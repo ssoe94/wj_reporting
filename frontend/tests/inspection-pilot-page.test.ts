@@ -1,6 +1,6 @@
 import * as trial from '../src/pages/quality/inspection-requests/integrationTrial.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 import { inspectionCopy } from '../src/pages/quality/inspection-requests/copy.ts';
@@ -16,6 +16,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 } }).outputText;
 const SESSION = 'SYNTHETIC-PILOT-PAGE-SESSION';
 const DATE = '2026-10-04';
+const ROLE_SETTINGS_LABEL = '담당자·교대 설정';
 const request = { id: 42, work_order_ref: 'SYNTHETIC-ASSIGNED-42', task_ref: 'SYNTHETIC-TASK', part_no: 'SYNTHETIC-PART', equipment_ref: 'SYNTHETIC-EQUIPMENT', target_quantity: '1', uom: 'EA', status: 'draft', assigned_to_name: 'SYNTHETIC-INSPECTOR' };
 const pilot = { can_view: true, can_manage: false, can_submit: true, can_review: false, access_scope: 'assigned_only', can_view_kanban: false, data_mode: 'synthetic_preview', mes: { enabled: false, can_refresh: false, can_sync: false } };
 const full = { ...pilot, can_manage: true, can_review: true, access_scope: 'all', can_view_kanban: true };
@@ -78,7 +79,7 @@ function harness(initialReply = deferred(), actorId = 12) {
   const api = {
     getInspectionCapabilities: (...args: unknown[]) => { calls.push({ kind: 'capabilities', args }); return reply.promise; },
     getInspectionRequests: async (...args: unknown[]) => { calls.push({ kind: 'list', args }); return { count: 1, next: null, previous: null, results: [request] }; },
-    getInspectionKanban: async (...args: unknown[]) => { calls.push({ kind: 'kanban', args }); return { business_date: DATE }; },
+    getInspectionKanban: async (...args: unknown[]) => { calls.push({ kind: 'kanban', args }); return { business_date: DATE, machines: [{ machine_number: 17, requests: [request] }] }; },
     getInspectionRequest: async (...args: unknown[]) => { calls.push({ kind: 'detail', args }); return request; },
   };
   const dependencies: Record<string, unknown> = {
@@ -86,7 +87,7 @@ function harness(initialReply = deferred(), actorId = 12) {
     '@tanstack/react-query': { useQueryClient: () => queryClient },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }), Fragment: 'Fragment' },
     'react-dom': { createPortal: (node: any) => node },
-    'lucide-react': { AlertTriangle: 'Icon', ClipboardCheck: 'Icon', Plus: 'Icon', RefreshCw: 'Icon', Search: 'Icon' },
+    'lucide-react': { AlertTriangle: 'Icon', ClipboardCheck: 'Icon', Plus: 'Icon', RefreshCw: 'Icon', Search: 'Icon', Users: 'Icon' },
     '../../../contexts/AuthContext': { useAuth: () => ({ user: { id: actorId, username: 'SYNTHETIC-INSPECTOR' }, authSessionId: SESSION, logout: async () => false, isLoggingOut: false, logoutError: false }) },
     '@/domains/auth/auth-storage': { subscribeToAuthStorage: () => () => {} },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (id: string) => { assert.ok(sessionCurrent && id === SESSION, 'Synthetic session changed'); }, isAuthSessionCurrent: (id: string) => sessionCurrent && id === SESSION, registerAuthTransitionGuard: () => () => {} },
@@ -98,7 +99,6 @@ function harness(initialReply = deferred(), actorId = 12) {
     './navigation': navigation,
     './mesWorkflowResult': mesWorkflowResult,
     './useInspectionRouteLeaveGuard': { useInspectionRouteLeaveGuard: () => ({ blocked: false, canLeave: true, stay: () => {}, leave: () => {} }) },
-    './InspectionKanban': { default: 'InspectionKanban' },
     './InspectionRequestDetail': { default: 'InspectionRequestDetail' },
     './TrialPresentation': { IntegrationTrialBadge: 'IntegrationTrialBadge' }, './integrationTrial': trial,
     './NewInspectionRequest': { default: 'NewInspectionRequest' },
@@ -107,8 +107,20 @@ function harness(initialReply = deferred(), actorId = 12) {
     './MesDetailPreview': { default: 'MesDetailPreview' },
     './InspectionRequestsPage.css': {},
   };
+  function requireModule(name: string): unknown {
+    if (name in dependencies) return dependencies[name];
+    assert.match(name, /^\.\/[A-Za-z][A-Za-z0-9]*(?:\.ts)?$/, `Unexpected module: ${name}`);
+    const path = name.replace(/\.ts$/, '');
+    const file = ['ts', 'tsx'].map((extension) => new URL(`../src/pages/quality/inspection-requests/${path.slice(2)}.${extension}`, import.meta.url)).find(existsSync);
+    assert.ok(file, `Missing real module: ${name}`);
+    const output: Record<string, unknown> = {};
+    dependencies[name] = output;
+    const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+    new Function('require', 'exports', code)(requireModule, output);
+    return output;
+  }
   const exports: Record<string, any> = {};
-  new Function('require', 'exports', compiled)((name: string) => { assert.ok(name in dependencies, `Unexpected module: ${name}`); return dependencies[name]; }, exports);
+  new Function('require', 'exports', compiled)(requireModule, exports);
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {
     setInterval: (callback: () => void) => { const id = ++intervalId; timers.set(id, callback); return id; },
@@ -122,6 +134,7 @@ function harness(initialReply = deferred(), actorId = 12) {
   }
   return {
     calls, invalidations, timers, reply: initialReply, settle,
+    stationPicker: () => elements(tree).find((node) => node.type === (dependencies['./InspectionStationPicker'] as { default: unknown }).default),
     expireSession: () => { sessionCurrent = false; },
     nodes: () => elements(tree), text: () => content(tree),
     button: (label: string) => elements(tree).find((node) => node.type === 'button' && content(node) === label),
@@ -138,7 +151,8 @@ test('pending capabilities send no list/detail/kanban request and create no poll
     assert.deepEqual(fixture.invalidations, []);
     assert.equal(fixture.timers.size, 0);
     assert.match(fixture.text(), /접근 권한을 확인/);
-    assert.equal(fixture.nodes().some((node) => ['InspectionKanban', 'InspectionRequestDetail', 'NewInspectionRequest'].includes(String(node.type))), false);
+    assert.equal(fixture.stationPicker(), undefined);
+    assert.equal(fixture.nodes().some((node) => ['InspectionRequestDetail', 'NewInspectionRequest'].includes(String(node.type))), false);
     assert.equal(fixture.nodes().some((node) => node.props.className?.includes('inspection-workspace')), false);
   } finally { fixture.cleanup(); }
 });
@@ -167,7 +181,7 @@ test('capability failure stays closed until an explicit successful retry', async
     assert.deepEqual(fixture.calls.map((call) => call.kind), ['capabilities', 'capabilities']);
     retry.resolve(pilot); await fixture.settle();
     assert.deepEqual(fixture.calls.map((call) => call.kind), ['capabilities', 'capabilities', 'list']);
-    assert.equal(fixture.timers.size, 0);
+    assert.equal(fixture.timers.size, 1, 'Accepted access enables the room clock');
   } finally { fixture.cleanup(); }
 });
 
@@ -176,8 +190,11 @@ test('assigned-only pilot has an always-visible assigned list and no kanban or c
   try {
     fixture.reply.resolve(pilot); await fixture.settle();
     assert.deepEqual(fixture.calls, [{ kind: 'capabilities', args: [SESSION] }, { kind: 'list', args: ['', '', 1, SESSION] }]);
-    assert.equal(fixture.timers.size, 0);
-    assert.equal(fixture.nodes().some((node) => node.type === 'InspectionKanban'), false);
+    assert.equal(fixture.timers.size, 1, 'Room clock is the only assigned-only timer');
+    const initialCalls = fixture.calls.length;
+    for (const tick of fixture.timers.values()) tick(); await fixture.settle();
+    assert.equal(fixture.calls.length, initialCalls, 'The clock performs no business-data polling');
+    assert.equal(fixture.stationPicker(), undefined);
     assert.equal(fixture.nodes().some((node) => node.type === 'details' && node.props.className?.includes('inspection-auxiliary')), false);
     assert.ok(fixture.nodes().some((node) => node.type === 'section' && node.props.className?.includes('inspection-assigned-workspace')));
     assert.match(fixture.text(), /내게 배정된 검사요청/);
@@ -198,13 +215,13 @@ test('pilot detail and its post-save refresh remain session-bound and never fetc
     const detail = fixture.nodes().find((node) => node.type === 'InspectionRequestDetail')!;
     assert.equal(detail.props.sessionId, SESSION);
     assert.equal(detail.props.userId, 12);
-    assert.ok(fixture.button(inspectionCopy.ko.returnToList));
+    assert.ok(fixture.nodes().some((node) => node.props.className?.includes('inspection-assigned-workspace')), 'The assigned list remains reachable beside the detail');
     assert.equal(fixture.button(inspectionCopy.ko.returnToKanban), undefined);
     detail.props.onChanged({ ...request, version: 2 }); await fixture.settle();
     assert.deepEqual(fixture.invalidations, [], 'a WJ-only save is not verified MES readback');
     assert.equal(fixture.calls.filter((call) => call.kind === 'list').length, 2);
     assert.equal(fixture.calls.some((call) => call.kind === 'kanban'), false);
-    assert.equal(fixture.timers.size, 0);
+    assert.equal(fixture.timers.size, 1, 'Assigned-only access enables the clock without kanban polling');
   } finally { fixture.cleanup(); }
 });
 
@@ -233,7 +250,7 @@ test('pilot projection invalidation requires verified MES readback and the ownin
     assert.deepEqual(fixture.invalidations, [['production-status'], ['inspection-overview'], ['production-status'], ['inspection-overview']]);
     assert.equal(fixture.calls.some((call) => call.kind === 'kanban'), false);
     assert.ok(fixture.calls.every((call) => ['capabilities', 'list', 'detail'].includes(call.kind) && call.args.at(-1) === SESSION));
-    assert.equal(fixture.timers.size, 0);
+    assert.equal(fixture.timers.size, 1, 'Assigned-only access enables the clock without kanban polling');
     const callCount = fixture.calls.length;
     fixture.expireSession(); detail.props.onChanged(observed); await fixture.settle();
     assert.equal(fixture.calls.length, callCount, 'a stale inspector cannot refetch scoped business data');
@@ -250,24 +267,29 @@ test('pilot creation is exposed only by explicit can_manage and still does not f
     assert.equal(editor.props.sessionId, SESSION);
     editor.props.onCreated(request); await fixture.settle();
     assert.equal(fixture.calls.some((call) => call.kind === 'kanban'), false);
-    assert.equal(fixture.timers.size, 0);
+    assert.equal(fixture.timers.size, 1, 'Assigned-only access enables the clock without kanban polling');
   } finally { fixture.cleanup(); }
 });
 
-test('full scope preserves kanban, visible searchable list and kanban polling', async () => {
+test('full scope preserves station selection, session-bound details and kanban polling', async () => {
   const fixture = harness();
   try {
     fixture.reply.resolve(full); await fixture.settle();
     assert.deepEqual(fixture.calls.map((call) => call.kind), ['capabilities', 'kanban', 'list']);
-    assert.ok(fixture.nodes().some((node) => node.type === 'InspectionKanban'));
-    const auxiliary = fixture.nodes().find((node) => node.type === 'details' && node.props.className?.includes('inspection-auxiliary'))!;
-    assert.equal(auxiliary.props.open, true);
+    assert.ok(fixture.stationPicker());
+    assert.equal(fixture.stationPicker()!.props.snapshot.business_date, DATE);
+    assert.equal(fixture.stationPicker()!.props.date, DATE);
     assert.equal(fixture.nodes().some((node) => node.props.className?.includes('inspection-assigned-workspace')), false);
     assert.equal(fixture.timers.size, 2);
     for (const tick of [...fixture.timers.values()]) tick(); await fixture.settle();
     assert.equal(fixture.calls.filter((call) => call.kind === 'kanban').length, 2);
-    fixture.nodes().find((node) => node.props.className === 'inspection-list-row')!.props.onClick(); await fixture.settle();
-    assert.ok(fixture.button(inspectionCopy.ko.returnToKanban));
+    fixture.stationPicker()!.props.onMachine(17, 42); await fixture.settle();
+    assert.equal(fixture.stationPicker()!.props.selectedMachine, 17);
+    assert.equal(fixture.stationPicker()!.props.selectedId, 42);
+    assert.deepEqual(fixture.calls.find((call) => call.kind === 'detail')?.args, [42, SESSION]);
+    assert.ok(fixture.nodes().some((node) => node.type === 'InspectionRequestDetail'));
+    fixture.stationPicker()!.props.onMachine(17, null); await fixture.settle();
+    assert.equal(fixture.nodes().some((node) => node.type === 'InspectionRequestDetail'), false);
   } finally { fixture.cleanup(); }
 });
 
@@ -296,7 +318,7 @@ test('role settings requires explicit accepted privilege and preserves current a
     const fixture = harness();
     try {
       fixture.reply.resolve(capabilities); await fixture.settle();
-      assert.equal(fixture.button(inspectionRoleCopy.ko.settings), undefined);
+      assert.equal(fixture.button(ROLE_SETTINGS_LABEL), undefined);
       assert.equal(fixture.nodes().some((node) => node.type === 'RoleSettings'), false);
     } finally { fixture.cleanup(); }
   }
@@ -304,7 +326,7 @@ test('role settings requires explicit accepted privilege and preserves current a
   try {
     fixture.reply.resolve({ ...full, can_manage_role_settings: true }); await fixture.settle();
     const before = fixture.calls.length;
-    fixture.button(inspectionRoleCopy.ko.settings)!.props.onClick(); await fixture.settle();
+    fixture.button(ROLE_SETTINGS_LABEL)!.props.onClick(); await fixture.settle();
     const panel = fixture.nodes().find((node) => node.type === 'RoleSettings')!;
     assert.ok(panel);
     assert.equal(panel.props.userId, 12);
@@ -319,7 +341,7 @@ test('stale session cannot open role settings even with previously accepted priv
   const fixture = harness();
   try {
     fixture.reply.resolve({ ...full, can_manage_role_settings: true }); await fixture.settle();
-    const entry = fixture.button(inspectionRoleCopy.ko.settings)!;
+    const entry = fixture.button(ROLE_SETTINGS_LABEL)!;
     const before = fixture.calls.length;
     fixture.expireSession(); entry.props.onClick(); await fixture.settle();
     assert.equal(fixture.nodes().some((node) => node.type === 'RoleSettings'), false);

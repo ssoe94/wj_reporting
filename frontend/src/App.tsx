@@ -325,6 +325,7 @@ function AppContent() {
   const { user, logout, isLoggingOut, isAuthenticated, isLoading } = useAuth();
   const routerLocation = useLocation();
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const inspectionMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationRef = useRef<HTMLElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const userMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -332,6 +333,7 @@ function AppContent() {
   const isFieldTerminal = Boolean(fieldTerminalUser);
 
   const locationKey = routerLocation.pathname;
+  const isInspectionRoom = locationKey === '/quality/inspection-requests';
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -342,7 +344,7 @@ function AppContent() {
 
     const previousOverflow = document.body.style.overflow;
     const navigation = mobileNavigationRef.current;
-    const menuButton = mobileMenuButtonRef.current;
+    const menuButton = inspectionMenuButtonRef.current?.offsetParent ? inspectionMenuButtonRef.current : mobileMenuButtonRef.current;
     const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
     document.body.style.overflow = 'hidden';
@@ -534,7 +536,7 @@ function AppContent() {
   }
 
   return (
-    <div className="main-app-shell">
+    <div className={`main-app-shell${isInspectionRoom ? ' main-app-shell--inspection-room' : ''}`}>
       {/* Header */}
       {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <header className="main-mobile-header md:hidden">
@@ -590,6 +592,7 @@ function AppContent() {
       {/* Breadcrumb */}
       {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <div className="main-topbar">
+          {isInspectionRoom && <button ref={inspectionMenuButtonRef} type="button" className="inspection-room-menu-trigger" aria-controls="main-mobile-navigation" aria-expanded={sidebarOpen} aria-label={lang === 'ko' ? '메뉴 열기' : '打开菜单'} onClick={() => setSidebarOpen(true)}><MenuIcon size={18} aria-hidden="true" /></button>}
           <Link aria-label={lang === 'ko' ? '홈' : '首页'} className="main-topbar__home" to="/">
             <HomeIcon aria-hidden="true" />
           </Link>

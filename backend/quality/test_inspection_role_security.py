@@ -72,7 +72,8 @@ class InspectionRoleSecurityTests(role_fixtures.RoleFixtures, APITestCase):
         request = self.request_now()
         areas = list(InspectionAreaResult.objects.filter(workflow=self.workflow).order_by('area').values(
             'area', 'assigned_to_id', 'version', 'status', 'judgement', 'measurements',
-            'evidence', 'completed_by_id', 'completed_at'))
+            'evidence', 'completed_by_id', 'completed_at', 'item_authorship',
+            'completed_recorded_by_id', 'completed_recorded_by_name'))
         return deepcopy((request.version, request.status, request.judgement,
             request.measurements, request.evidence, areas, InspectionAudit.objects.count(),
             InspectionOperation.objects.count(), InspectionShiftSetting.objects.count()))
@@ -208,6 +209,64 @@ class InspectionRoleSecurityTests(role_fixtures.RoleFixtures, APITestCase):
         before = self.state()
         response = self.area_post('area-save', payload, key=key)
         self.assertEqual(response.status_code, 404, response.data)
+        self.assertEqual(self.state(), before)
+
+    def test_shared_terminal_uses_one_signed_login_and_keeps_each_inspector_separate(self):
+        self.configure(shared_terminal=True)
+        token = self.use_signed_login(self.admin)
+        for name, inspector in [('appearance', self.appearance), ('dimension', self.dimension)]:
+            response = self.area_post('area-complete', self.payload(name, inspector_id=inspector.pk,
+                measurements=[self.measure(name)], judgement='pass'), area=name)
+            self.assertEqual(response.status_code, 200, response.data)
+            area = InspectionAreaResult.objects.get(workflow=self.workflow, area=name)
+            self.assertEqual((area.completed_by_id, area.completed_recorded_by_id), (inspector.pk, self.admin.pk))
+        self.assertEqual(self.client._credentials['HTTP_AUTHORIZATION'], 'Bearer ' + str(token))
+        self.assertEqual(self.request_now().judgement, 'pass')
+        self.assertFalse(response.data['mes_workflow']['can_finish'])
+
+    def test_revoked_terminal_login_cannot_replay_an_attributed_save(self):
+        self.configure(shared_terminal=True)
+        self.use_signed_login(self.admin)
+        payload = self.payload('appearance', inspector_id=self.appearance.pk, measurements=[self.measure('appearance')])
+        key = uuid.uuid4()
+        response = self.area_post('area-save', payload, key=key)
+        self.assertEqual(response.status_code, 200, response.data)
+        session = request_fixtures.inspection_session(self.admin)
+        MESLoginSession.objects.filter(pk=session.login_digest).update(revoked_at=timezone.now())
+        self.assert_denied_replay_without_mutation(payload, key)
+
+    def test_terminal_replay_denies_revoked_selected_inspector_permission(self):
+        self.configure(shared_terminal=True)
+        self.use_signed_login(self.admin)
+        payload = self.payload('appearance', inspector_id=self.appearance.pk, measurements=[self.measure('appearance')])
+        key = uuid.uuid4()
+        self.assertEqual(self.area_post('area-save', payload, key=key).status_code, 200)
+        self.appearance.user_permissions.remove(Permission.objects.get(
+            content_type__app_label='quality', codename='manage_inspectionrequest'))
+        before = self.state()
+        response = self.area_post('area-save', payload, key=key)
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(self.state(), before)
+
+    def test_shared_terminal_recorder_cannot_review_results_submitted_by_another_owner(self):
+        self.configure(shared_terminal=True)
+        InspectionRequest.objects.filter(pk=self.request.pk).update(assigned_to=self.outsider,
+            assigned_to_name=self.outsider.username)
+        self.use_signed_login(self.admin)
+        for name, inspector in [('appearance', self.appearance), ('dimension', self.dimension)]:
+            response = self.area_post('area-complete', self.payload(name, inspector_id=inspector.pk,
+                measurements=[self.measure(name)], judgement='pass'), area=name)
+            self.assertEqual(response.status_code, 200, response.data)
+        self.use_signed_login(self.outsider)
+        response = self.post(f'{self.request.pk}/submit/', {'version': self.request_now().version, 'reason': ''})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.use_signed_login(self.admin)
+        response = self.client.get(self.base + f'{self.request.pk}/')
+        self.assertFalse(response.data['capabilities']['can_review'])
+        before = self.state()
+        response = self.post(f'{self.request.pk}/approve/', {'version': self.request_now().version,
+            'reason': 'SYNTHETIC cannot review terminal input'})
+        self.assertEqual(response.status_code, 403, response.data)
         self.assertEqual(self.state(), before)
 
     def submitted_by_separate_owner(self, *, failed=False):

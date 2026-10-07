@@ -13,7 +13,7 @@ from mes_oauth.session_guard import InspectionSession
 
 from .inspection_models import InspectionRequest
 from .inspection_access import can_use_admin_inspection_flow
-from .inspection_validation import CreateInspectionSerializer, DraftInspectionSerializer, ActionSerializer
+from .inspection_validation import CreateInspectionSerializer, DraftInspectionSerializer, ActionSerializer, SubmitInspectionSerializer
 from .inspection_workflow import can_access_beta, capabilities, serialize, operation_key, create_request, local_action, external_action
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,19 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     @action(detail=False, methods=['get'], url_path='capabilities')
     def capabilities(self, request):
         return Response(capabilities(request.user))
+
+    @action(detail=False, methods=['get', 'post'], url_path='weekly-role-settings')
+    def weekly_role_settings(self, request):
+        from .inspection_weekly_roster import weekly_settings, save_weekly_settings
+        if request.method == 'GET':
+            response = Response(weekly_settings(request.user, request.query_params.get('week_start')))
+        else:
+            key = operation_key(request.headers.get('Idempotency-Key'))
+            data, status = save_weekly_settings(request.user, key, request.data,
+                                               session=InspectionSession.from_request(request))
+            response = Response(data, status=status)
+        response['Cache-Control'] = 'no-store, max-age=0'
+        return response
 
     @action(detail=False, methods=['get', 'post'], url_path='role-settings')
     def role_settings(self, request):
@@ -251,7 +264,7 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        return self._mutation(request, pk, 'submit')
+        return self._mutation(request, pk, 'submit', SubmitInspectionSerializer)
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
@@ -294,6 +307,32 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     @action(detail=True, methods=['post'], url_path='mes-reconcile')
     def mes_reconcile(self, request, pk=None):
         return self._mes_stage(request, pk, 'mes-reconcile')
+
+    def _mes_full_stage(self, request, pk, name):
+        from .inspection_full_snapshot import FullSnapshotError
+        from .inspection_full_snapshot_product import product_action
+        self.get_object()
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        try:
+            data, status = product_action(request.user, int(pk), name, key, request.data,
+                                         session=InspectionSession.from_request(request))
+        except FullSnapshotError as error:
+            unavailable = error.code in {'whole_connection_review_required', 'remote_concurrency_unverified'}
+            return Response({'code': error.code, 'detail': 'Reviewed whole-snapshot MES stage is unavailable.'},
+                            status=503 if unavailable else 409)
+        return Response(data, status=status)
+
+    @action(detail=True, methods=['post'], url_path='mes-full-save')
+    def mes_full_save(self, request, pk=None):
+        return self._mes_full_stage(request, pk, 'save')
+
+    @action(detail=True, methods=['post'], url_path='mes-full-finish')
+    def mes_full_finish(self, request, pk=None):
+        return self._mes_full_stage(request, pk, 'finish')
+
+    @action(detail=True, methods=['post'], url_path='mes-full-reconcile')
+    def mes_full_reconcile(self, request, pk=None):
+        return self._mes_full_stage(request, pk, 'reconcile')
 
     @action(detail=True, methods=['post'], url_path='review-failure')
     def review_failure(self, request, pk=None):

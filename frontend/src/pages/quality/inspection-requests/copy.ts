@@ -25,10 +25,10 @@ export const inspectionCopy = {
     createdAt: '요청 시간', updatedAt: '최근 저장', submittedAt: '제출 시간', reviewedAt: '검수 시간', mesChecked: 'MES 확인 시간', timezone: '상하이 시간 · UTC+8',
     version: '버전', immutable: '작업 정보와 검사 기준은 등록 후 고정됩니다. 변경이 필요한 경우 근거를 확인하고 새 요청을 등록하세요.',
     items: '검사 항목과 결과', addItem: '검사 항목 추가', itemName: '검사 항목명', kind: '값 유형', text: '관찰·문자', number: '수치', choice: '선택값', options: '선택값 목록 · 쉼표로 구분', optionsHint: '서로 다른 선택값 2~20개를 입력하세요.', itemUnit: '측정 단위', minimum: '최솟값', maximum: '최댓값', optional: '선택',
-    criteriaUnit: '기준·단위', fullValue: '값 전체 보기', attachments: '증빙', requiredEvidenceHint: '필수 증빙 있음', handlingHistory: '처리 이력', diagnosticDetails: '진단 상세', historyTime: '시간', historyActor: '처리자', historyAction: '동작', historyResult: '결과', historyOtherAction: '처리', historyUnknownResult: '미확인', historyCreated: '요청·기록 시각', historyCompleted: '처리 완료 시각',
+    criteriaUnit: '기준·단위', fullValue: '값 전체 보기', attachments: '사진·문서 링크', evidenceOptional: '필요 시', requiredEvidenceHint: '필수 증빙 있음', handlingHistory: '처리 이력', diagnosticDetails: '진단 상세', historyTime: '시간', historyActor: '처리자', historyAction: '동작', historyResult: '결과', historyOtherAction: '처리', historyUnknownResult: '미확인', historyCreated: '요청·기록 시각', historyCompleted: '처리 완료 시각',
     judgementPolicy: '전체 판정 기준', strictItems: '모든 항목 판정과 일치', independentJudgement: '독립 전체판정', strictHint: '전체 판정은 입력한 항목 판정과 일치해야 합니다.', independentHint: '전체 판정은 항목 판정과 별도로 입력합니다. 수동 요청의 로컬 기준이며 실제 MES 승인·예외 규칙은 별도 확인이 필요합니다.',
     evidenceRequired: '항목 증빙 필수', measurementRequired: '측정·관찰 값 필수', commonEvidenceRequired: '공통 증빙 필수', quantityPolicy: '검사 수량 기록 기준', quantityRecorded: '검사·합격·불합격 수량 기록', quantityNotRecorded: '수량 미기록', quantityNotRecordedHint: '이 요청은 검사 수량을 기록하지 않습니다. 표시된 0은 미기록 저장값이며 실제 검사·합격·불합격 수량을 뜻하지 않습니다.', measurement: '측정·관찰 값', judgement: '판정', choose: '선택하세요', pass: '합격', fail: '불합격',
-    itemEvidence: '항목 증빙 HTTPS 링크', evidenceHint: '사진·문서의 HTTPS 주소만 입력하세요. 계정정보, 쿼리 또는 # 조각이 포함된 링크는 저장할 수 없습니다.',
+    itemEvidence: '사진·문서 HTTPS 링크', evidenceHint: '사진·문서의 HTTPS 주소만 입력하세요. 계정정보, 쿼리 또는 # 조각이 포함된 링크는 저장할 수 없습니다.',
     unsafeEvidence: '증빙 주소를 확인해 주세요. HTTPS이며 계정정보·쿼리·# 조각이 없어야 합니다.', evidence: '공통 증빙', evidenceName: '증빙 설명', evidenceUrl: '증빙 HTTPS 주소', addEvidence: '증빙 추가', openEvidence: '증빙 열기', remove: '삭제',
     results: '검사 수량과 최종 판정', inspected: '검사 수량', accepted: '합격 수량', rejected: '불합격 수량', quantityHint: '검사 수량 = 합격 수량 + 불합격 수량. 서버가 요청 수량·단위·로트와 함께 검증합니다.', notes: '검사 메모',
     save: '초안 저장', submit: '검사 결과 제출', saved: '초안 저장 완료.', submitted: '제출 완료 · 검수 대기.', submittedFail: '불합격 결과 저장. 조치 후 재검을 요청하세요.',
@@ -39,7 +39,7 @@ export const inspectionCopy = {
     review: '검수', independent: '검수자는 검사 결과 제출자와 달라야 합니다.', reason: '처리 사유', reasonHint: '검수·반려·재검의 근거를 입력하세요.', approve: '검수 승인', reject: '반려', reinspect: '재검 요청 생성',
     approved: '검수 완료 · MES 완료 상태를 확인하세요.', rejectedMessage: '검사 결과를 반려했습니다.', reinspected: '재검 요청 생성 완료. 원검사 이력은 보존됩니다.',
     reasonRequired: '처리 사유를 입력해 주세요.', reviewReason: '최근 검수 사유',
-    mes: 'MES 검사 완료 상태', syncStatus: '검사 결과 동기화', mesCompletion: 'MES 검사 완료', mesTaskStatus: 'MES 작업 상태 코드', mesQcStatus: 'MES 품질 판정', mesTrialVerdict: 'MES 시험 판정', receiptReadiness: '사출 입고 선행조건', externalResult: 'MES 결과 ID', errorCode: '최근 오류 코드',
+    mes: 'MES 검사 완료 상태', mesDetails: 'MES 상세·안내', mesSyncShort: 'MES 동기화', mesCompletionShort: 'QC 완료', syncStatus: '검사 결과 동기화', mesCompletion: 'MES 검사 완료', mesTaskStatus: 'MES 작업 상태 코드', mesQcStatus: 'MES 품질 판정', mesTrialVerdict: 'MES 시험 판정', receiptReadiness: '사출 입고 선행조건', externalResult: 'MES 결과 ID', errorCode: '최근 오류 코드',
     refreshMes: 'MES 상태 재조회', mesSave: 'MES 검사값 저장', mesFinish: 'QC 검사 완료', mesStored: 'MES 저장 확인 완료.', mesFinished: 'MES 검사 완료 확인.', mesFinishConfirm: '이 QC 검사요청을 완료할까요? 생산 작업지시 종료나 입고 처리는 요청하지 않습니다.', mesStageHint: '검사값 저장과 QC 검사 완료는 별도 요청입니다. 저장값·시험표기를 재조회로 확인한 뒤 완료할 수 있습니다.', mesTestLabel: '원천 시험표기', sync: 'MES 결과 동기화',
     receiptHint: '입고는 별도 사출 업무이며 실제 입고 조건은 미확인입니다. 공정검사(巡检)가 대기 중이라는 이유만으로 입고 차단을 판단하지 않습니다. WJ 저장·검수, MES 항목 저장·검사 종료·판정·승인은 각각 확인하세요.',
     previousObservation: '이전 관측', currentReconciliation: '현재 대조 필요', observedAt: '관측 시각', previousObservationHint: '아래는 이전 관측값입니다. 현재 완료·합격·입고 가능이 확인된 상태가 아닙니다.',
@@ -77,10 +77,10 @@ export const inspectionCopy = {
     createdAt: '申请时间', updatedAt: '最近保存', submittedAt: '提交时间', reviewedAt: '审核时间', mesChecked: 'MES 确认时间', timezone: '上海时间 · UTC+8',
     version: '版本', immutable: '登记后作业信息与检验标准固定。需要更改时，请确认依据后创建新申请。',
     items: '检验项目与结果', addItem: '添加检验项目', itemName: '检验项目名称', kind: '值类型', text: '观察·文字', number: '数值', choice: '选择值', options: '选项列表 · 用逗号分隔', optionsHint: '请输入 2–20 个不同选项。', itemUnit: '测量单位', minimum: '最小值', maximum: '最大值', optional: '选填',
-    criteriaUnit: '标准·单位', fullValue: '查看完整值', attachments: '依据', requiredEvidenceHint: '有必填依据', handlingHistory: '处理记录', diagnosticDetails: '诊断详情', historyTime: '时间', historyActor: '处理人', historyAction: '操作', historyResult: '结果', historyOtherAction: '处理', historyUnknownResult: '待确认', historyCreated: '请求·记录时间', historyCompleted: '处理完成时间',
+    criteriaUnit: '标准·单位', fullValue: '查看完整值', attachments: '照片·文档链接', evidenceOptional: '按需', requiredEvidenceHint: '有必填依据', handlingHistory: '处理记录', diagnosticDetails: '诊断详情', historyTime: '时间', historyActor: '处理人', historyAction: '操作', historyResult: '结果', historyOtherAction: '处理', historyUnknownResult: '待确认', historyCreated: '请求·记录时间', historyCompleted: '处理完成时间',
     judgementPolicy: '整体判定规则', strictItems: '与所有项目判定一致', independentJudgement: '独立整体判定', strictHint: '整体判定必须与已填写的项目判定一致。', independentHint: '整体判定与项目判定分别填写。此为手工申请的本地规则，实际 MES 审批与例外规则需另行确认。',
     evidenceRequired: '项目依据必填', measurementRequired: '测量·观察值必填', commonEvidenceRequired: '公共依据必填', quantityPolicy: '检验数量记录规则', quantityRecorded: '记录检验·合格·不合格数量', quantityNotRecorded: '不记录数量', quantityNotRecordedHint: '此申请不记录检验数量。显示的 0 是未记录的存储值，不代表实际检验、合格或不合格数量。', measurement: '测量·观察值', judgement: '判定', choose: '请选择', pass: '合格', fail: '不合格',
-    itemEvidence: '项目依据 HTTPS 链接', evidenceHint: '仅填写照片、文档的 HTTPS 地址。不得包含账号信息、查询参数或 # 片段。',
+    itemEvidence: '照片·文档 HTTPS 链接', evidenceHint: '仅填写照片、文档的 HTTPS 地址。不得包含账号信息、查询参数或 # 片段。',
     unsafeEvidence: '请检查依据地址：必须为 HTTPS，且不含账号信息、查询参数或 # 片段。', evidence: '公共依据', evidenceName: '依据说明', evidenceUrl: '依据 HTTPS 地址', addEvidence: '添加依据', openEvidence: '打开依据', remove: '删除',
     results: '检验数量与最终判定', inspected: '检验数量', accepted: '合格数量', rejected: '不合格数量', quantityHint: '检验数量 = 合格数量 + 不合格数量。服务器结合申请数量、单位与批次进行验证。', notes: '检验备注',
     save: '保存草稿', submit: '提交检验结果', saved: '草稿已保存。', submitted: '已提交 · 待审核。', submittedFail: '不合格结果已保存，处置后请申请复检。',
@@ -91,7 +91,7 @@ export const inspectionCopy = {
     review: '审核', independent: '审核人与检验结果提交人必须不同。', reason: '处理原因', reasonHint: '填写审核、退回或复检的依据。', approve: '审核通过', reject: '退回', reinspect: '创建复检申请',
     approved: '审核完成 · 请确认 MES 完成状态。', rejectedMessage: '检验结果已退回。', reinspected: '复检申请已创建，原检验记录保留。',
     reasonRequired: '请填写处理原因。', reviewReason: '最近审核原因',
-    mes: 'MES 检验完成状态', syncStatus: '检验结果同步', mesCompletion: 'MES 检验完成', mesTaskStatus: 'MES 作业状态代码', mesQcStatus: 'MES 品质判定', mesTrialVerdict: 'MES 测试判定', receiptReadiness: '注塑入库前置条件', externalResult: 'MES 结果 ID', errorCode: '最近错误代码',
+    mes: 'MES 检验完成状态', mesDetails: 'MES 详情·说明', mesSyncShort: 'MES 同步', mesCompletionShort: 'QC 完成', syncStatus: '检验结果同步', mesCompletion: 'MES 检验完成', mesTaskStatus: 'MES 作业状态代码', mesQcStatus: 'MES 品质判定', mesTrialVerdict: 'MES 测试判定', receiptReadiness: '注塑入库前置条件', externalResult: 'MES 结果 ID', errorCode: '最近错误代码',
     refreshMes: '重新查询 MES 状态', mesSave: '保存 MES 检验值', mesFinish: '完成 QC 检验', mesStored: 'MES 保存已确认。', mesFinished: 'MES 检验完成已确认。', mesFinishConfirm: '完成此 QC 检验申请？此操作不请求关闭生产工单或入库。', mesStageHint: '保存检验值与完成 QC 检验是独立请求。重新查询并核对保存值和测试标记后才能完成。', mesTestLabel: '源系统测试标记', sync: '同步 MES 检验结果',
     receiptHint: '入库属于独立的注塑业务，实际入库条件尚未确认。不得仅因巡检待处理而判断入库被阻止。WJ 保存、审核与 MES 项目保存、检验结束、判定、审批需分别确认。',
     previousObservation: '此前观测', currentReconciliation: '当前需核对', observedAt: '观测时间', previousObservationHint: '以下保留的是此前观测值，当前是否完成、合格或可入库尚未确认。',
@@ -139,8 +139,8 @@ export const inspectionBlockingReasonLabels: Record<'ko' | 'zh', Record<string, 
   zh: { draft_not_submitted: '草稿未提交', awaiting_local_review: 'WJ 待审核', local_inspection_failed: 'WJ 不合格判定', local_review_rejected: 'WJ 审核退回', mes_approval_pending: 'MES 待审批', mes_completion_unverified: 'MES 检验完成未确认' },
 };
 export const inspectionActionLabels: Record<'ko' | 'zh', Record<string, string>> = {
-  ko: { role_configure: '교대·담당 설정', role_results: '검사 수량 저장', role_appearance_save: '외관 항목 저장', role_dimension_save: '치수 항목 저장', role_appearance_complete: '외관 검사 완료', role_dimension_complete: '치수 검사 완료', role_appearance_reopen: '외관 검사 다시 열기', role_dimension_reopen: '치수 검사 다시 열기', create: '요청 등록', create_integration_trial: '시험 준비', 'create-integration-trial': '시험 준비', prepare_single_actor_test: '시험 준비', update: '초안 변경', draft: '초안 저장', draft_saved: '초안 저장', save: '초안 저장', submit: '검사 제출', approve: '검수 승인', reject: '반려', reinspect: '재검 요청', reinspection: '재검 요청', create_reinspection: '재검 요청 등록', refresh: 'MES 상태 조회', sync: 'MES 결과 동기화', reconcile_sync: 'MES 상태 확인', 'mes-save': 'MES 값 저장', 'mes-finish': '검사 완료 요청', 'mes-reconcile': 'MES 상태 확인' },
-  zh: { role_configure: '设置班次·人员', role_results: '保存检验数量', role_appearance_save: '保存外观项目', role_dimension_save: '保存尺寸项目', role_appearance_complete: '完成外观检验', role_dimension_complete: '完成尺寸检验', role_appearance_reopen: '重新打开外观检验', role_dimension_reopen: '重新打开尺寸检验', create: '登记申请', create_integration_trial: '测试准备', 'create-integration-trial': '测试准备', prepare_single_actor_test: '测试准备', update: '修改草稿', draft: '保存草稿', draft_saved: '保存草稿', save: '保存草稿', submit: '提交检验', approve: '审核通过', reject: '退回', reinspect: '复检申请', reinspection: '复检申请', create_reinspection: '登记复检申请', refresh: '查询 MES 状态', sync: '同步 MES 结果', reconcile_sync: '确认 MES 状态', 'mes-save': '保存 MES 值', 'mes-finish': '请求完成检验', 'mes-reconcile': '确认 MES 状态' },
+  ko: { role_configure: '교대·담당 설정', role_results: '검사 수량 저장', role_appearance_save: '외관 항목 저장', role_dimension_save: '치수 항목 저장', role_appearance_complete: '외관 검사 완료', role_dimension_complete: '치수 검사 완료', role_appearance_reopen: '외관 검사 다시 열기', role_dimension_reopen: '치수 검사 다시 열기', create: '요청 등록', create_integration_trial: '시험 준비', 'create-integration-trial': '시험 준비', prepare_single_actor_test: '시험 준비', update: '초안 변경', draft: '초안 저장', draft_saved: '초안 저장', save: '초안 저장', submit: '검사 제출', approve: '검수 승인', reject: '반려', reinspect: '재검 요청', reinspection: '재검 요청', create_reinspection: '재검 요청 등록', refresh: 'MES 상태 조회', sync: 'MES 결과 동기화', reconcile_sync: 'MES 상태 확인', 'mes-save': 'MES 값 저장', 'mes-finish': '검사 완료 요청', 'mes-reconcile': 'MES 상태 확인', 'mes-full-save': 'MES 전체 저장', 'mes-full-finish': 'QC 완료 요청', 'mes-full-reconcile': 'MES 전체 결과 확인', mes_full_save: 'MES 전체 저장', mes_full_finish: 'QC 완료 확인' },
+  zh: { role_configure: '设置班次·人员', role_results: '保存检验数量', role_appearance_save: '保存外观项目', role_dimension_save: '保存尺寸项目', role_appearance_complete: '完成外观检验', role_dimension_complete: '完成尺寸检验', role_appearance_reopen: '重新打开外观检验', role_dimension_reopen: '重新打开尺寸检验', create: '登记申请', create_integration_trial: '测试准备', 'create-integration-trial': '测试准备', prepare_single_actor_test: '测试准备', update: '修改草稿', draft: '保存草稿', draft_saved: '保存草稿', save: '保存草稿', submit: '提交检验', approve: '审核通过', reject: '退回', reinspect: '复检申请', reinspection: '复检申请', create_reinspection: '登记复检申请', refresh: '查询 MES 状态', sync: '同步 MES 结果', reconcile_sync: '确认 MES 状态', 'mes-save': '保存 MES 值', 'mes-finish': '请求完成检验', 'mes-reconcile': '确认 MES 状态', 'mes-full-save': '保存 MES 全部项目', 'mes-full-finish': '请求完成 QC', 'mes-full-reconcile': '核实 MES 全部结果', mes_full_save: '保存 MES 全部项目', mes_full_finish: '核实 QC 完成' },
 };
 
 export function inspectionHistoryActionLabel(lang: 'ko' | 'zh', action: string): string {
@@ -150,6 +150,7 @@ export function inspectionHistoryActionLabel(lang: 'ko' | 'zh', action: string):
 
 /** A reserved/uncertain request is not a verified result, regardless of WJ approval. */
 export function inspectionHistoryResultLabel(lang: 'ko' | 'zh', action: string, state: string, operation = false): string {
+  if (!operation && ['mes_full_save', 'mes_full_finish'].includes(action)) return inspectionOperationLabels[lang].succeeded;
   if (operation) return inspectionOperationLabels[lang][state] || inspectionCopy[lang].historyUnknownResult;
   const suffix = action.match(/_(reserved|unknown|verified|stale_observation|login_rejected|succeeded|failed|blocked)$/)?.[1];
   if (suffix) {

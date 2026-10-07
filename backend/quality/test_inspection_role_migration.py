@@ -49,10 +49,10 @@ class InspectionRoleMigrationTests(TransactionTestCase):
         executor.migrate(self.latest)
         upgraded = executor.loader.project_state(self.latest).apps
         self.assertEqual(set(connection.introspection.table_names()) - tables,
-            {'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult'})
+            {'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult', 'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
         for name, snapshot in snapshots.items():
             self.assertEqual(list(upgraded.get_model('quality', name).objects.values()), snapshot)
-        for name in ('InspectionShiftSetting', 'InspectionRoleWorkflow', 'InspectionAreaResult'):
+        for name in ('InspectionShiftSetting', 'InspectionRoleWorkflow', 'InspectionAreaResult', 'InspectionInspector', 'InspectionWeeklyRoster'):
             model = upgraded.get_model('quality', name)
             self.assertEqual(model.objects.count(), 0)
             self.assertEqual(model._meta.default_permissions, ())
@@ -60,6 +60,13 @@ class InspectionRoleMigrationTests(TransactionTestCase):
         migration = import_module('quality.migrations.0013_inspection_roles').Migration
         self.assertEqual(len(migration.operations), 3)
         self.assertTrue(all(isinstance(operation, migrations.CreateModel) for operation in migration.operations))
+        weekly = import_module('quality.migrations.0017_inspection_weekly_roster').Migration
+        self.assertEqual(len(weekly.operations), 7)
+        self.assertTrue(all(isinstance(operation, (migrations.CreateModel, migrations.AddField, migrations.AddConstraint))
+                            for operation in weekly.operations))
+        added = [operation for operation in weekly.operations if isinstance(operation, migrations.AddField)]
+        self.assertEqual(len(added), 4)
+        self.assertTrue(all(operation.field.null for operation in added))
 
 
 class InspectionShiftEffectiveMigrationTests(TransactionTestCase):
@@ -110,7 +117,7 @@ class InspectionShiftEffectiveMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.migrate(self.latest)
         upgraded = executor.loader.project_state(self.latest).apps
-        self.assertEqual(set(connection.introspection.table_names()), tables)
+        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
         for name, snapshot in snapshots.items():
             fields = list(snapshot[0])
             self.assertEqual(list(upgraded.get_model('quality', name).objects.values(*fields)), snapshot)
@@ -123,3 +130,59 @@ class InspectionShiftEffectiveMigrationTests(TransactionTestCase):
         self.assertEqual(len(migration.operations), 2)
         self.assertTrue(all(isinstance(operation, migrations.AddField) for operation in migration.operations))
         self.assertEqual({operation.name for operation in migration.operations}, {'effective_from', 'effective_until'})
+
+
+class InspectionSharedTerminalMigrationTests(TransactionTestCase):
+    def setUp(self):
+        executor = MigrationExecutor(connection)
+        self.latest = executor.loader.graph.leaf_nodes()
+        self.before = [('quality', '0014_inspection_shift_effective_period') if app == 'quality'
+                       else (app, name) for app, name in self.latest]
+        executor.migrate(self.before)
+        self.old = executor.loader.project_state(self.before).apps
+
+    def tearDown(self):
+        MigrationExecutor(connection).migrate(self.latest)
+        super().tearDown()
+
+    def test_upgrade_preserves_old_area_author_and_does_not_enable_a_terminal_or_infer_authorship(self):
+        user = self.old.get_model('auth', 'User').objects.create(username='SYNTHETIC-existing-inspector')
+        request = self.old.get_model('quality', 'InspectionRequest').objects.create(
+            identity='c' * 64, work_order_ref='SYNTHETIC-WO', task_ref='SYNTHETIC-TASK',
+            part_no='SYNTHETIC-PART', equipment_ref='SYNTHETIC-MACHINE', target_quantity=Decimal('1'),
+            uom='EA', warehouse_ref='SYNTHETIC-WAREHOUSE', lot_ref='SYNTHETIC-LOT',
+            work_started_at=timezone.now(), assigned_to_id=user.pk, assigned_to_name=user.username,
+            status='approved', version=12, judgement='pass', quantity_mode='not_recorded',
+            mes_completion_status='completed', sync_status='succeeded',
+            measurements=[{'item_id': 'SYNTHETIC-item', 'value': 'SYNTHETIC-kept', 'judgement': 'pass'}])
+        workflow = self.old.get_model('quality', 'InspectionRoleWorkflow').objects.create(
+            request_id=request.pk, status='completed', config_version=2,
+            actor_snapshot={'appearance': {'id': user.pk, 'name': 'SYNTHETIC preserved author'}},
+            item_areas={'SYNTHETIC-item': 'appearance'})
+        area = self.old.get_model('quality', 'InspectionAreaResult').objects.create(
+            workflow_id=workflow.pk, area='appearance', assigned_to_id=user.pk,
+            assigned_to_name='SYNTHETIC preserved author', status='complete', judgement='pass', version=3,
+            measurements=request.measurements, completed_by_id=user.pk,
+            completed_by_name='SYNTHETIC preserved author', completed_at=timezone.now())
+        names = ('InspectionRequest', 'InspectionRoleWorkflow', 'InspectionAreaResult')
+        snapshots = {name: list(self.old.get_model('quality', name).objects.values()) for name in names}
+        permission_count = self.old.get_model('auth', 'Permission').objects.count()
+        tables = set(connection.introspection.table_names())
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.latest)
+        upgraded = executor.loader.project_state(self.latest).apps
+        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
+        for name, snapshot in snapshots.items():
+            self.assertEqual(list(upgraded.get_model('quality', name).objects.values(*snapshot[0])), snapshot)
+        row = upgraded.get_model('quality', 'InspectionRoleWorkflow').objects.get(pk=workflow.pk)
+        self.assertIsNone(row.shared_terminal_operator_id)
+        self.assertEqual(row.shared_terminal_operator_name, '')
+        row = upgraded.get_model('quality', 'InspectionAreaResult').objects.get(pk=area.pk)
+        self.assertEqual(row.item_authorship, {})
+        self.assertIsNone(row.completed_recorded_by_id)
+        self.assertEqual(row.completed_recorded_by_name, '')
+        self.assertEqual(upgraded.get_model('auth', 'Permission').objects.count(), permission_count)
+        from importlib import import_module
+        migration = import_module('quality.migrations.0015_inspection_shared_terminal').Migration
+        self.assertEqual(len(migration.operations), 5)
+        self.assertTrue(all(isinstance(operation, migrations.AddField) for operation in migration.operations))

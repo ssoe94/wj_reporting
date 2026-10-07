@@ -5,14 +5,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { FormEvent } from 'react';
 import type { KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ClipboardCheck, Plus, RefreshCw, Search } from 'lucide-react';
+import { Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { subscribeToAuthStorage } from '@/domains/auth/auth-storage';
 import { assertAuthSessionCurrent, isAuthSessionCurrent, registerAuthTransitionGuard } from '@/domains/auth/auth-transition';
 import { useLang } from '../../../i18n';
 import { getInspectionCapabilities, getInspectionKanban, getInspectionRequest, getInspectionRequests } from './api';
 import type { InspectionCapabilities, InspectionList, InspectionRequest } from './api';
-import { inspectionCopy, inspectionDataSourceCopy, inspectionRequestStatusLabels, inspectionTime } from './copy';
+import { inspectionCopy, inspectionRequestStatusLabels, inspectionTime } from './copy';
 import { inspectionBusinessDate } from './kanban';
 import type { InspectionKanban as Kanban } from './kanban';
 import { inspectionError } from './workflow';
@@ -20,18 +20,18 @@ import { inspectionConfirmsScopedRefresh, inspectionNavigationGate, isCurrentIns
 import { refreshInspectionProjectionQueries } from './mesWorkflowResult';
 import type { InspectionEditorSelection } from './navigation';
 import { useInspectionRouteLeaveGuard } from './useInspectionRouteLeaveGuard';
-import InspectionKanban from './InspectionKanban';
+import InspectionStationPicker from './InspectionStationPicker';
 import InspectionRequestDetail from './InspectionRequestDetail';
 import NewInspectionRequest from './NewInspectionRequest';
 import RoleSettings from './RoleSettings';
-import { inspectionRoleCopy } from './roleCopy';
+import InspectionRoomTeam from './InspectionRoomTeam';
 import MesDetailPreview from './MesDetailPreview';
 import './InspectionRequestsPage.css';
 
 export default function InspectionRequestsPage() {
   const queryClient = useQueryClient();
   const { lang } = useLang();
-  const { user, authSessionId, logout, isLoggingOut, logoutError } = useAuth();
+  const { user, authSessionId, isLoggingOut } = useAuth();
   const [sessionId] = useState(authSessionId);
   const [inspector] = useState(user);
   const [staleSession, setStaleSession] = useState(() => !isAuthSessionCurrent(sessionId));
@@ -47,7 +47,6 @@ export default function InspectionRequestsPage() {
   const canView = capabilities?.can_view === true && ['all', 'assigned_only'].includes(capabilities.access_scope);
   const assignedOnly = canView && capabilities?.access_scope === 'assigned_only';
   const canViewKanban = canView && capabilities?.access_scope === 'all' && capabilities.can_view_kanban === true;
-  const dataSource = inspectionDataSourceCopy(lang, capabilities?.data_mode);
   const [capabilityError, setCapabilityError] = useState('');
   const [kanban, setKanban] = useState<Kanban | null>(null);
   const [businessDate, setBusinessDate] = useState(() => inspectionBusinessDate());
@@ -67,6 +66,7 @@ export default function InspectionRequestsPage() {
   const selectedId = editor.kind === 'request' ? editor.requestId : null;
   const creating = editor.kind === 'create';
   const [showRoleSettings, setShowRoleSettings] = useState(false);
+  const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [editorLocked, setEditorLocked] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
@@ -134,10 +134,10 @@ export default function InspectionRequestsPage() {
   useEffect(() => { void loadKanban(); return () => { kanbanSequence.current += 1; }; }, [loadKanban]);
   useEffect(() => { void loadList(); return () => { listSequence.current += 1; }; }, [loadList]);
   useEffect(() => {
-    if (!canViewKanban) return;
+    if (!canView) return;
     const timer = window.setInterval(() => { if (ownsSession()) setNow(new Date()); }, 60_000);
     return () => window.clearInterval(timer);
-  }, [ownsSession, canViewKanban]);
+  }, [ownsSession, canView]);
   useEffect(() => {
     if (ownsSession() && canViewKanban && followCurrentDate) setBusinessDate(inspectionBusinessDate(now));
   }, [followCurrentDate, now, ownsSession, canViewKanban]);
@@ -157,7 +157,7 @@ export default function InspectionRequestsPage() {
   useEffect(() => {
     if (ownsSession() && (creating || (selectedId !== null && !detailLoading))) {
       detailRef.current?.focus({ preventScroll: true });
-      detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (creating) detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
   }, [selectedId, creating, detailLoading, ownsSession]);
   useEffect(() => {
@@ -204,9 +204,16 @@ export default function InspectionRequestsPage() {
   };
   const select = (id: number) => {
     if (!ownsSession() || !canView) return;
-    if (selectedId === id && !creating) { detailRef.current?.focus({ preventScroll: true }); detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' }); return; }
+    if (selectedId === id && !creating) { detailRef.current?.focus({ preventScroll: true }); return; }
     if (!canNavigate()) return;
+    setSelectedMachine(kanban?.machines.find((machine) => machine.requests.some((request) => request.id === id))?.machine_number ?? null);
     openEditor('request', id);
+  };
+  const selectMachine = (machine: number, id: number | null) => {
+    if (selectedMachine === machine && selectedId === id && !creating && !showRoleSettings) { detailRef.current?.focus({ preventScroll: true }); return; }
+    if (!ownsSession() || !canViewKanban || !canNavigate()) return;
+    setSelectedMachine(machine);
+    if (id !== selectedId || creating || showRoleSettings) openEditor(id === null ? 'none' : 'request', id);
   };
   const showCreate = () => {
     if (!ownsSession() || !canView || capabilities?.can_manage !== true) return;
@@ -217,15 +224,10 @@ export default function InspectionRequestsPage() {
   const openRoleSettings = () => {
     if (!ownsSession() || !canView || capabilities?.can_manage_role_settings !== true || !canNavigate()) return;
     openEditor('none'); setShowRoleSettings(true);
-    window.setTimeout(() => detailRef.current?.focus({ preventScroll: true }), 0);
+    window.setTimeout(() => { detailRef.current?.focus({ preventScroll: true }); detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' }); }, 0);
   };
   const closeDetail = () => { if (!canNavigate()) return; openEditor('none'); const target = canViewKanban ? kanbanRef.current : listRef.current; target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
   const filter = (event: FormEvent) => { event.preventDefault(); if (!ownsSession()) return; setSearch(query.trim()); setPage(1); };
-  const switchInspector = async () => {
-    if (!ownsSession() || isLoggingOut) return;
-    setTransitionMessage('');
-    try { await logout(); } catch { if (ownsSession()) setTransitionMessage(text.inspectorSwitchFailed); }
-  };
   const trapLeaveDialogFocus = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); routeGuard.stay(); return; }
     if (event.key !== 'Tab') return;
@@ -239,6 +241,7 @@ export default function InspectionRequestsPage() {
 
   const requestList = <>
         <form className="inspection-toolbar" onSubmit={filter}>
+          {capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked || isLoggingOut || staleSession} onClick={showCreate}><Plus size={16} aria-hidden="true" />{text.create}</button>}
           <label className="inspection-search"><Search size={19} aria-hidden="true" /><span className="sr-only">{text.search}</span><input maxLength={128} type="search" value={query} placeholder={text.search} onChange={(event) => { if (ownsSession()) setQuery(event.target.value); }} /></label>
           <button type="submit" className="inspection-button">{lang === 'ko' ? '검색' : '搜索'}</button>
           <label><span className="sr-only">{text.filter}</span><select value={status} onChange={(event) => { if (!ownsSession()) return; setStatus(event.target.value); setPage(1); }}><option value="">{text.all}</option>{['draft', 'submitted', 'approved', 'rejected', 'failed'].map((value) => <option value={value} key={value}>{inspectionRequestStatusLabels[lang][value]}</option>)}</select></label>
@@ -264,38 +267,30 @@ export default function InspectionRequestsPage() {
       <p id="inspection-route-leave-hint">{routeGuard.canLeave ? editorDirty ? text.routeDirtyHint : text.routeLeaveHint : text.navigationLocked}</p>
       <div className="inspection-actions"><button ref={leaveStayRef} type="button" className="inspection-button is-primary" onClick={routeGuard.stay}>{text.routeStay}</button>{routeGuard.canLeave && <button type="button" className="inspection-button" onClick={routeGuard.leave}>{text.routeLeave}</button>}</div>
     </div></div>, document.body)}
-    <header className="inspection-hero"><div><small>WJ DATA CENTER · {lang === 'ko' ? '품질' : '品质'}</small><h1>{text.title}</h1><p>{text.description}</p></div><ClipboardCheck size={42} aria-hidden="true" /></header>
-    <div className="inspection-inspector"><p>{text.currentInspector}: <strong>{inspector?.username || '—'}</strong></p><button type="button" className="inspection-button" disabled={isLoggingOut || staleSession} onClick={() => void switchInspector()}>{isLoggingOut ? text.inspectorSwitching : text.switchInspector}</button></div>
+    <header className="inspection-hero"><h1>{text.title}</h1>{canView && <InspectionRoomTeam sessionId={sessionId} lang={lang} now={now} refreshKey={showRoleSettings} />}<div className="inspection-header-actions">{canViewKanban && capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked || isLoggingOut || staleSession} onClick={showCreate}><Plus size={16} aria-hidden="true" />{text.create}</button>}
+      {canView && capabilities?.can_manage_role_settings && <button type="button" className="inspection-button" disabled={editorLocked || isLoggingOut || staleSession} onClick={openRoleSettings}><Users size={16} aria-hidden="true" />{lang === 'ko' ? '담당자·교대 설정' : '负责人·班次设置'}</button>}
+    </div></header>
     {transitionMessage && <div className="inspection-message" role="status">{transitionMessage}</div>}
-    {logoutError && <div className="inspection-message is-error" role="alert">{text.inspectorSwitchFailed}</div>}
     {staleSession ? <div className="inspection-message is-error" role="alert">{text.inspectorSessionChanged}</div> : <fieldset className="inspection-session-scope" disabled={isLoggingOut} aria-label={text.title}>
-    <div className={capabilities?.data_mode === 'wj_local_beta' ? 'inspection-connection-help' : 'inspection-notice inspection-connection-notice'} data-mode={capabilities?.data_mode || 'unconfirmed'}>
-      {capabilities?.data_mode !== 'wj_local_beta' && <AlertTriangle size={20} aria-hidden="true" />}
-      <div>{capabilities?.data_mode !== 'wj_local_beta' && <strong>{dataSource.notice}</strong>}
-        <details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {text.dataSource}</summary><p>{dataSource.hint}</p><dl className="inspection-data-sources">{canViewKanban && <div><dt>{text.plans}</dt><dd>{dataSource.plans}</dd></div>}<div><dt>{text.requests}</dt><dd>{dataSource.requests}</dd></div></dl></details>
-      </div>
-    </div>
     {capabilityError && <div className="inspection-message is-error" role="alert">{capabilityError}<div className="inspection-actions"><button type="button" className="inspection-button" onClick={() => void loadCapabilities()}>{text.retry}</button></div></div>}
     {!capabilities && !capabilityError && <div className="inspection-message" role="status">{text.checkingAccess}</div>}
     {capabilities && !canView && <div className="inspection-message" role="alert">{text.denied}</div>}
     {canView && <>
-      {inspector?.id === 18 && <MesDetailPreview actorId={inspector.id} sessionId={sessionId} lang={lang} disabled={editorLocked || isLoggingOut} />}
-      {canViewKanban && <div ref={kanbanRef} tabIndex={-1}><InspectionKanban snapshot={kanban?.business_date === businessDate ? kanban : null} date={businessDate} lang={lang} now={now} loading={kanbanLoading} error={kanbanError} selectedId={creating ? null : selectedId} onSelect={select}
-        onDate={(value) => { if (!ownsSession()) return; setFollowCurrentDate(false); setBusinessDate(value); }} onCurrent={() => { if (!ownsSession()) return; const current = new Date(); setNow(current); setFollowCurrentDate(true); setBusinessDate(inspectionBusinessDate(current)); }} onRefresh={() => void loadKanban()} /></div>}
+      {canViewKanban && <div ref={kanbanRef} tabIndex={-1}><InspectionStationPicker snapshot={kanban?.business_date === businessDate ? kanban : null} date={businessDate} lang={lang} loading={kanbanLoading} error={kanbanError} selectedMachine={selectedMachine} selectedId={selectedId} locked={editorLocked} onMachine={selectMachine} onSelect={select}
+        onDate={(value) => { if (!ownsSession() || !canNavigate()) return; openEditor('none'); setSelectedMachine(null); setFollowCurrentDate(false); setBusinessDate(value); }} onRefresh={() => void loadKanban()} /></div>}
       {assignedOnly && <section className="inspection-workspace inspection-assigned-workspace" aria-labelledby="inspection-assigned-title" ref={listRef} tabIndex={-1}><header className="inspection-assigned-heading"><h2 id="inspection-assigned-title">{text.assignedRequests}{list && ` (${list.count})`}</h2><p>{text.assignedHint}</p></header>{requestList}</section>}
-      <div className="inspection-page-actions">{capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked} onClick={showCreate}><Plus size={17} aria-hidden="true" />{text.create}</button>}{capabilities?.can_manage_role_settings && <button type="button" className="inspection-button" disabled={editorLocked} onClick={openRoleSettings}>{inspectionRoleCopy[lang].settings}</button>}</div>
       {(showRoleSettings || creating || selectedId !== null) && <div className="inspection-detail-workspace" ref={detailRef} tabIndex={-1}>
-        <div className="inspection-detail-navigation"><button className="inspection-button" type="button" disabled={editorLocked} onClick={closeDetail}>{canViewKanban ? text.returnToKanban : text.returnToList}</button>{editorLocked && <p className="inspection-muted" role="status">{text.navigationLocked}</p>}</div>
+        {(showRoleSettings || creating) && <div className="inspection-detail-navigation"><button className="inspection-button" type="button" disabled={editorLocked} onClick={closeDetail}>{canViewKanban ? text.returnToKanban : text.returnToList}</button>{editorLocked && <p className="inspection-muted" role="status">{text.navigationLocked}</p>}</div>}
         {notice && <div className="inspection-message is-success" role="status">{notice}</div>}
         {showRoleSettings && inspector ? <RoleSettings userId={inspector.id} sessionId={sessionId} lang={lang} onDirty={onDirty} onLocked={onLocked} onClose={closeDetail} /> : creating && inspector && capabilities?.can_manage ? <NewInspectionRequest key={`new-${inspector.id}-${editor.epoch}`} userId={inspector.id} sessionId={sessionId} lang={lang} dataMode={capabilities.data_mode} canPrepareIntegrationTrial={capabilities.can_prepare_integration_trial === true} onDirty={onDirty} onLocked={onLocked} onCreated={(item) => { if (!ownsSession() || !isCurrentInspectionEditor(editor, currentEditor.current) || editor.kind !== 'create') return; openEditor('request', item.id); setDetail(item); setNotice(text.createSuccess); void loadList(); void loadKanban(); }} onCancel={closeDetail} />
           : detailLoading ? <div className="inspection-empty" role="status">{text.loading}</div>
             : detailError ? <div className="inspection-detail"><div className="inspection-message is-error" role="alert">{detailError}</div><button type="button" className="inspection-button" onClick={() => { if (ownsSession()) setDetailRetry((value) => value + 1); }}>{text.retry}</button></div>
               : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} onOpenSettings={capabilities.can_manage_role_settings ? openRoleSettings : undefined} /> : <div className="inspection-empty">{text.select}</div>}
       </div>}
-      {!assignedOnly && <details className="inspection-workspace inspection-auxiliary" open><summary>{text.allRequests}{list && ` (${list.count})`}</summary>
-        {requestList}
-      </details>}
-      <details className="inspection-guide inspection-help"><summary><span aria-hidden="true">ⓘ</span> {text.guideTitle}</summary><p>{text.guideStop}</p><p>{text.guideResume}</p><p>{text.guidePending}</p></details>
+      {canViewKanban && !showRoleSettings && !creating && selectedId === null && <div className="inspection-station-placeholder">{selectedMachine === null ? (lang === 'ko' ? '설비를 선택하면 검사 항목을 바로 입력할 수 있습니다.' : '选择设备后可直接填写检验项目。') : (lang === 'ko' ? '이 설비에는 표시된 검사요청이 없습니다.' : '此设备没有显示的检验申请。')}</div>}
+      {!canViewKanban && !assignedOnly && <section className="inspection-workspace" ref={listRef} tabIndex={-1}>{requestList}</section>}
+      {inspector?.id === 18 && <details className="inspection-fold inspection-secondary-tool"><summary>{lang === 'ko' ? 'MES 검사 기준 조회' : '查询 MES 检验标准'}</summary><MesDetailPreview actorId={inspector.id} sessionId={sessionId} lang={lang} disabled={editorLocked || isLoggingOut} /></details>}
+
     </>}
     </fieldset>}
   </main>;

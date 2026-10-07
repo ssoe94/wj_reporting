@@ -1,8 +1,8 @@
 export type InspectionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'failed';
 export type InspectionDataMode = 'wj_local_beta' | 'synthetic_preview';
-export type InspectionJudgement = '' | 'pass' | 'fail';
+export type InspectionJudgement = '' | 'pass' | 'fail' | 'concession';
 export type InspectionItem = { id: string; label: string; kind: 'text' | 'number' | 'choice'; options?: string[]; unit: string; required: boolean; evidence_required: boolean; minimum?: string; maximum?: string };
-export type InspectionMeasurement = { item_id: string; value: string; judgement: InspectionJudgement; evidence_url?: string };
+export type InspectionMeasurement = { item_id: string; value: string; judgement: Exclude<InspectionJudgement, 'concession'>; evidence_url?: string };
 export type InspectionEvidence = { label: string; url: string };
 export type InspectionDraft = {
   measurements: InspectionMeasurement[]; evidence: InspectionEvidence[];
@@ -23,9 +23,10 @@ export type InspectionRecordCapabilities = {
   can_sync: boolean; can_refresh: boolean; can_review_failure?: boolean;
 };
 export type InspectionMesWorkflow = {
-  phase: 'unbound' | 'ready' | 'save_pending' | 'save_unknown' | 'saved' | 'finish_pending' | 'finish_unknown' | 'completed' | 'blocked';
+  phase: 'unbound' | 'ready' | 'save_pending' | 'save_unknown' | 'saved' | 'finish_pending' | 'finish_unknown' | 'completed' | 'blocked' | 'full_save_pending' | 'full_save_unknown' | 'full_saved' | 'full_finish_pending' | 'full_finish_unknown' | 'full_completed' | 'full_blocked';
   enabled: boolean; test_only?: boolean; qc_code?: string | null; test_label: string | null; last_verified_at: string | null;
   can_save: boolean; can_finish: boolean; can_reconcile: boolean;
+  mode?: 'whole_snapshot'; source_digest?: string | null; operation_id?: number | null; blocked_reason?: string | null;
 };
 export type InspectionMesTrialObservation = {
   verdict: 'pass' | 'fail' | null;

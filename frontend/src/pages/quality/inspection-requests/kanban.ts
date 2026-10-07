@@ -1,6 +1,7 @@
 import { isIntegrationTrial, type TrialIdentity, type IntegrationTrial } from './integrationTrial.ts';
 import type { InspectionRequest } from './model';
 import type { MesReadObservation } from './mesReadObservation';
+import type { MesInspectionSignalEvidence } from './mesInspectionSignal';
 
 export type InspectionStage = 'waiting' | 'in_progress' | 'completed' | 'blocked';
 export type InspectionPlanAlignment = {
@@ -17,6 +18,7 @@ export type InspectionMachine = {
   machine_number: number; station_id: string; mapping_status: string;
   plan_status: 'present' | 'missing' | 'unknown'; plans: InspectionPlan[];
   mes_observations?: MesReadObservation[];
+  mes_inspection_signal?: MesInspectionSignalEvidence;
   requests: KanbanInspectionRequest[]; request_count: number; requests_truncated: boolean;
   dry_run: { enabled: false; mode: 'dry_run'; candidate: string; recommendation: string;
     blocking_reasons: string[]; plan_version: string; requires_new_first_inspection_on_resume: string };

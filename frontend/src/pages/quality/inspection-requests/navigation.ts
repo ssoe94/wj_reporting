@@ -39,10 +39,10 @@ export function inspectionConfirmsScopedRefresh(request: {
   if (request.mes_workflow && request.mes_workflow.phase !== 'unbound') {
     return !inspectionRemoteReconciliationRequired(request) && request.last_error_code === ''
       && request.sync_status === 'succeeded'
-      && ['saved', 'completed'].includes(request.mes_workflow.phase)
+      && ['saved', 'completed', 'full_saved', 'full_completed'].includes(request.mes_workflow.phase)
       && typeof request.mes_checked_at === 'string' && Number.isFinite(Date.parse(request.mes_checked_at))
       && request.mes_workflow.last_verified_at === request.mes_checked_at
-      && (request.mes_workflow.phase === 'saved' ? request.mes_completion_status === 'not_completed'
+      && (['saved', 'full_saved'].includes(request.mes_workflow.phase) ? request.mes_completion_status === 'not_completed'
         : ['completed', 'approval_pending'].includes(request.mes_completion_status));
   }
   return !inspectionRemoteReconciliationRequired(request) && request.last_error_code === ''

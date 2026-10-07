@@ -12,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .inspection_access import can_access_inspections, can_use_admin_inspection_flow
 from .inspection_models import InspectionOperation, InspectionRequest, InspectionMesBinding
-from .inspection_role_models import InspectionShiftSetting, InspectionRoleWorkflow, InspectionAreaResult
+from .inspection_role_models import InspectionShiftSetting, InspectionRoleWorkflow, InspectionAreaResult, InspectionInspector
 from .inspection_validation import DraftInspectionSerializer, digest, validate_result
 
 AREAS = ('appearance', 'dimension')
@@ -40,14 +40,24 @@ def _admin(user):
 
 
 @contextmanager
-def _actor_transaction(user, session, *, permission='manage'):
+def _actor_transaction(user, session, *, permission='manage', participant_id=None):
     # Every mutation rechecks the verified login family, actor and permissions.
     if not user or not getattr(user, 'is_authenticated', False) or not user.pk:
         raise PermissionDenied('An authenticated inspection actor is required.')
     if session is None:
         raise PermissionDenied('A verified current inspection login is required.')
-    with session.lock(permission, actor_id=user.pk) as current:
-        yield current
+    with transaction.atomic():
+        if participant_id is not None:
+            # Direct authors lock their own user before the request. A terminal
+            # must lock both identities first in a stable order to avoid taking
+            # an inspector lock after a request already held by that inspector.
+            # Preliminary NO KEY UPDATE locks still protect user state, while
+            # allowing another operation's foreign-key KEY SHARE check to
+            # finish before we can acquire that operation's login actor.
+            list(get_user_model().objects.select_for_update(no_key=True).filter(
+                pk__in={user.pk, participant_id}).order_by('pk'))
+        with session.lock(permission, actor_id=user.pk) as current:
+            yield current
 
 
 def _operation(scope, key, payload, *, request=None):
@@ -86,7 +96,12 @@ def _setting_data(setting):
         'timezone': setting.timezone, 'start_time': setting.starts_at.isoformat() if setting.starts_at else None,
         'end_time': setting.ends_at.isoformat() if setting.ends_at else None,
         'appearance_assignee': setting.appearance_assignee_id,
-        'dimension_assignee': setting.dimension_assignee_id, 'active': setting.active,
+        'dimension_assignee': setting.dimension_assignee_id,
+        'appearance_person_id': setting.appearance_person_id,
+        'dimension_person_id': setting.dimension_person_id,
+        'appearance_assignee_name': setting.appearance_person.display_name if setting.appearance_person_id else _human_name(setting.appearance_assignee) if setting.appearance_assignee_id else '',
+        'dimension_assignee_name': setting.dimension_person.display_name if setting.dimension_person_id else _human_name(setting.dimension_assignee) if setting.dimension_assignee_id else '',
+        'active': setting.active,
         'version': setting.version, 'effective_from': effective('effective_from'),
         'effective_until': effective('effective_until'),
         'effective_from_local': effective('effective_from', local=True),
@@ -224,6 +239,9 @@ def _setting_validate(setting):
         raise ValidationError({'timezone': 'Inspection shifts use the factory timezone Asia/Shanghai.'})
     if type(setting.active) is not bool:
         raise ValidationError({'active': 'Use a boolean.'})
+    if ((setting.appearance_person_id or setting.dimension_person_id)
+            and (setting.appearance_assignee_id or setting.dimension_assignee_id)):
+        raise ValidationError('A display-name roster cannot also claim WJ account assignments.')
     for field in ('appearance_assignee', 'dimension_assignee'):
         actor_id = getattr(setting, field + '_id')
         if actor_id is not None:
@@ -235,9 +253,11 @@ def _setting_validate(setting):
     _effective_validate(setting, active=False)
     if not setting.active:
         return
-    if (not setting.starts_at or not setting.ends_at or setting.starts_at == setting.ends_at
-            or not setting.appearance_assignee_id or not setting.dimension_assignee_id
-            or setting.appearance_assignee_id == setting.dimension_assignee_id):
+    people = (setting.appearance_person_id, setting.dimension_person_id)
+    actors = (setting.appearance_assignee_id, setting.dimension_assignee_id)
+    valid_pair = (all(people) and people[0] != people[1] and InspectionInspector.objects.filter(pk__in=people).count() == 2
+                  or all(actors) and actors[0] != actors[1])
+    if (not setting.starts_at or not setting.ends_at or setting.starts_at == setting.ends_at or not valid_pair):
         raise ValidationError('Activation requires explicit times and two distinct eligible inspectors.')
     _effective_validate(setting, active=True)
     for other in InspectionShiftSetting.objects.filter(active=True).exclude(pk=setting.pk):
@@ -304,6 +324,10 @@ def settings_update(user, setting_id, key, payload, *, session):
         _admin(user)
         _lock('inspection-role:shift-settings')
         setting = get_object_or_404(InspectionShiftSetting.objects.select_for_update(), pk=setting_id)
+        from .inspection_role_models import InspectionWeeklyRoster
+        from django.db.models import Q
+        if InspectionWeeklyRoster.objects.filter(Q(day_setting=setting) | Q(night_setting=setting)).exists():
+            _conflict('weekly_setting_managed', 'Change this shift through its four-card weekly setting.')
         previous, key = _operation(scope, key, payload)
         if previous:
             return previous.response, previous.response_status
@@ -355,15 +379,41 @@ def _workflow(request, *, lock=False):
     return workflow
 
 
-def _area_access(user, workflow, area):
-    if not _eligible(user) or area.assigned_to_id != user.pk or workflow.status == 'unconfigured':
-        raise PermissionDenied('Only the assigned current inspector may change this area, including for superusers.')
+def _terminal_access(user, workflow):
+    return bool(_eligible(user) and can_use_admin_inspection_flow(user)
+                and workflow.shared_terminal_operator_id == user.pk)
+
+
+def _area_access(user, workflow, area, *, inspector_id=None, inspector_person_id=None):
+    if workflow.status == 'unconfigured' or not _eligible(user):
+        raise PermissionDenied('A configured assignment and current inspection authority are required.')
+    if area.assigned_person_id is not None:
+        if (area.assigned_to_id is not None or inspector_id is not None
+                or not _terminal_access(user, workflow) or inspector_person_id != area.assigned_person_id):
+            raise PermissionDenied('The configured terminal must name the declared display inspector for this area.')
+        return area.assigned_person
+    if inspector_person_id is not None:
+        raise PermissionDenied('A display name cannot impersonate an assigned account.')
+    if area.assigned_to_id == user.pk:
+        if inspector_id is not None and inspector_id != user.pk:
+            raise PermissionDenied('Select the inspector assigned to this area.')
+        return user
+    # A terminal entry records a declared inspector separately from its verified
+    # login actor. It never changes the session or claims a colleague's identity.
+    if not _terminal_access(user, workflow) or inspector_id != area.assigned_to_id:
+        raise PermissionDenied('Only the assigned inspector or explicitly configured terminal operator may change this area.')
+    inspector = get_user_model().objects.select_for_update().filter(pk=inspector_id, is_active=True).first()
+    if not inspector or not _eligible(inspector):
+        raise PermissionDenied('The assigned inspector must retain current inspection authority.')
+    return inspector
 
 
 def configure_role_workflow(user, request_id, key, payload, *, session):
-    allowed = {'config_version', 'shift_setting_id', 'shift_version', 'shift_date', 'item_areas', 'reason'}
+    allowed = {'config_version', 'shift_setting_id', 'shift_version', 'shift_date', 'item_areas', 'reason', 'shared_terminal'}
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise ValidationError('Unknown or server-controlled assignment fields.')
+    if 'shared_terminal' in payload and type(payload['shared_terminal']) is not bool:
+        raise ValidationError({'shared_terminal': 'Use an explicit boolean.'})
     with _actor_transaction(user, session) as user:
         _admin(user)
         # Shift updates and request snapshots share this lock. Existing requests
@@ -416,21 +466,30 @@ def configure_role_workflow(user, request_id, key, payload, *, session):
         if (not isinstance(mapping, dict) or set(mapping) != item_ids
                 or any(value not in AREAS for value in mapping.values()) or set(mapping.values()) != set(AREAS)):
             raise ValidationError({'item_areas': 'Explicitly map every item, with at least one item in each area.'})
-        actors = {area: getattr(shift, area + '_assignee') for area in AREAS}
+        display_people = shift.appearance_person_id is not None or shift.dimension_person_id is not None
+        if display_people and payload.get('shared_terminal') is not True:
+            raise ValidationError({'shared_terminal': 'Display-name inspectors require an explicitly configured authenticated terminal.'})
+        actors = {area: getattr(shift, area + ('_person' if display_people else '_assignee')) for area in AREAS}
         workflow.shift_setting = shift
         workflow.shift_snapshot = _setting_data(shift)
         workflow.shift_snapshot.update(shift_date=shift_date.isoformat(),
             window_start=window_start.isoformat(), window_end=window_end.isoformat(),
             basis='explicit_declaration')
-        workflow.actor_snapshot = {area: {'id': actor.pk, 'name': _human_name(actor),
-            'username': actor.get_username()} for area, actor in actors.items()}
+        workflow.actor_snapshot = ({area: {'id': actor.pk, 'name': actor.display_name,
+            'kind': 'display_inspector', 'wj_actor_id': None, 'distinguishing_note': actor.distinguishing_note}
+            for area, actor in actors.items()} if display_people else
+            {area: {'id': actor.pk, 'name': _human_name(actor), 'username': actor.get_username()} for area, actor in actors.items()})
+        if 'shared_terminal' in payload:
+            workflow.shared_terminal_operator = user if payload['shared_terminal'] else None
+            workflow.shared_terminal_operator_name = _human_name(user)[:150] if payload['shared_terminal'] else ''
         workflow.item_areas = mapping
         workflow.config_version += 1
         workflow.status = 'in_progress'
         workflow.save()
         for area in workflow.areas.select_for_update().all():
             actor = actors[area.area]
-            area.assigned_to, area.assigned_to_name = actor, _human_name(actor)[:150]
+            area.assigned_person, area.assigned_to = (actor, None) if display_people else (None, actor)
+            area.assigned_to_name = actor.display_name if display_people else _human_name(actor)[:150]
             area.version += 1
             area.save()
         request.version += 1
@@ -444,6 +503,15 @@ def _audit(request, user, action, reason=''):
     audit(request, user, action, reason)
 
 
+def is_area_contributor(request, user):
+    """Declared inspectors and authenticated recorders need independent review."""
+    from django.db.models import Q
+    return bool(InspectionAreaResult.objects.filter(workflow__request=request).filter(
+        Q(completed_by_id=user.pk) | Q(completed_recorded_by_id=user.pk)).exists()
+        or request.audit.filter(actor_id=user.pk, action__in=[
+            f'role_{area}_{action}' for area in AREAS for action in ('save', 'complete', 'reopen')]).exists())
+
+
 def role_summary(request, user):
     workflow = InspectionRoleWorkflow.objects.filter(request=request).first()
     if not workflow:
@@ -451,19 +519,31 @@ def role_summary(request, user):
     areas = []
     mutable = _is_mutable(request)
     eligible = _eligible(user)
+    terminal = _terminal_access(user, workflow)
     for row in workflow.areas.order_by('area'):
-        owner = eligible and row.assigned_to_id == user.pk and workflow.status != 'unconfigured' and mutable
+        assigned_eligible = (row.assigned_person_id is not None and row.assigned_to_id is None
+                             or row.assigned_to is not None and _eligible(row.assigned_to))
+        owner = eligible and (row.assigned_to_id == user.pk or terminal and assigned_eligible) and workflow.status != 'unconfigured' and mutable
         areas.append({'area': row.area, 'assigned_to': row.assigned_to_id,
+            'assigned_person_id': row.assigned_person_id,
             'assigned_to_name': row.assigned_to_name, 'version': row.version, 'status': row.status,
             'judgement': row.judgement, 'measurements': row.measurements, 'evidence': row.evidence,
+            'item_authorship': row.item_authorship,
             'completed_by': row.completed_by_id, 'completed_by_name': row.completed_by_name,
+            'completed_person_id': row.completed_person_id,
+            'completed_recorded_by': row.completed_recorded_by_id,
+            'completed_recorded_by_name': row.completed_recorded_by_name,
             'completed_at': row.completed_at.isoformat() if row.completed_at else None,
             'can_save': bool(owner and row.status == 'draft'), 'can_complete': bool(owner and row.status == 'draft'),
             'can_reopen': bool(owner and row.status == 'complete'), 'mes_status': row.mes_status,
             'mes_blocked_reason': row.mes_blocked_reason})
-    owned = {row['area'] for row in areas if row['assigned_to'] == getattr(user, 'pk', None)}
+    owned = {row['area'] for row in areas if row['assigned_to'] == getattr(user, 'pk', None)
+             or terminal and (row['can_save'] or row['can_reopen'])}
     return {'mode': 'roles', 'configured': workflow.status != 'unconfigured', 'status': workflow.status,
         'config_version': workflow.config_version, 'shift_snapshot': workflow.shift_snapshot,
+        'shared_terminal': {'enabled': workflow.shared_terminal_operator_id is not None,
+            'operator_id': workflow.shared_terminal_operator_id,
+            'operator_name': workflow.shared_terminal_operator_name, 'can_operate': bool(terminal and mutable)},
         'actor_snapshot': workflow.actor_snapshot, 'item_areas': workflow.item_areas, 'areas': areas,
         'my_item_ids': [item for item, area in workflow.item_areas.items() if area in owned],
         'aggregate_judgement': request.judgement,
@@ -474,7 +554,7 @@ def role_summary(request, user):
                 'executor_identity': 'unverified', 'wj_actor_is_mes_executor': False}}
 
 
-def _patch(area, workflow, payload):
+def _patch(area, workflow, payload, *, inspector, recorded_by):
     if 'measurements' in payload:
         measurements = DraftInspectionSerializer().validate_measurements(payload['measurements'])
         own_ids = {item for item, item_area in workflow.item_areas.items() if item_area == area.area}
@@ -483,6 +563,14 @@ def _patch(area, workflow, payload):
         merged = {entry['item_id']: entry for entry in area.measurements}
         merged.update({entry['item_id']: entry for entry in measurements})
         area.measurements = list(merged.values())
+        authorship = dict(area.item_authorship)
+        stamp = {'inspector_id': inspector.pk, 'inspector_name': area.assigned_to_name,
+            'recorded_by_id': recorded_by.pk, 'recorded_by_name': _human_name(recorded_by)[:150],
+            'recorded_at': timezone.now().isoformat()}
+        if area.assigned_person_id is not None:
+            stamp.update(inspector_kind='display_inspector', inspector_wj_id=None)
+        authorship.update({entry['item_id']: dict(stamp) for entry in measurements})
+        area.item_authorship = authorship
     if 'evidence' in payload:
         area.evidence = DraftInspectionSerializer().validate_evidence(payload['evidence'])
     if 'judgement' in payload:
@@ -532,18 +620,25 @@ def _aggregate(request, workflow):
 def _area_action(user, request_id, area_name, key, payload, action, *, session):
     if area_name not in AREAS:
         raise ValidationError({'area': 'Use appearance or dimension.'})
-    allowed = {'area_version', 'config_version', 'reason'} | ({'measurements', 'evidence', 'judgement'} if action != 'reopen' else set())
+    allowed = {'area_version', 'config_version', 'reason', 'inspector_id', 'inspector_person_id'} | ({'measurements', 'evidence', 'judgement'} if action != 'reopen' else set())
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise ValidationError('Unknown or server-controlled area fields.')
+    if 'inspector_id' in payload and (type(payload['inspector_id']) is not int or not 1 <= payload['inspector_id'] <= 9223372036854775807):
+        raise ValidationError({'inspector_id': 'Select the existing inspector assigned to this area.'})
+    if ('inspector_id' in payload and 'inspector_person_id' in payload
+            or 'inspector_person_id' in payload and (type(payload['inspector_person_id']) is not int or not 0 < payload['inspector_person_id'] < 2**63)):
+        raise ValidationError({'inspector_person_id': 'Use one explicit display-inspector identity.'})
     reason = payload.get('reason', '')
     if not isinstance(reason, str) or len(reason) > 500 or (action == 'reopen' and not reason.strip()):
         raise ValidationError({'reason': 'An explicit reopen reason is required, up to 500 characters.'})
-    with _actor_transaction(user, session, permission='submit' if action == 'complete' else 'manage') as user:
+    with _actor_transaction(user, session, permission='submit' if action == 'complete' else 'manage',
+                            participant_id=payload.get('inspector_id')) as user:
         _lock(f'inspection:{request_id}')
         request = InspectionRequest.objects.select_for_update().get(pk=request_id)
         workflow = _workflow(request, lock=True)
         area = InspectionAreaResult.objects.select_for_update().get(workflow=workflow, area=area_name)
-        _area_access(user, workflow, area)
+        inspector = _area_access(user, workflow, area, inspector_id=payload.get('inspector_id'),
+                                 inspector_person_id=payload.get('inspector_person_id'))
         scope = f'{user.pk}:{request_id}:role-{area_name}-{action}'
         previous, key = _operation(scope, key, payload, request=request)
         if previous:
@@ -558,14 +653,18 @@ def _area_action(user, request_id, area_name, key, payload, action, *, session):
                 _conflict('area_not_complete', 'Only a completed area needs reopening.')
             area.status, area.judgement = 'draft', ''
             area.completed_by, area.completed_by_name, area.completed_at = None, '', None
+            area.completed_person = None
+            area.completed_recorded_by, area.completed_recorded_by_name = None, ''
         else:
             if area.status != 'draft':
                 _conflict('area_reopen_required', 'Explicitly reopen your completed area before editing.')
-            _patch(area, workflow, payload)
+            _patch(area, workflow, payload, inspector=inspector, recorded_by=user)
             if action == 'complete':
                 _complete_validate(request, workflow, area)
                 area.status = 'complete'
-                area.completed_by, area.completed_by_name, area.completed_at = user, _human_name(user)[:150], timezone.now()
+                area.completed_person, area.completed_by = (inspector, None) if area.assigned_person_id is not None else (None, inspector)
+                area.completed_by_name, area.completed_at = area.assigned_to_name, timezone.now()
+                area.completed_recorded_by, area.completed_recorded_by_name = user, _human_name(user)[:150]
         area.version += 1
         area.save()
         _aggregate(request, workflow)

@@ -94,9 +94,12 @@ const reads: Operation[] = [
   { name: 'request detail', invoke: (api, sessionId) => api.getInspectionRequest(42, sessionId),
     expected: { method: 'get', url: `${BASE}42/`, config: { authSessionId: SESSION_A } }, result: { id: 42, version: 3 } },
 ];
-const actions: InspectionAction[] = ['create', 'save', 'submit', 'approve', 'reject', 'reinspect', 'refresh', 'sync', 'mes-save', 'mes-finish', 'mes-reconcile', 'review-failure'];
+const actions: InspectionAction[] = ['create', 'save', 'submit', 'approve', 'reject', 'reinspect', 'refresh', 'sync', 'mes-save', 'mes-finish', 'mes-reconcile', 'mes-full-save', 'mes-full-finish', 'mes-full-reconcile', 'review-failure'];
 const mutations: Operation[] = actions.map((action) => {
-  const attempt: MutationAttempt = { action, key: `SYNTHETIC-IDEMPOTENCY-${action}`, payload: { version: 3, notes: 'SYNTHETIC fixture' } };
+  const payload = action === 'mes-full-reconcile' ? { operation_id: 301 }
+    : action.startsWith('mes-full-') ? { source_digest: 'a'.repeat(64) }
+      : { version: 3, notes: 'SYNTHETIC fixture' };
+  const attempt: MutationAttempt = { action, key: `SYNTHETIC-IDEMPOTENCY-${action}`, payload };
   return {
     name: action,
     invoke: (api, sessionId) => api.mutateInspectionRequest(42, attempt, sessionId),

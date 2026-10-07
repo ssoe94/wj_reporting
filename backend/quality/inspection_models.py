@@ -30,7 +30,7 @@ class InspectionRequest(models.Model):
     inspected_quantity = models.DecimalField(max_digits=18, decimal_places=3, default=0)
     accepted_quantity = models.DecimalField(max_digits=18, decimal_places=3, default=0)
     rejected_quantity = models.DecimalField(max_digits=18, decimal_places=3, default=0)
-    judgement = models.CharField(max_length=8, blank=True, default='')
+    judgement = models.CharField(max_length=16, blank=True, default='')
     notes = models.TextField(blank=True, default='')
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='submitted_inspections')
     submitted_at = models.DateTimeField(null=True)

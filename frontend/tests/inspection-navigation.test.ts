@@ -117,3 +117,20 @@ test('separate-stage readback clears uncertainty only with matching verified tim
   assert.equal(inspectionNextReconciliationRequired(true, { kind: 'local_read' }), true);
   assert.equal(inspectionNextReconciliationRequired(true, { kind: 'scoped_refresh', observation: saved }), false);
 });
+
+test('whole-snapshot readback resolves the correct full stage while a local read or an unknown phase retains the lock', () => {
+  for (const [phase, completion] of [['full_saved', 'not_completed'], ['full_completed', 'completed']] as const) {
+    const observed = { sync_status: 'succeeded', mes_completion_status: completion, last_error_code: '',
+      mes_checked_at: '2026-10-07T10:11:59Z', mes_workflow: { phase, last_verified_at: '2026-10-07T10:11:59Z' } };
+    assert.equal(inspectionConfirmsScopedRefresh(observed), true);
+    assert.equal(inspectionNextReconciliationRequired(true, { kind: 'local_read' }), true);
+    assert.equal(inspectionNextReconciliationRequired(true, { kind: 'scoped_refresh', observation: observed }), false);
+    for (const state of ['full_save_pending', 'full_save_unknown', 'full_finish_pending', 'full_finish_unknown']) {
+      const uncertain = { ...observed, mes_workflow: { ...observed.mes_workflow, phase: state } };
+      assert.equal(inspectionConfirmsScopedRefresh(uncertain), false);
+      assert.equal(inspectionNextReconciliationRequired(true, { kind: 'scoped_refresh', observation: uncertain }), true);
+    }
+    assert.equal(inspectionConfirmsScopedRefresh({ ...observed, mes_completion_status: phase === 'full_saved' ? 'completed' : 'not_completed' }), false);
+    assert.equal(inspectionConfirmsScopedRefresh({ ...observed, mes_workflow: { ...observed.mes_workflow, last_verified_at: null } }), false);
+  }
+});

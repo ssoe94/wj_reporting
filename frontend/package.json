@@ -27,6 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.10",
+    "decimal.js-light": "2.5.1",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.1.0",

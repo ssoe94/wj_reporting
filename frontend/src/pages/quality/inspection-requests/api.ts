@@ -88,7 +88,7 @@ export async function getInspectionRequest(id: number, sessionId: string | null)
   return item;
 }
 const actionPaths: Record<Exclude<InspectionAction, 'create' | 'save'>, string> = {
-  submit: 'submit', approve: 'approve', reject: 'reject', reinspect: 'reinspect', refresh: 'refresh', sync: 'sync', 'mes-save': 'mes-save', 'mes-finish': 'mes-finish', 'mes-reconcile': 'mes-reconcile', 'review-failure': 'review-failure',
+  submit: 'submit', approve: 'approve', reject: 'reject', reinspect: 'reinspect', refresh: 'refresh', sync: 'sync', 'mes-save': 'mes-save', 'mes-finish': 'mes-finish', 'mes-reconcile': 'mes-reconcile', 'mes-full-save': 'mes-full-save', 'mes-full-finish': 'mes-full-finish', 'mes-full-reconcile': 'mes-full-reconcile', 'review-failure': 'review-failure',
 };
 export async function mutateInspectionRequest(id: number, attempt: MutationAttempt, sessionId: string | null): Promise<InspectionRequest> {
   assertAuthSessionCurrent(sessionId);

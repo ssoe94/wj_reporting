@@ -1,4 +1,4 @@
-export type InspectionAction = 'create' | 'save' | 'submit' | 'approve' | 'reject' | 'reinspect' | 'refresh' | 'sync' | 'mes-save' | 'mes-finish' | 'mes-reconcile' | 'review-failure';
+export type InspectionAction = 'create' | 'save' | 'submit' | 'approve' | 'reject' | 'reinspect' | 'refresh' | 'sync' | 'mes-save' | 'mes-finish' | 'mes-reconcile' | 'mes-full-save' | 'mes-full-finish' | 'mes-full-reconcile' | 'review-failure';
 
 export type MutationAttempt = {
   action: InspectionAction;
@@ -6,7 +6,7 @@ export type MutationAttempt = {
   key: string;
 };
 
-const actions: InspectionAction[] = ['create', 'save', 'submit', 'approve', 'reject', 'reinspect', 'refresh', 'sync', 'mes-save', 'mes-finish', 'mes-reconcile', 'review-failure'];
+const actions: InspectionAction[] = ['create', 'save', 'submit', 'approve', 'reject', 'reinspect', 'refresh', 'sync', 'mes-save', 'mes-finish', 'mes-reconcile', 'mes-full-save', 'mes-full-finish', 'mes-full-reconcile', 'review-failure'];
 
 export function createInspectionKey(randomBytes: (bytes: Uint8Array) => Uint8Array = (bytes) => crypto.getRandomValues(bytes)): string {
   const bytes = randomBytes(new Uint8Array(16));
@@ -91,7 +91,7 @@ export function inspectionError(error: unknown, fallback: string, expectedReques
     else if (value && typeof value === 'object') Object.entries(value).forEach(([field, child]) => { if (fields.includes(field)) collect(child, path ? `${path}.${field}` : field, depth + 1); });
   };
   collect(data, '', 0);
-  const disabled = data && typeof data === 'object' && 'code' in data && data.code === 'mes_contract_unverified';
+  const disabled = data && typeof data === 'object' && 'code' in data && ['mes_contract_unverified', 'whole_connection_review_required', 'remote_concurrency_unverified'].includes(String(data.code));
   const recordedOperation = data && typeof data === 'object' && 'code' in data && ['mes_outcome_unknown', 'mes_stage_blocked', 'operation_pending'].includes(String(data.code)) && 'operation_id' in data && typeof data.operation_id === 'number' && Number.isSafeInteger(data.operation_id) && data.operation_id > 0 && 'request' in data && data.request && typeof data.request === 'object' && 'id' in data.request && expectedRequestId !== undefined && data.request.id === expectedRequestId;
   return { conflict: response?.status === 409, uncertain: !response?.status || (response.status === 202 && !recordedOperation) || (response.status >= 500 && !disabled && !recordedOperation), reconciliation_required: Boolean(recordedOperation), message: messages.join('\n') || fallback };
 }

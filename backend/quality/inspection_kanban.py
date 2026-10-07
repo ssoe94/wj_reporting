@@ -25,7 +25,12 @@ def _trial_projection(request, *, now):
     contract = binding.contract if binding and type(binding.contract) is dict else {}
     code = contract.get('qc_code')
     code = code if type(code) is str and code.strip() and len(code) <= 128 else None
-    phase = binding.phase if binding and binding.phase in TRIAL_PHASES else 'unbound'
+    full_phases = {'full_saved': 'saved', 'full_completed': 'completed',
+        'full_save_pending': 'save_pending', 'full_save_unknown': 'save_unknown',
+        'full_finish_pending': 'finish_pending', 'full_finish_unknown': 'finish_unknown',
+        'full_blocked': 'blocked'}
+    phase = full_phases.get(binding.phase, binding.phase) if binding else 'unbound'
+    phase = phase if phase in TRIAL_PHASES else 'unbound'
     verdict, observed = None, None
     snapshot = request.mes_snapshot
     proof = snapshot.get('verified_trial') if type(snapshot) is dict else None

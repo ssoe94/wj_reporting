@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 import * as model from '../src/pages/quality/inspection-requests/model.ts';
+import * as roleModel from '../src/pages/quality/inspection-requests/roleModel.ts';
 import * as copy from '../src/pages/quality/inspection-requests/copy.ts';
 import { inspectionRoleCopy } from '../src/pages/quality/inspection-requests/roleCopy.ts';
 import * as workflow from '../src/pages/quality/inspection-requests/workflow.ts';
@@ -21,6 +22,7 @@ function harness(allowed: boolean | undefined) {
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }) },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (session: string) => assert.equal(session, 'fixture-session') },
     'lucide-react': { Plus: 'Icon' }, './copy': copy, './roleCopy': { inspectionRoleCopy }, './workflow': { ...workflow, createInspectionKey: () => `fixture-${++key}` },
+    './roleModel': roleModel,
     './api': { ...model,
       createIntegrationTrial: async (attempt: workflow.MutationAttempt, sessionId: string) => { calls.push({ endpoint: 'trial', attempt, sessionId }); if (failOnce) { failOnce = false; throw new Error('network'); } return { id: 42, source_kind: 'integration_test' }; },
       mutateInspectionRequest: async (_id: number, attempt: workflow.MutationAttempt, sessionId: string) => { calls.push({ endpoint: 'production', attempt, sessionId }); return { id: 43 }; },
@@ -43,6 +45,10 @@ test('area-split opt-in requires a second item without dispatching a one-area re
   let tree = fixture.render();
   const label = elements(tree).find(node => node.type === 'label' && content(node).includes(inspectionRoleCopy.ko.optIn))!;
   elements(label).find(node => node.type === 'input' && node.props.type === 'checkbox')!.props.onChange({ target: { checked: true } });
+  tree = fixture.render();
+  const initialItems = elements(tree).filter(node => node.type === 'fieldset' && node.props.className === 'inspection-item' && content(elements(node).find(child => child.type === 'legend')).startsWith(`${copy.inspectionCopy.ko.itemName} `));
+  assert.equal(initialItems.length, 2, 'Production preparation starts with dimension and appearance items');
+  elements(initialItems[1]).find(node => node.type === 'button' && node.props['aria-label'] === `${copy.inspectionCopy.ko.remove}: ${copy.inspectionCopy.ko.itemName} 2`)!.props.onClick();
   tree = fixture.render();
   assert.equal(elements(tree).find(node => node.type === 'button' && node.props.type === 'submit')!.props.disabled, true);
   const item = elements(tree).find(node => node.type === 'fieldset' && content(node).includes(`${copy.inspectionCopy.ko.itemName} 1`))!;

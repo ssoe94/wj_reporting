@@ -96,6 +96,34 @@ test('duplicate click or retry keeps the same idempotency key and immutable body
   assert.notEqual(inspectionMutationAttempt(first, 'save', first.payload, () => `key-${++created}`).key, first.key);
 });
 
+test('whole-snapshot stages retain the original digest or operation and never turn a changed stage into a retry', () => {
+  let keys = 0;
+  for (const action of ['mes-full-save', 'mes-full-finish', 'mes-full-reconcile'] as const) {
+    const payload: Record<string, unknown> = action === 'mes-full-reconcile' ? { operation_id: 301 } : { source_digest: 'a'.repeat(64) };
+    const first = inspectionMutationAttempt(null, action, payload, () => `SYNTHETIC-${++keys}`);
+    const original = structuredClone(first.payload);
+    payload[action === 'mes-full-reconcile' ? 'operation_id' : 'source_digest'] = action === 'mes-full-reconcile' ? 302 : 'b'.repeat(64);
+    assert.deepEqual(first.payload, original, 'external caller edits cannot alter a reserved full-snapshot stage');
+    assert.equal(inspectionMutationAttempt(first, action, original, () => `SYNTHETIC-${++keys}`), first);
+    assert.notEqual(inspectionMutationAttempt(first, action, payload, () => `SYNTHETIC-${++keys}`).key, first.key);
+    const otherAction = action === 'mes-full-save' ? 'mes-full-finish' : 'mes-full-save';
+    assert.notEqual(inspectionMutationAttempt(first, otherAction, original, () => `SYNTHETIC-${++keys}`).key, first.key);
+    const recovery = { schema: 1, user_id: 8, request_id: 5, version: 3, saved_at: 10_000, draft: { note: 'SYNTHETIC' }, attempt: { ...first, key: '11111111-1111-4111-8111-111111111111' } };
+    const restored = parseInspectionRecovery(JSON.stringify(recovery), 8, 5, 90_000_000);
+    assert.deepEqual(restored?.attempt, recovery.attempt, 'an unresolved full action survives draft expiry with its exact key and body');
+    assert.equal(parseInspectionRecovery(JSON.stringify(recovery), 9, 5, 90_000_000), null);
+  }
+});
+
+test('unreviewed whole-snapshot policy is a known pre-dispatch failure while an unrecorded 503 stays uncertain', () => {
+  for (const code of ['whole_connection_review_required', 'remote_concurrency_unverified']) {
+    assert.deepEqual(inspectionError({ response: { status: 503, data: { code, detail: 'SYNTHETIC policy unavailable' } } }, 'failed', 42), {
+      conflict: false, uncertain: false, reconciliation_required: false, message: 'SYNTHETIC policy unavailable',
+    });
+  }
+  assert.equal(inspectionError({ response: { status: 503, data: { code: 'SYNTHETIC unrecorded failure' } } }, 'failed', 42).uncertain, true);
+});
+
 test('UUID v4 generation supports browsers with getRandomValues and no randomUUID', () => {
   const key = createInspectionKey((bytes) => bytes.fill(0));
   assert.equal(key, '00000000-0000-4000-8000-000000000000');

@@ -32,19 +32,42 @@ The request snapshots the declared shift window and authors. Assignment and
 mapping cannot change after work starts. Unconfigured requests expose a setup
 action. The whole-request result editor is unavailable for role requests.
 
-Only the currently assigned author can save, complete or reopen their area,
-including when the caller is an administrator. Each save validates item ownership
-and merges only that area's items. A request lock and area/configuration versions
+By default only the assigned author can save, complete or reopen their area,
+including when the caller is an administrator. An administrator may explicitly
+select `shared_terminal: true` during request configuration for one inspection-room
+screen, keyboard and mouse. The server records that authenticated configurator as
+the terminal operator. Selecting an inspector does not switch the login or prove
+that person authenticated. Another administrator cannot use this terminal authority,
+and it does not grant MES executor authority. Terminal configuration, assignments
+and item mapping become immutable once any area input starts.
+
+The terminal operator may record either assigned inspector's area by submitting
+the exact `inspector_id`. Each mutation and idempotent replay rechecks the verified
+operator session, unrestricted administrator authority and selected assignee's
+current active inspection authority. Ordinary authors retain their own-area flow.
+Each save validates item ownership and merges only that area's items. A request
+lock and area/configuration versions
 serialize writes while allowing the other area's independent version to remain
-valid. Idempotent replay rechecks the current session, permission and assignment.
-Audit authors and completion times come from the server.
+valid. A terminal takes preliminary `NO KEY UPDATE` locks on caller and selected
+inspector in stable ID order before session and request locks; this permits a
+concurrent assignment's foreign-key checks to finish. The full inspector lock is
+taken after verified actor and request access. A direct author locks their own
+identity before the request. This avoids reversing the user/request lock order
+during mixed saves.
+
+Audit actors and timestamps come from the server. Each submitted item's
+`item_authorship` records the declared inspector separately from the authenticated
+recorder. Untouched values and authorship remain intact. `completed_by` records
+the assigned inspector, while `completed_recorded_by` records the authenticated
+account that entered completion. Reopening clears completion identities and
+retains the item's prior attribution.
 
 Both areas must be complete and PASS for the aggregate verdict to be PASS. A
 completed FAIL area makes the aggregate FAIL. Incomplete work has no aggregate
 PASS. Reopening an area clears the aggregate completion. Shared quantities and
 notes remain a separate versioned request-owner action; they cannot carry item
 results, evidence or an area verdict. The request owner can submit after both
-areas complete. A completed-area author cannot review their own work. A failed
+areas complete. An area author or recorder cannot review their own work. A failed
 request's reinspection child starts unconfigured, without copied assignments or
 results; parent evidence remains unchanged.
 
@@ -57,9 +80,9 @@ All mutation endpoints use the current inspection session and an idempotency key
 | `GET/POST role-settings/` | List configuration or create a shift draft |
 | `PATCH role-settings/{setting_id}/` | Versioned shift update |
 | `POST {id}/role-configure/` | Explicit shift/date/authors and item mapping |
-| `POST {id}/area-save/` | Save only the caller's area |
-| `POST {id}/area-complete/` | Validate and complete only the caller's area |
-| `POST {id}/area-reopen/` | Reopen only the caller's area |
+| `POST {id}/area-save/` | Save an authorized assigned area |
+| `POST {id}/area-complete/` | Validate and complete an authorized assigned area |
+| `POST {id}/area-reopen/` | Reopen an authorized assigned area |
 | `POST {id}/role-results/` | Request-owner shared quantities and notes |
 
 Area actions return the full serialized inspection request. Settings mutations
@@ -67,6 +90,16 @@ return `{settings, candidates, can_configure, setting, actor_id}`. The frontend
 validates the nested setting and current author before acknowledging the save.
 The existing limited pilot route policy includes area actions and shared results;
 it does not add pilot identities, settings administration or permission grants.
+
+`role-configure` accepts the optional boolean `shared_terminal`; omission preserves
+the current selection and a new request defaults to off. The server chooses the
+operator from the authenticated configurator, never from a supplied actor ID.
+Area actions accept `inspector_id`, required for terminal entries and constrained
+to the immutable area assignee. Authorship maps and timestamps are server-owned.
+The role projection adds `shared_terminal: {enabled, operator_id, operator_name,
+can_operate}`; area projections add `item_authorship`, `completed_recorded_by` and
+`completed_recorded_by_name`. Area capabilities reflect current terminal authority.
+Shared quantities and submission remain request-owner actions.
 
 ## MES contract boundary
 
@@ -118,6 +151,13 @@ Unknown outcomes require readback rather than retransmission. Existing completed
 QC evidence must remain unchanged. No role implementation or migration authorizes
 creation of a new QC, credential issuance or permission expansion.
 
+The [concrete partial-save trial and single-executor plan](inspection-partial-save-trial-plan.md)
+names a proposed new virtual QC, valid synthetic sentinels, the setup/full and
+two sparse save budget, complete readback comparisons and stop conditions. It
+also identifies the current one-save phase/fixed baseline limits and the
+server authorization needed for a full merged submission. This proposal has
+not created or written a live target.
+
 ## Migration and deployment
 
 `quality.0013_inspection_roles` contains exactly three additive `CreateModel`
@@ -133,6 +173,14 @@ for old settings. Existing request/area author snapshots and completed QC rows
 remain unchanged. A pre-existing active setting with no effective start needs an
 explicit reviewed setting update before configuring new requests with it.
 
+`quality.0015_inspection_shared_terminal` adds exactly five fields: nullable
+operator and completion-recorder foreign keys, their preserved names, and the
+per-item authorship JSON map. It adds no rows, permissions, grants or inferred
+historical authorship. Existing author and completion evidence stays unchanged;
+new terminal/recorder identities stay null and authorship stays empty. Apply it
+before serving the matching backend. Rollback must retain these columns and any
+recorded attribution rather than reversing the migration.
+
 Deploy the matching backend and frontend commit after the full CI succeeds,
 including PostgreSQL tests for independent area saves and same-area stale conflicts.
 The local SQLite suite cannot prove PostgreSQL locking behavior. Preserve the
@@ -143,3 +191,48 @@ migration as routine rollback. If role work has started, pause those actions
 before rolling back to code that does not enforce their ownership contract.
 Existing older models can read legacy rows with the new tables retained, but
 deleting referenced users may be protected by the new foreign keys.
+
+
+## Area entry and final decision — 2026-10-07
+
+The worksheet displays dimension (including deformation) and appearance in two
+parallel cards. Each card has its assigned inspector, input/save progress and
+scoped save control; editing or saving one card preserves the other card's draft.
+Compact columns for measurement, judgement and saved state are centered, including
+the input text and status badges. Cards stack on narrower screens. Shared-terminal
+area saves retain existing scoped CAS, authenticated recorder and explicitly
+assigned inspector attribution.
+
+Numeric dimension inputs derive pass/fail from inclusive configured minimum and
+maximum bounds. An out-of-range badge shows the distance from the violated bound
+using decimal arithmetic. The input update saves the derived judgement with the
+measurement; reading historical records never silently rewrites them. Recognized
+pass/fail choices in deformation and appearance derive a read-only badge from
+one measurement selection; the stored configured option string is preserved.
+Arbitrary choice contracts and unbounded numeric items retain their existing
+measurement semantics. Empty or invalid
+measurements and invalid bounds never fabricate a pass.
+The worksheet always shows both cards. Ordinary inspection creation starts with
+a required dimension item and a required pass/fail appearance item. The UI blocks
+creation/final judgement unless each area has a required configured item; older
+missing snapshots show a configuration warning and cannot be treated as passed.
+Existing production snapshots are not backfilled by reads. Explicit integration
+trials retain their isolated test-only flow. Role configuration already validates
+both areas on the server; legacy API validation is unchanged in this UI revision.
+
+After saved required values and evidence are ready and no local draft remains,
+the owner receives an explicit final-decision dialog. Confirming completes the
+remaining owned areas in order using each latest area revision, then submits the
+chosen final judgement using the latest request revision. Failures stop the
+sequence; uncertain writes retain their original idempotency key for explicit
+recovery. Separate inspector accounts retain scoped area completion.
+
+Final choices are pass, fail and concession (Korean: 한도승인; Chinese: 让步合格).
+A concession records mandatory grounds in the submit audit, preserves failed
+measurements and the nonconformance, and requires an independent reviewer with
+a recorded approval reason. It does not promote failed measurements to pass or
+imply confirmed MES completion/receipt readiness. Standalone integration trials
+retain their pass/fail-only contract. Per-item judgements remain pass/fail.
+`quality.0016_inspection_final_concession` widens only the final request judgement
+column from 8 to 16 characters, preserving rows; it must precede matching backend
+code in a future release. It has been applied only in disposable local tests.

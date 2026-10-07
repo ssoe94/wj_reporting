@@ -85,7 +85,7 @@ def request_capabilities(request, user):
         'can_sync': (caps['can_submit'] and can_use_admin_inspection_flow(user)
                      and accessible and enabled and final and not uncertain and request.source_kind != 'integration_test'),
     }
-    from .inspection_roles import role_summary
+    from .inspection_roles import is_area_contributor, role_summary
     roles = role_summary(request, user)
     if roles is not None:
         # Each area has its own writer and revision; a whole-request draft must
@@ -93,7 +93,7 @@ def request_capabilities(request, user):
         result.update(can_edit=False, can_refresh=False, can_sync=False,
                       can_submit=bool(caps['can_submit'] and owner and request.status == 'draft'
                                       and roles.get('can_submit', False)))
-        if any(area.get('completed_by') == user.pk for area in roles['areas']):
+        if is_area_contributor(request, user):
             result.update(can_review=False, can_review_failure=False)
     return result
 
@@ -292,8 +292,16 @@ def local_action(user, request_id, action, key, payload, *, session):
                 roles = role_summary(request, user)
                 if not roles.get('can_submit', False):
                     raise InspectionConflict('inspection_areas_incomplete', 'Both assigned areas must be completed before submission.')
+            if 'judgement' in payload:
+                if payload['judgement'] not in {'pass', 'fail', 'concession'}:
+                    raise ValidationError({'judgement': 'Choose a supported final judgement.'})
+                request.judgement = payload['judgement']
+            if request.judgement == 'concession':
+                from .inspection_integration_trial import SOURCE_KIND
+                if request.source_kind == SOURCE_KIND or not payload.get('reason', '').strip():
+                    raise ValidationError({'reason': 'A production concession requires explicit grounds and independent review.'})
             validate_result(request, submit=True)
-            request.status = 'submitted' if request.judgement == 'pass' else 'failed'
+            request.status = 'submitted' if request.judgement in {'pass', 'concession'} else 'failed'
             request.submitted_by, request.submitted_at = user, timezone.now()
         elif action in {'approve', 'reject', 'review-failure'}:
             required_state = 'failed' if action == 'review-failure' else 'submitted'
@@ -302,10 +310,13 @@ def local_action(user, request_id, action, key, payload, *, session):
                 raise InspectionConflict('invalid_state', 'Use the separate independent review for a failed result.')
             if request.submitted_by_id == user.pk:
                 raise PermissionDenied('An independent reviewer is required, including for superusers.')
-            if role_mode and request.role_workflow.areas.filter(completed_by_id=user.pk).exists():
+            from .inspection_roles import is_area_contributor
+            if role_mode and is_area_contributor(request, user):
                 raise PermissionDenied('An independent reviewer cannot review their own area results.')
             if action in {'reject', 'review-failure'} and not payload.get('reason', '').strip():
                 raise ValidationError({'reason': 'A rejection reason is required.'})
+            if request.judgement == 'concession' and action == 'approve' and not payload.get('reason', '').strip():
+                raise ValidationError({'reason': 'Independent concession approval requires a recorded reason.'})
             request.status = 'approved' if action in {'approve', 'review-failure'} else 'rejected'
             request.reviewed_by, request.reviewed_at = user, timezone.now()
             request.review_reason = payload.get('reason', '')
@@ -322,7 +333,7 @@ def local_action(user, request_id, action, key, payload, *, session):
                 from .inspection_roles import initialize_role_workflow
                 initialize_role_workflow(child)
             audit(child, user, 'create_reinspection', payload['reason'])
-        if action == 'submit' and request.judgement == 'fail':
+        if action == 'submit' and request.judgement in {'fail', 'concession'}:
             InspectionNonconformance.objects.get_or_create(request=request, defaults={
                 'quantity': request.rejected_quantity if request.quantity_mode == 'recorded' else None,
                 'uom': request.uom, 'owner': request.assigned_to, 'owner_name': request.assigned_to_name,

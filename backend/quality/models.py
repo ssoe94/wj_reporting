@@ -3,7 +3,7 @@ from django.db import models
 
 from .storage import quality_import_media_storage
 from .inspection_models import InspectionAudit, InspectionOperation, InspectionRequest, InspectionMesBinding, InspectionNonconformance  # noqa: F401
-from .inspection_role_models import InspectionShiftSetting, InspectionRoleWorkflow, InspectionAreaResult  # noqa: F401
+from .inspection_role_models import InspectionShiftSetting, InspectionRoleWorkflow, InspectionAreaResult, InspectionInspector, InspectionWeeklyRoster  # noqa: F401
 
 
 class QualityReport(models.Model):

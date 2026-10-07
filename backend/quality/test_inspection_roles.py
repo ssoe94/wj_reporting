@@ -1,8 +1,10 @@
 """Disposable fixtures for independent WJ area input; never contact MES."""
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import timedelta
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
 from queue import Queue
+from time import monotonic, sleep
 from unittest import mock, skipUnless
 import uuid
 
@@ -477,6 +479,111 @@ class InspectionRoleTests(RoleFixtures, TestCase):
             self.action(area_save, 'appearance', self.payload('appearance', measurements=[self.measure('appearance', evidence_url='https://evidence.example/a?secret=x')]))
 
 
+class InspectionSharedTerminalTests(RoleFixtures, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.configure(shared_terminal=True)
+
+    def terminal_action(self, func, area, **changes):
+        inspector = self.appearance if area == 'appearance' else self.dimension
+        payload = {'inspector_id': inspector.pk}
+        payload.update(changes)
+        return self.action(func, area, self.payload(area, **payload), user=self.admin)
+
+    def test_one_current_login_records_two_distinct_inspectors_and_independent_area_results(self):
+        dimension_payload = self.payload('dimension', inspector_id=self.dimension.pk,
+            measurements=[self.measure('dimension')], judgement='pass')
+        self.terminal_action(area_complete, 'appearance', measurements=[self.measure('appearance')], judgement='pass')
+        self.assertEqual(self.request_now().judgement, '')
+        response, _ = self.action(area_complete, 'dimension', dimension_payload, user=self.admin)
+        self.assertEqual(response['judgement'], 'pass')
+        self.assertEqual(response['role_workflow']['status'], 'completed')
+        self.assertEqual(response['role_workflow']['shared_terminal'], {'enabled': True,
+            'operator_id': self.admin.pk, 'operator_name': self.admin.username, 'can_operate': True})
+        for name, inspector in [('appearance', self.appearance), ('dimension', self.dimension)]:
+            area = InspectionAreaResult.objects.get(workflow=self.workflow, area=name)
+            self.assertEqual(area.completed_by_id, inspector.pk)
+            self.assertEqual(area.completed_recorded_by_id, self.admin.pk)
+            self.assertEqual(area.completed_recorded_by_name, self.admin.username)
+            item_id = 'look' if name == 'appearance' else 'size'
+            attribution = area.item_authorship[item_id]
+            self.assertEqual(attribution['inspector_id'], inspector.pk)
+            self.assertEqual(attribution['recorded_by_id'], self.admin.pk)
+            self.assertTrue(attribution['recorded_at'])
+            audit = InspectionAudit.objects.get(request=self.request, action=f'role_{name}_complete')
+            self.assertEqual(audit.actor_id, self.admin.pk)
+        self.assertFalse(response['role_workflow']['mes']['can_save'])
+        self.assertFalse(response['mes_workflow']['can_finish'])
+
+    def test_terminal_requires_explicit_exact_assignee_and_server_owned_attribution(self):
+        for inspector_id in (None, self.dimension.pk, self.outsider.pk):
+            with self.subTest(inspector_id=inspector_id), self.assertRaises((PermissionDenied, ValidationError)):
+                payload = self.payload('appearance', measurements=[self.measure('appearance')])
+                if inspector_id is not None:
+                    payload['inspector_id'] = inspector_id
+                self.action(area_save, 'appearance', payload, user=self.admin)
+        for field, value in [('item_authorship', {}), ('completed_recorded_by', self.outsider.pk),
+                             ('actor_id', self.appearance.pk), ('inspector_id', True)]:
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                self.terminal_action(area_save, 'appearance', **{field: value})
+        self.assertEqual(self.request_now().measurements, [])
+        self.assertEqual(InspectionAreaResult.objects.get(workflow=self.workflow, area='appearance').item_authorship, {})
+
+    def test_terminal_authority_is_specific_to_explicit_configurator(self):
+        self.assertFalse(role_summary(self.request, self.outsider)['shared_terminal']['can_operate'])
+        with self.assertRaises(PermissionDenied):
+            self.action(area_save, 'appearance', self.payload('appearance', inspector_id=self.appearance.pk), user=self.outsider)
+        self.configure(shared_terminal=False)
+        with self.assertRaises(PermissionDenied):
+            self.terminal_action(area_save, 'appearance')
+        self.assertFalse(role_summary(self.request, self.admin)['shared_terminal']['enabled'])
+
+    def test_terminal_opt_in_is_typed_server_owned_and_immutable_after_input(self):
+        for changes in ({'shared_terminal': 'true'}, {'shared_terminal_operator': self.outsider.pk}):
+            with self.subTest(changes=changes), self.assertRaises(ValidationError):
+                self.configure(**changes)
+        self.configure()
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.shared_terminal_operator_id, self.admin.pk)
+        self.terminal_action(area_save, 'appearance', measurements=[self.measure('appearance')])
+        with self.assertRaises(InspectionConflict):
+            self.configure(shared_terminal=False)
+
+    def test_terminal_replay_rechecks_selected_inspector_current_eligibility(self):
+        payload = self.payload('appearance', inspector_id=self.appearance.pk, measurements=[self.measure('appearance')])
+        key = uuid.uuid4()
+        first = self.action(area_save, 'appearance', payload, user=self.admin, key=key)
+        before = InspectionAudit.objects.count(), InspectionOperation.objects.count(), self.request_now().version
+        self.assertEqual(first, self.action(area_save, 'appearance', payload, user=self.admin, key=key))
+        get_user_model().objects.filter(pk=self.appearance.pk).update(is_active=False)
+        with self.assertRaises(PermissionDenied):
+            self.action(area_save, 'appearance', payload, user=self.admin, key=key)
+        self.assertEqual(before, (InspectionAudit.objects.count(), InspectionOperation.objects.count(), self.request_now().version))
+
+    def test_partial_item_save_preserves_previous_attribution_and_other_area(self):
+        self.action(area_save, 'dimension', self.payload('dimension', measurements=[self.measure('dimension')]))
+        before = deepcopy(InspectionAreaResult.objects.get(workflow=self.workflow, area='dimension').item_authorship['size'])
+        self.terminal_action(area_save, 'dimension', measurements=[{'item_id': 'size-optional', 'value': 'SYNTHETIC', 'judgement': 'pass'}])
+        area = InspectionAreaResult.objects.get(workflow=self.workflow, area='dimension')
+        self.assertEqual(area.item_authorship['size'], before)
+        self.assertEqual(area.item_authorship['size-optional']['recorded_by_id'], self.admin.pk)
+        self.assertEqual({entry['item_id'] for entry in area.measurements}, {'size', 'size-optional'})
+        with self.assertRaises(PermissionDenied):
+            self.terminal_action(area_save, 'appearance', measurements=[self.measure('dimension')])
+        area.refresh_from_db()
+        self.assertEqual(area.item_authorship['size'], before)
+
+    def test_reopen_clears_completion_recorders_but_preserves_item_evidence(self):
+        self.terminal_action(area_complete, 'appearance', measurements=[self.measure('appearance')], judgement='pass')
+        area = InspectionAreaResult.objects.get(workflow=self.workflow, area='appearance')
+        attribution = deepcopy(area.item_authorship)
+        self.terminal_action(area_reopen, 'appearance', reason='SYNTHETIC inspector correction')
+        area.refresh_from_db()
+        self.assertEqual((area.completed_by_id, area.completed_recorded_by_id, area.completed_recorded_by_name), (None, None, ''))
+        self.assertEqual(area.item_authorship, attribution)
+        self.assertEqual(self.request_now().judgement, '')
+
+
 @skipUnless(connection.vendor == 'postgresql', 'Requires disposable PostgreSQL for real concurrency.')
 class InspectionRolePostgresTests(RoleFixtures, TransactionTestCase):
     def concurrent(self, callbacks):
@@ -523,6 +630,100 @@ class InspectionRolePostgresTests(RoleFixtures, TransactionTestCase):
         results = self.concurrent([callback, callback])
         self.assertEqual(sorted(kind for kind, _ in results), ['error', 'result'], results)
         self.assertTrue(any(isinstance(value, InspectionConflict) for kind, value in results if kind == 'error'))
+
+    def test_same_terminal_independent_area_concurrency_preserves_both_authors(self):
+        self.configure(shared_terminal=True)
+        results = self.concurrent([
+            self.callback('appearance', self.payload('appearance', inspector_id=self.appearance.pk,
+                measurements=[self.measure('appearance')]), self.admin),
+            self.callback('dimension', self.payload('dimension', inspector_id=self.dimension.pk,
+                measurements=[self.measure('dimension')]), self.admin)])
+        self.assertEqual([kind for kind, _ in results], ['result', 'result'], results)
+        self.assertEqual({entry['item_id'] for entry in self.request_now().measurements}, {'look', 'size'})
+        for area, inspector in [('appearance', self.appearance), ('dimension', self.dimension)]:
+            row = InspectionAreaResult.objects.get(workflow=self.workflow, area=area)
+            attribution = next(iter(row.item_authorship.values()))
+            self.assertEqual((attribution['inspector_id'], attribution['recorded_by_id']), (inspector.pk, self.admin.pk))
+
+    def test_terminal_and_direct_author_same_area_have_one_stale_conflict_without_deadlock(self):
+        self.configure(shared_terminal=True)
+        payload = self.payload('appearance', measurements=[self.measure('appearance')])
+        results = self.concurrent([
+            self.callback('appearance', dict(payload, inspector_id=self.appearance.pk), self.admin),
+            self.callback('appearance', payload, self.appearance)])
+        self.assertEqual(sorted(kind for kind, _ in results), ['error', 'result'], results)
+        self.assertTrue(any(isinstance(value, InspectionConflict) for kind, value in results if kind == 'error'), results)
+        row = InspectionAreaResult.objects.get(workflow=self.workflow, area='appearance')
+        self.assertEqual(row.item_authorship['look']['inspector_id'], self.appearance.pk)
+        self.assertIn(row.item_authorship['look']['recorded_by_id'], [self.admin.pk, self.appearance.pk])
+
+    def test_terminal_prelocks_allow_concurrent_assignment_fk_checks_to_finish(self):
+        # A later-created terminal operator must first prelock the older
+        # inspector. Concurrent configuration holds that operator's user lock
+        # and swaps assignments, requiring a new FK check on the older user.
+        self.admin, self.outsider = self.outsider, self.admin
+        self.assertGreater(self.admin.pk, self.appearance.pk)
+        self.configure(shared_terminal=True)
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'active': False, 'reason': 'SYNTHETIC future reassignment'}, session=inspection_session(self.admin))
+        next_shift, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(
+            code='SYNTHETIC-SWAPPED', appearance_assignee=self.dimension.pk,
+            dimension_assignee=self.appearance.pk), session=inspection_session(self.admin))
+        self.workflow.refresh_from_db()
+        configuration = {'config_version': self.workflow.config_version,
+            'shift_setting_id': next_shift['setting']['id'], 'shift_version': 1,
+            'shift_date': '2026-10-07', 'item_areas': deepcopy(self.workflow.item_areas),
+            'shared_terminal': True, 'reason': 'SYNTHETIC concurrent swapped assignment'}
+        terminal_payload = self.payload('appearance', inspector_id=self.appearance.pk,
+            measurements=[self.measure('appearance')])
+        operator_id, request_id = self.admin.pk, self.request.pk
+        operator_locked, terminal_pid = Event(), Queue()
+        configuration_session = inspection_session(self.admin)
+        terminal_session = inspection_session(self.admin)
+
+        class ConfigurationSession:
+            @contextmanager
+            def lock(self, permission, *, actor_id):
+                with configuration_session.lock(permission, actor_id=actor_id) as current:
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT pg_backend_pid()')
+                        config_pid = cursor.fetchone()[0]
+                    operator_locked.set()
+                    waiting_pid = terminal_pid.get(timeout=5)
+                    deadline = monotonic() + 5
+                    while True:
+                        with connection.cursor() as cursor:
+                            cursor.execute('SELECT pg_blocking_pids(%s)', [waiting_pid])
+                            blockers = cursor.fetchone()[0]
+                        if config_pid in blockers:
+                            break
+                        if monotonic() >= deadline:
+                            raise AssertionError('Terminal did not reach its blocked operator prelock.')
+                        sleep(0.01)
+                    yield current
+
+        def configure():
+            actor = get_user_model().objects.get(pk=operator_id)
+            return configure_role_workflow(actor, request_id, uuid.uuid4(), configuration,
+                session=ConfigurationSession())
+
+        def save():
+            if not operator_locked.wait(timeout=5):
+                raise AssertionError('Configuration did not hold its operator lock.')
+            actor = get_user_model().objects.get(pk=operator_id)
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT pg_backend_pid()')
+                terminal_pid.put(cursor.fetchone()[0])
+            return area_save(actor, request_id, 'appearance', uuid.uuid4(), terminal_payload,
+                session=terminal_session)
+
+        results = self.concurrent([configure, save])
+        self.assertEqual(sorted(kind for kind, _ in results), ['error', 'result'], results)
+        self.assertTrue(any(isinstance(value, (InspectionConflict, PermissionDenied))
+            for kind, value in results if kind == 'error'), results)
+        self.assertEqual(self.request_now().measurements, [])
+        self.assertEqual(InspectionAreaResult.objects.get(workflow=self.workflow,
+            area='dimension').assigned_to_id, self.appearance.pk)
 
     def activation_callbacks(self, periods):
         settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1, 'active': False,

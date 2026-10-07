@@ -189,6 +189,11 @@ class ActionSerializer(StrictSerializer):
     reason = serializers.CharField(max_length=500, allow_blank=True, default='')
 
 
+class SubmitInspectionSerializer(ActionSerializer):
+    # Optional for older clients; the owner selects this only after saved input.
+    judgement = serializers.ChoiceField(choices=['pass', 'fail', 'concession'], required=False)
+
+
 def validate_result(request, *, submit=False):
     if request.inspected_quantity > request.target_quantity:
         raise serializers.ValidationError({'inspected_quantity': 'Cannot exceed request quantity.'})
@@ -230,7 +235,7 @@ def validate_result(request, *, submit=False):
         if item['kind'] == 'choice' and entry['value'] not in item['options']:
             raise serializers.ValidationError('Choose one configured option.')
         failures = failures or entry['judgement'] == 'fail'
-    if request.judgement not in {'pass', 'fail'} or (request.judgement_policy == 'strict_items' and failures and request.judgement != 'fail'):
+    if request.judgement not in {'pass', 'fail', 'concession'} or (request.judgement_policy == 'strict_items' and failures and request.judgement not in {'fail', 'concession'}):
         raise serializers.ValidationError('Overall judgement must match item results.')
     if request.judgement == 'pass' and request.rejected_quantity != 0:
         raise serializers.ValidationError('Passed inspection cannot contain rejected quantity.')

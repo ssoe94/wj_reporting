@@ -8,10 +8,11 @@ import type { InspectionCreate, InspectionPreparationDraft, InspectionDataMode, 
 import { createInspectionKey, inspectionError, inspectionMutationAttempt, inspectionRecoveryKey, parseInspectionRecovery } from './workflow';
 import type { InspectionRecovery, MutationAttempt } from './workflow';
 import { inspectionRoleCopy } from './roleCopy';
+import { inspectionRequiredAreasPresent } from './roleModel';
 
 function newItem(): InspectionItem { return { id: createInspectionKey(), label: '', kind: 'text', unit: '', required: true, evidence_required: false }; }
 function emptyRequest(): InspectionPreparationDraft {
-  return { work_order_ref: '', task_ref: '', part_no: '', equipment_ref: '', inspection_type: 'first', target_quantity: '', uom: '', warehouse_ref: '', lot_ref: '', work_started_at: '', inspection_items: [newItem()], require_evidence: false, quantity_mode: 'recorded', judgement_policy: 'strict_items' };
+  return { work_order_ref: '', task_ref: '', part_no: '', equipment_ref: '', inspection_type: 'first', target_quantity: '', uom: '', warehouse_ref: '', lot_ref: '', work_started_at: '', inspection_items: [{ ...newItem(), label: '치수 / 尺寸', kind: 'number' }, { ...newItem(), label: '외관 / 外观', kind: 'choice', options: ['合格', '不合格'] }], require_evidence: false, quantity_mode: 'recorded', judgement_policy: 'strict_items' };
 }
 
 export default function NewInspectionRequest({ userId, sessionId, lang, dataMode, canPrepareIntegrationTrial = false, onCreated, onCancel, onDirty, onLocked }: { userId: number; sessionId: string | null; lang: 'ko' | 'zh'; dataMode: InspectionDataMode; canPrepareIntegrationTrial?: boolean; onCreated: (item: InspectionRequest) => void; onCancel: () => void; onDirty: (dirty: boolean) => void; onLocked: (locked: boolean, pending: boolean) => void }) {
@@ -73,7 +74,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
       catch { setError(trialText.invalid); }
       return;
     }
-    if (form.role_workflow === true && form.inspection_items.length < 2) { setError(lang === 'ko' ? '외관과 치수에 배정할 항목을 각각 하나 이상 추가하세요.' : '请为外观与尺寸各添加至少一个项目。'); return; }
+    if (!inspectionRequiredAreasPresent(form.inspection_items)) { setError(lang === 'ko' ? '치수와 외관의 필수 검사 항목을 각각 하나 이상 등록하세요.' : '请为尺寸与外观各配置至少一个必检项目。'); return; }
     const started = new Date(form.work_started_at);
     if (Number.isNaN(started.getTime())) { setError(text.startedInvalid); return; }
     const payload = inspectionCreatePayload(form);
@@ -117,7 +118,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
         </fieldset>)}
         <button type="button" className="inspection-button" disabled={blocked || form.inspection_items.length >= 50} onClick={() => update({ inspection_items: [...form.inspection_items, newItem()] })}><Plus size={16} aria-hidden="true" />{text.addItem}</button>
       </section>
-      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked || (trial && !canPrepareIntegrationTrial) || (!trial && form.role_workflow === true && form.inspection_items.length < 2)}>{busy ? text.busy : trial ? trialText.submit : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
+      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked || (trial && !canPrepareIntegrationTrial) || (!trial && !inspectionRequiredAreasPresent(form.inspection_items))}>{busy ? text.busy : trial ? trialText.submit : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
     </form>
   </section>;
 }
