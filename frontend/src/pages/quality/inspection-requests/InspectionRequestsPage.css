@@ -29,6 +29,36 @@
 .inspection-help[open] > summary { text-decoration: underline; text-underline-offset: 3px; }
 .inspection-help > p { margin: 6px 0; overflow-wrap: anywhere; }
 .inspection-mes-actions { margin-top: 16px; }
+.inspection-detail .inspection-section { margin-top: 14px; padding-top: 12px; }
+.inspection-detail .inspection-section h3 { margin-bottom: 8px; font-size: 16px; }
+.inspection-detail .inspection-detail-heading h2 { margin: 2px 0 4px; font-size: 20px; line-height: 1.35; }
+.inspection-task-summary { margin: 6px 0; color: var(--muted, #627789); font-size: 14px; line-height: 1.4; }
+.inspection-detail .inspection-help { margin: 4px 0; }
+.inspection-detail .inspection-meta { gap: 10px; margin-top: 9px; padding: 11px; font-size: 14px; }
+.inspection-detail .inspection-muted { margin: 6px 0; line-height: 1.45; }
+.inspection-requests-page .inspection-detail textarea { min-height: 56px; line-height: 1.4; }
+.inspection-detail .inspection-form-grid { gap: 10px; }
+.inspection-detail .inspection-mes-actions { margin-top: 10px; }
+.inspection-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--surface-border, #dfe5eb); border-radius: 6px; }
+.inspection-table-scroll:focus-visible { outline: 3px solid var(--accent, #008ec3); outline-offset: 3px; }
+.inspection-items-table, .inspection-history-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 14px; line-height: 1.4; text-align: left; }
+.inspection-items-table { table-layout: fixed; }
+.inspection-items-table th, .inspection-items-table td, .inspection-history-table th, .inspection-history-table td { padding: 8px; border-bottom: 1px solid var(--surface-border, #dfe5eb); vertical-align: middle; overflow-wrap: anywhere; }
+.inspection-items-table thead, .inspection-history-table thead { background: var(--bg, #f5f8fb); color: var(--muted, #627789); }
+.inspection-items-table th { font-weight: 650; }
+.inspection-items-table thead th:nth-child(1) { width: 20%; }
+.inspection-items-table thead th:nth-child(2) { width: 23%; }
+.inspection-items-table thead th:nth-child(3) { width: 32%; }
+.inspection-items-table thead th:nth-child(4) { width: 25%; }
+.inspection-items-table tbody tr:last-child > *, .inspection-history-table tbody tr:last-child > * { border-bottom: 0; }
+.inspection-detail .inspection-items-table :is(input, select) { width: 100%; min-height: 40px; padding: 7px 8px; font-size: 14px; }
+.inspection-item-criterion { color: var(--muted, #627789); font-size: 13px; }
+.inspection-item-criterion > span { display: block; }
+.inspection-full-value p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inspection-item-evidence-fields { display: grid; gap: 10px; margin: 8px 0 12px; }
+.inspection-evidence-help h4 { margin: 10px 0 8px; font-size: 14px; }
+.inspection-history-table th, .inspection-history-table td { padding-top: 7px; padding-bottom: 7px; }
+@media (max-width: 760px) { .inspection-detail .inspection-items-table :is(input, select) { min-height: 44px; } }
 .inspection-route-dialog-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(20, 43, 61, .45); font-family: var(--wj-font-family); }
 .inspection-route-dialog { width: min(100%, 490px); max-height: 90dvh; overflow: auto; padding: 24px; border: 1px solid var(--surface-border, #dfe5eb); border-radius: 10px; color: var(--text, #142b3d); background: var(--surface-strong, #fff); box-shadow: 0 12px 40px rgba(20, 43, 61, .18); }
 .inspection-route-dialog button:focus-visible { outline: 3px solid var(--wj-accent, #245f86); outline-offset: 3px; }

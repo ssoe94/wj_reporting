@@ -6,7 +6,7 @@ import { ExternalLink, Plus, RefreshCw } from 'lucide-react';
 import MesConnectionDialog from '@/components/MesConnectionDialog';
 import { editableInspectionDraft, getInspectionRequest, inspectionDraftPayload, mutateInspectionRequest } from './api';
 import type { InspectionCapabilities, InspectionDraft, InspectionMeasurement, InspectionRequest } from './api';
-import { inspectionActionLabels, inspectionCopy, inspectionDataSourceCopy, inspectionMesObservationCopy, inspectionMesTrialObservationCopy, inspectionOperationLabels, inspectionRequestStatusLabels, inspectionTime, inspectionTypeLabels } from './copy';
+import { inspectionCopy, inspectionDataSourceCopy, inspectionHistoryActionLabel, inspectionHistoryResultLabel, inspectionMesObservationCopy, inspectionMesTrialObservationCopy, inspectionOperationLabels, inspectionRequestStatusLabels, inspectionTime, inspectionTypeLabels } from './copy';
 import { createInspectionKey, inspectionError, inspectionMutationAttempt, inspectionRecoveryKey, inspectionRequiresMesConnection, parseInspectionRecovery, safeInspectionEvidenceUrl } from './workflow';
 import type { InspectionAction, InspectionRecovery, MutationAttempt } from './workflow';
 import { inspectionRequestKind } from './kanban';
@@ -62,6 +62,13 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
     ? !request.mes_workflow?.can_reconcile : !globalCapabilities.mes.can_refresh || !request.capabilities.can_refresh);
   const editable = request.capabilities.can_edit && !disabled;
   const unsafeEvidence = draft.evidence.some((item) => item.url && !safeInspectionEvidenceUrl(item.url)) || draft.measurements.some((item) => item.evidence_url && !safeInspectionEvidenceUrl(item.evidence_url));
+  const requiredEvidence = request.require_evidence || request.inspection_items.some((item) => item.evidence_required);
+  const historyRows = [
+    ...request.audit.map((item) => ({ key: `audit-${item.id}`, at: item.created_at, actor: item.actor_name || '—',
+      action: inspectionHistoryActionLabel(lang, item.action), result: inspectionHistoryResultLabel(lang, item.action, item.status) })),
+    ...request.operations.map((item) => ({ key: `operation-${item.id}`, at: item.created_at, actor: '—',
+      action: inspectionHistoryActionLabel(lang, item.scope.split(':').slice(-1)[0]), result: inspectionHistoryResultLabel(lang, '', item.status, true) })),
+  ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   const persist = (changed: InspectionDraft, pending: MutationAttempt | null, baseVersion = version, reviewReason = reason, reconcile = reconciliationRequired) => {
     if (!ownsSession()) return;
     try { sessionStorage.setItem(inspectionRecoveryKey(userId, request.id), JSON.stringify({ schema: 1, user_id: userId, request_id: request.id, version: baseVersion, saved_at: Date.now(), draft: { ...changed, review_reason_draft: reviewReason }, attempt: pending, reconciliation_required: reconcile })); } catch { /* Optional per-tab recovery. */ }
@@ -162,8 +169,8 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
   return <section className="inspection-detail" aria-labelledby="inspection-detail-title" aria-busy={busy}>
     {mesConnectionOpen && <MesConnectionDialog onClose={() => setMesConnectionOpen(false)} />}
     {globalCapabilities.data_mode !== 'wj_local_beta' && <p className="inspection-beta-context"><strong>{dataSource.notice}</strong></p>}
-    {trial && <div className="inspection-trial-context"><IntegrationTrialBadge lang={lang} /><p>{integrationTrialCopy[lang].excluded}{request.mes_workflow?.qc_code ? ` · ${request.mes_workflow.phase === 'unbound' ? (lang === 'ko' ? '준비 코드 · MES 생성 전: ' : '准备代码 · MES 尚未创建：') : ''}${request.mes_workflow.qc_code}` : ''}</p>{request.mes_workflow?.test_label && <small>{request.mes_workflow.test_label}</small>}</div>}
-    <div className="inspection-detail-heading"><div><small>{text.requestId} #{request.id}</small><h2 id="inspection-detail-title">{request.work_order_ref}</h2><p>{request.part_no} · {request.equipment_ref}</p></div><span className="inspection-status" data-status={request.status}>{inspectionRequestStatusLabels[lang][request.status]}</span></div>
+    {trial && <div className="inspection-trial-context"><IntegrationTrialBadge lang={lang} /><p>{integrationTrialCopy[lang].excluded}{request.mes_workflow?.phase === 'unbound' ? ` · ${lang === 'ko' ? 'MES 생성 전' : 'MES 尚未创建'}` : ''}</p>{request.mes_workflow?.test_label && <small>{request.mes_workflow.test_label}</small>}</div>}
+    <div className="inspection-detail-heading"><div>{trial && <small>{text.requestId} #{request.id}</small>}<h2 id="inspection-detail-title">{trial ? request.mes_workflow?.qc_code || integrationTrialCopy[lang].title : request.part_no || request.work_order_ref || text.requests}</h2>{request.equipment_ref && <p>{request.equipment_ref}</p>}</div><span className="inspection-status" data-status={request.status}>{inspectionRequestStatusLabels[lang][request.status]}</span></div>
     {message && <div className="inspection-message is-success" role="status">{message}</div>}
     {error && <div className="inspection-message is-error" role="alert">{error}</div>}
     {remoteUnresolved && <div className="inspection-message" role="status">{text.reconciliationRequired}</div>}
@@ -178,12 +185,9 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
       <p>{request.nonconformance.owner_name} · {request.nonconformance.quantity ?? (lang === 'ko' ? '수량 미확인' : '数量未确认')} {request.nonconformance.uom}</p>
       <details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? '불량조치 확인' : '不合格处置说明'}</summary><p>{lang === 'ko' ? 'QC 검사 완료와 불량조치 종료는 별도입니다. 특채·폐기·재작업의 MES 승인 및 재고 연동을 확인해야 합니다.' : 'QC 检验完成不代表不合格处置结束。需确认让步接收、报废及返工的 MES 审批和库存关联。'}</p></details>
     </section>}
-    <dl className="inspection-meta inspection-snapshot">
-      {meta(text.inspectionType, kanbanText[inspectionRequestKind(request)])}{meta(text.task, request.task_ref, 'inspection-snapshot-secondary')}{meta(text.quantity, `${request.target_quantity} ${request.uom}`)}
-      {meta(text.owner, request.assigned_to_name || text.unassigned, 'inspection-snapshot-owner')}{meta(text.lot, request.lot_ref, 'inspection-snapshot-secondary')}{meta(text.createdAt, inspectionTime(request.created_at, lang), 'inspection-snapshot-secondary')}
-    </dl>
+    <p className="inspection-task-summary">{kanbanText[inspectionRequestKind(request)]} · {text.owner}: {request.assigned_to_name || text.unassigned}{request.quantity_mode === 'recorded' ? ` · ${text.quantity}: ${request.target_quantity} ${request.uom}` : ''}</p>
     <details className="inspection-fold inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? '작업 정보·검사 기준' : '作业信息·检验规则'}</summary><dl className="inspection-meta">
-      {meta(text.workOrder, request.work_order_ref)}{meta(text.task, request.task_ref)}{meta(text.part, request.part_no)}{meta(text.equipment, request.equipment_ref)}
+      {meta(text.requestId, request.id)}{meta(text.workOrder, request.work_order_ref)}{meta(text.task, request.task_ref)}{meta(text.part, request.part_no)}{meta(text.equipment, request.equipment_ref)}
       {meta(text.inspectionType, inspectionTypeLabels[lang][request.inspection_type])}{meta(text.quantity, `${request.target_quantity} ${request.uom}`)}
       {meta(text.quantityPolicy, request.quantity_mode === 'not_recorded' ? text.quantityNotRecorded : text.quantityRecorded)}{meta(text.evidence, request.require_evidence ? text.required : text.optional)}
       {meta(text.judgementPolicy, request.judgement_policy === 'independent' ? text.independentJudgement : text.strictItems)}
@@ -192,21 +196,33 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
       {meta(text.workStarted, inspectionTime(request.work_started_at, lang))}{meta(text.createdAt, inspectionTime(request.created_at, lang))}{meta(text.updatedAt, inspectionTime(request.updated_at, lang))}
       {meta(text.submittedAt, inspectionTime(request.submitted_at, lang))}{meta(text.reviewedAt, inspectionTime(request.reviewed_at, lang))}
     </dl><p className="inspection-muted">{text.timezone} · {text.immutable}</p></details>
-    <section className="inspection-section"><h3>{text.items}</h3>
+    <section className="inspection-section inspection-items-section"><h3 id="inspection-items-title">{text.items}</h3>
       {!request.capabilities.can_edit && <p className="inspection-muted">{text.readOnly}</p>}
+      <div className="inspection-table-scroll" role="region" aria-labelledby="inspection-items-title" tabIndex={0}>
+        <table className="inspection-items-table"><caption className="sr-only">{text.items}</caption>
+          <thead><tr><th scope="col">{text.itemName}</th><th scope="col">{text.criteriaUnit}</th><th scope="col">{text.measurement}</th><th scope="col">{verdictCopy.verdict}</th></tr></thead><tbody>
       {request.inspection_items.map((item, index) => {
         const measurement = draft.measurements[index];
-        const safeLink = safeInspectionEvidenceUrl(measurement?.evidence_url || '');
-        return <fieldset className="inspection-item" key={item.id} disabled={!editable}><legend>{index + 1}. {item.label}</legend>
-          <p>{item.required !== false ? text.required : text.optional} · {item.kind === 'number' ? text.number : item.kind === 'choice' ? text.choice : text.text}{item.unit ? ` · ${item.unit}` : ''}{item.minimum ? ` · ${text.minimum}: ${item.minimum}` : ''}{item.maximum ? ` · ${text.maximum}: ${item.maximum}` : ''}{item.evidence_required ? ` · ${text.evidenceRequired}` : ''}</p>
-          <div className="inspection-form-grid"><label>{text.measurement}{item.required !== false ? ' *' : ''}{item.kind === 'choice' ? <select value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })}><option value="">{text.choose}</option>{item.options?.map((option) => <option value={option} key={option}>{option}</option>)}</select> : <input maxLength={1000} inputMode={item.kind === 'number' ? 'decimal' : 'text'} value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })} />}</label>
-            <label>{verdictCopy.verdict} · {item.required !== false ? text.required : text.requiredWhenFilled}<select value={measurement?.judgement || ''} onChange={(event) => updateMeasurement(index, { judgement: event.target.value as InspectionMeasurement['judgement'] })}><option value="">{text.choose}</option><option value="pass">{verdictCopy.pass}</option><option value="fail">{verdictCopy.fail}</option></select></label>
-            <details className="inspection-form-full inspection-optional-field" open={item.evidence_required || Boolean(measurement?.evidence_url)}><summary>{text.itemEvidence} · {item.evidence_required ? text.required : text.optional}</summary><label>{text.itemEvidence}{item.evidence_required ? ' *' : ''}<input type="url" maxLength={500} value={measurement?.evidence_url || ''} autoCapitalize="none" spellCheck={false} onChange={(event) => updateMeasurement(index, { evidence_url: event.target.value })} /><small>{text.evidenceHint}</small></label></details>
-          </div>{safeLink && <a href={safeLink} target="_blank" rel="noopener noreferrer">{text.openEvidence} <ExternalLink size={14} aria-hidden="true" /></a>}
-        </fieldset>;
+        const valueId = `inspection-item-${request.id}-${index}-value`;
+        const judgementId = `inspection-item-${request.id}-${index}-judgement`;
+        return <tr key={item.id}>
+          <th scope="row">{index + 1}. {item.label}</th>
+          <td className="inspection-item-criterion"><span>{item.required !== false ? text.required : text.optional} · {item.kind === 'number' ? text.number : item.kind === 'choice' ? text.choice : text.text}{item.unit ? ` · ${item.unit}` : ''}</span>{(item.minimum || item.maximum) && <span>{item.minimum ? `${text.minimum}: ${item.minimum}` : ''}{item.minimum && item.maximum ? ' · ' : ''}{item.maximum ? `${text.maximum}: ${item.maximum}` : ''}</span>}{item.evidence_required && <span>{text.evidenceRequired}</span>}</td>
+          <td><label className="sr-only" htmlFor={valueId}>{text.measurement}{item.required !== false ? ' *' : ''}</label>{item.kind === 'choice' ? <select id={valueId} disabled={!editable} value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })}><option value="">{text.choose}</option>{item.options?.map((option) => <option value={option} key={option}>{option}</option>)}</select> : <input id={valueId} disabled={!editable} maxLength={1000} inputMode={item.kind === 'number' ? 'decimal' : 'text'} value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })} />}{!editable && [...(measurement?.value || '')].length > 8 && <details className="inspection-help inspection-full-value"><summary><span aria-hidden="true">ⓘ</span> {text.fullValue}</summary><p>{measurement.value}</p></details>}</td>
+          <td><label className="sr-only" htmlFor={judgementId}>{verdictCopy.verdict} · {item.required !== false ? text.required : text.requiredWhenFilled}</label><select id={judgementId} disabled={!editable} value={measurement?.judgement || ''} onChange={(event) => updateMeasurement(index, { judgement: event.target.value as InspectionMeasurement['judgement'] })}><option value="">{text.choose}</option><option value="pass">{verdictCopy.pass}</option><option value="fail">{verdictCopy.fail}</option></select></td>
+        </tr>;
       })}
+          </tbody></table>
+      </div>
     </section>
-    <details className="inspection-section inspection-fold" open={request.require_evidence || draft.evidence.length > 0}><summary>{text.evidence} · {request.require_evidence ? text.required : text.optional}</summary><p className="inspection-muted">{text.evidenceHint}</p>
+    <details className="inspection-help inspection-evidence-help"><summary><span aria-hidden="true">ⓘ</span> {text.attachments} · {requiredEvidence ? text.requiredEvidenceHint : text.optional}</summary><p>{text.evidenceHint}</p>
+      <div className="inspection-item-evidence-fields">{request.inspection_items.map((item, index) => {
+        const measurement = draft.measurements[index];
+        const safeLink = safeInspectionEvidenceUrl(measurement?.evidence_url || '');
+        const id = `inspection-item-${request.id}-${index}-evidence`;
+        return <div key={item.id}><label htmlFor={id}>{index + 1}. {item.label} · {text.itemEvidence}{item.evidence_required ? ' *' : ''}<input id={id} disabled={!editable} type="url" maxLength={500} value={measurement?.evidence_url || ''} autoCapitalize="none" spellCheck={false} onChange={(event) => updateMeasurement(index, { evidence_url: event.target.value })} /></label>{safeLink && <a href={safeLink} target="_blank" rel="noopener noreferrer">{text.openEvidence} <ExternalLink size={14} aria-hidden="true" /></a>}</div>;
+      })}</div>
+      <h4>{text.evidence} · {request.require_evidence ? text.required : text.optional}</h4>
       {draft.evidence.map((item, index) => {
         const safeLink = safeInspectionEvidenceUrl(item.url);
         return <div className={`inspection-evidence-row${item.url && !safeLink ? ' is-invalid' : ''}`} key={index}>
@@ -257,7 +273,10 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
         {request.mes_workflow?.test_label && <p>{text.mesTestLabel}: {request.mes_workflow.test_label}</p>}
       </details>
     </section>
-    <details className="inspection-section inspection-fold"><summary>{text.history} ({request.audit.length})</summary>{request.audit.length ? <ol className="inspection-history">{request.audit.map((item) => <li key={item.id}><strong>{inspectionActionLabels[lang][item.action] || item.action}</strong> · {item.actor_name} · {text.version} {item.version}<p>{item.reason}</p><small>{inspectionTime(item.created_at, lang)}</small></li>)}</ol> : <p className="inspection-muted">{text.noHistory}</p>}</details>
-    <details className="inspection-section inspection-fold"><summary>{text.operations} ({request.operations.length})</summary>{request.operations.length ? <ol className="inspection-history">{request.operations.map((item) => { const action = item.scope.split(':').slice(-1)[0]; return <li key={item.id}><strong>{inspectionActionLabels[lang][action] || action}</strong> · <span className="inspection-status" data-status={item.status}>{inspectionOperationLabels[lang][item.status] || item.status}</span><p>{item.response_status ? `HTTP ${item.response_status} · ` : ''}{inspectionTime(item.created_at, lang)}</p></li>; })}</ol> : <p className="inspection-muted">{text.noOperations}</p>}</details>
+    <details className="inspection-section inspection-fold inspection-handling-history"><summary>{text.handlingHistory} ({historyRows.length})</summary>{historyRows.length ? <div className="inspection-table-scroll" tabIndex={0} role="region" aria-label={text.handlingHistory}><table className="inspection-history-table"><caption className="sr-only">{text.handlingHistory}</caption><thead><tr><th scope="col">{text.historyTime}</th><th scope="col">{text.historyActor}</th><th scope="col">{text.historyAction}</th><th scope="col">{text.historyResult}</th></tr></thead><tbody>{historyRows.map((item) => <tr key={item.key}><td>{inspectionTime(item.at, lang)}</td><td>{item.actor}</td><td>{item.action}</td><td>{item.result}</td></tr>)}</tbody></table></div> : <p className="inspection-muted">{text.noOperations}</p>}</details>
+    <details className="inspection-help inspection-diagnostics"><summary><span aria-hidden="true">ⓘ</span> {text.diagnosticDetails}</summary>
+      <details className="inspection-fold"><summary>{text.history} ({request.audit.length})</summary>{request.audit.length ? <ol className="inspection-history">{request.audit.map((item) => <li key={item.id}><strong>{item.action}</strong> · {item.actor_name} · {text.version} {item.version}<p>{item.reason}</p><small>{inspectionTime(item.created_at, lang)}</small></li>)}</ol> : <p className="inspection-muted">{text.noHistory}</p>}</details>
+      <details className="inspection-fold"><summary>{text.operations} ({request.operations.length})</summary>{request.operations.length ? <ol className="inspection-history">{request.operations.map((item) => <li key={item.id}><strong>{item.scope.split(':').slice(-1)[0]}</strong> · <span className="inspection-status" data-status={item.status}>{inspectionOperationLabels[lang][item.status] || item.status}</span><p>{item.response_status ? `HTTP ${item.response_status} · ` : ''}{text.historyCreated}: {inspectionTime(item.created_at, lang)} · {text.historyCompleted}: {inspectionTime(item.completed_at, lang)}</p></li>)}</ol> : <p className="inspection-muted">{text.noOperations}</p>}</details>
+    </details>
   </section>;
 }

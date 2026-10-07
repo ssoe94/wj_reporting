@@ -48,7 +48,7 @@ function nodes(node: any, visible = false): Element[] {
   return [node, ...nodes(children, visible)];
 }
 function content(node: any, visible = false): string {
-  if (Array.isArray(node)) return node.map((child) => content(child, visible)).join(' ');
+  if (Array.isArray(node)) return node.map((child) => content(child, visible)).join('');
   if (node === null || node === undefined || typeof node === 'boolean') return '';
   if (typeof node !== 'object') return String(node);
   if (visible && node.type === 'details' && !node.props.open) return content(summary(node), visible);
@@ -201,6 +201,123 @@ test('production inspection keeps its MES QC status even if a trial projection i
     assert.equal(metaValue(view, copy.inspectionCopy[lang].mesQcStatus), copy.mesQcLabels[lang][4]);
     assert.ok(!view.text(true).includes(copy.inspectionCopy[lang].mesTrialVerdict));
   }
+});
+
+test('one semantic item table keeps each criterion, labelled value and judgement aligned and independently disabled', async () => {
+  const initial = fixture();
+  initial.inspection_items[0].unit = 'mm'; initial.inspection_items[0].minimum = '0.50'; initial.inspection_items[0].maximum = '3.00';
+  initial.inspection_items.push({ id: 'synthetic-choice', label: 'SYNTHETIC-VISUAL', kind: 'choice', options: ['OK', 'NG'], unit: '', required: false, evidence_required: false });
+  initial.measurements.push({ item_id: 'synthetic-choice', value: 'OK', judgement: 'pass', evidence_url: '' });
+  const view = harness(initial);
+  const table = view.nodes(true).filter((node) => node.type === 'table');
+  assert.equal(table.length, 1, 'All items belong to one working table');
+  assert.equal(content(nodes(table[0]).find((node) => node.type === 'caption')).trim(), copy.inspectionCopy.ko.items);
+  assert.equal(nodes(table[0]).filter((node) => node.type === 'th' && node.props.scope === 'col').length, 4);
+  const rows = nodes(table[0]).filter((node) => node.type === 'tr' && nodes(node).some((child) => child.type === 'th' && child.props.scope === 'row'));
+  assert.equal(rows.length, 2);
+  assert.ok(content(rows[0]).includes('1. SYNTHETIC-DIMENSION'));
+  for (const criterion of ['mm', '0.50', '3.00']) assert.ok(content(rows[0]).includes(criterion));
+  assert.ok(content(rows[1]).includes(copy.inspectionCopy.ko.optional));
+  const controls = nodes(table[0]).filter((node) => ['input', 'select'].includes(String(node.type)));
+  assert.equal(new Set(controls.map((node) => node.props.id)).size, 4);
+  for (const control of controls) {
+    const label = nodes(table[0]).find((node) => node.type === 'label' && node.props.htmlFor === control.props.id);
+    assert.ok(label, 'Every control keeps a unique native label association');
+    assert.equal(control.props.disabled, false);
+  }
+  assert.equal(content(nodes(rows[0]).find((node) => node.type === 'label')).trim(), '측정·관찰 값 *');
+  const value = controls.find((node) => node.type === 'input')!;
+  value.props.onChange({ target: { value: '2.50' } }); view.render();
+  assert.ok(view.nodes(true).some((node) => node.type === 'select' && node.props.value === 'OK'));
+  view.button(copy.inspectionCopy.ko.save).props.onClick(); await view.settle();
+  const attempt = (view.writes[0] as unknown[])[1] as workflow.MutationAttempt;
+  assert.deepEqual((attempt.payload.measurements as model.InspectionMeasurement[]).map((item) => [item.item_id, item.value]), [['synthetic-item', '2.50'], ['synthetic-choice', 'OK']]);
+  initial.capabilities.can_edit = false;
+  const readonly = harness(initial);
+  assert.ok(readonly.nodes(true).filter((node) => ['input', 'select'].includes(String(node.type))).every((node) => node.props.disabled === true));
+});
+
+test('required evidence remains discoverable and editable without exposing optional URLs in the working table', () => {
+  const initial = fixture(); initial.require_evidence = true; initial.inspection_items[0].evidence_required = true;
+  initial.measurements[0].evidence_url = 'https://example.test/synthetic-item-evidence';
+  initial.evidence = [{ label: 'SYNTHETIC-COMMON', url: 'https://example.test/synthetic-common-evidence' }];
+  const view = harness(initial); const text = copy.inspectionCopy.ko;
+  assert.ok(view.text(true).includes(text.evidenceRequired));
+  assert.ok(view.text(true).includes(text.requiredEvidenceHint));
+  assert.equal(view.nodes(true).filter((node) => node.type === 'input' && node.props.type === 'url').length, 0);
+  assert.equal(view.nodes(true).filter((node) => node.type === 'a').length, 0);
+  const evidence = view.nodes().find((node) => node.type === 'details' && node.props.className?.includes('inspection-evidence-help'))!;
+  evidence.props.open = true;
+  const urlInputs = view.nodes(true).filter((node) => node.type === 'input' && node.props.type === 'url');
+  assert.equal(urlInputs.length, 2); assert.ok(urlInputs.every((node) => node.props.disabled === false));
+  assert.ok(view.text(true).includes(`1. SYNTHETIC-DIMENSION · ${text.itemEvidence} *`));
+  assert.ok(view.nodes(true).some((node) => node.type === 'a' && node.props.href === initial.measurements[0].evidence_url));
+  initial.capabilities.can_edit = false;
+  const readonly = harness(initial);
+  assert.ok(readonly.nodes().filter((node) => node.type === 'input' && node.props.type === 'url').every((node) => node.props.disabled === true));
+  initial.capabilities.can_edit = true; initial.measurements[0].evidence_url = 'https://example.test/synthetic?unsafe=1';
+  const invalid = harness(initial);
+  assert.ok(invalid.nodes(true).some((node) => node.props.role === 'alert' && content(node).includes(text.unsafeEvidence)));
+  assert.ok(!invalid.nodes().some((node) => node.type === 'a' && node.props.href === initial.measurements[0].evidence_url));
+  assert.equal(invalid.button(text.save).props.disabled, true);
+});
+
+test('long readonly text and choice measurements remain reachable in a wrapping full-value disclosure', () => {
+  for (const kind of ['text', 'choice'] as const) {
+    const initial = fixture('completed'); initial.capabilities.can_edit = false;
+    const value = 'SYNTHETIC-LONG-READONLY-VALUE-完整观测值';
+    initial.inspection_items[0].kind = kind;
+    if (kind === 'choice') initial.inspection_items[0].options = [value, 'SYNTHETIC-OTHER'];
+    initial.measurements[0].value = value;
+    const view = harness(initial);
+    const field = view.nodes(true).find((node) => node.type === (kind === 'choice' ? 'select' : 'input') && node.props.value === value)!;
+    assert.equal(field.props.disabled, true);
+    const fullValue = view.nodes(true).find((node) => node.type === 'details' && node.props.className?.includes('inspection-full-value'))!;
+    assert.ok(content(fullValue, true).includes(copy.inspectionCopy.ko.fullValue));
+    assert.ok(!fullValue.props.open); fullValue.props.open = true;
+    assert.ok(content(fullValue, true).includes(value)); assert.equal(view.writes.length, 0);
+  }
+});
+
+test('compact history preserves real actors and unknown results while raw codes and long reasons stay separately folded', () => {
+  const initial = fixture('completed'); const reason = 'SYNTHETIC-LONG-REASON '.repeat(40);
+  initial.audit = [
+    { id: 1, actor_name: 'SYNTHETIC-AUDIT-ACTOR', action: 'mes-save_reserved', version: 4, status: 'approved', reason, result_digest: '', created_at: '2026-10-06T03:00:00Z' },
+    { id: 2, actor_name: 'SYNTHETIC-AUDIT-ACTOR', action: 'mes-finish_unknown', version: 5, status: 'approved', reason: '', result_digest: '', created_at: '2026-10-06T03:01:00Z' },
+  ];
+  initial.operations = [{ id: 1, scope: '18:42:mes-save', key: 'SYNTHETIC-KEY', status: 'succeeded', response_status: 200,
+    created_at: '2026-10-06T03:02:00Z', completed_at: '2026-10-06T03:02:30Z' }];
+  for (const lang of ['ko', 'zh'] as const) {
+    const view = harness(initial, lang); const text = copy.inspectionCopy[lang];
+    assert.ok(!view.text(true).includes(reason)); assert.ok(!view.text(true).includes('HTTP 200'));
+    const history = view.nodes().find((node) => node.type === 'details' && node.props.className?.includes('inspection-handling-history'))!;
+    assert.ok(!history.props.open); history.props.open = true;
+    const table = nodes(history).find((node) => node.type === 'table')!;
+    const rows = nodes(table).filter((node) => node.type === 'tr' && nodes(node).some((child) => child.type === 'td'));
+    assert.equal(rows.length, 3);
+    assert.deepEqual(nodes(rows[0]).filter((node) => node.type === 'td').map((node) => content(node).trim()),
+      [copy.inspectionTime(initial.operations[0].created_at, lang), '—', copy.inspectionHistoryActionLabel(lang, 'mes-save'), copy.inspectionOperationLabels[lang].succeeded]);
+    assert.ok(content(rows[1]).includes('SYNTHETIC-AUDIT-ACTOR'));
+    assert.ok(content(rows[1]).includes(copy.inspectionOperationLabels[lang].unknown));
+    assert.ok(content(rows[2]).includes(copy.inspectionOperationLabels[lang].pending));
+    for (const hidden of ['mes-save', 'mes-finish', 'HTTP 200', reason, 'SYNTHETIC-KEY', initial.assigned_to_name]) assert.ok(!content(history, true).includes(hidden));
+    assert.equal(copy.inspectionHistoryResultLabel(lang, 'mes-save', 'approved'), text.historyUnknownResult);
+    const diagnostics = view.nodes().find((node) => node.type === 'details' && node.props.className?.includes('inspection-diagnostics'))!;
+    diagnostics.props.open = true;
+    for (const fold of nodes(diagnostics).filter((node) => node.type === 'details')) fold.props.open = true;
+    assert.ok(view.text(true).includes(reason)); assert.ok(view.text(true).includes('HTTP 200'));
+    assert.equal(view.writes.length, 0);
+  }
+});
+
+test('standalone empty work information stays folded without a blank heading or an unrecorded zero quantity', () => {
+  const initial = fixture('completed'); initial.work_order_ref = ''; initial.target_quantity = '0';
+  const view = harness(initial);
+  assert.equal(content(view.nodes(true).find((node) => node.type === 'h2')).trim(), 'SYNTHETIC-QC');
+  assert.ok(view.text(true).includes(`${copy.inspectionCopy.ko.requestId} #42`));
+  assert.ok(!view.text(true).includes(copy.inspectionCopy.ko.quantity));
+  assert.ok(!view.nodes(true).some((node) => node.type === 'p' && content(node).trim() === '·'));
+  assert.ok(view.text(true).includes(LABEL));
 });
 
 test('unknown outcome keeps values and visible reconciliation warning while blocking retransmission', async () => {
