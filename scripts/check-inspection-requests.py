@@ -123,6 +123,7 @@ else:
         'production.test_mes_execution_contract', 'production.test_mes_delivery_transport',
         'production.test_mes_delivery', 'production.test_mes_delivery_credentials',
         'production.test_mes_delivery_views', 'production.test_mes_delivery_postgres',
+        'production.test_mes_delivery_read_contract', 'production.test_mes_read_status',
         'quality.test_inspection_kanban', 'quality.test_inspection_beta_access',
         'quality.test_inspection_transport', 'quality.test_inspection_migration',
         'quality.test_inspection_postgres', 'quality.test_inspection_test_database',

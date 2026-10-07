@@ -115,7 +115,8 @@ jobs:
             quality.test_inspection_trial_detail production.test_mes_execution_contract \
             production.test_mes_delivery_transport production.test_mes_delivery \
             production.test_mes_delivery_credentials production.test_mes_delivery_views \
-            production.test_mes_delivery_postgres
+            production.test_mes_delivery_postgres production.test_mes_delivery_read_contract \
+            production.test_mes_read_status
 
       - name: Validate isolated PostgreSQL inspection contracts
         run: |

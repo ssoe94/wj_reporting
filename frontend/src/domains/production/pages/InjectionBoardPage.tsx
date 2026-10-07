@@ -1,4 +1,5 @@
 import { InjectionQualityStatus } from '../components/InjectionQualityStatus';
+import { MesProductionReadStatusPanel } from '../components/MesProductionReadStatusPanel';
 import { reduceInjectionQuality } from '../injection-quality-status';
 import { selectBoardInspection } from '../injection-quality-binding';
 import { boardPartQueryOptions } from "../board-part-api";
@@ -1481,6 +1482,7 @@ export function InjectionBoardPage() {
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatTime(latestMesTime)}</strong></div>
           <div><span>{copy.refreshed}</span><strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong></div>
+          {!isVisitorMode ? <MesProductionReadStatusPanel businessDate={requestedBusinessDate} language={language} variant="board" /> : null}
           <button
             className="injection-board__history-button"
             onClick={openPreviousSummary}

@@ -53,6 +53,7 @@ import {
 import { describeLocalAiHistory } from "@/domains/ai/local-ai-history";
 import { useAuth } from "@/contexts/AuthContext";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { MesProductionReadStatusPanel } from "@/domains/production/components/MesProductionReadStatusPanel";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
   buildInjectionTransitionAnalysis,
@@ -5318,6 +5319,8 @@ export function ProductionDashboardPage() {
         title={copy.title}
         description={copy.description}
       />
+
+      <MesProductionReadStatusPanel businessDate={businessDate} language={language} />
 
       {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
 

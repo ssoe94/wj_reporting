@@ -9,14 +9,6 @@ from mes_oauth.pilot_scope import pilot_route_scope_required
 from .mes_delivery import DELIVERY_STAGES, implementation_readiness
 
 
-APPROVAL_GROUPS = (
-    ('material_bom_routing_resource', ('material', 'bom', 'routing', 'resource')),
-    ('quantity_unit_qc_plans', ('quantity', 'unit', 'first_qc_plan', 'periodic_qc_plan')),
-    ('warehouse_location_effects', ('warehouse', 'location', 'inventory_effects')),
-    ('actor_api_authority', ('actor', 'api_authority')),
-)
-
-
 class IsMesDeliverySuperuser(BasePermission):
     message = 'Production delivery readiness requires an active unrestricted superuser.'
 
@@ -59,8 +51,7 @@ class MesDeliveryReadinessView(APIView):
             'reason': readiness['reason'],
             'production_flow_status': 'not_evaluated',
             'receipt_verification': 'not_evaluated',
-            'missing_approval_groups': [
-                {'id': group, 'status': 'approval_required', 'requirements': list(requirements)}
-                for group, requirements in APPROVAL_GROUPS
-            ],
+            'missing_approval_groups': [],
+            'production_action_target': 'MES',
+            'inbound_action_target': 'MES',
         })

@@ -132,6 +132,25 @@ class AppTokenSupplier:
                     'usable_for_seconds': remaining}
 
     @sensitive_variables()
+    def peek_existing(self):
+        """Read a usable static/cached APP token without issuance or renewal.
+
+        Production status reads must preserve the existing user connection.
+        A missing process cache is an unavailable supply, never permission to
+        obtain a new APP or USER credential.
+        """
+        if getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is not True:
+            raise AppCredentialUnavailable('oauth_disabled')
+        with self._lock:
+            mode, key, _ = _configuration()
+            if mode == 'static':
+                return key
+            if (self._binding == app_credential_binding() and self._token is not None
+                    and self._clock() < self._deadline):
+                return self._token
+            raise AppCredentialUnavailable('app_credential_existing_supply_unavailable')
+
+    @sensitive_variables()
     def get(self):
         # This gate also prevents a future caller from minting while OAuth OFF.
         if getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is not True:
@@ -209,6 +228,11 @@ class AppTokenSupplier:
 
 
 _supplier = AppTokenSupplier()
+
+
+@sensitive_variables()
+def get_existing_app_access_token():
+    return _supplier.peek_existing()
 
 
 @sensitive_variables()

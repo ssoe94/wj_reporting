@@ -48,10 +48,10 @@ class MesDeliveryReadinessTests(TestCase):
         self.assertEqual(data['contract_stages'], [
             'work_order_create', 'work_order_dispatch', 'task_start', 'first_qc',
             'periodic_qc', 'progress_report', 'manual_inbound'])
-        self.assertIs(data['writers_implemented'], True)
+        self.assertIs(data['writers_implemented'], False)
         self.assertIs(data['runtime_connected'], False)
         self.assertIs(data['live_writes_enabled'], False)
-        self.assertEqual(data['reason'], 'production_scope_unapproved')
+        self.assertEqual(data['reason'], 'mes_read_only_workflow')
         self.assertEqual(data['production_flow_status'], 'not_evaluated')
         self.assertEqual(data['receipt_verification'], 'not_evaluated')
         self.assertEqual(len(queries), 1)
@@ -62,17 +62,11 @@ class MesDeliveryReadinessTests(TestCase):
         self.assertIn('no-store', response['Cache-Control'])
         self.assertEqual(response['Referrer-Policy'], 'no-referrer')
 
-    def test_missing_approvals_are_grouped_requirements_not_fabricated_business_observations(self):
-        groups = self.request(self.admin).data['missing_approval_groups']
-        self.assertEqual([group['id'] for group in groups], [
-            'material_bom_routing_resource', 'quantity_unit_qc_plans',
-            'warehouse_location_effects', 'actor_api_authority'])
-        self.assertTrue(all(group['status'] == 'approval_required' for group in groups))
-        requirements = {item for group in groups for item in group['requirements']}
-        self.assertEqual(requirements, {
-            'material', 'bom', 'routing', 'resource', 'quantity', 'unit',
-            'first_qc_plan', 'periodic_qc_plan', 'warehouse', 'location',
-            'inventory_effects', 'actor', 'api_authority'})
+    def test_read_only_workflow_keeps_production_and_inbound_actions_in_mes(self):
+        data = self.request(self.admin).data
+        self.assertEqual(data['missing_approval_groups'], [])
+        self.assertEqual(data['production_action_target'], 'MES')
+        self.assertEqual(data['inbound_action_target'], 'MES')
 
     def test_anonymous_and_staff_cannot_reach_readiness(self):
         with patch('production.mes_delivery_views.implementation_readiness') as readiness:

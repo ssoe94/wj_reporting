@@ -471,8 +471,8 @@ class ProductionDeliveryCoordinator:
 def implementation_readiness():
     """Pure code metadata: never reads records, credentials or the network."""
     return {
-        'writers_implemented': True,
+        'writers_implemented': False,
         'runtime_connected': False,
         'live_writes_enabled': False,
-        'reason': 'production_scope_unapproved',
+        'reason': 'mes_read_only_workflow',
     }
