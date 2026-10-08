@@ -2,7 +2,48 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
-## 최신 보완: 승인된 정상 재연결 시작, 공식 MES 로그인 인계
+## 최신 보완: 정상 재연결 성공·APP 1회·실제 시험 물료 후보 읽기
+
+이 절이 아래 재인증 대기와 fingerprint 차단 기록보다 우선한다. 사용자가 공식 MES 로그인을 완료했다고 알렸고 기존 `wj_report` APP token 발급 최대 1회를 명시 승인했다. 기존 IAB의 MES 개인정보 화면에서 **南京万佳 / Lee / 李宰荣**, WJ의 같은 superuser 계정을 확인했다. 이전 연결 준비는 만료되어 정상 UI에서 새 one-use bridge를 준비했고, 새 MES 창의 **WJ Lee 신원 확인 버튼을 정확히 1번** 눌렀다. 이중 클릭·callback 재시도·별도 APP 공급 함수 호출은 하지 않았다. 즉시 WJ 상태가 이전 값을 보여 추가 클릭하지 않고 DB 시도 기록을 먼저 읽었으며, 이후 서버 상태 읽기에서 연결 성공을 확인했다.
+
+| 실제 인증 증거 | 결과 |
+|---|---|
+| actor 18 OAuthAttempt | 생성 2026-10-08 23:40:55 UTC, consumed 23:41:21, **verified 23:41:24**, error 없음. 이전 22:19 attempt는 code 미예약/superseded |
+| callback APP 발급 로그 | `issued_at=2026-10-08T23:41:21.658468+00:00`, **http_attempts=1 / http_status=200 / api_code=200 / app_credential_issued**. 해당 구간/고정 event 조회 결과 1건 |
+| 저장 USER 인증 | actor 18, credential version **3**, 미철회, verified 23:41:24; credential/login authorization binding 일치, login session_version 2/revision 1 |
+| 현재 계정 fingerprint·정책 | WJ 서버 GET 결과 **connected / 유효한 연결 재사용**. 배포 코드 `ConnectionStatus.get()`의 `vault._login()` 및 `vault.decision()`은 현재 actor의 eligibility/identity/session/current authorization digest/정책/clock/기간을 검사하고 connected를 반환함. 단순 동일 digest SQL만으로 현재 권한 일치를 주장한 것이 아님 |
+| 현재 만료 | provider/overall/idle 2026-10-09 23:41:23 UTC, consent 23:41:24 UTC. 화면은 중국시간 2026-10-10 07:41 표시 |
+
+callback의 expected MES 사용자 비교와 USER code 교환/userinfo 검증을 통과해 verified 및 encrypted credential 저장까지 정상 지원 경로에서 완료됐다. token·code·cookie·secret·fingerprint 원문은 출력하거나 문서에 포함하지 않았다. 정상 인증 과정의 bridge/session/attempt/credential 메타데이터 저장은 있었으며, **생산 데이터/권한/운영 설정/migration/배포 변경은 0건**이다. APP budget은 이번 callback의 1회로 소진했으므로 추가 발급이 가능한 business fallback API를 호출하지 않았다. 이후 master 읽기는 기존 MES 브라우저 로그인으로 공식 화면을 사용했다. 인증 성공은 개별 工单 쓰기 권한·모든 mapping·tenant 부수효과 검증과 별도다.
+
+### 실제 master 후보와 생성 전 남은 사실
+
+공식 물료 목록의 전체 표시는 **12,410건**이었다. `物料名称=测试` 한 조건 조회에서 아래 한 건을 찾고 상세를 읽었다. inventory snapshot 부분집합 조회가 아닌 실제 물료 master UI다. 숫자 ID는 URL에서 읽은 **문자열**로 보존했다.
+
+| 시험 후보 (아직 선택/승인된 생성 target 아님) | 읽은 값 |
+|---|---|
+| 이름 / code / material ID | `测试物料` / `0` / `1734569511470476` |
+| 상태 / 단위 | 启用中 / 主单位·自制单位·投料单位 `个` |
+| 업무 범위 | 仓储、采购、销售、自制、质量、投料 |
+| 투입 규칙 | 仅允许扫码投料=否, **是否出库=是**, 关键件=否, **是否倒冲=否** |
+| 기본 출력 위치·batch rule | 화면에 `-`; 쓰기 값으로 사용하지 않음 |
+| material master version / unit ID | 상세 UI에 확인 가능한 값 없음; 목록更新시각이나 inventory version으로 대체하지 않음 |
+| BOM | 官方 物料清单에서 `父项物料名称=测试物料` 조회 결과 **暂无数据**. 전체 tenant에 BOM이 없다는 주장이나 권한 범위 밖 부재 증거로 확대하지 않음 |
+
+투입의 출고/backflush 설정은 **투입 동작의 규칙**이며 工单 생성만으로 자동 출고가 발생한다는 판정은 아니다. 동시에 이름에 ‘测试’가 있고 backflush가 否라는 이유만으로 재고/검사/자동 下达/开工 영향이 없다고 판정할 수 없다. 생성 폼 저장, 新建物料/BOM, 下达/开工/报工/投料/입출고/검사 버튼은 누르지 않았다. 회사 설정 메뉴를 찾는 읽기 탐색만 수행했으며 자동 처리 tenant 규칙은 아직 검증되지 않았다.
+
+**다음에 고정할 대상:** 이 물료 `0 / 测试物料`를 격리 시험 제품으로 쓰는지, 또는 기존 승인 시험 제품을 지정하는지; 그 제품의 시험 입력 원료/BOM/version/unit ID/배합·소요량, 공정·route, 시험 설비/금형, 최소 유효 수량, planned start/end. 후보에 연결된 BOM이 조회되지 않았으므로 원료를 임의 추가하거나 보통 생산 원료/설비로 대체하지 않는다. 자동 dispatch/start/입고·출고/backflush/QC 생성의 tenant 설정 또는 책임자의 명시적 영향 검토 근거를 확보한 뒤 정확한 request digest를 정한다. 단순 생성 의도는 이미 승인되어 있어 반복 승인 요청은 필요 없지만, 아직 정해지지 않은 이 대상/영향 사실과 배포·schema·trusted bridge 실행 범위는 별개다. qty/end update sender 및 campaign 실제 생산·순입고 adapter 미구현 경계도 계속 남는다.
+
+| 실제 검토 캡처 (합성 데이터 아님, version 0) | Library ID |
+|---|---|
+| 재연결 성공 / `mes-reauth-connected.jpg` | `libfile_cc7a408391748191ac00cb79c30994f4` |
+| 시험 물료 기본정보 / `mes-test-material-detail.jpg` | `libfile_f1103b83f07881919eb192a289ba9fa1` |
+| 투입 출고·backflush / `mes-test-material-feeding.jpg` | `libfile_afea670b3dd08191a660dfb78fecc3ec` |
+| 시험 물료 BOM 조회 없음 / `mes-test-material-bom-empty.jpg` | `libfile_8c2c144f1c1c81918d771bb9f108be25` |
+
+파일은 `output/plan-workflow/`에 있으며 모두 직접 열어 확인했다. 인증 화면은 현재 브라우저의 1053×1291 실제 capture이며 이전 1280×720 합성 UI 레이아웃 시험을 새로 했다는 뜻이 아니다. 비밀값이나 인위적 재배치/합성은 없다. WJ 탭 8, 사용자 로그인 MES 탭 9, 시험 후보 상세 탭 10을 다음 검토용 handoff로 보존했다. 이번 코드/schema 변경 없음; 인증·UI·read-only SQL/고정 diagnostic 로그 검증 및 `git diff --check`만 수행했다. UI/build/backend 시험은 재실행하지 않았다.
+
+## 이전 보완: 승인된 정상 재연결 시작, 공식 MES 로그인 인계
 
 사용자가 정상 WJ 로그인·MES 재연결에 `진행해`라고 승인했다. 기존 IAB에서 WJ production frontend를 열었으며 같은 `superuser` 계정으로 로그인되어 있었다. 사용자 메뉴 → MES 연결에서 `MES-CONN-AUTHORIZATION-CHANGED`를 실제 확인하고 **MES 다시 연결**을 눌렀다. 정상 UI의 one-use bridge/launch 준비와 공식 MES 이동만 수행했으며 강제 fingerprint 수정, 권한 추가, 임의 DB 수정은 하지 않았다. 이전의 DB 변경 0건은 직전 read-only probe에 대한 기록이다. 이번 정상 인증 시작은 지원 UI가 관리하는 bridge/session/attempt 메타데이터를 만들 수 있다.
 
