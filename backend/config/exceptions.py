@@ -4,6 +4,7 @@ Custom exception handlers for DRF to ensure all API errors return JSON
 from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed
 from django.http import Http404
 from django.core.exceptions import PermissionDenied
 
@@ -44,6 +45,13 @@ def custom_exception_handler(exc, context):
     
     # Add custom headers to prevent caching
     if response is not None:
+        # DRF serializes plain AuthenticationFailed as detail only. Preserve
+        # these definitive login codes so clients do not retry a rejected
+        # session as a temporary connection outage.
+        if isinstance(exc, AuthenticationFailed) and isinstance(response.data, dict):
+            code = exc.get_codes()
+            if code in ('inspection_login_required', 'session_idle_expired'):
+                response.data.setdefault('code', code)
         response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response['Pragma'] = 'no-cache'
         response['Expires'] = '0'
