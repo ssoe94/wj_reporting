@@ -136,6 +136,28 @@ class ExecuteTests(SimpleTestCase):
         [result] = self.run_items(mes, item())
         self.assertEqual((result['outcome'], result['reason']), ('uncertain', 'readback_mismatch'))
 
+    def test_matching_status_on_another_task_machine_or_order_is_not_confirmation(self):
+        for after in [detail(task_id='999'), detail(code='OTHER'), detail(machine=16), detail(work_order='OTHER')]:
+            after['data']['taskStatus']['code'] = 3
+            with self.subTest(after=after):
+                mes = FakeMes([detail(status=2), after], [{'code': 200}])
+                [result] = self.run_items(mes, item())
+                self.assertEqual((result['outcome'], result['reason']), ('uncertain', 'readback_mismatch'))
+                self.assertEqual(len(mes.write_paths()), 1)
+
+    def test_close_acknowledgment_without_readback_is_never_confirmation(self):
+        for data in [
+            {'successAmount': 0, 'failAmount': 1, 'failResults': []},
+            {'successAmount': 99, 'failAmount': 0, 'failResults': []},
+            {'successAmount': 1, 'failAmount': 0, 'failResults': []},
+            {},
+        ]:
+            with self.subTest(data=data):
+                mes = FakeMes([detail()], [{'code': 200, 'data': data}])
+                [result] = self.run_items(mes, item('close_work_order'))
+                self.assertEqual((result['outcome'], result['reason']), ('uncertain', 'close_readback_unverified'))
+                self.assertEqual(mes.write_paths(), [CLOSE_PATH])
+
     def test_work_orders_close_in_one_call_with_per_order_results(self):
         mes = FakeMes(
             [detail('1', 2, work_order='GD-1'), detail('2', 3, work_order='GD-2', code='C2'), detail('3', 1, work_order='GD-1', code='C3')],
@@ -148,7 +170,7 @@ class ExecuteTests(SimpleTestCase):
             item('close_work_order', '2', 3, work_order='GD-2', code='C2'),
             item('close_work_order', '3', 1, work_order='GD-1', code='C3'),
         )
-        self.assertEqual([r['outcome'] for r in results], ['confirmed', 'rejected', 'confirmed'])
+        self.assertEqual([r['outcome'] for r in results], ['uncertain', 'rejected', 'uncertain'])
         self.assertEqual(mes.write_paths(), [CLOSE_PATH])
         self.assertEqual(mes.calls[-1][1], {'workOrderCodeList': ['GD-1', 'GD-2'], 'operateReason': '계획 외 작업'})
         self.assertIn('不允许', results[1]['mes_message'])

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from .mes_progress import extract_machine_number
@@ -214,7 +214,8 @@ def execute_actions(
         except Exception:
             after = None
         status_after = _status_code(after)
-        outcome = 'confirmed' if status_after == expected_after else 'uncertain'
+        expected = replace(item, expected_status=expected_after)
+        outcome = 'confirmed' if after is not None and _mismatch(expected, after) is None else 'uncertain'
         results.append(_result(
             item, outcome, reason='' if outcome == 'confirmed' else 'readback_mismatch',
             status_after=status_after, **fields,
@@ -239,7 +240,6 @@ def _close_work_orders(items: list[ActionItem], reason: str, send: Sender) -> li
     for entry in (data.get('failResults') if isinstance(data, dict) else None) or []:
         if isinstance(entry, dict) and isinstance(entry.get('workOrderCode'), str):
             failed[entry['workOrderCode']] = _safe_message({'message': entry.get('failedReason')})
-    success_reported = _ok(payload) and isinstance(data, dict) and type(data.get('successAmount')) is int
     results = []
     for item in items:
         if not _ok(payload):
@@ -247,11 +247,11 @@ def _close_work_orders(items: list[ActionItem], reason: str, send: Sender) -> li
         elif item.work_order_code in failed:
             results.append(_result(item, 'rejected', reason='mes_rejected',
                                    **{**fields, 'mes_message': failed[item.work_order_code]}))
-        elif success_reported:
-            # MES reports the close per work order; the board re-reads the task list afterwards.
-            results.append(_result(item, 'confirmed', **fields))
         else:
-            results.append(_result(item, 'uncertain', reason='readback_mismatch', **fields))
+            # A success count is only an acknowledgment, not verified state for this
+            # work order. Its closed-state read contract has not been validated.
+            # Disappearance from the open-task list cannot prove closure either.
+            results.append(_result(item, 'uncertain', reason='close_readback_unverified', **fields))
     return results
 
 
