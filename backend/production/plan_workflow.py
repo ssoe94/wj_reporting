@@ -370,6 +370,7 @@ def preview(start, end, plan_type):
                     if set(order.members) & set(group['members'])]
         group['operation'] = 'create'
         group['work_order_code'] = None
+        group['mes_id'] = None
         group['reported_quantity'], group['inbound_quantity'] = None, None
         if overlaps:
             if len(overlaps) != 1 or not set(overlaps[0].members).issubset(set(group['members'])):
@@ -377,6 +378,7 @@ def preview(start, end, plan_type):
             else:
                 order = overlaps[0]
                 group['work_order_code'] = order.code
+                group['mes_id'] = str(order.mes_id) if order.mes_id else None
                 group['order_version'] = order.version
                 group['operation'] = 'update' if order.mes_id else 'prepare'
                 group['reported_quantity'] = str(order.reported_quantity) if order.observed_at else None

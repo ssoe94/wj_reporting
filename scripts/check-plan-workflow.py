@@ -63,11 +63,21 @@ elif preview:
     ProductionPlanListView.authentication_classes = [SyntheticAuthentication]
     from production.test_plan_workflow import seed_catalog, new_plan, approval_data
     from production.plan_workflow import approve_materials
-    seed_catalog()
+    catalog = seed_catalog()
+    catalog.payload.append({'material': {'id': '17000000000000011', 'code': 'SYNTHETIC-RM-B',
+        'name': 'SYNTHETIC Substitute', 'version': 'V2'}, 'amount': {'amount': '20',
+        'unit': {'id': '17000000000000002', 'name': '千克'}}})
+    catalog.save(update_fields=['payload'])
     for day, quantity in [(8, 1000), (9, 1000), (10, 300)]:
         plan = new_plan(day=day, quantity=quantity, actor=user)
         approve_materials(plan, approval_data(plan), user)
     new_plan(day=8, part='SYNTHETIC-UNCONFIRMED', machine='imm02', actor=user)
+    # Several orders on a small monitor; all isolated fixtures, no MES masters.
+    for index in range(3, 7):
+        plan = new_plan(day=8, part=f'SYNTHETIC-P{index:02}', machine=f'imm{index:02}', actor=user)
+        approved = approval_data(plan)
+        approved['resource_code'] = f'SYNTHETIC-IMM{index:02}'
+        approve_materials(plan, approved, user)
     with patch('requests.sessions.Session.request', side_effect=AssertionError('MES network forbidden in synthetic preview')):
         call_command('runserver', '127.0.0.1:8029', use_reloader=False)
 else:

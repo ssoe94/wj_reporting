@@ -12,6 +12,7 @@ export type WorkflowRow = { id: number; uid: string; version: number; plan_date:
   recommendation: { version: number; snapshot: MaterialSnapshot } | null };
 export type WorkflowGroup = { key: string; machine_name: string; part_no: string; quantity: string;
   planned_start: string; planned_end: string; operation: string; blockers: string[]; work_order_code: string | null;
+  mes_id?: string | null; versions?: Record<string, number>;
   members: string[]; reported_quantity: string | null; inbound_quantity: string | null };
 export type WorkflowRequest = { uid: string; work_order_code: string; operation: string; state: string; blockers: string[] };
 export type WorkflowData = { write_enabled: false; can_edit: boolean; can_manage_defaults: boolean; rows: WorkflowRow[];

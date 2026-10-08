@@ -175,6 +175,7 @@ class PlanWorkflowTests(TestCase):
         for plan in plans: self.approve(plan)
         group = self.groups()[0]
         self.assertEqual(group['quantity'], '2300.0')
+        self.assertIsNone(group['mes_id'])
         self.assertEqual(group['planned_end'], '2026-10-11T08:00:00+08:00')
         with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(self.groups())):
             result = prepare(date(2026,10,8), date(2026,10,10), 'injection', [group['key']], self.user)[0]
@@ -193,6 +194,7 @@ class PlanWorkflowTests(TestCase):
             self.assertEqual(group['quantity'], '3200.0')
             self.assertEqual(group['planned_end'], '2026-10-12T08:00:00+08:00')
             self.assertEqual(group['operation'], 'update')
+            self.assertEqual(group['mes_id'], '17000000000000007')
             result2 = prepare(date(2026,10,8), date(2026,10,11), 'injection', [group['key']], self.user)[0]
             update = PlanMesRequest.objects.get(uid=result2['uid'])
             self.assertEqual(update.work_order.code, req.work_order.code)
