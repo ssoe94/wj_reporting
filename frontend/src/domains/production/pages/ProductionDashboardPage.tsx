@@ -17,23 +17,19 @@ import {
   createProductionPlanItem,
   getAiJob,
   getAiWorkerStatus,
-  getLatestAiJob,
   getMachiningProvision,
   getInjectionActivityConfirmations,
   getInjectionDowntimeConfirmations,
   getProductionMesReportStats,
-  getProductionAiBriefing,
   getProductionPlanSummary,
   getProductionStatus,
   resetInjectionActivityConfirmation,
   saveInjectionActivityConfirmation,
   updateProductionPartCavity,
-  type InjectionActivityConfirmation,
   type InjectionActivityType,
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
   type ProductionAiAskResponse,
-  type ProductionAiBriefingResponse,
   type ProductionAiChatHistoryMessage,
   type ProductionAiModelId,
   type ProductionMesReportStatsResponse,
@@ -42,18 +38,13 @@ import {
   type ProductionStatusResponse,
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
-import { DeepAnalysisPanel } from "@/domains/ai/DeepAnalysisPanel";
 import {
   describeAiModel,
   getAiTierLabel,
   getAiWorkerLabel,
-  getAiWorkerStateLabel,
   withAiModelName,
 } from "@/domains/ai/model-labels";
-import { describeLocalAiHistory } from "@/domains/ai/local-ai-history";
-import { useAuth } from "@/contexts/AuthContext";
-import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
-import { MesTaskReconciliationPanel } from "@/domains/production/components/MesTaskReconciliationPanel";
+import { InjectionMachineBoard } from "@/domains/production/components/InjectionMachineBoard";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
   buildInjectionTransitionAnalysis,
@@ -391,7 +382,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 AI 보조 설명을 제공합니다.",
+    description: "사출기별 계획 진행, 정지·전환, MES 작업 상태를 한 화면에서 확인합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     dataUnavailable: "생산 데이터를 확인할 수 없습니다.",
     dataUnavailableHint: "필수 데이터 조회가 완료되지 않아 수치와 브리핑을 표시하지 않습니다. 조회 실패는 생산 실적 0건을 의미하지 않습니다.",
@@ -635,7 +626,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 AI 辅助说明。",
+    description: "按注塑机查看计划进度、停机·换型和 MES 任务状态。",
     loading: "正在读取生产现况。",
     dataUnavailable: "无法确认生产数据。",
     dataUnavailableHint: "必要数据尚未读取完成，暂不显示数值和简报。读取失败不代表生产实绩为 0。",
@@ -1034,61 +1025,6 @@ function getStringField(source: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
-function getRecordField(source: Record<string, unknown>, key: string) {
-  const value = source[key];
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function workerResultMatchesBriefing(
-  result: Record<string, unknown>,
-  briefing: ProductionAiBriefingResponse | undefined,
-) {
-  if (!briefing) return false;
-  const resultFreshness = getRecordField(result, "data_freshness");
-  const resultFacts = getRecordField(result, "facts");
-  const resultInjection = resultFacts ? getRecordField(resultFacts, "injection") : null;
-  const resultMachining = resultFacts ? getRecordField(resultFacts, "machining") : null;
-  const resultWarnings = result.warnings;
-  const resultTopRisks = result.top_risks;
-  if (
-    !resultFreshness
-    || !resultInjection
-    || !resultMachining
-    || !Array.isArray(resultWarnings)
-    || !Array.isArray(resultTopRisks)
-  ) return false;
-
-  const freshnessMatches = [
-    "last_plan_updated_at",
-    "last_mes_recorded_at",
-    "last_machining_reported_at",
-    "is_stale",
-  ].every((key) => (resultFreshness[key] ?? null) === (briefing.data_freshness[key as keyof typeof briefing.data_freshness] ?? null));
-  const processMatches = (
-    resultProcess: Record<string, unknown>,
-    currentProcess: ProductionAiBriefingResponse["facts"]["injection"],
-  ) => [
-    "actual_qty",
-    "planned_qty",
-    "progress_rate",
-    "time_progress_rate",
-    "gap_qty",
-    "status",
-    "active_equipment_count",
-    "running_equipment_count",
-    "total_equipment_count",
-  ].every(
-    (key) => resultProcess[key] === currentProcess[key as keyof typeof currentProcess],
-  );
-  return freshnessMatches
-    && processMatches(resultInjection, briefing.facts.injection)
-    && processMatches(resultMachining, briefing.facts.machining)
-    && JSON.stringify(resultWarnings) === JSON.stringify(briefing.warnings)
-    && JSON.stringify(resultTopRisks) === JSON.stringify(briefing.top_risks);
-}
-
 function getProductionAiApiError(error: unknown): ProductionAiApiError {
   if (!isAxiosError(error)) {
     return { status: null, code: "", detail: "" };
@@ -1133,44 +1069,6 @@ function formatAiTimestamp(value: string | null | undefined, language: AppLangua
     second: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-const briefingWarningCopy: Record<AppLanguage, Record<string, string>> = {
-  ko: {
-    injection_mes_data_missing: "사출 MES 실적이 없어 사출 진행 판단이 제한됩니다.",
-    injection_mes_data_stale: "사출 MES 실적 갱신이 지연되고 있습니다.",
-    injection_capacity_coverage_incomplete: "일부 계획 설비의 사출 MES 형합 데이터가 없어 전체 진행 판단이 제한됩니다.",
-    injection_plan_missing: "사출 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
-    machining_plan_missing: "가공 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
-    machining_actual_missing: "가공 실적이 없어 가공 진행 판단이 제한됩니다.",
-    ai_model_unavailable: "AI 보조 설명은 사용할 수 없지만 검증된 계산 결과는 정상 표시됩니다.",
-    ai_question_enqueue_failed: "AI 보조 설명 요청을 등록하지 못했습니다.",
-  },
-  zh: {
-    injection_mes_data_missing: "无注塑 MES 实绩，注塑进度判断受限。",
-    injection_mes_data_stale: "注塑 MES 实绩更新延迟。",
-    injection_capacity_coverage_incomplete: "部分计划设备缺少注塑 MES 合模数据，整体进度判断受限。",
-    injection_plan_missing: "无注塑生产计划，无法充分判断计划达成情况。",
-    machining_plan_missing: "无加工生产计划，无法充分判断计划达成情况。",
-    machining_actual_missing: "无加工实绩，加工进度判断受限。",
-    ai_model_unavailable: "AI 辅助说明不可用，但已验证的计算结果仍正常显示。",
-    ai_question_enqueue_failed: "无法提交 AI 辅助说明请求。",
-  },
-};
-
-function localizeBriefingWarning(code: string, language: AppLanguage) {
-  const localized = briefingWarningCopy[language][code];
-  if (localized) return localized;
-  return language === "ko"
-    ? "일부 데이터의 최신성 또는 완전성을 추가로 확인해야 합니다."
-    : "部分数据的时效性或完整性需要进一步确认。";
-}
-
-function formatBriefingFilters(filters: Record<string, unknown>) {
-  return Object.entries(filters)
-    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join(", ");
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
@@ -2517,44 +2415,6 @@ function buildProductionBriefContext(
   };
 }
 
-function buildScreenBriefingFallback(context: ProductionBriefContext, language: AppLanguage) {
-  const injectionRate = context.injectionPlanQty > 0
-    ? (context.actualInjectionOutput / context.injectionPlanQty) * 100
-    : null;
-  const machiningRate = context.machiningPlanQty > 0
-    ? (context.actualMachiningOutput / context.machiningPlanQty) * 100
-    : null;
-  const answer = language === "ko"
-    ? [
-      `사출은 추정 ${formatNumber(context.actualInjectionOutput)}개${injectionRate === null ? "" : `로 계획의 ${injectionRate.toFixed(1)}%`}입니다.`,
-      `가공은 ${formatNumber(context.actualMachiningOutput)}개${machiningRate === null ? "" : `로 계획의 ${machiningRate.toFixed(1)}%`}입니다.`,
-      `최근 60분 가동 설비는 ${context.runningMachineCount}대이며, 무계획 형합은 ${formatNumber(context.unplannedInjectionShots)}회입니다.`,
-    ].join(" ")
-    : [
-      `注塑估算产量为 ${formatNumber(context.actualInjectionOutput)} 个${injectionRate === null ? "" : `，完成计划的 ${injectionRate.toFixed(1)}%`}。`,
-      `加工实绩为 ${formatNumber(context.actualMachiningOutput)} 个${machiningRate === null ? "" : `，完成计划的 ${machiningRate.toFixed(1)}%`}。`,
-      `最近60分钟运行设备 ${context.runningMachineCount} 台，无计划合模 ${formatNumber(context.unplannedInjectionShots)} 次。`,
-    ].join("");
-  const risks: Array<{ label: string; detail: string }> = [];
-  if (context.unplannedInjectionShots > 0) {
-    risks.push({
-      label: language === "ko" ? "무계획 가동 확인" : "确认无计划运行",
-      detail: language === "ko"
-        ? `${context.unplannedInjectionMachineCount}대에서 ${formatNumber(context.unplannedInjectionShots)}회 형합이 기록되었습니다. Part No.와 작업 목적을 확인하세요.`
-        : `${context.unplannedInjectionMachineCount} 台设备记录了 ${formatNumber(context.unplannedInjectionShots)} 次合模，请确认 Part No. 与作业目的。`,
-    });
-  }
-  if (context.injectionPlanQty <= 0 || context.machiningPlanQty <= 0) {
-    risks.push({
-      label: language === "ko" ? "생산 계획 확인" : "确认生产计划",
-      detail: language === "ko"
-        ? "계획이 없는 공정은 진행률과 지연 여부를 판단할 수 없습니다. 기준일 계획 등록 여부를 확인하세요."
-        : "无计划的工序无法判断进度与延期情况，请确认基准日计划是否已登记。",
-    });
-  }
-  return { answer, risks };
-}
-
 function buildMachiningProgressPreview(
   planSummary: ProductionPlanSummaryResponse | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
@@ -2870,21 +2730,6 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
         ))}
       </div>
 
-      <section className="panel production-brief-panel">
-        <div className="production-brief-panel__header">
-          <div className="mes-skeleton-heading">
-            <span className="mes-skeleton-line mes-skeleton-line--eyebrow" />
-            <span className="mes-skeleton-line mes-skeleton-line--title" />
-          </div>
-          <span className="mes-skeleton-line production-skeleton-button" />
-        </div>
-        <div className="production-brief-panel__body production-skeleton-brief">
-          <span className="mes-skeleton-line mes-skeleton-line--wide" />
-          <span className="mes-skeleton-line" />
-          <span className="mes-skeleton-line mes-skeleton-line--short" />
-        </div>
-      </section>
-
       <section className="panel production-progress-panel">
         <div className="mes-skeleton-heading">
           <span className="mes-skeleton-line mes-skeleton-line--eyebrow" />
@@ -2922,14 +2767,11 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
 
 export function ProductionDashboardPage() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const canRequestDeepAnalysis = Boolean(user?.is_staff);
   const [language] = useStoredLanguage();
   const currentDate = getShanghaiBusinessDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const aiModelId = PRODUCTION_AI_MODEL_ID;
-  const briefingModelId = PRODUCTION_AI_MODEL_ID;
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
   const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
@@ -3042,20 +2884,6 @@ export function ProductionDashboardPage() {
   const coreDashboardState = getDashboardDataState(coreDashboardSources);
   const isCoreDashboardDataReady = coreDashboardState.isReady;
   const hasCoreRefreshError = coreDashboardState.hasRefreshError;
-  const productionAiBriefingQuery = useQuery({
-    queryKey: ["production", "ai-briefing", businessDate, language],
-    queryFn: () => getProductionAiBriefing(businessDate, language),
-    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
-    refetchInterval: isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false,
-    retry: 1,
-  });
-  const latestAiJobQuery = useQuery({
-    queryKey: ["ai-job", "latest", businessDate, language, briefingModelId],
-    queryFn: () => getLatestAiJob(businessDate, language, briefingModelId),
-    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
-    refetchInterval: isCurrentDate ? 30_000 : false,
-    retry: false,
-  });
   const aiWorkerStatusQuery = useQuery({
     queryKey: ["ai-worker", "status", language],
     queryFn: () => getAiWorkerStatus(language),
@@ -3268,10 +3096,6 @@ export function ProductionDashboardPage() {
     ),
     [businessDate, language, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
-  const screenBriefingFallback = useMemo(
-    () => buildScreenBriefingFallback(briefContext, language),
-    [briefContext, language],
-  );
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
@@ -3282,6 +3106,10 @@ export function ProductionDashboardPage() {
     ),
     [activityConfirmationsQuery.data?.confirmations],
   );
+  const activityConfirmedKeys = useMemo(
+    () => new Set(activityConfirmationByMachine.keys()),
+    [activityConfirmationByMachine],
+  );
   const activityTypeOptions = useMemo<Array<{ value: InjectionActivityType; label: string }>>(() => [
     { value: "production", label: copy.activityProduction },
     { value: "test_shot", label: copy.activityTestShot },
@@ -3291,10 +3119,6 @@ export function ProductionDashboardPage() {
     { value: "quality_check", label: copy.activityQualityCheck },
     { value: "other", label: copy.activityOther },
   ], [copy]);
-  const unresolvedActivityReviewCount = useMemo(
-    () => realtimeProgress.rows.filter((row) => !row.hasPlan && !activityConfirmationByMachine.has(row.key)).length,
-    [activityConfirmationByMachine, realtimeProgress.rows],
-  );
   const selectedActivityConfirmation = selectedActivityRow
     ? activityConfirmationByMachine.get(selectedActivityRow.key)
     : undefined;
@@ -3305,12 +3129,6 @@ export function ProductionDashboardPage() {
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
-  const productionAiBriefing = productionAiBriefingQuery.isError ? undefined : productionAiBriefingQuery.data;
-  const latestAiJob = latestAiJobQuery.data ?? undefined;
-  const latestAiJobResult = latestAiJob?.result_payload ?? {};
-  const latestAiJobSummary = getStringField(latestAiJobResult, "summary").trim();
-  const latestAiJobSource = getStringField(latestAiJobResult, "source");
-  const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
   const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
   const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
   // The top-level status fields describe the local tier; `workers[]` lists every tier.
@@ -3321,7 +3139,6 @@ export function ProductionDashboardPage() {
     && aiWorkerStatus?.llm_ready === true
     && aiWorkerAvailableModelIds.includes(modelId);
   const aiSelectedModelIsAvailable = isAiModelAvailable(aiModelId);
-  const briefingModelIsAvailable = isAiModelAvailable(briefingModelId);
   const localAiWorkerEntry = aiWorkerStatus?.workers?.find((worker) => worker.tier === "local"
     || worker.available_model_ids?.includes(PRODUCTION_AI_MODEL_ID));
   // Show the model name only when the worker has reported one; never guess from copy.
@@ -3332,37 +3149,6 @@ export function ProductionDashboardPage() {
   }).displayName;
   const localAiWorkerLabel = withAiModelName(getAiWorkerLabel(language), localAiModelDisplayName);
   const localAiTierLabel = getAiTierLabel("local", language);
-  const latestAiJobActualModelId = getAiJobModelId(latestAiJob);
-  const latestAiJobUsedLocalLlm = latestAiJobSource === "local_llm_rewrite"
-    && !latestAiJobUsedFallback
-    && latestAiJob?.status === "completed"
-    && latestAiJobActualModelId === briefingModelId
-    && workerResultMatchesBriefing(latestAiJobResult, productionAiBriefing);
-  const latestAiJobModelDisplayName = getAiJobModelDisplayName(latestAiJob);
-  const briefingWorkerStateLabel = getAiWorkerStateLabel(aiWorkerState, language, localAiModelDisplayName);
-  const briefingModelStatusLabel = `${briefingWorkerStateLabel} · ${briefingModelIsAvailable ? copy.workerModelReady : copy.workerModelUnavailable}`;
-  const localAiHistory = describeLocalAiHistory(aiWorkerStatus, language);
-  const localAiHistoryClass = localAiHistory.state === "success" ? " production-ai-worker-status__pill--llm-ready"
-    : localAiHistory.state === "fallback" ? " production-ai-worker-status__pill--llm-unavailable" : "";
-  const briefingSeverityLabel = productionAiBriefing?.severity === "critical"
-    ? copy.severityCritical
-    : productionAiBriefing?.severity === "warning"
-      ? copy.severityWarning
-      : copy.severityNormal;
-  const briefingWarningLabels = productionAiBriefing
-    ? [...new Set(productionAiBriefing.warnings.map((warning) => localizeBriefingWarning(warning, language)))]
-    : [];
-  const briefingRiskEvaluationLimited = productionAiBriefing?.warnings.some((warning) => [
-    "injection_mes_data_missing",
-    "injection_mes_data_stale",
-    "injection_capacity_coverage_incomplete",
-    "injection_plan_missing",
-    "machining_plan_missing",
-    "machining_actual_missing",
-  ].includes(warning)) ?? false;
-  const briefingSourceLabel = briefingRiskEvaluationLimited
-    ? copy.deterministicSourceLimited
-    : copy.deterministicSource;
   const aiQuestionJob = aiQuestionJobQuery.data;
   const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
@@ -4500,23 +4286,6 @@ export function ProductionDashboardPage() {
     );
   }
 
-  function getActivityTypeLabel(activityType: InjectionActivityType) {
-    return activityTypeOptions.find((option) => option.value === activityType)?.label ?? activityType;
-  }
-
-  function getActivityConfirmationSummary(confirmation: InjectionActivityConfirmation) {
-    const confirmedAt = new Date(confirmation.confirmed_at);
-    const details = [
-      confirmation.part_no,
-      confirmation.model_name,
-      confirmation.note,
-      confirmation.confirmed_by_name
-        ? `${copy.activityConfirmedBy} ${confirmation.confirmed_by_name}${Number.isNaN(confirmedAt.getTime()) ? "" : ` ${formatTimeLabel(confirmedAt)}`}`
-        : "",
-    ].filter(Boolean);
-    return details.join(" · ") || copy.activityConfirmed;
-  }
-
   function openActivityConfirmation(row: RealtimeProgressRow) {
     const confirmation = activityConfirmationByMachine.get(row.key);
     setSelectedActivityRow(row);
@@ -4603,131 +4372,47 @@ export function ProductionDashboardPage() {
     });
   }
 
-  function renderProgressRow(row: RealtimeProgressRow) {
+  function renderProgressTrack(row: RealtimeProgressRow) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const displaySegments = getDisplaySegments(row.segments);
     const displayLabel = getLocalizedMachineLabel(row.label, language);
-    const isReviewRow = !row.hasPlan;
-    const activityConfirmation = isReviewRow ? activityConfirmationByMachine.get(row.key) : undefined;
-    const statusLabel = activityConfirmation
-      ? copy.activityConfirmed
-      : row.equipmentState === "running"
-      ? copy.running
-      : row.equipmentState === "paused"
-        ? copy.paused
-        : row.equipmentState === "unplanned_running"
-          ? copy.unplannedRunning
-          : row.equipmentState === "activity_review"
-            ? copy.activityReview
-            : "-";
-    const statusClass = [
-      "production-progress-status",
-      row.equipmentState === "running" ? "production-progress-status--running" : "",
-      row.equipmentState === "paused" ? "production-progress-status--paused" : "",
-      isReviewRow && !activityConfirmation ? "production-progress-status--review" : "",
-      activityConfirmation ? "production-progress-status--confirmed" : "",
-    ].filter(Boolean).join(" ");
-    const reviewIsRunning = row.equipmentState === "unplanned_running";
-    const reviewTitle = activityConfirmation
-      ? `${copy.activityConfirmed} · ${getActivityTypeLabel(activityConfirmation.activity_type)}`
-      : reviewIsRunning ? copy.productConfirmationTitle : copy.activityConfirmationTitle;
-    const reviewBody = activityConfirmation
-      ? getActivityConfirmationSummary(activityConfirmation)
-      : reviewIsRunning ? copy.productConfirmationBody : copy.activityConfirmationBody;
-
     return (
-      <article className={`production-progress-row${row.equipmentState === "paused" ? " production-progress-row--paused" : ""}${isReviewRow && !activityConfirmation ? " production-progress-row--review" : ""}${activityConfirmation ? " production-progress-row--confirmed" : ""}`} key={row.key}>
-        <div className="production-progress-row__head">
-          <div className="production-progress-row__identity">
-            <div className="production-progress-row__title">
-              <strong>{displayLabel}</strong>
-              {row.hasPlan ? (
-                <button
-                  aria-label={`${displayLabel} ${copy.detail}`}
-                  className="production-progress-detail-button"
-                  onClick={() => setSelectedProgressRow(row)}
-                  type="button"
-                >
-                  {copy.detail}
-                </button>
-              ) : null}
-            </div>
-            <span>
-              {isReviewRow
-                ? `${copy.noPlan} · ${copy.shotCount} ${formatNumber(row.shotCount)}`
-                : currentSegment
-                  ? `${copy.currentPart} ${currentSegment.partNo}`
-                  : copy.partProgress}
-            </span>
-            {row.equipmentState === "paused" ? (
-              <small className="production-progress-row__diagnostic">
-                {copy.noClampDuration} {formatNumber(Math.max(0, Math.round(row.idleMinutes ?? 0)))}m
-                {row.expectedCycleTimeSec !== null ? ` · ${copy.baselineCycleTime} ${row.expectedCycleTimeSec.toFixed(1)}s` : ""}
-              </small>
-            ) : null}
-          </div>
-          <div className="production-progress-row__state">
-            <span>{isReviewRow ? `${copy.shotCount} ${formatNumber(row.shotCount)}` : progressText}</span>
-            <em className={statusClass}>{statusLabel}</em>
-          </div>
-        </div>
-        {isReviewRow ? (
-          <div className={`production-progress-review-callout${activityConfirmation ? " production-progress-review-callout--confirmed" : ""}`}>
-            <div>
-              <strong>{reviewTitle}</strong>
-              <span>{reviewBody}</span>
-            </div>
-            <button className="production-progress-review-action" onClick={() => openActivityConfirmation(row)} type="button">
-              {activityConfirmation ? copy.activityEdit : reviewIsRunning ? copy.productInputAction : copy.activityCheckAction}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="production-progress-track-wrap">
-              <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
-                {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
-                  <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
-                    <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
-                  </span>
-                )}
-                {row.gapQty > 0 ? (
-                  <span
-                    className="production-part-overrun"
-                    style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
-                  >
-                    <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
-                  </span>
-                ) : null}
-              </div>
-              {renderProgressHoverCard({
-                label: displayLabel,
-                progressText,
-                actualLabel: copy.estimatedVsPlan,
-                actualQty: row.estimatedQty,
-                plannedQty: row.plannedQty,
-                gapQty: row.gapQty,
-                completedCount: row.completedCount,
-                inProgressCount: row.inProgressCount,
-                pendingCount: row.pendingCount,
-                currentPart: currentSegment?.partNo,
-                shotCount: row.shotCount,
-                recentShots: row.recentShots,
-                avgCavity: row.avgCavity,
-                showInjectionMetrics: true,
-                segments: row.segments,
-              })}
-            </div>
-            <div className="production-progress-state-strip">
-              <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
-              <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
-              <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
-              {renderOverrunChip(row.gapQty, row.plannedQty)}
-            </div>
-          </>
+    <div className="production-progress-track-wrap">
+      <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
+        {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
+          <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
+            <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
+          </span>
         )}
-      </article>
+        {row.gapQty > 0 ? (
+          <span
+            className="production-part-overrun"
+            style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
+          >
+            <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
+          </span>
+        ) : null}
+      </div>
+      {renderProgressHoverCard({
+        label: displayLabel,
+        progressText,
+        actualLabel: copy.estimatedVsPlan,
+        actualQty: row.estimatedQty,
+        plannedQty: row.plannedQty,
+        gapQty: row.gapQty,
+        completedCount: row.completedCount,
+        inProgressCount: row.inProgressCount,
+        pendingCount: row.pendingCount,
+        currentPart: currentSegment?.partNo,
+        shotCount: row.shotCount,
+        recentShots: row.recentShots,
+        avgCavity: row.avgCavity,
+        showInjectionMetrics: true,
+        segments: row.segments,
+      })}
+    </div>
     );
   }
 
@@ -5446,297 +5131,48 @@ export function ProductionDashboardPage() {
 
           {activeKpiDetail === "machines" ? renderMachineActivityDetail() : null}
 
-          <section className="panel production-brief-panel">
-            <div className="production-brief-panel__header">
-              <div>
-                <p className="panel-card__eyebrow">{copy.localBrief}</p>
-                <h3 className="panel__title">{copy.briefTitle}</h3>
-              </div>
-              <div className="production-ai-model-selector production-brief-model-selector">
-                <strong>{copy.briefModelSelect}</strong>
-                <div className="production-ai-worker-status__states">
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${briefingModelIsAvailable ? "ready" : "unavailable"}`}>
-                    {briefingModelStatusLabel}
-                  </span>
-                </div>
-                <p>{copy.briefModelCompareHint}</p>
-              </div>
-            </div>
-
-            <div className="production-ai-worker-status">
-              <div className="production-ai-worker-status__states" role="status">
-                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${hasCoreRefreshError ? "unavailable" : "ready"}`}>
-                  {hasCoreRefreshError ? copy.dataRefreshFailed : copy.deterministicAnswerReady}
-                </span>
-                <span className={`production-ai-worker-status__pill${localAiHistoryClass}`}>
-                  {localAiHistory.label}{localAiHistory.reason ? ` · ${localAiHistory.reason}` : ""}
-                </span>
-              </div>
-              {aiWorkerStatus ? (
-                <dl className="production-ai-worker-status__meta">
-                  <div>
-                    <dt>{copy.workerLatestAttempt}</dt>
-                    <dd>{withAiModelName(formatAiTimestamp(aiWorkerStatus.last_analysis_completed_at, language), aiWorkerStatus.last_analysis_model_display_name)}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy.workerLastSuccessful}</dt>
-                    <dd>{aiWorkerStatus.last_successful_analysis_at ? formatAiTimestamp(aiWorkerStatus.last_successful_analysis_at, language) : copy.workerNoSuccessfulRecord}</dd>
-                  </div>
-                </dl>
-              ) : null}
-            </div>
-
-            <div className="production-brief-panel__body">
-              {hasCoreRefreshError ? (
-                <div className="notice notice--warning">{copy.dataBriefingPaused}</div>
-              ) : productionAiBriefingQuery.isLoading ? (
-                <p>{copy.briefLoading}</p>
-              ) : productionAiBriefing ? (
-                <article className={`production-ai-job production-ai-job--${productionAiBriefing.severity === "normal" ? "completed" : "failed"}`}>
-                  <div className="production-ai-job__header">
-                    <div>
-                      <strong>{copy.deterministicBriefTitle}</strong>
-                      <span>{briefingSourceLabel}</span>
-                    </div>
-                    <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${productionAiBriefing.severity === "normal" ? "ready" : "unavailable"}`}>
-                      {briefingSeverityLabel}
-                    </span>
-                  </div>
-
-                  <div className="production-ai-job__result">
-                    {productionAiBriefing.answer.split("\n\n").map((paragraph, index) => (
-                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                    ))}
-                  </div>
-
-                  <div className="production-brief-evidence">
-                    <span>
-                      {copy.freshness}: {productionAiBriefing.data_freshness.last_mes_recorded_at
-                        ? productionAiBriefing.data_freshness.is_stale
-                          ? copy.freshnessStale
-                          : copy.freshnessCurrent
-                        : copy.freshnessUnknown}
-                    </span>
-                    <span>{copy.planUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_plan_updated_at, language)}</span>
-                    <span>{copy.mesUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_mes_recorded_at, language)}</span>
-                    <span>{copy.machiningUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_machining_reported_at, language)}</span>
-                    <span>{productionAiBriefing.top_risks.length} {copy.topRisks}</span>
-                  </div>
-
-                  <div className="production-ai-job__result">
-                    <strong>{copy.topRisks}</strong>
-                    {productionAiBriefing.top_risks.length ? (
-                      <div className="production-ai-job__issues">
-                        {productionAiBriefing.top_risks.map((risk, index) => (
-                          <article className="production-ai-job__issue" key={`${risk.type}-${risk.label}-${index}`}>
-                            <span>{risk.process === "injection" ? copy.injectionFacilities : copy.machiningFacilities}</span>
-                            <strong>{risk.label}</strong>
-                            <p>
-                              {language === "ko"
-                                ? `현재 시간 기준 ${formatNumber(Math.abs(risk.gap_qty))}개 부족${risk.detail ? ` · ${risk.detail}` : ""}`
-                                : `较当前时间基准少 ${formatNumber(Math.abs(risk.gap_qty))} 个${risk.detail ? ` · ${risk.detail}` : ""}`}
-                            </p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : <p>{briefingRiskEvaluationLimited ? copy.riskEvaluationLimited : copy.noTopRisks}</p>}
-                  </div>
-
-                  {briefingWarningLabels.length ? (
-                    <div className="notice notice--warning">
-                      <strong>{copy.warningsTitle}</strong>
-                      <ul>
-                        {briefingWarningLabels.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  <details>
-                    <summary>{copy.evidenceTitle}</summary>
-                    <div className="production-ai-job__issues">
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.usedDataTitle}</strong>
-                        {productionAiBriefing.used_data.map((item) => {
-                          const filters = formatBriefingFilters(item.filters);
-                          return (
-                            <p key={item.name}>
-                              {item.name}: {formatNumber(item.row_count)} {language === "ko" ? "행" : "条"}
-                              {filters ? ` · ${filters}` : ""}
-                            </p>
-                          );
-                        })}
-                      </article>
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.calculationBasisTitle}</strong>
-                        {productionAiBriefing.calculation_basis.map((item, index) => (
-                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
-                        ))}
-                      </article>
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.retrievalTraceTitle}</strong>
-                        {productionAiBriefing.retrieval_trace.map((item, index) => (
-                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
-                        ))}
-                      </article>
-                    </div>
-                  </details>
-                </article>
-              ) : (
-                <>
-                  <div className="notice notice--warning">{copy.briefFailed}</div>
-                  <article className="production-ai-job production-ai-job--failed">
-                    <div className="production-ai-job__header">
-                      <div>
-                        <strong>{copy.screenFallbackTitle}</strong>
-                        <span>{formatAiTimestamp(briefContext.latestUpdatedAt, language)}</span>
-                      </div>
-                    </div>
-                    <div className="production-ai-job__result">
-                      <p>{screenBriefingFallback.answer}</p>
-                    </div>
-                    {screenBriefingFallback.risks.length ? (
-                      <div className="production-ai-job__issues">
-                        {screenBriefingFallback.risks.map((risk) => (
-                          <article className="production-ai-job__issue" key={risk.label}>
-                            <strong>{risk.label}</strong>
-                            <p>{risk.detail}</p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                </>
-              )}
-
-              {!hasCoreRefreshError && latestAiJobUsedLocalLlm && latestAiJobSummary ? (
-                <article className="production-ai-job production-ai-job--completed">
-                  <div className="production-ai-job__header">
-                    <div>
-                      <strong>{localAiTierLabel}</strong>
-                      <span>
-                        {withAiModelName(formatAiTimestamp(latestAiJob?.completed_at, language), latestAiJobModelDisplayName)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="production-ai-job__result">
-                    {latestAiJobSummary.split("\n\n").map((paragraph, index) => (
-                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                    ))}
-                  </div>
-                </article>
-              ) : null}
-            </div>
-          </section>
-
-          <DeepAnalysisPanel canRequest={canRequestDeepAnalysis} kind="production_weekly" language={language} />
-
-          <section className="panel production-progress-panel">
-            <div className="production-progress-panel__header">
-              <div>
-                <p className="panel-card__eyebrow">{copy.progressEyebrow}</p>
-                <div className="production-progress-title-line">
-                  <h3 className="panel__title">{copy.progressTitle}</h3>
-                  <span
-                    className="production-progress-help"
-                    data-tooltip={copy.progressDescription}
-                    role="img"
-                    aria-label={copy.progressDescription}
-                  >
-                    ?
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="production-progress-grid">
-              <article className="production-progress-card">
-                <div className="production-progress-visual-summary">
-                  <div className={`production-progress-ring${realtimeProgress.estimatedQty > realtimeProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(realtimeProgress.progressRate)}>
-                    <strong>{getProgressText(realtimeProgress.progressRate)}</strong>
-                    <span>{copy.totalProgress}</span>
-                  </div>
-                  <div className="production-progress-summary-text">
-                    <h4>{copy.injectionProgress}</h4>
-                    <p>{copy.progressHint}</p>
-                    <div className="production-progress-state-strip">
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {realtimeProgress.completedCount}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {realtimeProgress.inProgressCount}</span>
-                      <span className="production-progress-chip">{copy.pending} {realtimeProgress.pendingCount}</span>
-                      {realtimeProgress.pausedCount > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--paused">{copy.pausedCount} {realtimeProgress.pausedCount}</span>
-                      ) : null}
-                      {unresolvedActivityReviewCount > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--review">{copy.reviewCount} {unresolvedActivityReviewCount}</span>
-                      ) : null}
-                      {renderOverrunChip(realtimeProgress.estimatedQty - realtimeProgress.plannedQty, realtimeProgress.plannedQty)}
-                    </div>
-                  </div>
-                </div>
-                <div className="production-progress-list">
-                  {realtimeProgress.rows.length ? (
-                    realtimeProgress.rows.map(renderProgressRow)
-                  ) : (
-                    <div className="notice notice--neutral">{copy.noProgressRows}</div>
-                  )}
-                </div>
-              </article>
-
-              <article className="production-progress-card production-progress-card--pending">
-                <div className="production-progress-visual-summary">
-                  <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
-                    <strong>{getProgressText(machiningProgress.progressRate)}</strong>
-                    <span>{copy.totalProgress}</span>
-                  </div>
-                  <div className="production-progress-summary-text">
-                    <h4>{copy.machiningProgress}</h4>
-                    <p>{copy.machiningSupplementHint}</p>
-                    <div className="production-progress-state-strip">
-                      <span className="production-progress-chip">{copy.mesQty} {formatNumber(machiningSummaryMesQty)}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(machiningSummaryManualOpenQty)}</span>
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.effectiveQty} {formatNumber(machiningSummaryEffectiveQty)}</span>
-                      {machiningSummaryAdvanceQty > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--overrun">{copy.advanceQty} {formatNumber(machiningSummaryAdvanceQty)}</span>
-                      ) : null}
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
-                      <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
-                      {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty, machiningProgress.plannedQty)}
-                    </div>
-                  </div>
-                </div>
-                <div className="production-progress-list">
-                  {machiningProgress.rows.length ? (
-                    machiningProgress.rows.map(renderMachiningPreviewRow)
-                  ) : (
-                    <div className="notice notice--neutral">{copy.noProgressRows}</div>
-                  )}
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <InjectionTransitionPanel
+          <InjectionMachineBoard
+            activityConfirmedKeys={activityConfirmedKeys}
             analysis={transitionAnalysis}
+            businessDate={businessDate}
             confirmationState={downtimeConfirmationsQuery.isError ? "error" : downtimeConfirmationsQuery.isPending ? "loading" : "ready"}
             confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
-            mode="dashboard"
+            machiningRows={machiningProgress.rows.length ? machiningProgress.rows.map(renderMachiningPreviewRow) : <div className="notice notice--neutral">{copy.noProgressRows}</div>}
+            machiningSummary={(
+            <div className="production-progress-visual-summary">
+              <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
+                <strong>{getProgressText(machiningProgress.progressRate)}</strong>
+                <span>{copy.totalProgress}</span>
+              </div>
+              <div className="production-progress-summary-text">
+                <h4>{copy.machiningProgress}</h4>
+                <p>{copy.machiningSupplementHint}</p>
+                <div className="production-progress-state-strip">
+                  <span className="production-progress-chip">{copy.mesQty} {formatNumber(machiningSummaryMesQty)}</span>
+                  <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(machiningSummaryManualOpenQty)}</span>
+                  <span className="production-progress-chip production-progress-chip--completed">{copy.effectiveQty} {formatNumber(machiningSummaryEffectiveQty)}</span>
+                  {machiningSummaryAdvanceQty > 0 ? (
+                    <span className="production-progress-chip production-progress-chip--overrun">{copy.advanceQty} {formatNumber(machiningSummaryAdvanceQty)}</span>
+                  ) : null}
+                  <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
+                  <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
+                  <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
+                  {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty, machiningProgress.plannedQty)}
+                </div>
+              </div>
+            </div>
+            )}
+            onOpenActivity={openActivityConfirmation}
+            onOpenBoard={() => {
+              const boardUrl = new URL("/production/injection-board", window.location.origin);
+              window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
+            }}
+            onOpenDetail={setSelectedProgressRow}
+            progress={realtimeProgress}
+            renderTrack={renderProgressTrack}
           />
-
-          <div className="production-dashboard__board-launcher">
-            <span>{copy.openInjectionBoardHint}</span>
-            <button
-              className="button button--ghost"
-              onClick={() => {
-                const boardUrl = new URL("/production/injection-board", window.location.origin);
-                window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
-              }}
-              type="button"
-            >
-              {copy.openInjectionBoard}
-            </button>
-          </div>
 
           {selectedActivityRow ? createPortal(
             <div
@@ -6259,7 +5695,6 @@ export function ProductionDashboardPage() {
           </section>
         </div>
       , document.body) : null}
-      <MesTaskReconciliationPanel businessDate={businessDate} />
     </section>
   );
 }
