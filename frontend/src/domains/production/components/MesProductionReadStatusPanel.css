@@ -1,0 +1,51 @@
+.mes-read-status {
+  color: var(--text-primary, #102a3d);
+  font-size: 0.9375rem;
+}
+
+.mes-read-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mes-read-status__header h2 { margin: 0; font-size: 1.0625rem; }
+.mes-read-status__scope, .mes-read-status__hint { margin: 10px 0; line-height: 1.6; }
+.mes-read-status__scope, .mes-read-status__observed { color: var(--text-secondary, #647786); }
+.mes-read-status__form label { display: block; margin: 16px 0 7px; font-weight: 650; }
+.mes-read-status__controls { display: flex; align-items: stretch; gap: 8px; max-width: 700px; }
+.mes-read-status__controls input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #b8cbd6);
+  border-radius: 8px;
+  background: var(--surface-color, #fff);
+  color: inherit;
+  font: inherit;
+}
+.mes-read-status__controls button { min-height: 44px; flex-shrink: 0; }
+.mes-read-status__controls input:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.mes-read-status__controls input[aria-invalid="true"] { border-color: #b45309; }
+.mes-read-status__identity { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 14px 0; }
+.mes-read-status__stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.mes-read-status__stage { padding: 12px; border: 1px solid var(--border-color, #d2dfe8); border-radius: 8px; }
+.mes-read-status__stage > span, .mes-read-status__stage > small { display: block; color: var(--text-secondary, #647786); }
+.mes-read-status__value { display: block; margin-top: 7px; font-size: 1rem; }
+.mes-read-status__value--completed { color: #166534; }
+.mes-read-status__value--blocked { color: #b45309; }
+.mes-read-status__stage small { margin-top: 7px; font-size: 0.875rem; }
+.mes-read-status__next { margin-top: 14px; }
+.mes-read-status__next p { margin: 7px 0; line-height: 1.6; }
+.mes-read-status__observed { margin: 12px 0 0; font-size: 0.875rem; }
+.mes-read-status-dialog { width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid #b8cbd6; border-radius: 12px; }
+.mes-read-status-dialog::backdrop { background: rgba(16, 42, 61, 0.42); }
+
+@media (max-width: 600px) {
+  .mes-read-status__stages { grid-template-columns: 1fr; }
+  .mes-read-status__controls { flex-wrap: wrap; }
+  .mes-read-status__controls input { flex-basis: 100%; }
+  .mes-read-status-dialog { padding: 16px; }
+}

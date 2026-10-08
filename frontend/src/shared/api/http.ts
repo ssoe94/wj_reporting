@@ -15,6 +15,8 @@ type RetriableRequest = InternalAxiosRequestConfig & {
 declare module "axios" {
   export interface AxiosRequestConfig {
     skipAuth?: boolean;
+    skipAuthRefresh?: boolean;
+    authSessionId?: string | null;
   }
 }
 
@@ -36,7 +38,7 @@ http.interceptors.request.use((config) => {
 
   const session = getAuthSessionSnapshot();
   if (request._authSessionId === undefined) {
-    request._authSessionId = session.id;
+    request._authSessionId = config.authSessionId === undefined ? session.id : config.authSessionId;
   }
   if (request._authSessionId !== session.id) {
     return Promise.reject(new AuthRefreshError("The authenticated session changed", false));
@@ -62,7 +64,7 @@ http.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const request = error.config as RetriableRequest | undefined;
-    if (!request || request.skipAuth || error.response?.status !== 401 || request._retry) {
+    if (!request || request.skipAuth || request.skipAuthRefresh || error.response?.status !== 401 || request._retry) {
       return Promise.reject(error);
     }
 

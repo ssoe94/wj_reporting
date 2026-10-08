@@ -6,7 +6,29 @@ WJ DATA CENTER / `wj_reporting` supports production, quality and field operation
 
 Read the code needed for the requested change. Use `docs/rebuild/README.md` when choosing product priorities or service boundaries, `docs/reviews/2026-09-06-company-development-report.md` for the recorded business review, and `docs/rebuild/19-ai-rag-architecture.md` for AI/RAG architecture changes. Search other `docs/reviews/` only for relevant decisions. Small fixes do not require these documents. Documents are proposals and snapshots, not evidence that a feature is deployed; verify the current implementation for the behavior being changed.
 
-The near-term sequence is:
+### Current delivery priority (owner update, 2026-10-06)
+
+Complete one account and one explicitly selected QC through WJ entry → MES value
+save → individual inspection finish → MES readback → board/dashboard projection.
+Defer four-account activation, graphics and disposition expansion. The local
+business baseline is `08e3cf6`; it is not the deployed OAuth-only PR90/91 runtime.
+Use `docs/mes-oauth-continuity-plan.md` for the current work checkpoint.
+
+Implement, run the smallest meaningful regression for the changed path, fix a
+failure and continue. Test totals or new reports are not the delivery outcome.
+Reuse established evidence; do not restart completed contract research, create
+repeated approval gates for authorized local work, or end after diagnosis while
+an independent implementation step is available. Keep current sessions and
+prepared permissions through a work bundle; consolidate cleanup at its end.
+
+Preserve secrets and data integrity. Before live writes, name the exact current
+QC, values and effects together; do not broaden a single-QC trial into work-order
+completion, scrap, inventory or unrelated records. Local changes do not enable
+production flags or authorize new credential issuance. A tool rejection cannot
+be bypassed by editing these instructions. Earlier plans remain historical
+evidence; their completed investigation/approval steps are not fresh gates.
+
+The broader product sequence, after this first QC, is:
 
 1. Agree metric definitions and preserve evidence for MES observation coverage before raw-log compression.
 2. Recover collector gaps and record completeness independently from a machine's production state.

@@ -1,18 +1,44 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { useLang } from "@/i18n";
-import type { InjectionDowntimeConfirmation } from "@/domains/production/api";
+import type { InjectionDowntimeConfirmation, ProductionStatusResponse } from "@/domains/production/api";
 import type { InjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 import type { RealtimeProgressRow, RealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { getMesTaskReconciliation } from "@/domains/production/mes-task-reconciliation-api";
 import { assessmentTone, reconciliationQueryOptions, type ReconciliationTask } from "@/domains/production/mes-task-reconciliation";
-import { buildMachineBoardRows, type MachineBoardRow } from "@/domains/production/injection-machine-board";
+import {
+  buildMachineBoardRows,
+  INJECTION_MACHINE_COUNT,
+  MACHINE_BOARD_GROUPS,
+  type MachineBoardGroup,
+  type MachineBoardRow,
+  type MachineInspectionAttention,
+} from "@/domains/production/injection-machine-board";
+import {
+  deriveInjectionQuality,
+  reduceInjectionQuality,
+  type ExpectedInjectionQualityScope,
+  type InjectionQualityState,
+  type InjectionQualityView,
+  type QualityCheckStatus,
+} from "@/domains/production/injection-quality-status";
+import { injectionQualityAttention } from "@/domains/production/injection-quality-attention";
+import { InjectionQualityStatus } from "@/domains/production/components/InjectionQualityStatus";
 import { InjectionTransitionPanel, type InjectionTransitionPanelCopy } from "@/domains/production/components/InjectionTransitionPanel";
 import type { AppLanguage } from "@/shared/i18n/language";
 import "./injection-machine-board.css";
 
 type BoardTab = "injection" | "machining";
+
+type MachineQuality = {
+  scope: ExpectedInjectionQualityScope;
+  state: InjectionQualityState;
+  view: InjectionQualityView;
+};
+
+const QUALITY_CLOCK_MS = 15_000;
+const COLUMN_COUNT = 6;
 
 type InjectionMachineBoardProps = {
   businessDate: string;
@@ -23,6 +49,8 @@ type InjectionMachineBoardProps = {
   confirmations?: InjectionDowntimeConfirmation[];
   confirmationState: "loading" | "ready" | "error";
   activityConfirmedKeys: ReadonlySet<string>;
+  productionStatus?: ProductionStatusResponse;
+  productionStatusError: boolean;
   renderTrack: (row: RealtimeProgressRow) => ReactNode;
   onOpenDetail: (row: RealtimeProgressRow) => void;
   onOpenActivity: (row: RealtimeProgressRow) => void;
@@ -66,6 +94,8 @@ export function InjectionMachineBoard({
   confirmations,
   confirmationState,
   activityConfirmedKeys,
+  productionStatus,
+  productionStatusError,
   renderTrack,
   onOpenDetail,
   onOpenActivity,
@@ -85,6 +115,43 @@ export function InjectionMachineBoard({
   });
   const reconciliation = reconciliationQuery.data;
   const reconciliationFailed = reconciliationQuery.isError;
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<MachineBoardGroup>>(new Set(["inactive"]));
+  const qualityGenerations = useRef(new Map<number, InjectionQualityState>());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), QUALITY_CLOCK_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+  // Same current-plan scope rules as the inspection overview: a payload for a
+  // different plan or a duplicated machine row never reads as the current result.
+  const quality = useMemo(() => {
+    const result = new Map<string, MachineQuality>();
+    for (let number = 1; number <= INJECTION_MACHINE_COUNT; number += 1) {
+      const matches = productionStatus?.injection.filter((row) => row.machine_number === number) ?? [];
+      const row = matches.length === 1 ? matches[0] : undefined;
+      const input = row?.inspection_scope;
+      const valid = input?.business_date === businessDate && input.machine_number === number
+        && input.current_plan_id !== null
+        && row?.parts.filter((part) => part.plan_id === input.current_plan_id).length === 1;
+      const scope: ExpectedInjectionQualityScope = {
+        businessDate,
+        machineNumber: number,
+        currentPlanId: valid ? input.current_plan_id : null,
+        planVersion: valid ? input.plan_version : "0".repeat(64),
+      };
+      const state = reduceInjectionQuality(qualityGenerations.current.get(number) ?? null, valid ? row?.inspection_status : null, scope);
+      qualityGenerations.current.set(number, state);
+      const view = deriveInjectionQuality(state, scope, nowMs, { transportError: productionStatusError });
+      result.set(String(number), { scope, state, view });
+    }
+    return result;
+  }, [businessDate, nowMs, productionStatus, productionStatusError]);
+  const inspectionAttention = useMemo(() => new Map<string, MachineInspectionAttention>(
+    [...quality].map(([key, item]) => {
+      const attention = injectionQualityAttention(item.view);
+      return [key, { failed: attention.failed, overdue: attention.overdue }];
+    }),
+  ), [quality]);
   const rows = useMemo(() => buildMachineBoardRows({
     progressRows: progress.rows,
     analysis,
@@ -93,30 +160,40 @@ export function InjectionMachineBoard({
     reconciliation,
     reconciliationFailed,
     activityConfirmedKeys,
-  }), [activityConfirmedKeys, analysis, confirmationState, confirmations, progress.rows, reconciliation, reconciliationFailed]);
+    inspection: inspectionAttention,
+  }), [activityConfirmedKeys, analysis, confirmationState, confirmations, inspectionAttention, progress.rows, reconciliation, reconciliationFailed]);
   const visibleRows = attentionOnly ? rows.filter((row) => row.needsAttention) : rows;
 
   const counts = useMemo(() => {
-    const running = rows.filter((row) => row.progress?.equipmentState === "running").length;
-    const stopped = rows.filter((row) => row.progress?.equipmentState === "paused").length;
-    const unplanned = rows.filter((row) => row.progress && !row.progress.hasPlan && !activityConfirmedKeys.has(row.key)).length;
+    const byGroup = Object.fromEntries(MACHINE_BOARD_GROUPS.map((group) => [group, rows.filter((row) => row.group === group).length])) as Record<MachineBoardGroup, number>;
     const stopPending = confirmationState === "ready"
       ? rows.reduce((sum, row) => sum + (row.stop.pending ?? 0), 0)
       : null;
     const mesReady = rows.filter((row) => row.mes.state === "ready");
     const mesAvailable = Boolean(reconciliation) && !reconciliationFailed;
     const sum = (pick: (row: MachineBoardRow) => number) => (mesAvailable ? mesReady.reduce((total, row) => total + pick(row), 0) : null);
+    const inspectionKnown = [...inspectionAttention.values()].filter((item) => item.failed !== null);
     return {
-      running,
-      stopped,
-      unplanned,
+      byGroup,
       stopPending,
       pauseReview: sum((row) => (row.mes.state === "ready" ? row.mes.pauseReview : 0)),
       linkReview: sum((row) => (row.mes.state === "ready" ? row.mes.linkReview : 0)),
       startNeeded: sum((row) => (row.mes.state === "ready" ? row.mes.startNeeded : 0)),
+      noTask: sum((row) => (row.mes.state === "ready" ? row.mes.noTask : 0)),
+      inspectionFailed: inspectionKnown.length ? inspectionKnown.filter((item) => item.failed).length : null,
+      inspectionOverdue: inspectionKnown.length ? inspectionKnown.filter((item) => item.overdue).length : null,
       attention: rows.filter((row) => row.needsAttention).length,
     };
-  }, [activityConfirmedKeys, confirmationState, reconciliation, reconciliationFailed, rows]);
+  }, [confirmationState, inspectionAttention, reconciliation, reconciliationFailed, rows]);
+
+  function toggleGroup(group: MachineBoardGroup) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }
 
   function toggle(key: string) {
     setExpanded((current) => {
@@ -129,19 +206,20 @@ export function InjectionMachineBoard({
 
   function renderState(row: MachineBoardRow) {
     const item = row.progress;
-    if (!item) return <em className="production-progress-status">{text("idle")}</em>;
-    if (!item.hasPlan) {
+    if (row.hadProduction && item && !item.hasPlan) {
       return activityConfirmedKeys.has(row.key)
         ? <em className="production-progress-status production-progress-status--confirmed">{copy.activityConfirmed}</em>
-        : <em className="production-progress-status production-progress-status--review">{item.equipmentState === "unplanned_running" ? copy.unplannedRunning : copy.activityReview}</em>;
+        : <em className="production-progress-status production-progress-status--review">{text("unplanned")}</em>;
     }
-    if (item.equipmentState === "running") return <em className="production-progress-status production-progress-status--running">{copy.running}</em>;
-    if (item.equipmentState === "paused") return <em className="production-progress-status production-progress-status--paused">{copy.paused}</em>;
-    return <em className="production-progress-status">{text("idle")}</em>;
+    if (row.group === "running") return <em className="production-progress-status production-progress-status--running">{copy.running}</em>;
+    if (row.group === "stopped_after_run") return <em className="production-progress-status production-progress-status--paused">{text("stopped")}</em>;
+    if (row.group === "planned_idle") return <em className="production-progress-status">{text("notStarted")}</em>;
+    return null;
   }
 
   function renderProduction(row: MachineBoardRow) {
-    const item = row.progress;
+    // Sporadic shots without a plan read as no activity.
+    const item = row.progress && (row.progress.hasPlan || row.hadProduction) ? row.progress : null;
     if (!item) {
       const todayPlans = row.mesMachine?.plans.filter((plan) => plan.plan_date === businessDate) ?? [];
       if (!todayPlans.length) return <span className="machine-board__muted">{text("noPlanNoShot")}</span>;
@@ -183,7 +261,7 @@ export function InjectionMachineBoard({
   }
 
   function renderStops(row: MachineBoardRow) {
-    const pausedMinutes = row.progress?.equipmentState === "paused" ? row.progress.idleMinutes : null;
+    const pausedMinutes = row.group === "stopped_after_run" && row.progress?.idleMinutes != null ? row.progress.idleMinutes : null;
     if (!row.stop.eventCount && pausedMinutes === null) return <span className="machine-board__muted">—</span>;
     return (
       <div className="machine-board__stack">
@@ -194,6 +272,40 @@ export function InjectionMachineBoard({
           <span>{text("stopEvents")} {row.stop.eventCount} · {formatMinutes(row.stop.minutes, language)}</span>
         ) : null}
         {row.stop.pending ? <span className="machine-board__badge machine-board__badge--warning">{text("confirmPending")} {row.stop.pending}</span> : null}
+      </div>
+    );
+  }
+
+  function inspectionLabel(status: QualityCheckStatus) {
+    return text(`inspectionStatus.${status}`);
+  }
+
+  function renderInspection(row: MachineBoardRow) {
+    const item = quality.get(row.key);
+    if (!item) return <span className="machine-board__muted">—</span>;
+    const { view } = item;
+    if (!view.data) {
+      return <span className="machine-board__muted">{view.availability === "error" ? text("inspectionError") : text("inspectionUnlinked")}</span>;
+    }
+    const periodic = view.data.periodic;
+    return (
+      <div className="machine-board__stack">
+        <span>
+          {text("inspectionFirst")}{" "}
+          <span className={`machine-board__badge${view.firstStatus === "failed" ? " machine-board__badge--warning" : view.firstStatus === "passed" ? " machine-board__badge--ok" : ""}`}>
+            {inspectionLabel(view.firstStatus)}
+          </span>
+        </span>
+        <span>
+          {text("inspectionPeriodic")} {formatTime(periodic.last_checked_at, language)}
+          {view.scheduleStatus === "overdue" ? (
+            <span className="machine-board__badge machine-board__badge--warning">{text("inspectionOverdue")}</span>
+          ) : view.scheduleStatus === "scheduled" && periodic.next_due_at ? (
+            <span className="machine-board__muted"> · {text("inspectionNext")} {formatTime(periodic.next_due_at, language)}</span>
+          ) : null}
+          {view.periodicStatus === "failed" ? <span className="machine-board__badge machine-board__badge--warning">{inspectionLabel("failed")}</span> : null}
+        </span>
+        {view.historical ? <span className="machine-board__muted">{text("inspectionStale")}</span> : null}
       </div>
     );
   }
@@ -218,6 +330,7 @@ export function InjectionMachineBoard({
           {mes.pauseReview ? <span className="machine-board__badge machine-board__badge--warning">{text("pauseReview")} {mes.pauseReview}</span> : null}
           {mes.linkReview ? <span className="machine-board__badge machine-board__badge--warning">{text("linkReview")} {mes.linkReview}</span> : null}
           {mes.startNeeded ? <span className="machine-board__badge">{text("startNeeded")} {mes.startNeeded}</span> : null}
+          {mes.noTask ? <span className="machine-board__badge">{text("noTask")} {mes.noTask}</span> : null}
           {mes.held ? <span className="machine-board__badge">{text("held")}</span> : null}
         </span>
       </div>
@@ -316,6 +429,17 @@ export function InjectionMachineBoard({
             </p>
           )}
         </section>
+        {quality.get(row.key)?.view.data ? (
+          <section className="machine-board__detail-wide">
+            <InjectionQualityStatus
+              expectedScope={quality.get(row.key)!.scope}
+              language={language}
+              nowMs={nowMs}
+              state={quality.get(row.key)!.state}
+              transportError={productionStatusError}
+            />
+          </section>
+        ) : null}
         {row.events.length ? (
           <section className="machine-board__detail-wide">
             <InjectionTransitionPanel
@@ -336,14 +460,54 @@ export function InjectionMachineBoard({
   }
 
   const summaryItems: Array<[string, number | null, string?]> = [
-    [copy.running, counts.running, "running"],
-    [copy.paused, counts.stopped, counts.stopped ? "paused" : undefined],
-    [copy.unplannedRunning, counts.unplanned, counts.unplanned ? "review" : undefined],
-    [text("confirmPending"), counts.stopPending, counts.stopPending ? "review" : undefined],
+    [text("stopPendingChip"), counts.stopPending, counts.stopPending ? "review" : undefined],
     [text("pauseReview"), counts.pauseReview, counts.pauseReview ? "review" : undefined],
     [text("linkReview"), counts.linkReview, counts.linkReview ? "review" : undefined],
     [text("startNeeded"), counts.startNeeded],
+    [text("noTask"), counts.noTask],
+    [text("inspectionOverdueChip"), counts.inspectionOverdue, counts.inspectionOverdue ? "review" : undefined],
+    [text("inspectionFailedChip"), counts.inspectionFailed, counts.inspectionFailed ? "review" : undefined],
   ];
+
+  function renderRow(row: MachineBoardRow) {
+    const isOpen = expanded.has(row.key);
+    const label = row.machineNumber ? `${row.machineNumber}${mesText("machineUnit")}` : row.progress?.label ?? row.key;
+    return (
+      <Fragment key={row.key}>
+        <tr className={`machine-board__row${row.needsAttention ? " machine-board__row--attention" : ""}${isOpen ? " is-open" : ""}`}>
+          <th scope="row">
+            <div className="machine-board__machine">
+              <strong>{label}</strong>
+              {renderState(row)}
+            </div>
+            {row.hadProduction && row.progress?.lastShotAt ? (
+              <small className="machine-board__muted">{text("lastShot")} {formatTime(row.progress.lastShotAt, language)}</small>
+            ) : null}
+          </th>
+          <td>{renderProduction(row)}</td>
+          <td>{renderStops(row)}</td>
+          <td>{renderMes(row)}</td>
+          <td>{renderInspection(row)}</td>
+          <td className="machine-board__toggle-cell">
+            <button
+              aria-expanded={isOpen}
+              aria-label={`${label} ${text("colDetail")}`}
+              className="machine-board__icon-button"
+              onClick={() => toggle(row.key)}
+              type="button"
+            >
+              {isOpen ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
+            </button>
+          </td>
+        </tr>
+        {isOpen ? (
+          <tr className="machine-board__detail-row">
+            <td colSpan={COLUMN_COUNT}>{renderDetail(row)}</td>
+          </tr>
+        ) : null}
+      </Fragment>
+    );
+  }
 
   return (
     <section className="panel machine-board" aria-labelledby="machine-board-title">
@@ -397,6 +561,13 @@ export function InjectionMachineBoard({
               <strong>{Math.round(progress.progressRate)}%</strong>
               <span>{formatNumber(progress.estimatedQty, language)} / {formatNumber(progress.plannedQty, language)}</span>
             </div>
+            <div className="machine-board__groups-summary">
+              {MACHINE_BOARD_GROUPS.map((group) => (
+                <span className={`machine-board__group-count machine-board__group-count--${group}`} key={group}>
+                  {text(`group.${group}`)} <b>{counts.byGroup[group]}</b>
+                </span>
+              ))}
+            </div>
             <div className="machine-board__chips" aria-live="polite">
               {summaryItems.map(([label, value, tone]) => (
                 <span className={`production-progress-chip${tone ? ` production-progress-chip--${tone === "running" ? "completed" : tone}` : ""}`} key={label}>
@@ -425,52 +596,35 @@ export function InjectionMachineBoard({
                   <th scope="col">{text("colProduction")}</th>
                   <th scope="col">{text("colStops")}</th>
                   <th scope="col">{text("colMes")}</th>
+                  <th scope="col">{text("colInspection")}</th>
                   <th scope="col"><span className="sr-only">{text("colDetail")}</span></th>
                 </tr>
               </thead>
-              <tbody>
-                {visibleRows.map((row) => {
-                  const isOpen = expanded.has(row.key);
-                  const label = row.machineNumber ? `${row.machineNumber}${mesText("machineUnit")}` : row.progress?.label ?? row.key;
-                  return (
-                    <Fragment key={row.key}>
-                      <tr className={`machine-board__row${row.needsAttention ? " machine-board__row--attention" : ""}${isOpen ? " is-open" : ""}`}>
-                        <th scope="row">
-                          <div className="machine-board__machine">
-                            <strong>{label}</strong>
-                            {renderState(row)}
-                          </div>
-                          {row.progress?.lastShotAt ? (
-                            <small className="machine-board__muted">{text("lastShot")} {formatTime(row.progress.lastShotAt, language)}</small>
-                          ) : null}
-                        </th>
-                        <td>{renderProduction(row)}</td>
-                        <td>{renderStops(row)}</td>
-                        <td>{renderMes(row)}</td>
-                        <td className="machine-board__toggle-cell">
-                          <button
-                            aria-expanded={isOpen}
-                            aria-label={`${label} ${text("colDetail")}`}
-                            className="machine-board__icon-button"
-                            onClick={() => toggle(row.key)}
-                            type="button"
-                          >
-                            {isOpen ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
-                          </button>
-                        </td>
-                      </tr>
-                      {isOpen ? (
-                        <tr className="machine-board__detail-row">
-                          <td colSpan={5}>{renderDetail(row)}</td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-                {!visibleRows.length ? (
-                  <tr><td colSpan={5} className="machine-board__muted">{text("noAttention")}</td></tr>
-                ) : null}
-              </tbody>
+              {MACHINE_BOARD_GROUPS.map((group) => {
+                const groupRows = visibleRows.filter((row) => row.group === group);
+                if (!groupRows.length) return null;
+                const collapsed = collapsedGroups.has(group);
+                return (
+                  <tbody className={`machine-board__group machine-board__group--${group}`} key={group}>
+                    <tr className="machine-board__group-row">
+                      <th colSpan={COLUMN_COUNT} scope="rowgroup">
+                        <button aria-expanded={!collapsed} onClick={() => toggleGroup(group)} type="button">
+                          {collapsed ? <ChevronRight aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}
+                          <strong>{text(`group.${group}`)}</strong>
+                          <span>{groupRows.length}{text("machineCount")}</span>
+                          <small>{text(`groupHint.${group}`)}</small>
+                        </button>
+                      </th>
+                    </tr>
+                    {collapsed ? null : groupRows.map(renderRow)}
+                  </tbody>
+                );
+              })}
+              {!visibleRows.length ? (
+                <tbody>
+                  <tr><td colSpan={COLUMN_COUNT} className="machine-board__muted">{text("noAttention")}</td></tr>
+                </tbody>
+              ) : null}
             </table>
           </div>
 

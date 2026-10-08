@@ -34,9 +34,13 @@ from .field_kanban_views import (
     FieldMaterialShareView,
     FieldMaterialsView,
 )
+from .mes_delivery_views import MesDeliveryReadinessView
+from .mes_read_status_views import MesProductionReadStatusView
 
 urlpatterns = [
     path('mes-task-reconciliation/', MesTaskReconciliationView.as_view(), name='mes-task-reconciliation'),
+    path('mes-read-status/', MesProductionReadStatusView.as_view(), name='production-mes-read-status'),
+    path('mes-delivery-readiness/', MesDeliveryReadinessView.as_view(), name='production-mes-delivery-readiness'),
     path('field-kanban/', FieldKanbanView.as_view(), name='production-field-kanban'),
     path(
         'field-kanban/defects/',

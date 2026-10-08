@@ -34,9 +34,11 @@ from .archive_views import (
     ArchiveReportListView,
     ArchiveServiceProvisionView,
 )
+from .inspection_views import InspectionRequestViewSet
 
 
 router = DefaultRouter()
+router.register(r'inspection-requests', InspectionRequestViewSet, basename='inspection-request')
 router.register(r'reports', QualityReportViewSet, basename='quality-report')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'import-batches', QualityImportBatchViewSet, basename='quality-import-batch')

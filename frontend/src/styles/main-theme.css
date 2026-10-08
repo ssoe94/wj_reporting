@@ -2079,3 +2079,15 @@ section#new {
 .main-login__brand h2 {
   font-optical-sizing: auto;
 }
+
+/* Inspection-room screens reserve vertical space for the worksheet. */
+@media (min-width: 768px) {
+  .main-app-shell--inspection-room .main-sidebar--desktop { display: none; }
+  .main-app-shell--inspection-room .main-topbar { margin-left: 8px; margin-right: 8px; top: 6px; min-height: 40px; margin-top: 6px; padding: 4px 10px; border-radius: 10px; }
+  .main-app-shell--inspection-room .main-topbar__home { width: 30px; height: 30px; border-radius: 7px; }
+  .main-app-shell--inspection-room .main-user-menu__trigger { min-height: 30px; padding: 4px 10px; }
+  .main-app-shell--inspection-room .main-workspace { margin-left: 0; padding: 6px 8px 24px; }
+  .inspection-room-menu-trigger { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--wj-border); border-radius: 7px; color: var(--wj-accent-strong); background: var(--wj-surface); }
+}
+
+@media (max-width: 767px) { .inspection-room-menu-trigger { display: none; } }

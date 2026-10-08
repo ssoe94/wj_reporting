@@ -53,7 +53,7 @@ const formatUpdateTime = (timestamp: number) => {
 export default function FieldStationPage() {
   const { stationId } = useParams();
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, isLoggingOut, user } = useAuth();
 
   const station = getFieldStationById(stationId);
   const currentFieldUser = parseFieldTerminalUser(user?.username);
@@ -112,7 +112,8 @@ export default function FieldStationPage() {
               variant="secondary"
               size="lg"
               className="h-12 rounded-none border-2 border-slate-300 bg-white px-5 text-lg font-bold text-slate-900 shadow-none"
-              onClick={logout}
+              disabled={isLoggingOut}
+              onClick={async () => { await logout(); }}
             >
               <LogOut className="mr-2 h-5 w-5" />
               登出
