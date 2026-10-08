@@ -38,6 +38,7 @@ export const workflowLabels: Record<string, [string, string]> = {
   readback_required: ["전송 결과 재조회 필요", "需复查发送结果"],
   product_resource_bom_mapping_review_required: ["품번·설비·BOM 매핑 검증 필요", "需验证产品／设备／BOM映射"],
   tenant_contract_review_required: ["MES 계약·매핑 검증 필요", "需验证MES契约及映射"],
+  tenant_readback_mapping_required: ["MES 원본 ID·금형·BOM·조회 매핑 검증 필요", "需验证MES原始ID／模具／BOM及查询映射"],
   task_quantity_propagation_and_allowed_state_review: ["任务 수량 반영·수정 허용상태 검증 필요", "需验证任务数量联动及可编辑状态"],
   plan_scope_truncated: ["계획 조회 범위 초과", "计划查询范围超限"],
   disabled: ["MES 쓰기 OFF · 로컬 준비", "MES写入关闭 · 本地准备"],

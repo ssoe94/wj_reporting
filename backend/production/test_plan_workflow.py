@@ -14,7 +14,22 @@ from .plan_workflow import (snapshot, _record, lock_type, replace_uploaded_plans
     reconcile_readback, resolve_identity, WorkflowConflict, digest)
 
 REVIEW = {'reference': 'SYNTHETIC-reviewed-fixture-only', 'initial_status': 1, 'report_flag': 1,
-          'manual_warehousing': '1', 'no_auto_warehousing': '0'}
+          'manual_warehousing': '1', 'no_auto_warehousing': '0', 'tenant': 'SYNTHETIC-TENANT'}
+
+
+def reviewed(groups):
+    bindings = {}
+    for group in groups:
+        setup = group['setup']
+        if not setup: continue
+        bindings[group['setup_fingerprint']] = {'resource_id': '17000000000000004',
+            'part_no': group['part_no'], 'machine_name': group['machine_name'],
+            'output_material_id': '17000000000000005', 'mold_code': setup['mold_code'],
+            'bom_version': setup['bom_version'], 'read_manual_warehousing': 1,
+            'read_no_auto_warehousing': 0, 'base_clock_covers_children': True,
+            'mold_field': {'fieldCode': 'SYNTHETIC_MOLD', 'fieldValue': {'code': setup['mold_code']}},
+            'bom_version_field': {'fieldCode': 'SYNTHETIC_BOM', 'fieldValue': {'code': setup['bom_version']}}}
+    return {**REVIEW, 'setup_fingerprints': list(bindings), 'setup_bindings': bindings}
 
 
 def seed_catalog():
@@ -161,7 +176,7 @@ class PlanWorkflowTests(TestCase):
         group = self.groups()[0]
         self.assertEqual(group['quantity'], '2300.0')
         self.assertEqual(group['planned_end'], '2026-10-11T08:00:00+08:00')
-        with override_settings(MES_PLAN_REVIEWED_CONTRACT={**REVIEW, 'setup_fingerprints': [g['setup_fingerprint'] for g in self.groups()]}):
+        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(self.groups())):
             result = prepare(date(2026,10,8), date(2026,10,10), 'injection', [group['key']], self.user)[0]
             req = PlanMesRequest.objects.get(uid=result['uid'])
             claim_for_isolated_adapter(req.uid, fixture=True)
@@ -237,7 +252,7 @@ class PlanWorkflowTests(TestCase):
 
     def test_timeout_or_crash_never_replays_and_mismatch_stays_review(self):
         plan = new_plan(actor=self.user); self.approve(plan)
-        with override_settings(MES_PLAN_REVIEWED_CONTRACT={**REVIEW, 'setup_fingerprints': [g['setup_fingerprint'] for g in self.groups()]}):
+        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(self.groups())):
             group = self.groups()[0]
             result = prepare(date(2026,10,8), date(2026,10,8), 'injection', [group['key']], self.user)[0]
             req = PlanMesRequest.objects.get(uid=result['uid'])
@@ -288,7 +303,7 @@ class PlanWorkflowTests(TestCase):
     def test_stale_preview_and_stale_claim_blocked_after_plan_change(self):
         plan = new_plan(actor=self.user); self.approve(plan)
         group = self.groups()[0]
-        with override_settings(MES_PLAN_REVIEWED_CONTRACT={**REVIEW, 'setup_fingerprints': [g['setup_fingerprint'] for g in self.groups()]}):
+        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(self.groups())):
             req = prepare(date(2026,10,8),date(2026,10,8),'injection',[group['key']],self.user)[0]
         self.upload([self.clone(plan, planned_quantity=2000)])
         with self.assertRaises(WorkflowConflict): prepare(date(2026,10,8),date(2026,10,8),'injection',[group['key']],self.user)

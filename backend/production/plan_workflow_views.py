@@ -65,6 +65,9 @@ class PlanWorkflowView(APIView):
             except (ValueError, PlanMesRequest.DoesNotExist): raise ValidationError('Invalid request.') from None
             if req.state not in ('sending', 'uncertain', 'readback_pending', 'review'):
                 raise WorkflowConflict('No unresolved transmission to recheck.')
+            if req.operation == 'create' and req.contract.get('readback_binding'):
+                from .plan_workflow_transport import recheck_creation_for_session
+                return Response(recheck_creation_for_session(req.uid, InspectionSession.from_request(request)))
             observed = read_mes_production_status(InspectionSession.from_request(request),
                 date.fromisoformat(req.intent['planned_start'][:10]), req.work_order.code)
             # Current four-read projection cannot prove BOM and campaign-wide qty.

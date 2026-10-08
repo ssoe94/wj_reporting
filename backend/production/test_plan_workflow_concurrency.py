@@ -9,7 +9,7 @@ from django.db import connection, connections, transaction
 from django.test import TransactionTestCase, override_settings
 from .models import ProductionPlan, PlanWorkflowLock, PlanMesRequest, PlanWorkOrder, PlanMaterialApproval
 from .plan_workflow import lock_type, prepare, preview, approve_materials, replace_uploaded_plans, WorkflowConflict
-from .test_plan_workflow import seed_catalog, new_plan, approval_data, REVIEW
+from .test_plan_workflow import seed_catalog, new_plan, approval_data, reviewed
 
 
 @skipUnless(connection.vendor == 'postgresql', 'Requires disposable PostgreSQL fixture')
@@ -41,8 +41,7 @@ class PlanWorkflowConcurrencyTests(TransactionTestCase):
         def send():
             user=get_user_model().objects.get(pk=self.user.pk)
             return prepare(date(2026,10,8),date(2026,10,8),'injection',[key],user)
-        setup_hash=preview(date(2026,10,8),date(2026,10,8),'injection')[0]['setup_fingerprint']
-        with override_settings(MES_PLAN_REVIEWED_CONTRACT={**REVIEW, 'setup_fingerprints': [setup_hash]}):
+        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(preview(date(2026,10,8),date(2026,10,8),'injection'))):
             results=self.run_pair([send,send])
         self.assertEqual(PlanMesRequest.objects.count(),1)
         self.assertEqual(PlanWorkOrder.objects.count(),1)
@@ -70,6 +69,32 @@ class PlanWorkflowConcurrencyTests(TransactionTestCase):
         row=ProductionPlan.objects.get()
         self.assertEqual(row.work_version,2)
         self.assertFalse(PlanMaterialApproval.objects.filter(revision__work_id=row.work_uid,revision__version=2).exists())
+
+    def test_two_dispatchers_produce_one_import_and_preserve_replay_fence(self):
+        import time
+        from quality.inspection_transport import InspectionUserAccessToken
+        from .test_plan_workflow_transport import bodies, response, WORK_ID
+        from .plan_workflow_transport import PlanMesTransport, dispatch_prepared_create, READ_ROUTES, CREATE_PATH, ROUTE_BASE
+        groups=preview(date(2026,10,8),date(2026,10,8),'injection')
+        calls=[]
+        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(groups)):
+            prepared=prepare(date(2026,10,8),date(2026,10,8),'injection',[groups[0]['key']],self.user)[0]
+            req=PlanMesRequest.objects.get(uid=prepared['uid']);values=bodies(req)
+            def sender(url,**kwargs):
+                path=url.split(ROUTE_BASE)[1];calls.append(path)
+                if path==CREATE_PATH:return response({'code':200,'needCheck':0,'data':{'id':int(WORK_ID)}})
+                key=next(key for key,value in READ_ROUTES.items() if value==path)
+                return response(values[key])
+            def dispatch():
+                transport=PlanMesTransport(origin='https://v3-ali.blacklake.cn',tenant='SYNTHETIC-TENANT',
+                    actor_id=self.user.pk,mes_user_id=17000000000000009,sender=sender,
+                    credential=InspectionUserAccessToken('SYNTHETIC-ONLY',time.time()+60,user_id=17000000000000009))
+                try:return dispatch_prepared_create(req.uid,transport,fixture=True)['state']
+                except WorkflowConflict:return 'conflict'
+            results=self.run_pair([dispatch,dispatch])
+        self.assertEqual(set(results),{'confirmed','conflict'})
+        self.assertEqual(calls.count(CREATE_PATH),1)
+        req.refresh_from_db();self.assertEqual(req.attempt,1)
 
 
 class PlanWorkflowMigrationTests(TransactionTestCase):

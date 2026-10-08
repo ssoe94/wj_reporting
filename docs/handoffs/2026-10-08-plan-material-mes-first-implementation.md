@@ -1,6 +1,51 @@
 # 생산계획 → 원료 확인 → MES 工单 준비: 첫 구현 검토
 
-2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. 로컬 commit만 허용된 범위다. push / PR / merge는 하지 않았다.
+2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
+
+## 후속 보완: 생성 transport와 캠페인 전체 조회
+
+아래 초기 검토 이후 사용자 지시로 최신 main `b857c50e`를 독립 브랜치에 충돌 없이 통합했다(로컬 merge `f939d07d`). 인증 예외 코드 보존과 그 테스트가 포함됐다. 원본 checkout과 Claude 작업에는 쓰지 않았다.
+
+`plan_workflow_transport.py`와 `plan_workflow_read_contract.py`를 추가했다. 문서화된 v2 import payload를 기존 USER route gateway로 보내는 transport, 영속 예약을 commit한 후 단 한 번 전송하는 coordinator, 개별 import의 순차 batch/부분 결과, 17자리 생성 ID 보존, timeout 이후 공번 재조회가 구현됐다. 운영 쓰기 gate는 그대로 OFF다. 실제 생성 시험은 synthetic credential과 injected sender로만 실행된다. 운영 send endpoint·Celery 자동 송신·08시 개시·검사 생성은 추가하지 않았다.
+
+조회는 기본정보 → 입력 원료/BOM → 산출 → 공정계획 → 기본정보 재확인의 최대 5회다. 문서 `1686655055663531/3539/3541/3542`의 공식 경로만 사용하고 날짜별 보고 필터를 넣지 않는다. 캠페인 전체 계획량·단위·제품/원료 ID·version·배합비·손실률·설비·공정/route·창고 정책·tenant custom field를 승인 snapshot과 대조한다. 숨겨진 필드, 잘못된 수량/단위/ID, 추가 산출/대체원료, 누락 자료, weak control, 변한 clock은 확인 완료로 만들지 않는다.
+
+생성 응답에서 받은 ID를 event에 보존하여 이후 다른 ID가 조회되면 차단한다. 생성 snapshot 확인만으로 MES 보고량·순입고량·실행 완료를 확정하지 않는다. `observation_complete`는 false로 유지하고 실제 시작시각은 기존 값이 있으면 보존한다. 수정 요청은 기존 생산량/입고량과 허용 상태·task 수량 전파를 검증하기 전까지 차단한다.
+
+읽기 API는 기존 same-user session/credential broker를 사용한다. 원래 요청 actor의 unresolved create만 재조회하며 USER credential 거절은 broker에 전달한다. 토큰 발급·USER refresh·다른 사용자/APP fallback이나 자동 재전송이 없다. 조회 실패 안내를 UI에 표시하며 성공처럼 표시하지 않는다.
+
+`MES_PLAN_REVIEWED_CONTRACT`에는 단순 setup fingerprint 외에 정확한 tenant, 품번/호기 binding, 실제 resource/product material ID, read/write 창고 enum 대응, 금형/BOM version의 실제 custom-field code 및 literal object 값이 필요하다. 금형/BOM version custom fields는 tenant가 그 표현을 명시적으로 검토한 경우만 쓴다. 이것은 실제 금형 교체 수행이나 별도 MES master BOM version 선택을 증명하지 않는다. 승인된 inline BOM 내용은 전부 조회 대조한다.
+
+기본정보 `updatedAt`이 원료/산출/공정 수정까지 반영한다는 보장은 현재 공식 문서에 없다. `base_clock_covers_children`에 대한 별도 검증 근거가 없으면 생성 계약부터 fail-closed다. 아무 boolean을 켜면 검증됐다고 볼 수 없으며 vendor의 보장 또는 승인된 통제 시험 증거가 필요하다. 계약 검토 내용이 바뀌면 기존 disabled 요청을 덮어쓰지 않고 같은 工单 code에 새 영속 요청을 준비하고 과거 요청은 superseded로 보존한다.
+
+### 후속 검증
+
+| 검사 | 결과 |
+|---|---|
+| 최종 PostgreSQL | 138개 통과; 실제 두 dispatcher에서 import 1회, partial batch timeout 독립 보존 포함 |
+| 최종 SQLite | 138개 중 135개 통과·PG 전용 3개 제외 |
+| 최신 main 인증 + workflow + upload 통합 | 76개 통과; 실제 config URL/JWT 설정으로 실행, network 차단 |
+| 별도 session activity 회귀 | 17개 통과; definitive rejected-session code 검증 포함 |
+| migration check | 새 schema 변경 없음 |
+| frontend lint/typecheck/production build | 통과; 기존 큰 chunk 경고 유지 |
+
+로그는 `transport-postgres-tests.log`, `transport-backend-tests.log`, `integrated-auth-workflow-tests.log`, `integrated-auth-tests.log`, `transport-migration-check.log`, `transport-lint.log`, `transport-build.log`이다. 아래 14개 화면 검증과 Library 캡처는 최초 버전의 합성 화면 증거이며 이 후속 transport의 실제 MES 검증을 의미하지 않는다.
+
+### 남은 일을 구분한 운영 수용 기준
+
+| 구분 | 대상과 최소 정보/승인 |
+|---|---|
+| 코드 구현 완료·모의 검증 완료 | v2 생성 요청/응답 transport, durable reservation, single send, batch 개별 결과, timeout fence, 전체 캠페인/BOM readback, 기존 USER 읽기 broker 연결. 운영 gate OFF를 유지한다. |
+| 아직 운영 코드 연결 없음 | HTTP/UI 또는 worker에서 서버 승인된 한 건 쓰기 권한과 USER lease를 writer에 전달하는 운영 bridge 및 activation 정책. 현재는 어떤 설정 flag로도 실제 쓰기를 켤 수 없다. 승인을 받으면 정확한 actor/tenant/요청 digest/기간이 고정된 bridge만 연결해야 한다. |
+| 첫 생성 범위 밖·코드 아직 없음 | 진행 중 계획량/end 변경 transport 실행, task 수량 전파·전체 생산보고/순입고량의 freshness adapter. 수정 payload는 있으나 송신은 미연결·차단이다. 08시 下达/开工, 마감, 검사 생성은 후속 범위다. |
+| 읽기 권한/정보로 진행 가능 | 대상 tenant의 네 상세 조회 권한, 제품/원료·unit·resource code/ID/version, process/route, custom field 정의/값, 초기 status/reportFlag, 창고 enum 의미. 기존 대상 한 건과 공식/tenant 설정 근거로 바인딩을 검토할 수 있다. task detail 권한이 네 상세 조회 권한을 대체하지 않는다. 현재 live 조회는 수행하지 않았다. |
+| vendor 보장 또는 별도 통제 시험 필요 | 자식 BOM/산출/공정 변경과 base updatedAt의 연동. 정보만으로 보장이 없으면 승인된 변경 시험이 필요하며 현재 fail-closed다. |
+| 실제 MES 쓰기 시험 후에만 확정 | 승인된 제품·호기·금형·원료/BOM·수량·기간 한 건의 생성, custom-field/inline BOM 및 창고/SOP side effect, 생성 응답 ID와 공번 조회의 일치. 진행 상태에서 qty/end 변경 허용 여부, 실제 시작 보존, task 전파는 별도 수정 시험이 필요하다. |
+| 별도 운영 승인 필요 | migration `production.0016`, 역할·tenant 설정, 제한된 시험 scope, push/PR/merge/배포. 운영 DB/mapping/permissions는 변경하지 않았다. |
+
+따라서 생성 transport와 조회 구현을 preview 상태로 남겨두지는 않았지만, **실제 MES 생성 성공과 운영 활성화는 아직 수용 완료가 아니다**. 필요한 최소 대상과 미검증 값을 위처럼 고정한 후 명시적 시험 승인으로 진행해야 한다.
+
+아래는 최초 commit `4da3634b` 당시의 구현·검증 기록이다. transport가 미구현이었다는 초기 문구는 위 보완으로 대체됐다.
 
 ## 작업공간과 충돌 확인
 

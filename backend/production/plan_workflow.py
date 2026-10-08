@@ -395,6 +395,12 @@ def preview(start, end, plan_type):
                     group['blockers'].append('readback_required')
                 if digest(order.approved_snapshot) == digest(_intent(group)):
                     group['operation'] = 'unchanged'
+                    if not order.mes_id:
+                        from .plan_workflow_contract import build_contract
+                        contract, blockers = build_contract(order, _intent(group))
+                        pending = order.requests.filter(state='disabled').order_by('-created_at').first()
+                        if pending and (digest(pending.contract) != digest(contract) or pending.blockers != blockers):
+                            group['operation'] = 'prepare'
         if Decimal(group['quantity']) < sum(group.pop('_executions').values(), Decimal('0')):
             group['blockers'].append('below_existing_execution_review')
         group['key'] = digest(_intent(group))
@@ -439,10 +445,15 @@ def prepare(start, end, plan_type, keys, actor):
                 approved_snapshot=intent)
         from .plan_workflow_contract import build_contract
         contract, blockers = build_contract(order, intent)
-        request, created = PlanMesRequest.objects.get_or_create(dedupe_key=digest({'code': order.code, 'intent': intent}),
+        request, created = PlanMesRequest.objects.get_or_create(dedupe_key=digest({'code': order.code, 'intent': intent, 'contract': contract, 'blockers': blockers}),
             defaults={'work_order': order, 'operation': 'update' if order.mes_id else 'create', 'intent': intent,
                       'contract': contract, 'blockers': blockers, 'actor': actor, 'state': 'disabled'})
-        if created: PlanMesRequestEvent.objects.create(request=request, state='disabled', evidence={'write_enabled': False})
+        if created:
+            for old in order.requests.filter(state='disabled').exclude(pk=request.pk):
+                old.state = 'superseded'
+                old.save(update_fields=['state', 'updated_at'])
+                PlanMesRequestEvent.objects.create(request=old, state='superseded')
+            PlanMesRequestEvent.objects.create(request=request, state='disabled', evidence={'write_enabled': False})
         results.append({'key': key, 'uid': str(request.uid), 'state': request.state, 'blockers': request.blockers,
                         'work_order_code': order.code})
     return results
@@ -470,13 +481,14 @@ def claim_for_isolated_adapter(request_uid, *, fixture=False):
 
 
 @transaction.atomic
-def record_adapter_result(request_uid, outcome):
+def record_adapter_result(request_uid, outcome, *, work_order_id=''):
     req = PlanMesRequest.objects.select_for_update().get(uid=request_uid)
     if req.state != 'sending': raise WorkflowConflict()
     # Even a provider success awaits exact readback; timeout is never retried.
     req.state = 'readback_pending' if outcome == 'acknowledged' else 'uncertain'
     req.save(update_fields=['state', 'updated_at'])
-    PlanMesRequestEvent.objects.create(request=req, state=req.state)
+    PlanMesRequestEvent.objects.create(request=req, state=req.state,
+        evidence={'work_order_id': exact_id(work_order_id)} if work_order_id else {})
 
 
 @transaction.atomic
@@ -490,9 +502,10 @@ def reconcile_readback(request_uid, evidence):
     good = (not order.mes_id or evidence.get('work_order_id') == order.mes_id) and evidence.get('complete') is True and all(evidence.get(k) == v for k, v in expected.items())
     if good:
         order.mes_id = exact_id(evidence.get('work_order_id'))
-        order.reported_quantity = Decimal(decimal_text(evidence.get('reported_quantity')))
-        order.inbound_quantity = Decimal(decimal_text(evidence.get('inbound_quantity')))
-        order.observed_at, order.observation_complete = timezone.now(), True
+        if evidence.get('scope') != 'creation_snapshot':
+            order.reported_quantity = Decimal(decimal_text(evidence.get('reported_quantity')))
+            order.inbound_quantity = Decimal(decimal_text(evidence.get('inbound_quantity')))
+            order.observed_at, order.observation_complete = timezone.now(), True
         if evidence.get('actual_started_at') and order.actual_started_at is None:
             from django.utils.dateparse import parse_datetime
             started = parse_datetime(evidence['actual_started_at'])
@@ -504,5 +517,6 @@ def reconcile_readback(request_uid, evidence):
         req.state = 'review'
     req.save(update_fields=['state', 'updated_at'])
     PlanMesRequestEvent.objects.create(request=req, state=req.state, evidence={
-        'complete': good, 'work_order_id': order.mes_id if good else '', 'checked_at': timezone.now().isoformat()})
+        'complete': good, 'scope': evidence.get('scope', 'production_totals'),
+        'work_order_id': order.mes_id if good else '', 'checked_at': timezone.now().isoformat()})
     return req.state

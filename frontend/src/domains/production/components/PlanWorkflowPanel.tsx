@@ -45,8 +45,12 @@ function WorkflowEditor({ date, language }: Props) {
   const query = useQuery({ queryKey: ["production", "plan-workflow", scope], queryFn: () => getPlanWorkflow(scope), retry: false });
   const data = query.data;
   const mutate = useMutation({ mutationFn: (payload: Record<string, unknown>) => changePlanWorkflow(scope, payload),
-    onSuccess: async (result) => {
-      setMessage(result.results?.some((row: { state: string }) => row.state === "blocked")
+    onSuccess: async (result, payload) => {
+      setMessage(payload.action === "recheck"
+        ? (result.state === "confirmed"
+          ? (zh ? "工单创建快照已核验；生产报工和入库数量仍需另查。" : "工单 생성 스냅샷을 확인했습니다. 생산보고·입고량은 별도 조회가 필요합니다.")
+          : (zh ? "创建结果仍未核实，禁止重发。请检查MES连接、权限和完整快照。" : "생성 결과가 아직 미검증입니다. 재전송하지 말고 MES 연결·권한·전체 스냅샷을 확인하세요."))
+        : result.results?.some((row: { state: string }) => row.state === "blocked")
         ? (zh ? "部分项目待确认，请检查准备结果。" : "일부 항목은 확인 대기입니다. 준비 결과를 확인하세요.")
         : (zh ? "已保存本地准备。MES写入仍关闭。" : "로컬 준비를 저장했습니다. MES 쓰기는 OFF입니다."));
       setEditing(null); setDefaultTarget(null);

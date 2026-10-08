@@ -72,7 +72,7 @@ elif preview:
         call_command('runserver', '127.0.0.1:8029', use_reloader=False)
 else:
     from django.test.runner import DiscoverRunner
-    labels = ['production.test_plan_workflow', 'production.test_mes_execution_contract',
+    labels = ['production.test_plan_workflow', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
         'production.test_plan_workflow_concurrency', 'production.test_mes_delivery', 'production.test_mes_task_actions', 'injection.tests']
     with patch('requests.sessions.Session.request', side_effect=AssertionError('MES network forbidden in isolated tests')):
         raise SystemExit(DiscoverRunner(verbosity=2).run_tests(labels))
