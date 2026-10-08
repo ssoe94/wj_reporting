@@ -199,12 +199,28 @@ class InspectionReadProjectionTests(APITestCase):
         with patch('quality.inspection_kanban.get_read_batch', return_value=None) as provider:
             response = self.client.get('/api/quality/inspection-requests/kanban/')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'no-store, max-age=0')
+        directives = {value.strip().lower() for value in response['Cache-Control'].split(',')}
+        self.assertTrue({'no-store', 'max-age=0'}.issubset(directives))
+        self.assertNotIn('public', directives)
         session = provider.call_args.kwargs['session']
         self.assertIs(type(session), InspectionSession)
         self.assertEqual(session.actor_id, user.pk)
         self.assertNotIn(session.login_digest, str(response.data))
         self.assertNotIn('mes_sid', str(response.data))
+
+    @override_settings(MIDDLEWARE=['config.middleware.NoCacheAPIMiddleware'])
+    def test_api_cache_middleware_preserves_kanban_cache_prohibition(self):
+        from .test_inspection_requests import authenticate_inspection_client
+        user = get_user_model().objects.create_user(username='middleware-read-admin', is_superuser=True)
+        authenticate_inspection_client(self.client, user)
+        with patch('quality.inspection_kanban.get_read_batch', return_value=None):
+            response = self.client.get('/api/quality/inspection-requests/kanban/')
+        self.assertEqual(response.status_code, 200)
+        directives = {value.strip().lower() for value in response['Cache-Control'].split(',')}
+        self.assertTrue({'no-store', 'no-cache', 'must-revalidate', 'max-age=0'}.issubset(directives))
+        self.assertNotIn('public', directives)
+        self.assertEqual(response['Pragma'], 'no-cache')
+        self.assertEqual(response['Expires'], '0')
 
     def test_legacy_local_board_does_not_supply_a_mes_session(self):
         user = get_user_model().objects.create_user(username='legacy-read-admin', is_superuser=True)
