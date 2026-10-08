@@ -138,7 +138,9 @@ def fetch_task_page(page, size):
     token = get_access_token()
     response = requests.post(
         f'{MES_BASE_URL}{MES_ROUTE_BASE}/mfg/open/v1/produce_task/_list',
-        headers={'access_token': token},
+        # Render uses Blacklake's route gateway, which authenticates via query
+        # parameters. The downstream endpoint's documented header is not enough.
+        params={'access_token': token},
         json={'page': page, 'size': size, 'taskStatusList': [1, 2, 3]},
         timeout=(3, 5),
     )

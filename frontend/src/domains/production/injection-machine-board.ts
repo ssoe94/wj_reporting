@@ -69,6 +69,13 @@ export function summarizeMachineMes(machine: ReconciliationMachine | null, data:
   };
 }
 
+/** Empty task lists establish absence only when MES and assignment evidence is complete. */
+export function machineMesEmptyLabel(row: MachineBoardRow, data?: MesTaskReconciliation): "mesNoOpen" | "mesUnavailable" {
+  return row.mes.state === "ready" && !row.mes.held
+    && data?.data_freshness.mes_complete && data.data_freshness.assignment_complete
+    ? "mesNoOpen" : "mesUnavailable";
+}
+
 export function summarizeMachineStops(
   events: InjectionTransitionEvent[],
   confirmations: InjectionDowntimeConfirmation[] | undefined,

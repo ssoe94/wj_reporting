@@ -1,11 +1,13 @@
 """MES task action checks, run by scripts/check-mes-task-reconciliation.py. No network."""
+from unittest.mock import Mock, patch
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .mes_task_actions import (
-    CLOSE_PATH, DETAIL_PATH, ActionRequestError, execute_actions, parse_items,
+    CLOSE_PATH, DETAIL_PATH, ActionRequestError, execute_actions, mes_sender, parse_items,
 )
 from .mes_task_actions_views import MesTaskActionView
 from .mes_task_reconciliation_service import TASK_LIST_CACHE_KEY
@@ -47,6 +49,29 @@ class FakeMes:
 
     def write_paths(self):
         return [path for path, _ in self.calls if path != DETAIL_PATH]
+
+
+class RouteTransportTests(SimpleTestCase):
+    def test_route_query_authentication_is_used_once(self):
+        response = Mock()
+        response.json.return_value = {'code': 200, 'data': {}}
+        with patch('requests.post', return_value=response) as post, \
+                patch('inventory.mes.get_access_token', return_value='synthetic-token'):
+            self.assertEqual(mes_sender(DETAIL_PATH, {'taskId': 101}), response.json.return_value)
+        post.assert_called_once()
+        args, kwargs = post.call_args
+        self.assertTrue(args[0].endswith(DETAIL_PATH))
+        self.assertNotIn('synthetic-token', args[0])
+        self.assertEqual(kwargs['params'], {'access_token': 'synthetic-token'})
+        self.assertEqual(kwargs['json'], {'taskId': 101})
+
+    def test_detail_permission_denied_never_submits_an_action(self):
+        mes = FakeMes([{'code': 3500060, 'subCode': 'OPENAPI-DOMAIN/URL_NO_PERMISSION'}])
+        items, reason = parse_items({'reason': '상태 확인', 'items': [item()]})
+        results = execute_actions(items, reason, send=mes, actor_label='test')
+        self.assertEqual(results[0]['outcome'], 'blocked')
+        self.assertEqual(results[0]['reason'], 'mes_read_failed')
+        self.assertEqual(mes.write_paths(), [])
 
 
 class ParseTests(SimpleTestCase):
