@@ -12,8 +12,11 @@ from .mes_task_reconciliation import SHANGHAI, observe_samples, reconcile
 from .models import ProductionPartCavity, ProductionPlan
 
 
+TASK_LIST_CACHE_KEY = 'production:mes-task-list:v1'
+
+
 def read_snapshot():
-    key = 'production:mes-task-list:v1'
+    key = TASK_LIST_CACHE_KEY
     cached = cache.get(key)
     if cached is not None:
         return cached

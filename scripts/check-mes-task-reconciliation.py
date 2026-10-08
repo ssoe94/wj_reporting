@@ -25,4 +25,5 @@ from django.test.runner import DiscoverRunner
 with patch('requests.sessions.Session.request', side_effect=AssertionError('Network is forbidden in offline checks')):
     raise SystemExit(DiscoverRunner(verbosity=2).run_tests([
         'production.test_mes_task_reconciliation', 'production.test_mes_task_reconciliation_api',
+        'production.test_mes_task_actions',
     ]))

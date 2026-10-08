@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { useLang } from "@/i18n";
 import type { InjectionDowntimeConfirmation, ProductionStatusResponse } from "@/domains/production/api";
@@ -14,7 +14,11 @@ import {
   type MachineBoardGroup,
   type MachineBoardRow,
   type MachineInspectionAttention,
+  recommendTaskActions,
+  type TaskRecommendation,
 } from "@/domains/production/injection-machine-board";
+import { getMesTaskActionAvailability, type MesTaskActionItem } from "@/domains/production/mes-task-actions-api";
+import { MesTaskActionDialog } from "@/domains/production/components/MesTaskActionDialog";
 import {
   deriveInjectionQuality,
   reduceInjectionQuality,
@@ -109,6 +113,17 @@ export function InjectionMachineBoard({
   const [tab, setTab] = useState<BoardTab>("injection");
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [selectedTasks, setSelectedTasks] = useState<ReadonlySet<string>>(new Set());
+  const [actionDialog, setActionDialog] = useState<{ title: string; items: MesTaskActionItem[] } | null>(null);
+  const queryClient = useQueryClient();
+  const availabilityQuery = useQuery({
+    queryKey: ["production", "mes-task-actions", "availability"],
+    queryFn: ({ signal }) => getMesTaskActionAvailability(signal),
+    retry: false,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const actionsEnabled = availabilityQuery.data?.enabled === true && availabilityQuery.data.permitted;
   const reconciliationQuery = useQuery({
     ...reconciliationQueryOptions(businessDate),
     queryFn: ({ signal }) => getMesTaskReconciliation(businessDate, signal),
@@ -337,9 +352,104 @@ export function InjectionMachineBoard({
     );
   }
 
-  function renderTask(task: ReconciliationTask) {
+  function toActionItem(row: MachineBoardRow, task: ReconciliationTask, action: MesTaskActionItem["action"]): MesTaskActionItem | null {
+    if (row.machineNumber === null || !task.task_code) return null;
+    return {
+      action,
+      task_id: task.task_id,
+      task_code: task.task_code,
+      machine_number: row.machineNumber,
+      expected_status: task.status,
+      work_order_code: task.work_order_code,
+      part_no: task.part_no,
+    };
+  }
+
+  function toggleTask(taskId: string) {
+    setSelectedTasks((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function openActions(title: string, items: Array<MesTaskActionItem | null>) {
+    const valid = items.filter((item): item is MesTaskActionItem => item !== null);
+    if (valid.length) setActionDialog({ title, items: valid });
+  }
+
+  function closeActions(changed: boolean) {
+    setActionDialog(null);
+    if (changed) {
+      setSelectedTasks(new Set());
+      void queryClient.invalidateQueries({ queryKey: reconciliationQueryOptions(businessDate).queryKey });
+    }
+  }
+
+  function renderActionBar(row: MachineBoardRow, recommendations: TaskRecommendation[]) {
+    const tasks = row.mesMachine?.tasks ?? [];
+    const label = `${row.machineNumber ?? row.key}${mesText("machineUnit")}`;
+    const recommended = recommendations
+      .filter((item) => item.action !== null)
+      .map((item) => {
+        const task = tasks.find((candidate) => candidate.task_id === item.taskId);
+        return task && item.action ? toActionItem(row, task, item.action) : null;
+      });
+    const selected = tasks.filter((task) => selectedTasks.has(task.task_id));
+    const pausable = selected.filter((task) => task.status === 2);
+    const closable = selected.filter((task) => task.work_order_code);
+    const disabled = !actionsEnabled;
+    return (
+      <div className="machine-board__action-bar">
+        <button
+          className="button button--primary machine-board__action"
+          disabled={disabled || !recommended.length}
+          onClick={() => openActions(`${label} · ${text("action.recommendedTitle")}`, recommended)}
+          type="button"
+        >
+          {text("action.applyRecommended")} ({recommended.length})
+        </button>
+        <button
+          className="button button--ghost machine-board__action"
+          disabled={disabled || !pausable.length}
+          onClick={() => openActions(`${label} · ${text("action.pauseTitle")}`, pausable.map((task) => toActionItem(row, task, "pause")))}
+          type="button"
+        >
+          {text("action.pauseSelected")} ({pausable.length})
+        </button>
+        <button
+          className="button button--ghost machine-board__action machine-board__action--danger"
+          disabled={disabled || !closable.length}
+          onClick={() => openActions(`${label} · ${text("action.closeTitle")}`, closable.map((task) => toActionItem(row, task, "close_work_order")))}
+          type="button"
+        >
+          {text("action.closeSelected")} ({closable.length})
+        </button>
+        {!actionsEnabled ? (
+          <span className="machine-board__muted">
+            {availabilityQuery.data && !availabilityQuery.data.permitted
+              ? text("action.noPermission")
+              : text("action.disabled")}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderTask(task: ReconciliationTask, recommendation?: TaskRecommendation) {
     return (
       <tr key={task.task_id}>
+        {recommendation !== undefined ? (
+          <td className="machine-board__check">
+            <input
+              aria-label={`${task.task_code || task.task_id} ${text("action.select")}`}
+              checked={selectedTasks.has(task.task_id)}
+              onChange={() => toggleTask(task.task_id)}
+              type="checkbox"
+            />
+          </td>
+        ) : null}
         <td>
           <strong>{task.part_no || "—"}</strong>
           <small>{task.task_code || task.task_id} · {task.work_order_code || "—"}</small>
@@ -349,7 +459,7 @@ export function InjectionMachineBoard({
           {formatNumber(task.planned_quantity, language)} / {formatNumber(task.reported_quantity, language)} / {formatNumber(task.inbound_quantity, language)}
         </td>
         <td>{formatTime(task.actual_start, language, true)}</td>
-        <td>
+        <td className="machine-board__assessment">
           <span className={`machine-board__badge${assessmentTone(task.assessment) === "warning" ? " machine-board__badge--warning" : ""}`}>
             {mesText(`assessment.${task.assessment}`)}
           </span>
@@ -359,6 +469,17 @@ export function InjectionMachineBoard({
             </ul>
           ) : null}
         </td>
+        {recommendation !== undefined ? (
+          <td>
+            {recommendation.action ? (
+              <span className={`machine-board__badge machine-board__badge--${recommendation.action === "pause" ? "warning" : "ok"}`}>
+                {text(`action.kind.${recommendation.action}`)}
+              </span>
+            ) : recommendation.note ? (
+              <span className="machine-board__muted">{text(`action.note.${recommendation.note}`)}</span>
+            ) : null}
+          </td>
+        ) : null}
       </tr>
     );
   }
@@ -366,6 +487,9 @@ export function InjectionMachineBoard({
   function renderDetail(row: MachineBoardRow) {
     const item = row.progress;
     const machine = row.mesMachine;
+    const recommendations = recommendTaskActions(row, businessDate);
+    const recommendationFor = (taskId: string) => recommendations.find((entry) => entry.taskId === taskId)
+      ?? { taskId, action: null, note: null };
     return (
       <div className="machine-board__detail">
         <section>
@@ -410,17 +534,20 @@ export function InjectionMachineBoard({
             <p className="machine-board__muted">{text("mesUnavailable")}</p>
           ) : machine?.tasks.length ? (
             <div className="machine-board__table-wrap">
+              {renderActionBar(row, recommendations)}
               <table className="machine-board__tasks">
                 <thead>
                   <tr>
+                    <th scope="col"><span className="sr-only">{text("action.select")}</span></th>
                     <th scope="col">{text("taskPart")}</th>
                     <th scope="col">{text("taskStatus")}</th>
                     <th scope="col">{mesText("quantities")}</th>
                     <th scope="col">{mesText("opened")}</th>
                     <th scope="col">{text("taskAssessment")}</th>
+                    <th scope="col">{text("action.recommendation")}</th>
                   </tr>
                 </thead>
-                <tbody>{machine.tasks.map(renderTask)}</tbody>
+                <tbody>{machine.tasks.map((task) => renderTask(task, recommendationFor(task.task_id)))}</tbody>
               </table>
             </div>
           ) : (
@@ -645,7 +772,7 @@ export function InjectionMachineBoard({
               <summary>{mesText("unmapped")} · {reconciliation.unmapped_tasks.length}</summary>
               <div className="machine-board__table-wrap">
                 <table className="machine-board__tasks">
-                  <tbody>{reconciliation.unmapped_tasks.map(renderTask)}</tbody>
+                  <tbody>{reconciliation.unmapped_tasks.map((task) => renderTask(task))}</tbody>
                 </table>
               </div>
             </details>
@@ -657,6 +784,7 @@ export function InjectionMachineBoard({
           <div className="production-progress-list">{machiningRows}</div>
         </div>
       )}
+      {actionDialog ? <MesTaskActionDialog items={actionDialog.items} onClose={closeActions} title={actionDialog.title} /> : null}
     </section>
   );
 }

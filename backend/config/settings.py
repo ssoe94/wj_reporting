@@ -457,6 +457,11 @@ MES_USER_OAUTH_APP_SECRET = config('MES_USER_OAUTH_APP_SECRET', default='')
 MES_APP_KEY = config('MES_APP_KEY', default='')
 MES_APP_SECRET = config('MES_APP_SECRET', default='')
 MES_INSPECTION_ENABLED = config('MES_INSPECTION_ENABLED', default=False, cast=bool)
+# Operator-requested MES production task start/resume/pause and work-order close.
+# Off by default; enabling it lets the production board change live MES state.
+MES_TASK_ACTIONS_ENABLED = config('MES_TASK_ACTIONS_ENABLED', default=False, cast=bool)
+# Optional MES user ID recorded as the operator on pause/resume (the integration account).
+MES_TASK_ACTION_OPERATOR_ID = config('MES_TASK_ACTION_OPERATOR_ID', default=0, cast=int) or None
 MES_INSPECTION_CONTRACT = config('MES_INSPECTION_CONTRACT', default='')
 
 # Local candidate only. Both gates and every contract remain unconfigured by default.

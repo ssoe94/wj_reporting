@@ -1,4 +1,5 @@
 from django.urls import path
+from .mes_task_actions_views import MesTaskActionView
 from .mes_task_reconciliation_views import MesTaskReconciliationView
 from .views import (
     ProductionConsoleView,
@@ -39,6 +40,7 @@ from .mes_read_status_views import MesProductionReadStatusView
 
 urlpatterns = [
     path('mes-task-reconciliation/', MesTaskReconciliationView.as_view(), name='mes-task-reconciliation'),
+    path('mes-task-actions/', MesTaskActionView.as_view(), name='mes-task-actions'),
     path('mes-read-status/', MesProductionReadStatusView.as_view(), name='production-mes-read-status'),
     path('mes-delivery-readiness/', MesDeliveryReadinessView.as_view(), name='production-mes-delivery-readiness'),
     path('field-kanban/', FieldKanbanView.as_view(), name='production-field-kanban'),

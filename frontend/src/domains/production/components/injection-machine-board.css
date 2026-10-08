@@ -467,9 +467,13 @@
   }
 }
 
-.machine-board__tasks td:last-child {
+.machine-board__tasks td.machine-board__assessment {
   width: 40%;
-  min-width: 220px;
+  min-width: 240px;
+}
+
+.machine-board__tasks td:last-child:not(.machine-board__assessment) {
+  white-space: nowrap;
 }
 
 .machine-board__table thead th:nth-child(5) { width: 190px; }
@@ -551,4 +555,84 @@
 
 .machine-board__stack .machine-board__badge {
   margin-left: 4px;
+}
+
+.machine-board__action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.machine-board__action.button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.machine-board__action--danger:not(:disabled) {
+  color: #a03b16;
+  border-color: rgba(190, 91, 42, 0.4);
+}
+
+.machine-board__check {
+  width: 28px;
+}
+
+.machine-board__check input {
+  width: 18px;
+  height: 18px;
+}
+
+.machine-action-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  font-size: 14px;
+}
+
+.machine-action-dialog__header p {
+  margin: 4px 0 10px;
+  color: var(--muted);
+}
+
+.machine-action-dialog__form fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.machine-action-dialog__form legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.machine-action-dialog__form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+
+.machine-action-dialog__other {
+  flex-basis: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+}
+
+.machine-action-dialog__ack {
+  font-weight: 600;
+}
+
+.machine-action-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }

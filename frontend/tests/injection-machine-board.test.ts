@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { buildMachineBoardRows, MACHINE_BOARD_GROUPS, SPORADIC_SHOT_LIMIT, summarizeMachineStops } from "../src/domains/production/injection-machine-board.ts";
+import {
+  buildMachineBoardRows, currentPlanParts, MACHINE_BOARD_GROUPS, recommendTaskActions, SPORADIC_SHOT_LIMIT, summarizeMachineStops,
+} from "../src/domains/production/injection-machine-board.ts";
 import type { MesTaskReconciliation } from "../src/domains/production/mes-task-reconciliation.ts";
 import type { InjectionTransitionAnalysis, InjectionTransitionEvent } from "../src/domains/production/injection-transition-analysis.ts";
 import type { RealtimeProgressRow } from "../src/domains/production/realtime-progress.ts";
@@ -149,4 +151,68 @@ test("unplanned activity needs attention until it is confirmed; a stopped machin
     ...base, progressRows: [unplanned], reconciliation: fresh(), activityConfirmedKeys: new Set(["9"]),
   });
   assert.equal(confirmed.find((row) => row.key === "9")?.needsAttention, false);
+});
+
+function segment(partNo: string, sequence: number, status: "completed" | "in_progress" | "pending", shotGroupKey?: string) {
+  return {
+    key: `${partNo}-${sequence}`, sequence, partNo, modelName: "", lotNo: "", productFamilyCode: null, productFamilyName: null,
+    isFinishedProduct: true, plannedQty: 100, cavity: 1, shotGroupKey, requiredShots: 100, allocatedShots: 0,
+    estimatedQty: 0, progressRate: 0, status,
+  };
+}
+
+function machineWithTasks(tasks: Array<{ id: string; part: string; status: 1 | 2 | 3; assessment?: string }>, overrides: Partial<RealtimeProgressRow> = {}) {
+  const data = fresh();
+  const machine = data.machines.find((entry) => entry.machine_number === 1)!;
+  machine.plan_scope = "present";
+  machine.tasks = tasks.map((item) => ({
+    task_id: item.id, task_code: `C${item.id}`, work_order_code: `W${item.id}`, part_no: item.part, machine_number: 1,
+    status: item.status, actual_start: null, planned_quantity: 100, reported_quantity: 0, inbound_quantity: null,
+    quantity_unit: null, assessment: (item.assessment ?? "plan_match") as never, reasons: [],
+  }));
+  const progress = progressRow("1", {
+    shotCount: 300, isRunning: true,
+    segments: [segment("PART-01", 1, "completed"), segment("PART-02", 2, "in_progress", "g2"), segment("PART-02B", 2, "in_progress", "g2"), segment("PART-03", 3, "pending")],
+    ...overrides,
+  });
+  return buildMachineBoardRows({ ...base, reconciliation: data, progressRows: [progress] }).find((row) => row.key === "1")!;
+}
+
+test("current plan parts are the in-progress segment plus parts shot together with it", () => {
+  const row = machineWithTasks([]);
+  assert.deepEqual([...currentPlanParts(row, fixture.business_date)].sort(), ["PART-02", "PART-02B"]);
+});
+
+test("only the current plan part is started or resumed; running tasks for other parts are paused", () => {
+  const row = machineWithTasks([
+    { id: "1", part: "PART-02", status: 1 },
+    { id: "2", part: "PART-02B", status: 3 },
+    { id: "3", part: "PART-01", status: 2 },
+    { id: "4", part: "OLD", status: 2, assessment: "pause_review" },
+    { id: "5", part: "PART-03", status: 1 },
+  ]);
+  const actions = Object.fromEntries(recommendTaskActions(row, fixture.business_date).map((item) => [item.taskId, item.action ?? item.note]));
+  assert.deepEqual(actions, { 1: "start", 2: "resume", 3: "pause", 4: "pause", 5: "not_current_waiting" });
+});
+
+test("a running current task is kept and duplicate current tasks are left for the operator", () => {
+  const keep = machineWithTasks([{ id: "1", part: "PART-02", status: 2 }]);
+  assert.equal(recommendTaskActions(keep, fixture.business_date)[0].note, "current");
+  const duplicate = machineWithTasks([{ id: "1", part: "PART-02", status: 1 }, { id: "2", part: "PART-02", status: 3 }]);
+  assert.deepEqual(recommendTaskActions(duplicate, fixture.business_date).map((item) => [item.action, item.note]), [[null, "duplicate"], [null, "duplicate"]]);
+});
+
+test("no action is suggested when plan or MES data is incomplete", () => {
+  const unknown = machineWithTasks([{ id: "1", part: "OLD", status: 2, assessment: "unknown" }]);
+  assert.deepEqual(recommendTaskActions(unknown, fixture.business_date).map((item) => item.action), [null]);
+  const failed = buildMachineBoardRows({ ...base, reconciliation: fresh(), reconciliationFailed: true }).find((row) => row.key === "3")!;
+  assert.deepEqual(recommendTaskActions(failed, fixture.business_date), []);
+});
+
+test("without a progress row the earliest planned part of the day is current", () => {
+  const rows = buildMachineBoardRows({ ...base, reconciliation: fresh() });
+  const four = rows.find((row) => row.key === "4")!;
+  const firstPlan = four.mesMachine!.plans.filter((plan) => plan.plan_date === fixture.business_date)
+    .sort((left, right) => left.sequence - right.sequence)[0];
+  assert.ok(currentPlanParts(four, fixture.business_date).has(firstPlan.part_no.toUpperCase()));
 });

@@ -139,3 +139,76 @@ export function buildMachineBoardRows(input: {
   // Stable sort keeps machine order inside each group.
   return rows.sort((left, right) => (order.get(left.group) ?? 0) - (order.get(right.group) ?? 0));
 }
+
+export type TaskActionKind = "start" | "resume" | "pause" | "close_work_order";
+
+export type TaskRecommendation = {
+  taskId: string;
+  action: Exclude<TaskActionKind, "close_work_order"> | null;
+  /** Why no action is suggested, when relevant. */
+  note: "current" | "duplicate" | "held" | "not_current_waiting" | null;
+};
+
+/**
+ * Parts the machine should be producing now: the in-progress plan segment (or the
+ * first pending one) plus parts shot together with it. Falls back to the earliest
+ * sequence of today's MES-side plans when no progress row exists.
+ */
+export function currentPlanParts(row: MachineBoardRow, businessDate: string): Set<string> {
+  const parts = new Set<string>();
+  const segments = row.progress?.hasPlan ? row.progress.segments : [];
+  const current = segments.find((segment) => segment.status === "in_progress")
+    ?? segments.find((segment) => segment.status === "pending");
+  if (current) {
+    for (const segment of segments) {
+      if (segment === current || (current.shotGroupKey && segment.shotGroupKey === current.shotGroupKey)) {
+        if (segment.partNo) parts.add(segment.partNo.trim().toUpperCase());
+      }
+    }
+  } else {
+    const today = (row.mesMachine?.plans ?? []).filter((plan) => plan.plan_date === businessDate);
+    const first = today.reduce<typeof today[number] | null>((best, plan) => (!best || plan.sequence < best.sequence ? plan : best), null);
+    if (first) {
+      parts.add(first.part_no.trim().toUpperCase());
+      for (const part of first.parallel_parts) parts.add(part.trim().toUpperCase());
+    }
+  }
+  for (const plan of row.mesMachine?.plans ?? []) {
+    if (parts.has(plan.part_no.trim().toUpperCase())) {
+      for (const part of plan.parallel_parts) parts.add(part.trim().toUpperCase());
+    }
+  }
+  return parts;
+}
+
+/**
+ * Suggest MES task actions for one machine. Only the task matching the current plan
+ * part is started or resumed; running tasks for other parts are paused. Duplicate
+ * tasks for the current part and machines whose plan or MES data is incomplete get
+ * no suggestion, because the right task cannot be identified automatically.
+ */
+export function recommendTaskActions(row: MachineBoardRow, businessDate: string): TaskRecommendation[] {
+  const machine = row.mesMachine;
+  if (!machine || row.mes.state !== "ready") return [];
+  const held = machine.plan_scope === "incomplete" || row.mes.held;
+  const current = currentPlanParts(row, businessDate);
+  const countByPart = new Map<string, number>();
+  for (const task of machine.tasks) {
+    const part = task.part_no.trim().toUpperCase();
+    countByPart.set(part, (countByPart.get(part) ?? 0) + 1);
+  }
+  return machine.tasks.map((task): TaskRecommendation => {
+    const part = task.part_no.trim().toUpperCase();
+    if (held || task.assessment === "unknown" || task.assessment === "unmapped" || !part) {
+      return { taskId: task.task_id, action: null, note: "held" };
+    }
+    if (current.has(part)) {
+      if ((countByPart.get(part) ?? 0) > 1) return { taskId: task.task_id, action: null, note: "duplicate" };
+      if (task.status === 1) return { taskId: task.task_id, action: "start", note: null };
+      if (task.status === 3) return { taskId: task.task_id, action: "resume", note: null };
+      return { taskId: task.task_id, action: null, note: "current" };
+    }
+    if (task.status === 2) return { taskId: task.task_id, action: "pause", note: null };
+    return { taskId: task.task_id, action: null, note: "not_current_waiting" };
+  });
+}
