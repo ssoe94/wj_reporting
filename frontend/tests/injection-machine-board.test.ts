@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import {
-  buildMachineBoardRows, currentPlanParts, MACHINE_BOARD_GROUPS, recommendTaskActions, SPORADIC_SHOT_LIMIT, summarizeMachineStops,
+  buildMachineBoardRows, currentPlanParts, MACHINE_BOARD_GROUPS, machineMesEmptyLabel, recommendTaskActions, SPORADIC_SHOT_LIMIT, summarizeMachineStops,
 } from "../src/domains/production/injection-machine-board.ts";
 import type { MesTaskReconciliation } from "../src/domains/production/mes-task-reconciliation.ts";
 import type { InjectionTransitionAnalysis, InjectionTransitionEvent } from "../src/domains/production/injection-transition-analysis.ts";
@@ -129,6 +129,27 @@ test("a failed or missing reconciliation never reads as zero open tasks", () => 
     const rows = buildMachineBoardRows({ ...base, ...input });
     assert.ok(rows.every((row) => row.mes.state === "unavailable"));
   }
+});
+
+test("empty MES wording requires complete evidence and a known machine assessment", () => {
+  const data = fresh();
+  const machine = data.machines[0];
+  machine.tasks = [];
+  const row = () => buildMachineBoardRows({ ...base, reconciliation: data })
+    .find((entry) => entry.machineNumber === machine.machine_number)!;
+  assert.equal(machineMesEmptyLabel(row(), data), "mesNoOpen");
+  for (const key of ["mes_complete", "assignment_complete"] as const) {
+    data.data_freshness[key] = false;
+    assert.equal(machineMesEmptyLabel(row(), data), "mesUnavailable", key);
+    data.data_freshness[key] = true;
+  }
+  machine.plan_scope = "incomplete";
+  data.data_freshness.plan_complete = false;
+  data.warnings.push("current_snapshot_with_other_date");
+  assert.equal(machineMesEmptyLabel(row(), data), "mesNoOpen", "plan coverage and date do not change the current MES task list");
+  machine.plans[0].assessment = "unknown";
+  assert.equal(machineMesEmptyLabel(row(), data), "mesUnavailable");
+  assert.equal(machineMesEmptyLabel(buildMachineBoardRows({ ...base })[0]), "mesUnavailable");
 });
 
 test("stop summary counts unconfirmed events only when confirmations loaded", () => {

@@ -215,7 +215,7 @@ class ReaderTests(unittest.TestCase):
         tasks, _ = normalize_tasks([row], lambda row: 'A', lambda name: 1)
         self.assertEqual(tasks[0]['quantity_unit'], '1')
 
-    def test_transport_is_list_only_and_token_is_in_header(self):
+    def test_transport_is_list_only_and_authenticates_the_route_gateway(self):
         response = Mock()
         response.json.return_value = self.payload([])
         post = Mock(return_value=response)
@@ -228,9 +228,17 @@ class ReaderTests(unittest.TestCase):
         args, kwargs = post.call_args
         self.assertEqual(args[0], 'https://mes.invalid/route/mfg/open/v1/produce_task/_list')
         self.assertNotIn('synthetic-token', args[0])
-        self.assertEqual(kwargs['headers'], {'access_token': 'synthetic-token'})
+        self.assertEqual(kwargs['params'], {'access_token': 'synthetic-token'})
         self.assertEqual(kwargs['json'], {'page': 1, 'size': 100, 'taskStatusList': [1, 2, 3]})
         post.assert_called_once()
+
+    def test_work_center_is_not_equipment_identity(self):
+        row = {'taskId': '1', 'taskCode': 'T1', 'taskStatus': {'code': 2}, 'processCode': 'ZS',
+               'mainMaterialCode': 'A',
+               'workCenterVO': {'id': 17, 'name': '注塑车间工作中心', 'code': 'ZS'}}
+        tasks, complete = normalize_tasks([row], lambda row: 'A', lambda name: 17)
+        self.assertTrue(complete)
+        self.assertIsNone(tasks[0]['machine_number'])
 
     def test_malformed_nested_fields_cannot_leak_raw_objects(self):
         row = {'taskId': '1', 'taskCode': 'T1', 'taskStatus': 2, 'processCode': 'ZS',

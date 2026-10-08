@@ -11,6 +11,7 @@ import {
   buildMachineBoardRows,
   INJECTION_MACHINE_COUNT,
   MACHINE_BOARD_GROUPS,
+  machineMesEmptyLabel,
   type MachineBoardGroup,
   type MachineBoardRow,
   type MachineInspectionAttention,
@@ -339,7 +340,7 @@ export function InjectionMachineBoard({
               mes.paused ? `${text("mesPaused")} ${mes.paused}` : "",
               mes.waiting ? `${text("mesWaiting")} ${mes.waiting}` : "",
             ].filter(Boolean).join(" · ")
-            : text("mesNoOpen")}
+            : text(machineMesEmptyLabel(row, reconciliation))}
         </span>
         <span className="machine-board__badges">
           {mes.pauseReview ? <span className="machine-board__badge machine-board__badge--warning">{text("pauseReview")} {mes.pauseReview}</span> : null}
@@ -552,7 +553,7 @@ export function InjectionMachineBoard({
             </div>
           ) : (
             <p className="machine-board__muted">
-              {reconciliation?.data_freshness.assignment_complete ? mesText("emptyTasks") : mesText("unknownTasks")}
+              {text(machineMesEmptyLabel(row, reconciliation))}
             </p>
           )}
         </section>

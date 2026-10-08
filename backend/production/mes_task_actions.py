@@ -256,13 +256,13 @@ def _close_work_orders(items: list[ActionItem], reason: str, send: Sender) -> li
 
 
 def mes_sender(path: str, body: dict[str, Any]) -> dict[str, Any]:
-    """POST one request with the server-side MES token. No retry and no token in the URL."""
+    """POST once using the route gateway's query authentication. Never retry."""
     import requests
     from inventory.mes import MES_BASE_URL, MES_ROUTE_BASE, get_access_token
 
     response = requests.post(
         f'{MES_BASE_URL}{MES_ROUTE_BASE}{path}',
-        headers={'access_token': get_access_token()},
+        params={'access_token': get_access_token()},
         json=body,
         timeout=(3, 10),
     )

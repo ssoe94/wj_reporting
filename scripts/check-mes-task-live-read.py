@@ -50,7 +50,11 @@ def run(sample_count: int) -> dict:
         'machine_counts': dict(Counter(str(task['machine_number']) for task in tasks)),
         'status_counts': dict(Counter(str(task['status']) for task in tasks)),
     })
-    candidates = [task for task in tasks if task['machine_number'] is not None and task['identity_complete']]
+    # A real list response may omit equipment entirely. Still probe a bounded
+    # sample of details to distinguish missing detail grants from mapping gaps.
+    if evidence['mapped_tasks'] != len(tasks):
+        evidence['warnings'] = warnings + ['equipment_assignment_incomplete']
+    candidates = [task for task in tasks if task['identity_complete']]
     candidates.sort(key=lambda task: task['actual_start'] or '9999')
     for task in candidates[:sample_count]:
         sample = {key: task[key] for key in (
@@ -59,13 +63,9 @@ def run(sample_count: int) -> dict:
         )}
         sample['matches'] = False
         try:
-            items, _ = parse_items({'reason': 'read-only contract validation', 'items': [{
-                **task, 'expected_status': task['status'],
-                'action': {1: 'start', 2: 'pause', 3: 'resume'}[task['status']],
-            }]})
             response = mes.requests.post(
                 f'{mes.MES_BASE_URL}{mes.MES_ROUTE_BASE}{DETAIL_PATH}',
-                headers={'access_token': mes.get_access_token()},
+                params={'access_token': mes.get_access_token()},
                 json={'taskId': int(task['task_id'])}, timeout=(3, 10),
             )
             sample['http_status'] = response.status_code
@@ -74,8 +74,17 @@ def run(sample_count: int) -> dict:
             detail = payload.get('data') if isinstance(payload, dict) else None
             if isinstance(payload, dict) and type(payload.get('code')) is int:
                 sample['mes_code'] = payload['code']
+            if isinstance(payload, dict) and isinstance(payload.get('subCode'), str):
+                sample['mes_sub_code'] = payload['subCode']
             if sample.get('mes_code') == 200 and isinstance(detail, dict):
-                sample['mismatch'] = _mismatch(items[0], detail)
+                if task['machine_number'] is None:
+                    sample['mismatch'] = 'equipment_unmapped'
+                else:
+                    items, _ = parse_items({'reason': 'read-only contract validation', 'items': [{
+                        **task, 'expected_status': task['status'],
+                        'action': {1: 'start', 2: 'pause', 3: 'resume'}[task['status']],
+                    }]})
+                    sample['mismatch'] = _mismatch(items[0], detail)
                 sample['matches'] = sample['mismatch'] is None and bool(task['work_order_code'])
             else:
                 sample['blocker'] = 'detail_read_failed'
