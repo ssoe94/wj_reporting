@@ -125,7 +125,12 @@ test('preview GET requires one explicit enabled current-actor click and deduplic
     const data = previewFixture(); const before = JSON.stringify(data);
     fixture.reply.resolve(model.parseMesDetailPreview(data));
     await fixture.settle();
-    assert.match(fixture.text(), /조회 성공/);
+    assert.match(fixture.text(), /QC-26100300323/);
+    assert.equal(fixture.nodes().filter((node) => node.type === 'tr').length, 17);
+    assert.equal(fixture.nodes().some((node) => node.type === 'details' && node.props.open), false);
+    assert.equal(fixture.text().includes(data.qc_id), false);
+    assert.equal(fixture.text().includes(data.snapshot_id!), false);
+    assert.match(fixture.text(), /사출기 선택과 별개로 조회/);
     assert.equal(fixture.calls.length, 1, 'A successful read must not dispatch follow-up requests');
     assert.equal(JSON.stringify(data), before, 'Displaying metadata must not alter source data');
     assert.equal(fixture.nodes().some((node) => ['input', 'textarea', 'select', 'form'].includes(String(node.type))), false);

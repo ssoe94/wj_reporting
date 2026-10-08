@@ -1,5 +1,6 @@
 // A display projection only. These IDs never select a request or grant write authority.
 const approvedQc = { id: '1791013139392836', code: 'QC-26100300323' };
+export const mesDetailPreviewTarget = approvedQc.code;
 export const canReadMesDetailPreview = (actorId: unknown) => actorId === 18;
 export type PreviewEnum = { code: number | null; message: string | null };
 type PreviewUnit = { id: string | null; code: string | null; name: string | null };
@@ -126,12 +127,34 @@ export function parseMesDetailPreview(value: unknown): MesDetailPreviewData {
     inventory_metadata: { ...inventoryEnums, check_material_count: integer(inventory.check_material_count, 1000), sample_material_count: integer(inventory.sample_material_count, 1000) },
     missing_fields: missing };
 }
-export function previewLifecycle(value: PreviewEnum, kind: 'status' | 'get_status', lang: 'ko' | 'zh') {
+export function previewLifecycle(value: PreviewEnum, kind: 'status' | 'get_status', lang: 'ko' | 'zh', showCode = true) {
   const labels = kind === 'status'
     ? (lang === 'ko' ? ['시작 전', '진행 중', '종료', '취소', '검토 중', '반려'] : ['未开始', '进行中', '结束', '取消', '审核中', '驳回'])
     : (lang === 'ko' ? ['미수령', '수령됨'] : ['未领取', '已领取']);
-  return value.code !== null && value.code >= 0 && value.code < labels.length
-    ? `${labels[value.code]} (${value.code})` : `${lang === 'ko' ? '미확인' : '未确认'} (${value.code ?? '—'})`;
+  const label = value.code !== null && value.code >= 0 && value.code < labels.length
+    ? labels[value.code] : lang === 'ko' ? '미확인' : '未确认';
+  return showCode ? `${label} (${value.code ?? '—'})` : label;
+}
+// Display strings only: remove redundant trailing zeros without rounding or
+// converting MES decimals to floating point. Original metadata stays unchanged.
+export function previewDecimal(value: string | null) {
+  return value === null ? '—' : value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
+}
+export function previewSpecification(item: MesDetailPreviewItem, lang: 'ko' | 'zh') {
+  if (item.options.length) return item.options.join(' / ');
+  if (item.logic.code === 1 && item.minimum !== null && item.maximum !== null)
+    return `${previewDecimal(item.minimum)}–${previewDecimal(item.maximum)}`;
+  const bounds = [
+    item.minimum === null ? null : `${lang === 'ko' ? '하한' : '下限'} ${previewDecimal(item.minimum)}`,
+    item.maximum === null ? null : `${lang === 'ko' ? '상한' : '上限'} ${previewDecimal(item.maximum)}`,
+  ].filter(Boolean);
+  if (bounds.length) return [item.logic.message, ...bounds].filter(Boolean).join(' · ');
+  if (item.base !== null) return `${lang === 'ko' ? '기준' : '基准'} ${previewDecimal(item.base)}`;
+  return lang === 'ko' ? '미확인' : '未确认';
+}
+export function previewRequired(value: PreviewEnum, lang: 'ko' | 'zh') {
+  return value.code === 1 ? (lang === 'ko' ? '필수' : '必填')
+    : value.code === 2 ? (lang === 'ko' ? '선택' : '选填') : (lang === 'ko' ? '미확인' : '未确认');
 }
 export function previewSourceEnum(value: PreviewEnum) {
   return value.code === null ? '—' : `${value.code}${value.message ? ` · ${value.message}` : ''}`;

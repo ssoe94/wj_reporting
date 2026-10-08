@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isAuthSessionCurrent } from '@/domains/auth/auth-transition';
 import { getMesDetailPreview } from './api';
-import { canReadMesDetailPreview, mesDetailPreviewDownload, previewLifecycle, previewSourceEnum } from './mesDetailPreviewModel';
+import { canReadMesDetailPreview, mesDetailPreviewDownload, mesDetailPreviewTarget, previewLifecycle, previewRequired, previewSpecification } from './mesDetailPreviewModel';
 import type { MesDetailPreviewData } from './mesDetailPreviewModel';
 import { inspectionTime } from './copy';
 
@@ -35,46 +35,38 @@ export default function MesDetailPreview({ actorId, sessionId, lang, disabled }:
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   if (!canReadMesDetailPreview(actorId) || !isAuthSessionCurrent(sessionId)) return null;
-  const source = (label: string, value: string | number | null) => <div><dt>{label}</dt><dd>{value ?? '—'}</dd></div>;
-  return <section className="inspection-workspace inspection-detail" aria-label={ko ? '지정 MES 검사 조회' : '查询指定 MES 检验'}>
-    <div className="inspection-actions"><button type="button" className="inspection-button" disabled={disabled || busy} onClick={() => void load()}>{busy ? (ko ? '조회 중…' : '查询中…') : (ko ? '지정 MES 검사 조회' : '查询指定 MES 检验')}</button><span className="inspection-muted">{ko ? 'MES 검사 기준과 상태를 읽기 전용으로 확인합니다.' : '只读查看 MES 检验标准和状态。'}</span></div>
+  return <section className="inspection-workspace inspection-detail inspection-mes-preview" aria-label={ko ? '지정 MES 검사 조회' : '查询指定 MES 检验'}>
+    <div className="inspection-actions">
+      <button type="button" className="inspection-button" disabled={disabled || busy} onClick={() => void load()}>{busy ? (ko ? '조회 중…' : '查询中…') : (ko ? '지정 MES 검사 조회' : '查询指定 MES 检验')}</button>
+      <span className="inspection-muted">{mesDetailPreviewTarget} · {ko ? '사출기 선택과 별개로 조회' : '查询对象不随注塑机选择改变'}</span>
+    </div>
     {error && <p className="inspection-message is-error" role="alert">{ko ? '지정 MES 검사를 조회하지 못했습니다. MES 연결 상태와 조회 권한을 확인한 뒤 다시 시도해 주세요.' : '无法查询指定 MES 检验。请确认 MES 连接状态和查询权限后重试。'}</p>}
-    {data && <details className="inspection-mes-observation" open>
-      <summary>{data.qc_code} · {ko ? '조회 항목' : '查询项目'} {data.item_count ?? '—'}</summary>
-      <p className="inspection-muted">{ko ? '조회 성공 · 측정 결과를 포함하지 않습니다.' : '查询成功 · 不含测量结果。'} {inspectionTime(data.observed_at, lang)}</p>
-      <button type="button" className="inspection-button" disabled={disabled || busy} onClick={download}>{ko ? '조회 메타데이터 내려받기' : '下载查询元数据'}</button>
-      <dl className="inspection-meta">
-        {source('QC ID', data.qc_id)}{source(ko ? '스냅샷 ID' : '快照 ID', data.snapshot_id)}
-        {source(ko ? '검사 상태' : '检验状态', previewLifecycle(data.status, 'status', lang))}
-        {source(ko ? '수령 상태' : '领取状态', previewLifecycle(data.get_status, 'get_status', lang))}
-        {source(ko ? '수령 가능 원천값' : '可领取源值', data.get_able)}
-        {source(ko ? '담당 MES 사용자' : '负责 MES 用户', data.executor_present && data.executor_matches_lee === false ? (ko ? '다른 검사자' : '其他检验员') : data.executor_id)}
-        {source(ko ? '현재 검사자와 담당자 일치' : '与当前检验员一致', data.executor_matches_lee === null ? '—' : data.executor_matches_lee ? (ko ? '일치' : '一致') : (ko ? '불일치' : '不一致'))}
-      </dl>
-      {data.item_count_matches_expected !== true && <p className="inspection-message" role="status">{ko ? `예정 ${data.expected_item_count}항목과 현재 조회 수가 일치하는지 확인되지 않았습니다.` : `尚未确认当前查询数量与预期 ${data.expected_item_count} 项一致。`}</p>}
-      <ol className="inspection-mes-items">{data.items.map((item, index) => <li className="inspection-mes-item" key={item.id}>
-        <strong>{index + 1}. {item.name || '—'}</strong>
-        <dl className="inspection-mes-values">
-          {source(ko ? '그룹' : '分组', item.group_name)}{source(ko ? '단위' : '单位', item.unit.name ?? item.unit.code)}
-          {source(ko ? '하한 / 상한' : '下限 / 上限', `${item.minimum ?? '—'} / ${item.maximum ?? '—'}`)}
-          {source(ko ? '기준 / 소수 자리' : '基准 / 小数位', `${item.base ?? '—'} / ${item.scale ?? '—'}`)}
-          {source(ko ? '규격 조건' : '规格条件', previewSourceEnum(item.logic))}
-          {source(ko ? '값 유형' : '值类型', previewSourceEnum(item.value_type))}
-          {source(ko ? '입력 요구 원천값' : '填写要求源值', previewSourceEnum(item.required_type))}
-          {source(ko ? '허용값' : '允许值', item.options.length ? item.options.join(' · ') : item.missing_fields.includes('options') ? (ko ? '미확인' : '未确认') : (ko ? '없음' : '无'))}
-        </dl>
-        <p className="inspection-mes-source-id">ID {item.id} · {ko ? '기준 항목' : '标准项目'} {item.check_item_id ?? '—'} · {ko ? '버전' : '版本'} {item.version_id ?? '—'}</p>
-      </li>)}</ol>
-      <details><summary>{ko ? '승인·입고 관련 원천 설정' : '审批及入库相关源设置'}</summary>
-        <dl className="inspection-mes-values">
-          {source(ko ? '승인 ID / 코드' : '审批 ID / 编码', data.approval ? `${data.approval.id ?? '—'} / ${data.approval.code ?? '—'}` : null)}
-          {source(ko ? '승인 상태 · 의미 미확인' : '审批状态 · 含义未确认', data.approval ? previewSourceEnum(data.approval.status) : null)}
-          {(['qcRange', 'materialBatchRecordType', 'sampleProcessMethod', 'recordSample', 'recordSummaryCount'] as const).map((key, index) => <div key={key}><dt>{(ko ? ['검사 범위', '자재 배치 기록', '샘플 처리 방식', '샘플 기록', '집계 수량 기록'] : ['检验范围', '物料批次记录', '样品处理方式', '样品记录', '汇总数量记录'])[index]}</dt><dd>{previewSourceEnum(data.inventory_metadata[key])}</dd></div>)}
-          {source(ko ? '검사 자재 / 샘플 자재 수' : '检验物料 / 样品物料数', `${data.inventory_metadata.check_material_count ?? '—'} / ${data.inventory_metadata.sample_material_count ?? '—'}`)}
-        </dl>
-        <p className="inspection-muted">{ko ? '이 정보만으로 승인 완료나 입고 가능 여부를 판단하지 않습니다.' : '不能仅凭这些信息判断审批完成或是否可以入库。'}</p>
+    {data && <div className="inspection-mes-observation">
+      <div className="inspection-mes-preview-summary" role="status">
+        <strong>{data.qc_code}</strong>
+        <span>{previewLifecycle(data.status, 'status', lang, false)}</span>
+        <span>{previewLifecycle(data.get_status, 'get_status', lang, false)}</span>
+        <span>{data.item_count ?? '—'}{ko ? '항목' : '项'}</span>
+        <small className="inspection-muted">{ko ? '조회' : '查询'} {inspectionTime(data.observed_at, lang)}</small>
+      </div>
+      {data.item_count_matches_expected !== true && <p className="inspection-message" role="status">{ko ? `예정 ${data.expected_item_count}항목과 조회 수를 확인해 주세요.` : `请核对查询数量与预期 ${data.expected_item_count} 项。`}</p>}
+      <div className="inspection-table-scroll" role="region" aria-label={ko ? 'MES 검사 기준표' : 'MES 检验标准表'} tabIndex={0}>
+        <table className="inspection-history-table inspection-mes-preview-table">
+          <caption className="sr-only">{data.qc_code} · {ko ? 'MES 검사 기준' : 'MES 检验标准'}</caption>
+          <thead><tr>{(ko ? ['항목', '규격 / 허용값', '단위', '입력'] : ['项目', '规格 / 允许值', '单位', '填写']).map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{data.items.map((item) => <tr key={item.id}>
+            <th scope="row">{item.name || '—'}</th>
+            <td>{previewSpecification(item, lang)}</td>
+            <td>{item.unit.name || item.unit.code || '—'}</td>
+            <td>{previewRequired(item.required_type, lang)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <details className="inspection-help">
+        <summary><span aria-hidden="true">ⓘ</span>{ko ? '조회 안내' : '查询说明'}</summary>
+        <p>{ko ? '검사 기준만 조회하며 측정 결과는 포함하지 않습니다. 사출기별 현재 검사와의 연결은 아직 확인되지 않았습니다.' : '仅查询检验标准，不含测量结果。尚未确认与各注塑机当前检验的关联。'}</p>
+        <button type="button" className="inspection-button" disabled={disabled || busy} onClick={download}>{ko ? '조회 메타데이터 내려받기' : '下载查询元数据'}</button>
       </details>
-      {data.missing_fields.length > 0 && <p className="inspection-muted">{ko ? '미확인 메타데이터' : '未确认元数据'}: {data.missing_fields.join(' · ')}</p>}
-    </details>}
+    </div>}
   </section>;
 }

@@ -110,6 +110,15 @@
 .inspection-mes-observation { min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 .inspection-mes-observation summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
 .inspection-mes-observation summary:focus-visible { outline: 3px solid var(--accent, #008ec3); outline-offset: 3px; }
+.inspection-mes-preview-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 10px 0; }
+.inspection-mes-preview-summary small { margin-left: auto; font-size: 13px; }
+.inspection-mes-preview .inspection-table-scroll { max-width: 960px; }
+.inspection-mes-preview-table { min-width: 420px; max-width: 960px; }
+.inspection-mes-preview-table :is(th, td) { padding: 6px 10px; }
+.inspection-mes-preview-table tbody th { font-weight: 500; }
+.inspection-mes-preview-table th:nth-child(1) { width: 30%; }
+.inspection-mes-preview-table th:nth-child(2) { width: 46%; }
+.inspection-mes-preview-table th:nth-child(3), .inspection-mes-preview-table th:nth-child(4) { width: 12%; }
 .inspection-mes-items, .inspection-mes-records ol { list-style: none; margin: 0; padding: 0; }
 .inspection-mes-item { padding: 14px 0; border-top: 1px solid var(--surface-border, #dfe5eb); }
 .inspection-mes-item > strong { font-size: 16px; }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canReadMesDetailPreview, mesDetailPreviewDownload, parseMesDetailPreview, previewLifecycle } from '../src/pages/quality/inspection-requests/mesDetailPreviewModel.ts';
+import { canReadMesDetailPreview, mesDetailPreviewDownload, parseMesDetailPreview, previewDecimal, previewLifecycle, previewRequired, previewSpecification } from '../src/pages/quality/inspection-requests/mesDetailPreviewModel.ts';
 import { previewFixture } from './fixtures/mes-detail-preview.ts';
 
 test('preview eligibility is exact actor18 without coercion or alternate roles', () => {
@@ -61,6 +61,30 @@ test('task and receipt enums stay separate; unknown codes ignore source wording'
   assert.equal(previewLifecycle({ code: 2, message: 'approved' }, 'get_status', 'zh'), '未确认 (2)');
   assert.equal(previewLifecycle({ code: 99, message: 'completed' }, 'status', 'ko'), '미확인 (99)');
   assert.equal(previewLifecycle({ code: null, message: null }, 'status', 'zh'), '未确认 (—)');
+});
+test('compact display preserves significant decimal digits and keeps unknown rules unknown', () => {
+  assert.equal(previewDecimal('713.4000000000'), '713.4');
+  assert.equal(previewDecimal('0.000000000000000001'), '0.000000000000000001');
+  assert.equal(previewDecimal('999999999999999.123456789012345678'), '999999999999999.123456789012345678');
+  assert.equal(previewDecimal('-10.0000'), '-10');
+  assert.equal(previewDecimal('1000'), '1000');
+  assert.equal(previewDecimal(null), '—');
+  const item = previewFixture().items[0];
+  Object.assign(item, { options: [], minimum: '713.4000000000', maximum: '714.2000000000', logic: { code: 1, message: '区间' } });
+  const before = JSON.stringify(item);
+  assert.equal(previewSpecification(item, 'ko'), '713.4–714.2');
+  assert.equal(JSON.stringify(item), before);
+  item.logic = { code: 99, message: null };
+  assert.equal(previewSpecification(item, 'ko'), '하한 713.4 · 상한 714.2');
+  item.options = ['合格', '不合格'];
+  assert.equal(previewSpecification(item, 'zh'), '合格 / 不合格');
+  Object.assign(item, { options: [], minimum: null, maximum: null, base: null });
+  assert.equal(previewSpecification(item, 'ko'), '미확인');
+  assert.equal(previewRequired({ code: 1, message: '必填' }, 'ko'), '필수');
+  assert.equal(previewRequired({ code: 2, message: '非必填' }, 'zh'), '选填');
+  assert.equal(previewRequired({ code: 99, message: '必填' }, 'ko'), '미확인');
+  assert.equal(previewLifecycle({ code: 0, message: null }, 'status', 'ko', false), '시작 전');
+  assert.equal(previewLifecycle({ code: 99, message: 'completed' }, 'status', 'zh', false), '未确认');
 });
 test('metadata download revalidates scope and emits only the projection with a fixed filename', () => {
   const raw: any = previewFixture(); raw.provider_payload = 'SYNTHETIC-EXCLUDED'; raw.items[0].measurements = [99];
