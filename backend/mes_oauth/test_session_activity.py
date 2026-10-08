@@ -254,6 +254,31 @@ class SessionActivityTests(ActivityFixture, TestCase):
                     self.assertFalse(MESLoginSession.objects.filter(pk=digest).exists())
         self.assert_no_provider()
 
+    def test_rejected_refresh_and_identity_expose_definitive_session_code(self):
+        # Browser recovery distinguishes a rejected login from a retryable
+        # outage by code; DRF's detail-only AuthenticationFailed shape loops.
+        for kind in ('missing', 'revoked', 'authority', 'expired'):
+            tokens = self.obtain(self.user)
+            rows = MESLoginSession.objects.filter(pk=self.login_digest(tokens))
+            if kind == 'missing':
+                rows.delete()
+            elif kind == 'revoked':
+                rows.update(revoked_at=self.now)
+            elif kind == 'authority':
+                rows.update(authorization_digest='SYNTHETIC-OLD-AUTHORITY')
+            else:
+                rows.update(last_activity_at=self.now - timedelta(hours=25),
+                            idle_expires_at=self.now - timedelta(hours=1))
+            expected = 'session_idle_expired' if kind == 'expired' else 'inspection_login_required'
+            with self.subTest(kind=kind):
+                for response in (self.refresh(tokens), self.api.get('/api/injection/user/me/',
+                    secure=True, HTTP_AUTHORIZATION='Bearer ' + tokens['access'])):
+                    self.assertEqual(response.status_code, 401)
+                    self.assertEqual(response.json().get('code'), expected)
+                    self.assertEqual(set(response.json()), {'detail', 'code'})
+                    self.assertIn('no-store', response['Cache-Control'])
+        self.assert_no_provider()
+
     def test_logout_past_original_anchor_keeps_tombstone_and_cannot_be_revived(self):
         tokens = self.tokens
         for _ in range(8):
