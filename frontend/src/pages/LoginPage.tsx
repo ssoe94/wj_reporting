@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
+import { loginReturnPath } from '../domains/auth/login-return';
 import { X } from 'lucide-react';
 
 export default function LoginPage() {
@@ -82,9 +83,7 @@ export default function LoginPage() {
     
     if (success) {
       const requestedReturnTo = new URLSearchParams(location.search).get('returnTo');
-      const safeReturnTo = requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//')
-        ? requestedReturnTo
-        : '/';
+      const safeReturnTo = loginReturnPath(requestedReturnTo, location.state);
       navigate(parseFieldTerminalUser(username) ? '/field' : safeReturnTo, { replace: true });
     } else {
       setError('로그인에 실패했습니다. 아이디와 비밀번호를 확인하세요.');

@@ -64,6 +64,9 @@ ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host]
 
 # Application definition
 
+# First-password activation is separate from existing-user MES connections.
+ACCOUNT_ACTIVATION_ENABLED = config('ACCOUNT_ACTIVATION_ENABLED', default=False, cast=bool)
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -94,9 +97,13 @@ INSTALLED_APPS = [
     'production',
     'ai_core',
     'analytics',
+    'mes_oauth',
 ]
+if ACCOUNT_ACTIVATION_ENABLED:
+    INSTALLED_APPS.append('account_activation')
 
 MIDDLEWARE = [
+    'mes_oauth.security.OAuthQueryRedactionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -104,12 +111,15 @@ MIDDLEWARE = [
     'config.middleware.DisableCSRFMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'mes_oauth.connection_views.BridgeRestrictionMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Custom middleware for API handling
     'config.middleware.NoCacheAPIMiddleware',
     'config.middleware.APINotFoundMiddleware',
 ]
+if ACCOUNT_ACTIVATION_ENABLED:
+    MIDDLEWARE.insert(0, 'account_activation.security.ActivationBoundaryMiddleware')
 
 # 보안 설정
 if ENVIRONMENT == 'production':
@@ -154,10 +164,13 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 
+# Explicit cookie controls let OAuth activation require HTTPS cookies without
+# changing ENVIRONMENT and its unrelated HSTS settings. Existing defaults stay.
+SESSION_COOKIE_SECURE = ENVIRONMENT == 'production' or config('SESSION_COOKIE_SECURE', default=False, cast=bool)
+CSRF_COOKIE_SECURE = ENVIRONMENT == 'production' or config('CSRF_COOKIE_SECURE', default=False, cast=bool)
+
 # 프로덕션 환경에서 쿠키 보안 설정
 if ENVIRONMENT == 'production':
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
 
@@ -360,6 +373,7 @@ SIMPLE_JWT = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {'oauth_query': {'()': 'mes_oauth.security.OAuthQueryLogFilter'}},
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
@@ -374,6 +388,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['oauth_query'],
         },
     },
     'root': {
@@ -409,3 +424,58 @@ CELERY_ENABLE_UTC = False
 
 # Celery Beat 스케줄러 설정 (django-celery-beat 사용 시)
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# First-password activation only; no actual actor IDs or role grants in source.
+ACCOUNT_ACTIVATION_APPROVED_TARGETS = config('ACCOUNT_ACTIVATION_APPROVED_TARGETS', default='{}')
+ACCOUNT_ACTIVATION_ORIGIN = 'https://wj-reporting-backend.onrender.com'
+
+# Role admission is independent of self-set password activation.
+INSPECTION_PILOT_ENABLED = config('INSPECTION_PILOT_ENABLED', default=False, cast=bool)
+INSPECTION_PILOT_USER_IDS = config('INSPECTION_PILOT_USER_IDS', default='[]')
+
+# Identity verification only. Activation/deployment/app grants are separately approved.
+MES_USER_OAUTH_ENABLED = config('MES_USER_OAUTH_ENABLED', default=False, cast=bool)
+MES_USER_OAUTH_CALLBACK_ORIGIN = 'https://wj-reporting-backend.onrender.com'
+MES_USER_OAUTH_PROVIDER_ORIGIN = 'https://v3-ali.blacklake.cn'
+MES_USER_OAUTH_LAUNCH_URL = config('MES_USER_OAUTH_LAUNCH_URL', default='')
+MES_USER_OAUTH_REVIEW_REFERENCE = config('MES_USER_OAUTH_REVIEW_REFERENCE', default='')
+MES_USER_OAUTH_USER_MAP = config('MES_USER_OAUTH_USER_MAP', default='{}')
+MES_USER_OAUTH_LOGIN_FACTORY_NUMBER = config('MES_USER_OAUTH_LOGIN_FACTORY_NUMBER', default='')
+MES_USER_OAUTH_LOGIN_HINTS = config('MES_USER_OAUTH_LOGIN_HINTS', default='{}')
+MES_USER_OAUTH_APP_ACCESS_TOKEN = config('MES_USER_OAUTH_APP_ACCESS_TOKEN', default='')
+# Server issuance stays opt-in; no fallback to inventory credentials.
+MES_USER_OAUTH_APP_TOKEN_SOURCE = config('MES_USER_OAUTH_APP_TOKEN_SOURCE', default='static')
+MES_USER_OAUTH_APP_CREDENTIAL_SOURCE = config('MES_USER_OAUTH_APP_CREDENTIAL_SOURCE', default='dedicated')
+MES_USER_OAUTH_APP_TOKEN_HEADER = config('MES_USER_OAUTH_APP_TOKEN_HEADER', default='access_token')
+MES_USER_OAUTH_APP_ID = config('MES_USER_OAUTH_APP_ID', default='')
+# Optional exact QC for an app-auth read control; empty means no control call.
+MES_USER_OAUTH_CONTROL_QC_ID = config('MES_USER_OAUTH_CONTROL_QC_ID', default='')
+MES_USER_OAUTH_APP_KEY = config('MES_USER_OAUTH_APP_KEY', default='')
+MES_USER_OAUTH_APP_SECRET = config('MES_USER_OAUTH_APP_SECRET', default='')
+# Explicit existing_mes selection can read the existing server secret directly;
+# it never imports the inventory helper or silently falls back to its tokens.
+MES_APP_KEY = config('MES_APP_KEY', default='')
+MES_APP_SECRET = config('MES_APP_SECRET', default='')
+MES_INSPECTION_ENABLED = config('MES_INSPECTION_ENABLED', default=False, cast=bool)
+# Operator-requested MES production task start/resume/pause and work-order close.
+# Off by default; enabling it lets the production board change live MES state.
+MES_TASK_ACTIONS_ENABLED = config('MES_TASK_ACTIONS_ENABLED', default=False, cast=bool)
+# Optional MES user ID recorded as the operator on pause/resume (the integration account).
+MES_TASK_ACTION_OPERATOR_ID = config('MES_TASK_ACTION_OPERATOR_ID', default=0, cast=int) or None
+MES_INSPECTION_CONTRACT = config('MES_INSPECTION_CONTRACT', default='')
+
+# Local candidate only. Both gates and every contract remain unconfigured by default.
+MES_USER_SESSION_BRIDGE_ENABLED = config('MES_USER_SESSION_BRIDGE_ENABLED', default=False, cast=bool)
+MES_USER_TOKEN_STORAGE_ENABLED = config('MES_USER_TOKEN_STORAGE_ENABLED', default=False, cast=bool)
+MES_USER_TOKEN_KEYS = config('MES_USER_TOKEN_KEYS', default='')
+MES_USER_TOKEN_ACTIVE_KEY_ID = config('MES_USER_TOKEN_ACTIVE_KEY_ID', default='')
+MES_USER_TOKEN_EXPIRY_MODE = config('MES_USER_TOKEN_EXPIRY_MODE', default='')
+MES_USER_TOKEN_CONTRACT_REFERENCE = config('MES_USER_TOKEN_CONTRACT_REFERENCE', default='')
+MES_USER_TOKEN_POLICY_REFERENCE = config('MES_USER_TOKEN_POLICY_REFERENCE', default='')
+MES_USER_TOKEN_APP_ID = config('MES_USER_TOKEN_APP_ID', default='')
+MES_USER_TOKEN_TENANT_REFERENCE = config('MES_USER_TOKEN_TENANT_REFERENCE', default='')
+MES_USER_TOKEN_MAX_AGE_SECONDS = config('MES_USER_TOKEN_MAX_AGE_SECONDS', default=0, cast=int)
+MES_USER_TOKEN_IDLE_SECONDS = config('MES_USER_TOKEN_IDLE_SECONDS', default=0, cast=int)
+MES_USER_TOKEN_CONSENT_SECONDS = config('MES_USER_TOKEN_CONSENT_SECONDS', default=0, cast=int)
+MES_USER_TOKEN_SAFETY_SECONDS = config('MES_USER_TOKEN_SAFETY_SECONDS', default=30, cast=int)
+MES_USER_FRONTEND_ORIGIN = 'https://wj-reporting.onrender.com'

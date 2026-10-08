@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -66,7 +68,70 @@ jobs:
 
       - name: Run backend tests
         working-directory: backend
-        run: python manage.py test --no-input
+        env:
+          INTERNAL_DATABASE_URL: ""
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: synthetic-ci-validation-only-not-a-deployment-secret
+          DEBUG: "False"
+          ENVIRONMENT: test
+          MES_USER_OAUTH_ENABLED: "False"
+          ACCOUNT_ACTIVATION_ENABLED: "True"
+        run: |
+          test ! -e .env && test ! -e ../.env
+          python manage.py test --no-input
+
+      - name: Validate isolated OAuth and existing authentication contracts
+        run: |
+          python scripts/test_mes_oauth_postgres_local.py
+          python scripts/check-mes-oauth.py
+          python scripts/check-mes-oauth.py \
+            quality.test_archive_service \
+            injection.test_admin_user_create.MissingUserProfileAuthenticationTests \
+            injection.test_admin_user_create.FirstLoginPasswordChangeTests \
+            injection.test_admin_user_create.AdminUserStatusTests
+          python scripts/check-mes-oauth.py \
+            quality.test_inspection_migration \
+            quality.test_inspection_flow_scenarios \
+            quality.test_inspection_beta_access \
+            quality.test_inspection_roles \
+            quality.test_inspection_role_api \
+            quality.test_inspection_role_migration \
+            quality.test_inspection_role_security \
+            quality.test_inspection_live_adapter \
+            quality.test_inspection_live_readback \
+            quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial \
+            quality.test_inspection_integration_trial_board \
+            quality.test_inspection_trial_detail
+
+      - name: Validate PostgreSQL OAuth replay and migration contracts
+        run: |
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for OAuth validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-mes-oauth-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ci \
+            mes_oauth account_activation quality.test_inspection_live_adapter \
+            quality.test_inspection_live_readback quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial quality.test_inspection_integration_trial_board \
+            quality.test_inspection_trial_detail production.test_mes_execution_contract \
+            production.test_mes_delivery_transport production.test_mes_delivery \
+            production.test_mes_delivery_credentials production.test_mes_delivery_views \
+            production.test_mes_delivery_postgres production.test_mes_delivery_read_contract \
+            production.test_mes_read_status
+
+      - name: Validate isolated PostgreSQL inspection contracts
+        run: |
+          python scripts/test_inspection_postgres_local.py
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for inspection validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-inspection-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ins
 
       - name: Run local AI worker tests
         run: >-

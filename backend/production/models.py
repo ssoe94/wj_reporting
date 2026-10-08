@@ -480,3 +480,49 @@ class MachiningManualReportMatch(models.Model):
 
     def __str__(self):
         return f"{self.manual_report_id} -> {self.mes_report_record_id} ({self.matched_qty})"
+
+
+class MesTaskActionLog(models.Model):
+    """One operator-requested MES task action and its verified outcome. Never deleted."""
+
+    ACTION_CHOICES = [
+        ("start", "Start"),
+        ("resume", "Resume"),
+        ("pause", "Pause"),
+        ("close_work_order", "Close work order"),
+    ]
+    OUTCOME_CHOICES = [
+        ("confirmed", "Confirmed"),
+        ("rejected", "Rejected"),
+        ("uncertain", "Uncertain"),
+        ("blocked", "Blocked"),
+    ]
+
+    request_id = models.CharField(max_length=36, db_index=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="mes_task_actions",
+    )
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    reason = models.CharField(max_length=200)
+    machine_number = models.PositiveSmallIntegerField(db_index=True)
+    task_id = models.CharField(max_length=20, db_index=True)
+    task_code = models.CharField(max_length=100)
+    work_order_code = models.CharField(max_length=100, blank=True, default="")
+    part_no = models.CharField(max_length=100, blank=True, default="")
+    status_before = models.PositiveSmallIntegerField()
+    status_after = models.PositiveSmallIntegerField(null=True, blank=True)
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, db_index=True)
+    outcome_reason = models.CharField(max_length=60, blank=True, default="")
+    mes_code = models.IntegerField(null=True, blank=True)
+    mes_sub_code = models.CharField(max_length=40, blank=True, default="")
+    mes_message = models.CharField(max_length=200, blank=True, default="")
+    need_check = models.SmallIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.machine_number} {self.task_code} {self.action} {self.outcome}"

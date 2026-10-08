@@ -1,3 +1,7 @@
+import { InjectionQualityStatus } from '../components/InjectionQualityStatus';
+import { MesProductionReadStatusPanel } from '../components/MesProductionReadStatusPanel';
+import { reduceInjectionQuality } from '../injection-quality-status';
+import { selectBoardInspection } from '../injection-quality-binding';
 import { boardPartQueryOptions } from "../board-part-api";
 import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch";
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
@@ -933,6 +937,8 @@ function MachineBoardCard({
   machine,
   priorMorningShotGapCount,
   language,
+  inspection,
+  inspectionTransportError,
 }: {
   onPartSummary: (partNo: string) => void;
   businessDate: string;
@@ -940,8 +946,22 @@ function MachineBoardCard({
   machine: BoardMachine;
   priorMorningShotGapCount: number;
   language: AppLanguage;
+  inspection: ReturnType<typeof selectBoardInspection>;
+  inspectionTransportError: boolean;
 }) {
   const copy = boardCopy[language];
+  const { businessDate: qualityDate, machineNumber: qualityMachine,
+    currentPlanId: qualityPlan, planVersion: qualityVersion } = inspection.scope;
+  const qualityScope = useMemo(() => ({ businessDate: qualityDate, machineNumber: qualityMachine,
+    currentPlanId: qualityPlan, planVersion: qualityVersion }),
+    [qualityDate, qualityMachine, qualityPlan, qualityVersion]);
+  const sourceAvailability = inspection.payload && typeof inspection.payload === 'object'
+    && 'availability' in inspection.payload ? inspection.payload.availability : undefined;
+  const qualityPayload = sourceAvailability === 'unavailable' ? null : inspection.payload;
+  const [qualityState, setQualityState] = useState(() => reduceInjectionQuality(null, qualityPayload, qualityScope));
+  useEffect(() => {
+    setQualityState(previous => reduceInjectionQuality(previous, qualityPayload, qualityScope));
+  }, [qualityPayload, qualityScope]);
   const row = machine.row;
   const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
   const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
@@ -1011,11 +1031,15 @@ function MachineBoardCard({
         machineNumber={machine.machineNumber}
         segments={machine.timelineSegments}
       />
-      <footer>
-        <span>{showMorningHistory
-          ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
-          : partNoReview ? copy.partNoReview : copy.lastShot}</span>
-        <strong>{showMorningHistory ? `${copy.latestShort} ` : ""}{row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}</strong>
+      <footer className="injection-board-card__footer-with-quality">
+        <div className="injection-board-card__footer-production">
+          <span>{showMorningHistory
+            ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
+            : partNoReview ? copy.partNoReview : copy.lastShot}</span>
+          <strong>{showMorningHistory ? `${copy.latestShort} ` : ""}{row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}</strong>
+        </div>
+        <InjectionQualityStatus state={qualityState} expectedScope={qualityScope}
+          language={language} transportError={inspectionTransportError || sourceAvailability === 'error'} />
       </footer>
     </article>
   );
@@ -1458,6 +1482,7 @@ export function InjectionBoardPage() {
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatTime(latestMesTime)}</strong></div>
           <div><span>{copy.refreshed}</span><strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong></div>
+          {!isVisitorMode ? <MesProductionReadStatusPanel businessDate={requestedBusinessDate} language={language} variant="board" /> : null}
           <button
             className="injection-board__history-button"
             onClick={openPreviousSummary}
@@ -1559,6 +1584,13 @@ export function InjectionBoardPage() {
             key={machine.machineNumber}
             language={language}
             machine={machine}
+            inspection={selectBoardInspection({ businessDate, requestedBusinessDate,
+              machineNumber: machine.machineNumber, currentPlanId: machine.row?.transition?.current_plan_id,
+              planDate: planData?.plan_date, planRecords: planData?.injection.records ?? [],
+              machinePlanIds: (planData?.injection.records ?? [])
+                .filter(record => getMachineNumber(record.machine_name) === machine.machineNumber).map(record => record.id),
+              statusMachines: statusData?.injection ?? [] })}
+            inspectionTransportError={statusQuery.isError || planQuery.isError}
             priorMorningShotGapCount={visiblePreviousSnapshot.summary.rows.find((row) => Number(getMachineNumber(row.label) || row.key) === machine.machineNumber)?.morningShotGapCount ?? 0}
           />
         ))}

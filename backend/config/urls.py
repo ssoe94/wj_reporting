@@ -1,10 +1,11 @@
 """
 URL configuration for config project.
 """
+from django.apps import apps
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
-from .token_views import ScopedTokenObtainPairView, ScopedTokenRefreshView
+from .token_views import ScopedTokenObtainPairView, ScopedTokenRefreshView, SessionActivityView
 
 from . import views
 from . import urls_admin
@@ -36,8 +37,12 @@ api_urlpatterns = [
 ]
 
 urlpatterns = [
+    path('api/mes-connection/', include('mes_oauth.api_urls')),
+    path('integrations/blacklake/', include('mes_oauth.urls')),
     path('admin/', admin.site.urls),
     path('staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal'),
+
+    path('api/auth/activity/', SessionActivityView.as_view(), name='auth_activity'),
 
     # JWT endpoints (AllowAny by default)
     path('api/token/', ScopedTokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -51,6 +56,8 @@ urlpatterns = [
     # SPA fallback
     re_path(r'^(?!api/|admin/|static/|media/|accounts/).*$', TemplateView.as_view(template_name='index.html')),
 ]
+if apps.is_installed('account_activation'):
+    urlpatterns.insert(0, path('accounts/activate/', include('account_activation.urls')))
 
 # 개발 환경에서 미디어 파일 서빙
 if settings.DEBUG:

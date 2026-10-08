@@ -12,6 +12,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:legacy && node ../scripts/write-build-info.mjs frontend/dist",
     "build:legacy": "postcss src/legacy.css --config ./config/postcss-legacy -o dist/legacy.css",
+    "build:inspection-fixture": "node scripts/build-inspection-fixture.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -26,6 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.10",
+    "decimal.js-light": "2.5.1",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.1.0",
