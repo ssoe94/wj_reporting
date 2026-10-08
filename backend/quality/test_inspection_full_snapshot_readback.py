@@ -10,7 +10,7 @@ from django.test import SimpleTestCase
 from .inspection_full_snapshot import FullSnapshotError, normalize_observation
 from .inspection_full_snapshot_readback import (
     CONFIG_FIELDS, EMPTY_MATERIALS, ITEM_FIELDS, NULL_RELATIONS, DetailPin,
-    FullDetailReview, decode_full_detail, parse_full_detail_json,
+    FullDetailReview, decode_full_detail, decode_production_full_detail, parse_full_detail_json,
 )
 
 
@@ -257,3 +257,144 @@ class FullDetailDecoderTests(SimpleTestCase):
                                observed_at=datetime.now())
         self.assertEqual(str(caught.exception), 'invalid_observation_time')
         self.assertEqual(self.decode()['observed_at'], self.at.isoformat())
+
+
+class ProductionFullDetailDecoderTests(SimpleTestCase):
+    """Synthetic related-QC reads only; no connector, authority or MES writes."""
+    def setUp(self):
+        fixture = FullDetailDecoderTests()
+        fixture.setUp()
+        self.at, self.envelope, self.binding = fixture.at, fixture.envelope, fixture.binding
+        self.binding.test_only = False
+        self.binding.work_order_id = '901'
+        self.binding.request = SimpleNamespace(inspection_type='first',
+            source_kind='mes_read', part_no='SYNTHETIC-PART')
+        self.binding.contract.update(context='production_qc', production_task_id='902',
+            equipment_id='903', production_read_scope={'process_id': '904', 'material_id': '905',
+                'part_no': 'SYNTHETIC-PART', 'check_type': 3, 'reference': 'SYNTHETIC relation review'})
+        data = self.envelope['data']
+        data.update(checkType={'code': 3}, sourceType={'code': 1}, inboundOrderItemId=0)
+        for field, value in zip(('workOrder', 'produceTask', 'equipment', 'process', 'material'),
+                                (901, 902, 903, 904, 905)):
+            data[field] = {'id': value, 'code': 'SYNTHETIC-PART' if field == 'material' else f'SYNTHETIC-{value}'}
+        data['qcConfig'].update(checkType={'code': 3}, recordSample={'code': 2},
+                                recordSummaryCount={'code': 2})
+        replaced = {'workOrder', 'produceTask', 'equipment'}
+        pins = [pin for pin in fixture.review.pins if pin.path not in {(field,) for field in replaced}]
+        pins = [DetailPin(pin.path, data['checkType']['code']) if pin.path == ('checkType', 'code') else
+                DetailPin(pin.path, data['qcConfig'][pin.path[-1]]) if pin.path in {
+                    ('qcConfig', 'checkType'), ('qcConfig', 'recordSample'), ('qcConfig', 'recordSummaryCount')}
+                else pin for pin in pins]
+        pins.extend(DetailPin((field, 'id'), str(data[field]['id']), 'id')
+                    for field in ('workOrder', 'produceTask', 'equipment', 'process', 'material'))
+        pins.extend([DetailPin(('material', 'code'), 'SYNTHETIC-PART'),
+                     DetailPin(('inboundOrderItemId',), 0), DetailPin(('sourceType', 'code'), 1)])
+        self.review = replace(fixture.review, pins=tuple(pins))
+
+    def decode(self, review=None):
+        return decode_production_full_detail(json.dumps(self.envelope), binding=self.binding,
+            review=review or self.review, observed_at=self.at)
+
+    def repin(self, path, value):
+        self.review = replace(self.review, pins=tuple(
+            DetailPin(pin.path, value, pin.comparison) if pin.path == path else pin
+            for pin in self.review.pins))
+
+    def assert_blocked(self, code):
+        with self.assertRaises(FullSnapshotError) as caught:
+            self.decode()
+        self.assertEqual(caught.exception.code, code)
+
+    def test_exact_relations_keep_partial_records_and_coordinator_dto(self):
+        result = self.decode()
+        self.assertEqual(result, normalize_observation(result))
+        self.assertEqual(result['records'][0]['record_id'], '801')
+        self.assertEqual(result['records'][0]['operator_id'], '101')
+        self.assertEqual(result['records'][0]['value'], '10.100')
+        self.envelope['data']['checkItems'][0]['qcTaskCheckItems'].pop()
+        self.assertEqual(len(self.decode()['records']), 1)
+        self.assertEqual(len(self.decode()['config_keys']), 2)
+        self.assertNotIn('workOrder', result)
+
+    def test_each_relation_and_part_must_match_binding_even_if_repinning(self):
+        for field in ('workOrder', 'produceTask', 'equipment', 'process', 'material'):
+            with self.subTest(field=field):
+                original = self.envelope['data'][field]['id']
+                original_review = self.review
+                self.envelope['data'][field]['id'] = 999
+                self.repin((field, 'id'), '999')
+                self.assert_blocked('production_read_relation_changed')
+                self.envelope['data'][field]['id'] = original
+                self.review = original_review
+        self.envelope['data']['material']['code'] = 'SYNTHETIC-OTHER'
+        self.repin(('material', 'code'), 'SYNTHETIC-OTHER')
+        self.assert_blocked('production_read_relation_changed')
+
+    def test_local_part_trial_or_unreviewed_scope_cannot_admit_related_qc(self):
+        for owner, key, value in ((self.binding.request, 'part_no', 'SYNTHETIC-OTHER'),
+                                 (self.binding.request, 'source_kind', 'integration_test'),
+                                 (self.binding, 'test_only', True)):
+            with self.subTest(key=key):
+                original = getattr(owner, key)
+                setattr(owner, key, value)
+                self.assert_blocked('production_read_scope_invalid')
+                setattr(owner, key, original)
+        scope = self.binding.contract['production_read_scope']
+        scope['material_id'] = 905
+        self.assert_blocked('production_read_scope_invalid')
+        scope['material_id'] = '905'
+        self.binding.contract['context'] = 'standalone_test'
+        self.assert_blocked('production_read_scope_invalid')
+
+    def test_production_type_matches_config_and_local_first_or_process(self):
+        self.envelope['data']['qcConfig']['checkType'] = {'code': 5}
+        self.repin(('qcConfig', 'checkType'), {'code': 5})
+        self.assert_blocked('production_read_type_changed')
+        for check_type in (4, 5):
+            self.binding.request.inspection_type = 'process'
+            self.binding.contract['production_read_scope']['check_type'] = check_type
+            self.envelope['data']['checkType'] = {'code': check_type}
+            self.envelope['data']['qcConfig']['checkType'] = {'code': check_type}
+            self.repin(('checkType', 'code'), check_type)
+            self.repin(('qcConfig', 'checkType'), {'code': check_type})
+            self.assertEqual(self.decode()['state'], 'open')
+        self.binding.request.inspection_type = 'final'
+        self.assert_blocked('production_read_scope_invalid')
+
+    def test_inventory_approval_scrap_or_quantity_configuration_stays_blocked(self):
+        for field, value in (('inboundOrder', {'id': 999}), ('outboundOrder', {'id': 999}),
+                             ('approvalDetail', {'id': 999}), ('checkMaterials', [{'id': 999}]),
+                             ('sampleMaterials', [{'id': 999}]), ('inboundOrderItemId', 999)):
+            with self.subTest(field=field):
+                original, original_review = self.envelope['data'][field], self.review
+                self.envelope['data'][field] = value
+                self.repin((field,), value)
+                self.assert_blocked('unsupported_side_effects')
+                self.envelope['data'][field], self.review = original, original_review
+        for field, code in (('recordSample', 1), ('recordSummaryCount', 1),
+                            ('sampleProcessMethod', 2), ('materialBatchRecordType', 3)):
+            with self.subTest(field=field):
+                original = self.envelope['data']['qcConfig'][field]
+                original_review = self.review
+                self.envelope['data']['qcConfig'][field] = {'code': code}
+                self.repin(('qcConfig', field), {'code': code})
+                self.assert_blocked('unsupported_side_effects')
+                self.envelope['data']['qcConfig'][field], self.review = original, original_review
+
+    def test_source_type_is_known_and_pinned_and_relation_review_is_complete(self):
+        self.envelope['data']['sourceType'] = {'code': 2}
+        self.assert_blocked('detail_pinned_field_changed')
+        self.repin(('sourceType', 'code'), 2)
+        self.assertEqual(self.decode()['state'], 'open')
+        self.envelope['data']['sourceType'] = {'code': 99}
+        self.repin(('sourceType', 'code'), 99)
+        self.assert_blocked('production_read_scope_invalid')
+        self.envelope['data']['sourceType'] = {'code': 2}
+        self.repin(('sourceType', 'code'), 2)
+        self.review = replace(self.review, pins=self.review.pins[:-1])
+        self.assert_blocked('detail_pin_coverage_invalid')
+
+    def test_default_standalone_decoder_does_not_accept_production_pins(self):
+        with self.assertRaises(FullSnapshotError):
+            decode_full_detail(json.dumps(self.envelope), binding=self.binding,
+                               review=self.review, observed_at=self.at)

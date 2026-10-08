@@ -185,6 +185,29 @@ class FullSnapshotConnectionTests(TestCase):
     def writes(self):
         return [entry for entry in self.calls if entry[0] != '_detail']
 
+    def test_related_production_detail_uses_read_decoder_without_enabling_a_writer(self):
+        dto = detail_fixtures.ProductionFullDetailDecoderTests()
+        dto.setUp()
+        self.envelope = deepcopy(dto.envelope)
+        self.binding.contract = deepcopy(dto.binding.contract)
+        self.binding.work_order_id = dto.binding.work_order_id
+        self.binding.test_only = False
+        self.binding.save(update_fields=['contract', 'work_order_id', 'test_only'])
+        self.request.inspection_type = 'first'
+        self.request.save(update_fields=['inspection_type'])
+        self.policy = replace(self.policy, detail_review=dto.review,
+            binding_digest=binding_fingerprint(self.binding), write_authorized=False,
+            concurrency_mode='unverified', concurrency_reference='',
+            operational_conditions_reference='')
+        # The synthetic source and broker retain existing actor/session checks.
+        guard, adapter, _ = self.connection()
+        authority = guard(self.actor, self.request, self.binding, 'read')
+        observation = adapter.read(self.binding, authority)
+        self.assertEqual(len(observation['records']), 2)
+        self.assertFalse(adapter.enabled)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.broker_calls, ['read', 'read'])
+
     def test_reuse_only_identity_provider_reads_existing_cache_once_without_issuance(self):
         provider = ReuseOnlyIdentityProvider(self.policy)
         with patch('quality.inspection_full_snapshot_authority.get_existing_app_access_token',

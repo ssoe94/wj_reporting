@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from copy import copy
 from datetime import timedelta
+from html.parser import HTMLParser
 import json
 from threading import Event
 from unittest import skipUnless
@@ -25,7 +26,8 @@ from .connection_views import (
 )
 from .identity import UserContextResponse
 from .models import MESCredential, MESLoginSession, MESLoginTicket, OAuthAttempt
-from .views import CALLBACK, COOKIE, START
+from .views import (CALLBACK, COOKIE, START, OAuthBlocked, WJ_REGISTERED_LAUNCH_URL,
+                    reviewed_configuration)
 
 
 BACKEND = 'https://testserver'
@@ -148,6 +150,175 @@ class ConnectionFixture:
         self.factory.assert_not_called()
         self.provider.exchange.assert_not_called()
         self.provider.userinfo.assert_not_called()
+
+
+class NativeConnectionPage(HTMLParser):
+    """Inspect the native form contract rather than accepting a page signature."""
+    def __init__(self, response):
+        super().__init__()
+        self.elements = []
+        self.feed(response.content.decode('utf-8'))
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+
+    def select(self, tag, **attrs):
+        return [element for name, element in self.elements if name == tag
+                and all(element.get(key) == value for key, value in attrs.items())]
+
+
+@override_settings(**CONNECTION_SETTINGS)
+class ConnectionNativeAutomationTests(ConnectionFixture, TestCase):
+    def native_post(self, path, form, *, accept=None):
+        headers = {'HTTP_ORIGIN': BACKEND}
+        if accept is not None:
+            headers['HTTP_ACCEPT'] = accept
+        return self.browser.post(path, form, secure=True, **headers)
+
+    def form(self, response, *, automatic=True):
+        page = NativeConnectionPage(response)
+        forms = page.select('form', method='post')
+        self.assertEqual(len(forms), 1)
+        self.assertEqual(forms[0].get('data-auto-mes-connect'), 'true' if automatic else 'false')
+        csrf = page.select('input', name='csrfmiddlewaretoken')
+        self.assertEqual(len(csrf), 1)
+        self.assertTrue(csrf[0].get('value'))
+        return page, forms[0], {'csrfmiddlewaretoken': csrf[0]['value']}
+
+    def test_native_start_get_defers_attempt_and_provider_until_real_csrf_post(self):
+        self.connect()
+        response = self.browser.get(START, secure=True)
+        self.assertEqual(response.status_code, 200)
+        page, form, payload = self.form(response)
+        self.assertEqual(form['action'], BACKEND + START)
+        self.assertEqual(OAuthAttempt.objects.count(), 0)
+        self.assert_no_provider()
+        self.assertEqual(self.native_post(START, {}).status_code, 403)
+        self.assertEqual(OAuthAttempt.objects.count(), 0)
+        response = self.native_post(START, payload)
+        self.assertEqual(response.status_code, 200)
+        attempt = OAuthAttempt.objects.get()
+        self.assertEqual((attempt.actor_id, attempt.expected_user_id, attempt.status),
+                         (self.user.pk, str(MES_USER), 'pending'))
+        self.assert_no_provider()
+        links = NativeConnectionPage(response).select('a')
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]['href'], settings.MES_USER_OAUTH_LAUNCH_URL)
+        self.assertIn('data-mes-launch', links[0])
+        self.assertEqual(urlsplit(links[0]['href']).query, '')
+        self.assertIn('location.replace(a.href)', response.content.decode('utf-8'))
+
+    def test_native_callback_get_requires_fragment_before_any_provider_call(self):
+        attempt = self.begin()
+        response = self.browser.get(CALLBACK, secure=True)
+        self.assertEqual(response.status_code, 200)
+        page, form, payload = self.form(response)
+        self.assertEqual(form['action'], BACKEND + CALLBACK)
+        inputs = page.select('input', name='code')
+        self.assertEqual(len(inputs), 1)
+        self.assertNotIn('value', inputs[0])
+        buttons = page.select('button', type='submit')
+        self.assertEqual(len(buttons), 1)
+        self.assertIn('disabled', buttons[0])
+        self.assertIn("frame-ancestors 'none'", response['Content-Security-Policy'])
+        self.assert_no_provider()
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, 'pending')
+        self.assertEqual(self.native_post(CALLBACK, {**payload, 'code': CODE}).status_code, 200)
+        self.provider.exchange.assert_called_once_with(CODE)
+
+    def test_native_html_success_is_human_identity_result_without_credentials(self):
+        attempt = self.begin()
+        _, _, payload = self.form(self.browser.get(CALLBACK, secure=True))
+        response = self.native_post(CALLBACK, {**payload, 'code': CODE}, accept='text/html')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response['Content-Type'].startswith('text/html'))
+        self.assertContains(response, 'MES 사용자 확인 완료')
+        self.assertNotContains(response, 'MES 계정 연결 완료')
+        self.assertNotContains(response, '/admin/login/')
+        page = NativeConnectionPage(response)
+        self.assertEqual(len(page.select('button', id='mes-close')), 1)
+        self.assertEqual(len(page.select('a')), 1)
+        self.assertEqual(urlsplit(page.select('a')[0]['href']).path, '/quality/inspection-requests')
+        self.assertEqual(MESCredential.objects.count(), 0)
+        self.assertEqual(response.cookies[COOKIE].value, '')
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, 'verified')
+        for secret in (CODE, PROVIDER_TOKEN, self.tokens['access'], self.tokens['refresh']):
+            self.assertNotIn(secret.encode(), response.content)
+
+    def test_unbridged_session_remains_manual_and_html_accept_retains_json_contract(self):
+        self.browser.force_login(self.user)
+        page, _, payload = self.form(self.browser.get(START, secure=True), automatic=False)
+        self.assertEqual(self.native_post(START, payload).status_code, 200)
+        _, _, payload = self.form(self.browser.get(CALLBACK, secure=True), automatic=False)
+        self.assert_no_provider()
+        response = self.native_post(CALLBACK, {**payload, 'code': CODE}, accept='text/html')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(),
+            {'identity_verified': True, 'expiry_verified': False, 'live_ready': False})
+
+    def test_logout_or_switched_actor_cannot_render_or_submit_automatic_callback(self):
+        attempt = self.begin()
+        old_nonce = self.browser.cookies[COOKIE].value
+        self.assertEqual(self.action('logout', {'refresh': self.tokens['refresh']}).status_code, 200)
+        response = self.browser.get(CALLBACK, secure=True, HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(NativeConnectionPage(response).select('form'), [])
+        self.assertContains(response, 'WJ 검사관리로 돌아가기', status_code=403)
+        self.assertNotContains(response, '/admin/login/', status_code=403)
+        self.connect(tokens=self.obtain(self.other))
+        self.browser.cookies[COOKIE] = old_nonce
+        response = self.browser.get(CALLBACK, secure=True, HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(NativeConnectionPage(response).select('form'), [])
+        self.assertEqual(self.csrf_post(CALLBACK, {'code': CODE}).status_code, 403)
+        self.assert_no_provider()
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, 'pending')
+
+    def test_registered_landing_replaces_only_this_deployments_generic_home(self):
+        for home in ('https://v3-ali.blacklake.cn', 'https://v3-ali.blacklake.cn/'):
+            with self.subTest(home=home), override_settings(
+                    MES_USER_OAUTH_CALLBACK_ORIGIN='https://wj-reporting-backend.onrender.com',
+                    MES_USER_OAUTH_LAUNCH_URL=home):
+                _, _, launch, _ = reviewed_configuration()
+                self.assertEqual(launch, WJ_REGISTERED_LAUNCH_URL)
+                self.assertEqual(urlsplit(launch).query, '')
+                self.assertEqual(urlsplit(launch).fragment, '')
+        self.assertEqual(OAuthAttempt.objects.count(), 0)
+        self.assertEqual(MESLoginTicket.objects.count(), 0)
+        self.assert_no_provider()
+
+    def test_custom_launch_or_other_origin_is_never_replaced_by_registered_landing(self):
+        cases = (
+            ('https://wj-reporting-backend.onrender.com', 'https://v3-ali.blacklake.cn',
+             'https://v3-ali.blacklake.cn/custom/SYNTHETIC-REVIEWED-OTHER'),
+            ('https://SYNTHETIC-other-deployment.example', 'https://v3-ali.blacklake.cn',
+             'https://v3-ali.blacklake.cn/'),
+            ('https://wj-reporting-backend.onrender.com', 'https://v3-hw.blacklake.cn',
+             'https://v3-hw.blacklake.cn/'),
+        )
+        for callback, provider, configured in cases:
+            with self.subTest(callback=callback, provider=provider), override_settings(
+                    MES_USER_OAUTH_CALLBACK_ORIGIN=callback,
+                    MES_USER_OAUTH_PROVIDER_ORIGIN=provider,
+                    MES_USER_OAUTH_LAUNCH_URL=configured):
+                self.assertEqual(reviewed_configuration()[2], configured)
+        self.assert_no_provider()
+
+    def test_landing_resolution_never_accepts_query_fragment_or_cross_origin_launch(self):
+        for launch in ('https://v3-ali.blacklake.cn/?code=SYNTHETIC',
+                       'https://v3-ali.blacklake.cn/#SYNTHETIC',
+                       'https://SYNTHETIC-unreviewed.example/'):
+            with self.subTest(launch=launch), override_settings(
+                    MES_USER_OAUTH_CALLBACK_ORIGIN='https://wj-reporting-backend.onrender.com',
+                    MES_USER_OAUTH_LAUNCH_URL=launch):
+                with self.assertRaises(OAuthBlocked):
+                    reviewed_configuration()
+        self.assertEqual(OAuthAttempt.objects.count(), 0)
+        self.assertEqual(MESLoginTicket.objects.count(), 0)
+        self.assert_no_provider()
 
 
 @override_settings(**CONNECTION_SETTINGS)

@@ -1,4 +1,4 @@
-"""Pure decoder for a reviewed standalone Blacklake whole-task detail.
+"""Pure decoders for explicitly reviewed Blacklake whole-task details.
 
 No tenant, permission or writer lock is inferred from a provider response.
 The caller supplies a server-owned binding and immutable configuration review.
@@ -220,10 +220,67 @@ def _configuration(config, expected_rows, expected_keys):
     return row_paths, groups
 
 
-def _config_digest(data, review, row_paths):
+def _production_scope(binding, data):
+    """Validate read identities only; never authorize production/inventory writes."""
+    contract = _object(binding.contract)
+    scope = _object(contract.get('production_read_scope'))
+    _require(contract.get('context') == 'production_qc'
+             and binding.test_only is False
+             and set(scope) == {'process_id', 'material_id', 'part_no', 'check_type', 'reference'},
+             'production_read_scope_invalid')
+    _text(scope['reference'], 500)
+    part = _text(scope['part_no'])
+    _require(all(type(value) is str for value in (
+        binding.work_order_id, contract.get('production_task_id'),
+        contract.get('equipment_id'), scope['process_id'], scope['material_id'])),
+        'production_read_scope_invalid')
+    request = binding.request
+    check_type = scope['check_type']
+    _require(type(check_type) is int and check_type in {3, 4, 5}
+             and request.inspection_type == ('first' if check_type == 3 else 'process')
+             and request.source_kind != 'integration_test' and request.part_no == part,
+             'production_read_scope_invalid')
+    expected = {
+        ('workOrder', 'id'): _id(binding.work_order_id),
+        ('produceTask', 'id'): _id(contract.get('production_task_id')),
+        ('equipment', 'id'): _id(contract.get('equipment_id')),
+        ('process', 'id'): _id(scope['process_id']),
+        ('material', 'id'): _id(scope['material_id']),
+        ('material', 'code'): part,
+    }
+    for path, value in expected.items():
+        actual = _path(data, path)
+        _require((_id(actual) if path[-1] == 'id' else actual) == value,
+                 'production_read_relation_changed')
+    config = _object(data.get('qcConfig'))
+    _require(_enum(data.get('checkType')) == check_type
+             and _enum(config.get('checkType')) == check_type,
+             'production_read_type_changed')
+    _require(_enum(config.get('materialBatchRecordType')) == 1
+             and _enum(config.get('sampleProcessMethod')) == 1
+             and _enum(config.get('recordSample')) == 2
+             and _enum(config.get('recordSummaryCount')) == 2,
+             'unsupported_side_effects')
+    inbound_item = data.get('inboundOrderItemId')
+    _require(inbound_item is None or type(inbound_item) is int and inbound_item == 0,
+             'unsupported_side_effects')
+    # Review the actual nullable/zero encoding rather than guessing one.
+    _require('inboundOrderItemId' in data, 'detail_pinned_field_missing')
+    expected[('inboundOrderItemId',)] = inbound_item
+    source_type = _enum(data.get('sourceType'))
+    _require(source_type in {1, 2}, 'production_read_scope_invalid')
+    expected[('sourceType', 'code')] = source_type
+    return expected
+
+
+def _config_digest(data, review, row_paths, *, production_scope=None):
     required = {('checkType', 'code'), ('getStatus', 'code')}
     required.update(('qcConfig', field) for field in CONFIG_FIELDS)
-    required.update((field,) for field in NULL_RELATIONS + EMPTY_MATERIALS)
+    null_relations = NULL_RELATIONS if production_scope is None else (
+        'inboundOrder', 'outboundOrder', 'approvalDetail')
+    required.update((field,) for field in null_relations + EMPTY_MATERIALS)
+    if production_scope is not None:
+        required.update(production_scope)
     for path in row_paths.values():
         required.update(path + (field,) for field in ITEM_FIELDS)
     _require(type(review.pins) is tuple and len(review.pins) == len(required),
@@ -251,7 +308,13 @@ def _config_digest(data, review, row_paths):
         else:
             _require(_canonical(actual) == _canonical(expected), 'detail_pinned_field_changed')
             marker = actual
-        if pin.path in {(field,) for field in NULL_RELATIONS}:
+        if production_scope is not None and pin.path in production_scope:
+            required_value = production_scope[pin.path]
+            _require((pin.comparison == 'id' and _id(marker) == required_value)
+                     if pin.path[-1] == 'id' else
+                     pin.comparison == 'exact' and marker == required_value,
+                     'production_read_scope_invalid')
+        if pin.path in {(field,) for field in null_relations}:
             _require(marker is None, 'unsupported_side_effects')
         if pin.path in {(field,) for field in EMPTY_MATERIALS}:
             _require(marker == [], 'unsupported_side_effects')
@@ -268,6 +331,20 @@ def decode_full_detail(raw, *, binding, review, observed_at):
     partial result is a valid observation, never proof of a successful save.
     Timestamp units are deliberately milliseconds, matching the reviewed API.
     """
+    return _decode_full_detail(raw, binding=binding, review=review, observed_at=observed_at)
+
+
+def decode_production_full_detail(raw, *, binding, review, observed_at):
+    """Read a production-linked QC with exact server-owned relation pins.
+
+    This adds no credential, binding, policy, writer, claim or completion. The
+    standalone decoder retains its original null-relation requirements.
+    """
+    return _decode_full_detail(raw, binding=binding, review=review,
+                               observed_at=observed_at, production=True)
+
+
+def _decode_full_detail(raw, *, binding, review, observed_at, production=False):
     try:
         _require(type(review) is FullDetailReview, 'detail_review_invalid')
         qc_code = _text(review.qc_code)
@@ -299,7 +376,9 @@ def decode_full_detail(raw, *, binding, review, observed_at):
                  and _id(_object(data.get('executor')).get('id')) == target['executor_id'],
                  'mes_target_changed')
         row_paths, groups = _configuration(config, expected_rows, keys)
-        config_digest = _config_digest(data, review, row_paths)
+        production_scope = _production_scope(binding, data) if production else None
+        config_digest = _config_digest(data, review, row_paths,
+                                       production_scope=production_scope)
         state = states.get(_enum(data.get('status')))
         _require(state is not None and {'inspectionResult', 'beginTime', 'endTime'} <= set(data),
                  'detail_task_state_unverified')

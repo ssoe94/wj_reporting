@@ -45,6 +45,11 @@ from quality.archive_access import is_archive_identity_marker
 START = '/integrations/blacklake/start/'
 CALLBACK = '/integrations/blacklake/callback/'
 RELAY_URL = 'https://wj-reporting.onrender.com/integrations/blacklake/relay.html'
+WJ_RETURN_URL = 'https://wj-reporting.onrender.com/quality/inspection-requests'
+# Existing permission-controlled WJLEE_OAUTH_BTN_20261005, observed 2026-10-08.
+# Unlike the custom-page menu, this button opens the registered relay top-level.
+# This is a landing page only, not an authorize URL, grant or account mapping.
+WJ_REGISTERED_LAUNCH_URL = 'https://v3-ali.blacklake.cn/custom/customObject/cust_object9__c'
 COOKIE = '__Host-wj-mes-oauth'
 ATTEMPT_SECONDS = 300  # local attempt TTL; not the user token lifetime
 
@@ -119,6 +124,12 @@ def reviewed_configuration():
             or launch_parts.scheme + '://' + launch_parts.netloc != provider_origin
             or launch_parts.query or launch_parts.fragment):
         raise OAuthBlocked('oauth_configuration_unreviewed')
+    # Replace only this WJ deployment's observed generic home landing. Preserve
+    # every explicitly configured launch path and every other tenant/origin.
+    if (origin == 'https://wj-reporting-backend.onrender.com'
+            and provider_origin == 'https://v3-ali.blacklake.cn'
+            and launch_parts.path in {'', '/'}):
+        launch = WJ_REGISTERED_LAUNCH_URL
     return origin, provider_origin, launch, review
 
 
@@ -197,7 +208,8 @@ def _headers(response):
     return response
 
 
-def _page(content, *, status=200, callback=False):
+def _page(content, *, status=200, callback=False, automatic_start=False,
+          automatic_launch=False, connected=False):
     nonce = secrets.token_urlsafe(24)
     # Capture only the documented code in browser memory; immediately remove
     # the query from history. No external assets, analytics or browser storage.
@@ -212,6 +224,27 @@ document.addEventListener('DOMContentLoaded',()=>{
     c.length!==1||!/^[!-~]{1,4096}$/.test(c[0])){f.remove();return;}
  f.elements.code.value=c[0];
  f.querySelector('button[type="submit"]').disabled=false;
+ if(f.dataset.autoMesConnect==='true')f.requestSubmit();
+});"""
+    elif automatic_start:
+        script += """document.addEventListener('DOMContentLoaded',()=>{
+ if(window.top!==window.self)return;
+ const f=document.querySelector('form[data-auto-mes-connect="true"]');
+ if(f)f.requestSubmit();
+});"""
+    elif automatic_launch:
+        script += """document.addEventListener('DOMContentLoaded',()=>{
+ if(window.top!==window.self)return;
+ const a=document.querySelector('a[data-mes-launch]');
+ if(a)location.replace(a.href);
+});"""
+    elif connected:
+        # A native form opened this dedicated tab from the original WJ tab.
+        # Closing returns focus there; its server status recheck is authoritative.
+        script += """document.addEventListener('DOMContentLoaded',()=>{
+ const b=document.getElementById('mes-close');
+ if(b)b.addEventListener('click',()=>window.close());
+ window.close();
 });"""
     response = HttpResponse(format_html(
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
@@ -227,8 +260,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 def _blocked(code, status=403):
     # Codes are fixed local strings, never provider messages.
     return _page(format_html('<p>사용자 연결을 진행할 수 없습니다: {}</p>'
-                             '<a href="/admin/login/?next=/integrations/blacklake/start/">'
-                             '백엔드 로그인</a>', code), status=status)
+                             '<p>원래 WJ 탭에서 현재 사용자와 MES 연결 상태를 확인한 뒤 다시 연결해 주세요.</p>'
+                             '<a href="{}">WJ 검사관리로 돌아가기</a>', code, WJ_RETURN_URL), status=status)
 
 
 def _attempt(request, fingerprint):
@@ -255,10 +288,12 @@ def start(request):
     except (OAuthBlocked, ValueError):
         return _blocked('oauth_start_unavailable')
     if request.method == 'GET':
+        automatic = request.session.get('mes_bridge_only') is True
         return _page(format_html(
             '<h1>MES 사용자 확인</h1><p>기존 백엔드 로그인 사용자에게 지정된 MES 신원을 확인합니다.</p>'
-            '<form method="post" action="{}"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
-            '<button type="submit">인증 준비 시작</button></form>', origin + START, get_token(request)))
+            '<form method="post" action="{}" data-auto-mes-connect="{}"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
+            '<button type="submit">MES 연결 계속</button></form>', origin + START,
+            'true' if automatic else 'false', get_token(request)), automatic_start=automatic)
     nonce = secrets.token_urlsafe(32)
     now = timezone.now()
     OAuthAttempt.objects.filter(actor_id=request.user.pk, status='pending').update(
@@ -268,9 +303,10 @@ def start(request):
         session_digest=_session_digest(request), policy_digest=fingerprint,
         expected_user_id=str(expected), expires_at=now + timedelta(seconds=ATTEMPT_SECONDS))
     response = _page(format_html(
-        '<p>5분 안에 같은 브라우저의 승인된 MES 화면에서 새 탭으로 사용자 연결을 여세요.</p>'
-        '<a href="{}" rel="noreferrer noopener" target="_blank">MES 인증 화면 열기</a>'
-        '<p>이 단계는 MES 권한을 개통하거나 토큰을 발급하지 않습니다.</p>', launch))
+        '<p>MES 연결 화면으로 이동합니다. 이미 로그인했다면 기존 계정을 사용합니다.</p>'
+        '<a data-mes-launch href="{}" rel="noreferrer noopener" target="_blank">MES 연결 화면 열기</a>'
+        '<p>다른 사용자이면 MES에서 본인의 계정으로 전환해 주세요.</p>', launch),
+        automatic_launch=request.session.get('mes_bridge_only') is True)
     response.set_cookie(COOKIE, nonce, max_age=ATTEMPT_SECONDS, secure=True,
                         httponly=True, samesite='Lax', path='/')
     return response
@@ -299,9 +335,10 @@ def callback(request):
     if request.method == 'GET':
         return _page(format_html(
             '<p>이미 로그인한 WJ 사용자에게 지정된 MES 신원만 확인합니다.</p>'
-            '<form method="post" action="{}"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
+            '<form method="post" action="{}" data-auto-mes-connect="{}"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
             '<input type="hidden" name="code"><button type="submit" disabled>사용자 신원 확인</button></form>',
-            origin + CALLBACK, get_token(request)), callback=True)
+            origin + CALLBACK, 'true' if request.session.get('mes_bridge_only') is True else 'false',
+            get_token(request)), callback=True)
     if (set(request.POST) - {'csrfmiddlewaretoken', 'code'} or len(request.POST.getlist('code')) != 1):
         return _blocked('oauth_code_invalid', 400)
     code = request.POST.get('code', '')
@@ -363,6 +400,14 @@ def callback(request):
         payload = {'identity_verified': True, 'expiry_verified': False, 'live_ready': False}
         if stored_until is not None:
             payload.update(expiry_verified=True, credential_stored=True, expires_at=stored_until.isoformat())
-        response = _headers(JsonResponse(payload))
+        if request.session.get('mes_bridge_only') is True and 'text/html' in request.headers.get('Accept', ''):
+            response = _page(format_html(
+                '<h1>{}</h1><p>원래 WJ 탭으로 돌아가 연결 상태를 확인합니다.</p>'
+                '<button type="button" id="mes-close">이 창 닫기</button> '
+                '<a href="{}">WJ 검사관리로 돌아가기</a>',
+                'MES 계정 연결 완료' if stored_until is not None else 'MES 사용자 확인 완료', WJ_RETURN_URL),
+                connected=True)
+        else:
+            response = _headers(JsonResponse(payload))
     response.delete_cookie(COOKIE, path='/', samesite='Lax')
     return response

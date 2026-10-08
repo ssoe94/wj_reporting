@@ -14,7 +14,7 @@ from .inspection_full_snapshot import (
     OWNER, CredentialGuardFailure, FullSnapshotCoordinator, FullSnapshotError,
     _check, binding_fingerprint, fingerprint, remote_fingerprint, verify_readback,
 )
-from .inspection_full_snapshot_readback import decode_full_detail
+from .inspection_full_snapshot_readback import decode_full_detail, decode_production_full_detail
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,9 @@ class BlacklakeFullSnapshotAdapter:
             params={'access_token': token.value}, data=json.dumps({'id': int(binding.qc_id)}),
             headers={'Content-Type':'application/json'}, timeout=(5,20), allow_redirects=False)
         _check(response.status_code == 200, 'mes_detail_unverified')
-        return decode_full_detail(response.content.decode('utf-8'), binding=binding,
+        decoder = (decode_production_full_detail
+                   if binding.contract.get('context') == 'production_qc' else decode_full_detail)
+        return decoder(response.content.decode('utf-8'), binding=binding,
                                 review=self.policy.detail_review, observed_at=timezone.now())
 
     def read(self, binding, authority):

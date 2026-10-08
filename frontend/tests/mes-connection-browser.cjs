@@ -10,12 +10,12 @@ const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const DIST = path.join(ROOT, 'dist');
+const DIST = path.resolve(process.env.WJ_INSPECTION_FIXTURE_DIST || path.join(ROOT, 'dist'));
 const REPO = path.dirname(ROOT);
 const FRONT = 'https://wj-reporting.onrender.com';
 const SUBMIT = 'https://wj-reporting-backend.onrender.com/integrations/blacklake/session/';
-const PLAYWRIGHT = '/Users/ssoe94/dev/mes-qc/wj_reporting-standard-20261003/node_modules/playwright';
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PLAYWRIGHT = process.env.WJ_INSPECTION_PLAYWRIGHT || require.resolve('playwright', { paths: [REPO, ROOT] });
+const CHROME = process.env.WJ_INSPECTION_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const CONTROL = 'wj-auth-session-control-v2';
 const outputName = process.argv[2] || 'mes-connection-react-browser-20261004.json';
 if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/.test(outputName)) throw new Error('Use a log basename only.');
@@ -59,8 +59,8 @@ const deferred = () => {
 };
 const metadata = connected => ({
   enabled: true, status: connected ? 'connected' : 'disconnected', reason: connected ? 'metadata_valid' : 'connection_missing',
-  expires_at: null, can_connect: !connected, can_disconnect: connected,
-  mode: 'identity_only', live_ready: false,
+  expires_at: connected ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null, can_connect: !connected, can_disconnect: connected,
+  mode: 'stored_identity', live_ready: false,
   login_hint: { factory_number: '12345678', account_name: 'fixture-mes-a', prefill_supported: false },
 });
 
@@ -83,7 +83,7 @@ const metadata = connected => ({
   const errorCategories = new Set();
   const blockedPaths = { font_stylesheet: 0, unexpected_api: 0, unexpected_frontend_path: 0,
     unexpected_origin: 0, websocket: 0 };
-  const consoleKinds = { blocked_resource: 0, mocked_http_500: 0, fixed_api_error: 0, other: 0 };
+  const consoleKinds = { blocked_resource: 0, mocked_http_500: 0, mocked_activity_http_401: 0, fixed_api_error: 0, other: 0 };
   const apiResponses = {};
   let domPresence = null;
   const dialogGeometry = [];
@@ -124,6 +124,7 @@ const metadata = connected => ({
     const known = ['/api/token/', '/api/token/refresh/', '/api/injection/user/me/',
       '/api/mes-connection/', '/api/mes-connection/launch/',
       '/api/mes-connection/disconnect/', '/api/mes-connection/logout/',
+      '/api/auth/activity/',
       '/api/quality/inspection-requests/capabilities/'];
     const key = `${known.includes(pathname) ? pathname : 'unexpected_api'}:${status}`;
     apiResponses[key] = (apiResponses[key] || 0) + 1;
@@ -163,6 +164,8 @@ const metadata = connected => ({
           const text = message.text();
           if (text.includes('net::ERR_BLOCKED_BY_CLIENT')) consoleKinds.blocked_resource += 1;
           else if (text.includes('the server responded with a status of 500')) consoleKinds.mocked_http_500 += 1;
+          else if (text.includes('the server responded with a status of 401')
+            && message.location().url === FRONT + '/api/auth/activity/') consoleKinds.mocked_activity_http_401 += 1;
           else if (text.startsWith('[API Error]')) consoleKinds.fixed_api_error += 1;
           else consoleKinds.other += 1;
         }
@@ -309,10 +312,21 @@ const metadata = connected => ({
       verify(geometry.panel_has_area && geometry.focus_inside && !geometry.hidden_ancestor, 'named_dialog_visible_panel_and_focus');
       step = 'status_button_visible';
       await page.getByRole('button', { name: '상태 확인', exact: true }).waitFor({ state: 'visible' });
-      step = 'status_ready';
-      await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(button => button.textContent === '상태 확인')?.disabled);
+      // Automatic preparation may deliberately await a deferred launch reply.
+      // Each case waits on its own status/ticket/action, without treating the
+      // whole dialog's busy state as readiness for every scenario.
     };
     const closeDialog = () => page.getByRole('button', { name: '닫기', exact: true }).click();
+    const waitForTicket = async () => {
+      // Hidden native form inputs have no visible box. Check attachment only;
+      // the subsequent user click and body assertions validate the actual form.
+      const until = Date.now() + 5000;
+      while (Date.now() < until) {
+        if (await page.locator('input[name="ticket"]').count() === 1) return;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      verify(false, 'prepared_hidden_ticket_attached');
+    };
     const noStoredTicket = async () => page.evaluate(() => {
       const values = store => Object.keys(store).map(key => store.getItem(key) || '');
       return [...values(localStorage), ...values(sessionStorage)].every(value => !value.includes('SYNTHETIC-ONE-USE-UI-TICKET-'));
@@ -366,10 +380,22 @@ const metadata = connected => ({
     verify(JSON.stringify(await page.evaluate(() => window.__mesFixtureCopies)) === JSON.stringify(['12345678', 'fixture-mes-a']), 'copy_only_server_hint_values');
     const originalLocation = page.url();
     await page.evaluate(() => sessionStorage.setItem('synthetic-original-inspection-draft', 'SYNTHETIC-DRAFT-NOT-MES-DATA'));
-    await page.getByRole('button', { name: '연결 준비', exact: true }).click();
-    const submitButton = page.getByRole('button', { name: 'MES 연결 화면 열기', exact: true });
+    const submitButton = page.getByRole('button', { name: 'MES 연결', exact: true });
+    step = 'prepared_native_button';
     await submitButton.waitFor();
+    step = 'prepared_hidden_ticket';
+    await waitForTicket();
+    verify(counts.launch === 1 && counts.native_post === 0, 'one_automatic_bridge_prepare_no_provider_or_native_submit');
     verify(await noStoredTicket(), 'prepared_ticket_not_stored');
+    const screenshot = path.join(REPO, 'output', outputName.replace(/\.json$/, '-synthetic-connect.png'));
+    await page.getByRole('dialog').evaluate(element => {
+      const label = document.createElement('p'); label.dataset.fixtureLabel = 'true';
+      label.textContent = '합성 시험 화면 · 실제 MES 연결이 아닙니다';
+      label.style.cssText = 'padding:8px;background:#fff3cd;color:#5e4400;font-weight:600';
+      element.querySelector('h2').after(label);
+    });
+    await page.getByRole('heading', { name: 'MES 연결', exact: true }).locator('..').screenshot({ path: screenshot });
+    await page.locator('[data-fixture-label]').evaluate(element => element.remove());
     const [popup] = await Promise.all([context.waitForEvent('page'), submitButton.click()]);
     await popup.waitForURL(SUBMIT);
     await popup.waitForLoadState('domcontentloaded');
@@ -382,6 +408,8 @@ const metadata = connected => ({
     await popup.close();
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.getByText('MES 계정이 연결되어 있습니다.', { exact: true }).waitFor();
+    await page.getByText('현재 사용자의 유효한 MES 연결을 자동으로 재사용합니다.', { exact: true }).waitFor();
+    verify(await page.getByText(/연결 만료 예정:/).count() === 1 && counts.launch === 1, 'connected_reuses_valid_identity_and_shows_expiry_without_new_ticket');
     verify(counts.status_read > beforeReturnRead, 'return_rechecks_server_connection');
     verify(page.url() === originalLocation && await page.evaluate(() => sessionStorage.getItem('synthetic-original-inspection-draft')) === 'SYNTHETIC-DRAFT-NOT-MES-DATA', 'original_tab_context_and_draft_untouched');
     connected = false;
@@ -413,17 +441,18 @@ const metadata = connected => ({
       const dialogText = await page.getByRole('dialog', { name: 'MES 연결', exact: true }).innerText();
       verify(message.test(dialogText), 'reason_has_reviewed_recovery_guidance');
       verify(!dialogText.includes(privateReason), 'untrusted_reason_not_rendered');
-      verify(await page.getByRole('button', { name: '연결 준비', exact: true }).isDisabled(), 'diagnostic_does_not_enable_blocked_launch');
+      verify(await page.getByRole('button', { name: 'MES 연결', exact: true }).isDisabled(), 'diagnostic_does_not_enable_blocked_launch');
       verify(await page.getByRole('button', { name: '연결 해제', exact: true }).isDisabled(), 'diagnostic_does_not_enable_disconnect');
       verify(await page.locator('input[name="ticket"], [role="dialog"] input[type="password"]').count() === 0, 'reason_creates_no_ticket_or_password_form');
     }
     statusOverride = { status: 'reconnect_required', reason: 'session_changed', can_connect: true, can_disconnect: true };
     await page.getByRole('button', { name: '상태 확인', exact: true }).click();
     await page.getByText('MES-CONN-SESSION-CHANGED', { exact: true }).waitFor();
-    verify(await page.getByRole('button', { name: '연결 준비', exact: true }).isEnabled(), 'reconnect_remains_explicitly_available');
+    await waitForTicket();
+    verify(await page.getByRole('button', { name: 'MES 다시 연결', exact: true }).isEnabled(), 'server_allowed_reconnect_prepares_one_native_button');
     verify(await page.getByRole('button', { name: '연결 해제', exact: true }).isEnabled(), 'server_disconnect_permission_preserved');
     verify(!/WJ에 다시 로그인/.test(await page.getByRole('dialog').innerText()), 'new_wj_session_does_not_require_repeated_wj_login');
-    verify(counts.launch === launchesBeforeDiagnostics && counts.native_post === postsBeforeDiagnostics, 'diagnostic_never_automatically_launches');
+    verify(counts.launch === launchesBeforeDiagnostics + 1 && counts.native_post === postsBeforeDiagnostics, 'blocked_diagnostics_prepare_nothing_and_allowed_status_never_submits_automatically');
     verify(await page.evaluate(key => localStorage.getItem(key), CONTROL) === authBeforeDiagnostics, 'diagnostic_does_not_change_wj_session');
     verify(page.url() === originalLocation && await page.evaluate(() => sessionStorage.getItem('synthetic-original-inspection-draft')) === 'SYNTHETIC-DRAFT-NOT-MES-DATA', 'diagnostic_preserves_original_context_and_draft');
     statusOverride = null;
@@ -432,19 +461,18 @@ const metadata = connected => ({
 
     stage = 'unopened_or_canceled_window_can_prepare_again';
     await openDialog();
-    await page.getByRole('button', { name: '연결 준비', exact: true }).click();
-    await submitButton.waitFor();
+    await waitForTicket();
     const postsBeforeBlocked = counts.native_post;
     const launchesBeforeBlocked = counts.launch;
     // Simulate a suppressed native navigation; do not claim browser popup
     // permission behavior was verified. React must not infer connection success.
     await page.evaluate(() => document.addEventListener('submit', event => event.preventDefault(), { capture: true, once: true }));
     await submitButton.click();
-    await page.getByText(/창이 열리지 않거나 연결을 취소했다면/).waitFor();
+    await page.getByText(/MES 화면에서 ‘WJ Lee 신원 확인’/).waitFor();
     verify(counts.native_post === postsBeforeBlocked, 'suppressed_window_sends_nothing');
     verify(await page.getByText('MES 계정이 연결되어 있습니다.', { exact: true }).count() === 0, 'suppressed_window_not_connection_success');
-    await page.getByRole('button', { name: '연결 준비', exact: true }).click();
-    await submitButton.waitFor();
+    await page.getByRole('button', { name: '다시 연결 준비', exact: true }).click();
+    await waitForTicket();
     verify(counts.launch === launchesBeforeBlocked + 1 && await noStoredTicket(), 'retry_uses_new_memory_only_ticket');
     await closeDialog();
     verify(await page.locator('input[name="ticket"]').count() === 0, 'cancel_clears_ticket');
@@ -460,7 +488,8 @@ const metadata = connected => ({
     statusOverride = { login_hint: { factory_number: '12345678', account_name: 'fixture-mes-a', prefill_supported: true } };
     await openDialog();
     verify(await page.getByLabel('MES 로그인 ID', { exact: true }).count() === 0, 'unsupported_prefill_hint_hidden');
-    verify(await page.getByRole('button', { name: '연결 준비', exact: true }).isEnabled(), 'old_metadata_still_uses_reviewed_launch');
+    await waitForTicket();
+    verify(await submitButton.isEnabled(), 'old_metadata_still_uses_reviewed_launch');
     statusOverride = null;
     await closeDialog();
     finishCase(stage);
@@ -468,9 +497,12 @@ const metadata = connected => ({
     stage = 'ticket_expiry_clears_dom';
     launchTtl = 1;
     await openDialog();
-    await page.getByRole('button', { name: '연결 준비', exact: true }).click();
-    await submitButton.waitFor();
+    await waitForTicket();
     await page.locator('input[name="ticket"]').waitFor({ state: 'detached' });
+    const launchesBeforeExpiryCheck = counts.launch;
+    await page.getByRole('button', { name: '상태 확인', exact: true }).click();
+    await page.getByRole('button', { name: '다시 연결 준비', exact: true }).waitFor();
+    verify(counts.launch === launchesBeforeExpiryCheck, 'expired_ticket_requires_explicit_retry');
     launchTtl = 60;
     verify(await noStoredTicket() && counts.native_post === 1, 'expired_ticket_never_submitted_or_stored');
     await closeDialog();
@@ -493,7 +525,6 @@ const metadata = connected => ({
     pendingLaunch = { started: deferred(), reply: deferred() };
     releases.push(pendingLaunch.reply.resolve);
     await openDialog();
-    await page.getByRole('button', { name: '연결 준비', exact: true }).click();
     await Promise.race([pendingLaunch.started.promise, timeoutSignal]);
     const secondTab = await loginAs('b');
     await userVisible(page, 'b');
@@ -567,6 +598,9 @@ const metadata = connected => ({
           dialog_ancestor_hidden: Boolean(dialog?.closest('[aria-hidden="true"], [inert]')),
           dialog_displayed: Boolean(dialog && getComputedStyle(dialog).display !== 'none' && getComputedStyle(dialog).visibility !== 'hidden'),
           router_error: document.body.innerText.includes('Unexpected Application Error'),
+          dialog_buttons: [...dialog?.querySelectorAll('button') || []].map(button => ({ label: button.textContent, disabled: button.disabled })),
+          ticket_input_count: document.querySelectorAll('input[name="ticket"]').length,
+          dialog_forms: [...dialog?.querySelectorAll('form') || []].map(form => ({ method: form.method, target: form.target })),
         };
       }).catch(() => null);
     }

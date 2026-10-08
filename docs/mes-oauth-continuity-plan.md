@@ -1,5 +1,38 @@
 # MES authentication continuity — local candidate
 
+## Studio continuation — 2026-10-08
+
+One Chrome profile supports sequential WJ users; its tabs share the current WJ
+account. Switching waits for the old signed family logout and clears the active
+editor, ticket, requests and caches; per-account recovery stays separate.
+Credentials remain per WJ actor and exact mapped
+MES identity. Separate simultaneous users require separate browser profiles.
+This implementation does not activate accounts or widen MES permissions.
+
+An existing valid connection is reused. For a disconnected/expired current
+account, the dialog prepares one 60-second, memory-only bridge ticket and offers
+one native POST button. Failed/expired attempts require an explicit retry.
+Bridge-only browser pages automatically submit their existing CSRF forms for
+preparation and callback confirmation. JSON clients retain their response
+contract; browser success closes the dedicated tab and the original WJ tab
+rechecks the server. Logout, identity mismatch and stale attempts still block.
+
+The live MES custom-page menu embeds the relay and is rejected by its existing
+frame protection. The already registered permission-controlled button
+`WJLEE_OAUTH_BTN_20261005` (WJ Lee 신원 확인) instead uses 新页签跳转, OAuth2,
+`code`, `wj_report` and the exact relay. Its existing landing page was observed
+at `/custom/customObject/cust_object9__c`. Only the WJ production callback origin
+and v3-ali generic home launch are redirected there by code; configured custom
+paths and other deployments are preserved. No provider registration, deployment
+setting, credential setting, CSP, X-Frame-Options or permission is changed.
+
+The intended reconnect flow is WJ MES connection → existing MES identity button
+→ automatic confirmation/return. An expired MES browser login or a different
+MES account still requires the user's normal login/account switch. Lee/WJ18's
+old flow was actually reconnected at 2026-10-08 08:30 China time; this is distinct
+from acceptance or deployment of this new simplified flow. QC000/QC001/QC003/
+QC004 (WJ46–49) were observed inactive with no login/credential history.
+
 ## Current checkpoint — 2026-10-06
 
 Owner priority: finish one account/QC's entry, save, finish, readback and board

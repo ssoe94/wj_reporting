@@ -33,6 +33,10 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
   const submitted = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const confirmedStatus = useRef<MesConnectionStatus | null>(null);
+  const preparationAttempted = useRef(false);
+  const loggingOut = useRef(isLoggingOut);
+  loggingOut.current = isLoggingOut;
 
   const clearTicket = useCallback(() => {
     ticket.current = null;
@@ -47,6 +51,49 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     try { assertAuthSessionCurrent(sessionId); return true; } catch { return false; }
   }, [sessionId]);
 
+  const prepare = useCallback(async (candidate: MesConnectionStatus | null) => {
+    if (!isCurrent() || inFlight.current || loggingOut.current || !sessionId
+      || candidate !== confirmedStatus.current || !candidate?.enabled || !candidate.can_connect
+      || !['disconnected', 'reconnect_required'].includes(candidate.status)) return;
+    // Preparing only the current WJ account's one-use bridge ticket makes no
+    // provider request. The user still opens MES with a native form gesture.
+    preparationAttempted.current = true;
+    clearTicket();
+    setNotice(null);
+    setError(false);
+    setBusy(true);
+    inFlight.current = true;
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    request.current = controller;
+    try {
+      const response = await api.post('/mes-connection/launch/', {}, {
+        signal: controller.signal, authSessionId: sessionId,
+      });
+      if (!isCurrent() || request.current !== controller || controller.signal.aborted) return;
+      const prepared = parseMesLaunch(response.data, sessionId, startedAt);
+      if (!isMesLaunchUsable(prepared, sessionId, Date.now())) throw new Error('Launch expired');
+      submitted.current = false;
+      ticket.current = prepared;
+      setLaunch(prepared);
+      expiryTimer.current = window.setTimeout(() => {
+        clearTicket();
+        if (isCurrent()) setNotice('expired');
+      }, prepared.expiresAt - Date.now());
+    } catch {
+      if (isCurrent() && request.current === controller && !controller.signal.aborted) {
+        clearTicket(); setError(true);
+      }
+    } finally {
+      if (request.current === controller) {
+        inFlight.current = false;
+        // A failed logout may retain this dialog after the ending latch clears.
+        // Settle its loading UI without accepting any late response or ticket.
+        if (mounted.current) setBusy(false);
+      }
+    }
+  }, [clearTicket, isCurrent, sessionId]);
+
   const loadStatus = useCallback(async () => {
     if (!isCurrent() || inFlight.current) return;
     inFlight.current = true;
@@ -54,27 +101,34 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     setError(false);
     const controller = new AbortController();
     request.current = controller;
+    let next: MesConnectionStatus | null = null;
     try {
       const response = await api.get('/mes-connection/', {
         signal: controller.signal, authSessionId: sessionId,
       });
       if (isCurrent() && request.current === controller && !controller.signal.aborted) {
-        const next = parseMesConnectionStatus(response.data);
-        if (!next.can_connect) clearTicket();
+        next = parseMesConnectionStatus(response.data);
+        confirmedStatus.current = next;
+        if (!next.can_connect || !['disconnected', 'reconnect_required'].includes(next.status)) clearTicket();
         setStatus(next);
         if (next.status === 'connected') setNotice(null);
       }
     } catch {
       if (isCurrent() && request.current === controller && !controller.signal.aborted) {
+        confirmedStatus.current = null;
         clearTicket(); setStatus(null); setError(true);
       }
     } finally {
       if (request.current === controller) {
         inFlight.current = false;
-        if (isCurrent()) setBusy(false);
+        if (mounted.current) setBusy(false);
       }
     }
-  }, [clearTicket, isCurrent, sessionId]);
+    // At most one automatic preparation per dialog. Return/focus/status checks
+    // never replace a submitted, expired or failed ticket without another click.
+    if (!preparationAttempted.current && isCurrent() && request.current === controller
+      && !controller.signal.aborted && next) await prepare(next);
+  }, [clearTicket, isCurrent, prepare, sessionId]);
 
   useEffect(() => {
     mounted.current = true;
@@ -118,37 +172,6 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     }
   };
 
-  const prepare = async () => {
-    if (!isCurrent() || inFlight.current || isLoggingOut || !status?.enabled || !status.can_connect || !sessionId) return;
-    clearTicket();
-    setNotice(null);
-    setError(false);
-    setBusy(true);
-    inFlight.current = true;
-    const startedAt = Date.now();
-    request.current = new AbortController();
-    try {
-      const response = await api.post('/mes-connection/launch/', {}, {
-        signal: request.current.signal, authSessionId: sessionId,
-      });
-      if (!isCurrent()) return;
-      const prepared = parseMesLaunch(response.data, sessionId, startedAt);
-      if (!isMesLaunchUsable(prepared, sessionId, Date.now())) throw new Error('Launch expired');
-      submitted.current = false;
-      ticket.current = prepared;
-      setLaunch(prepared);
-      expiryTimer.current = window.setTimeout(() => {
-        clearTicket();
-        if (isCurrent()) setNotice('expired');
-      }, prepared.expiresAt - Date.now());
-    } catch {
-      if (isCurrent()) { clearTicket(); setError(true); }
-    } finally {
-      inFlight.current = false;
-      if (isCurrent()) setBusy(false);
-    }
-  };
-
   const submit = (event: FormEvent<HTMLFormElement>) => {
     if (!isCurrent() || isLoggingOut || submitted.current
       || !isMesLaunchUsable(ticket.current, getAuthSessionSnapshot().id, Date.now())) {
@@ -157,7 +180,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
       setNotice('expired');
       return;
     }
-    // A second explicit user gesture submits the secret only in the POST body.
+    // The explicit user gesture submits the secret only in the POST body.
     // Let the browser serialize the native form before clearing its input.
     submitted.current = true;
     event.currentTarget.action = MES_SESSION_SUBMIT_URL;
@@ -169,6 +192,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
 
   const disconnect = async () => {
     if (!isCurrent() || inFlight.current || isLoggingOut || !status?.can_disconnect) return;
+    preparationAttempted.current = true;
     clearTicket();
     setNotice(null);
     setError(false);
@@ -205,6 +229,13 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
   };
   const disabled = busy || isLoggingOut;
   const diagnostic = status ? mesConnectionDiagnostic(status.reason, ko ? 'ko' : 'zh') : null;
+  const canPrepare = status?.enabled && status.can_connect
+    && ['disconnected', 'reconnect_required'].includes(status.status);
+  const connectLabel = status?.status === 'reconnect_required'
+    ? (ko ? 'MES 다시 연결' : '重新连接 MES') : (ko ? 'MES 연결' : '连接 MES');
+  const expiry = status?.expires_at ? new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(status.expires_at)) : null;
 
   return (
     <Dialog open onClose={() => { clearTicket(); onClose(); }} className="relative z-[100]">
@@ -222,7 +253,13 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
             </div>
           )}
           {status?.status === 'connected' && (
-            <p className="mt-2 text-sm text-slate-600">{ko ? 'MES 작업 권한은 작업을 수행할 때 별도로 확인합니다.' : '执行 MES 操作时会另行检查操作权限。'}</p>
+            <div className="mt-2 text-sm text-slate-600">
+              <p>{status.mode === 'stored_identity'
+                ? (ko ? '현재 사용자의 유효한 MES 연결을 자동으로 재사용합니다.' : '自动复用当前用户的有效 MES 连接。')
+                : (ko ? '현재 사용자의 MES 신원을 확인했습니다.' : '已确认当前用户的 MES 身份。')}</p>
+              {expiry && <p>{ko ? '연결 만료 예정' : '连接预计到期'}: {expiry} ({ko ? '중국시간' : '中国时间'})</p>}
+              <p>{ko ? 'MES 작업 권한은 작업을 수행할 때 별도로 확인합니다.' : '执行 MES 操作时会另行检查操作权限。'}</p>
+            </div>
           )}
           {status?.login_hint && (status.can_connect || launch) && (
             <div className="mt-4 rounded-lg bg-slate-50 p-3">
@@ -247,7 +284,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
           )}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{ko ? '요청 완료를 확인할 수 없습니다. 상태를 확인한 뒤 다시 시도해 주세요.' : '无法确认请求是否完成。请检查状态后重试。'}</p>}
           {notice && <p role="status" className="mt-3 text-sm text-slate-700">
-            {notice === 'opened' ? (ko ? '새 창에서 연결을 마친 뒤 이 탭으로 돌아와 주세요. 검사 화면과 입력 내용은 이 탭에 유지됩니다. 창이 열리지 않거나 연결을 취소했다면 다시 준비해 주세요.' : '请在新窗口完成连接后返回此标签页，检查页面和已输入内容会保留。若窗口未打开或已取消连接，请重新准备。')
+            {notice === 'opened' ? (ko ? 'MES 화면에서 ‘WJ Lee 신원 확인’을 한 번 눌러 주세요. 현재 WJ 사용자에게 연결할 MES 계정으로 로그인되어 있어야 합니다. 다른 계정이면 MES에서 전환해 주세요.' : '请在 MES 页面点击一次“WJ Lee 신원 확인”。需登录当前 WJ 用户对应的 MES 账号；账号不符时请在 MES 切换。')
               : notice === 'expired' ? (ko ? '연결 준비 시간이 지났습니다. 다시 준비해 주세요.' : '连接准备已过期，请重新准备。')
                 : (ko ? 'MES 연결을 해제했습니다.' : '已断开 MES 连接。')}
           </p>}
@@ -255,13 +292,15 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
             {launch ? (
               <form method="post" action={MES_SESSION_SUBMIT_URL} target="_blank" rel="noopener" onSubmit={submit}>
                 <input ref={ticketInput} type="hidden" name="ticket" value={launch.ticket} readOnly autoComplete="off" />
-                <Button type="submit" disabled={disabled}>{ko ? 'MES 연결 화면 열기' : '打开 MES 连接页面'}</Button>
+                <Button type="submit" disabled={disabled}>{connectLabel}</Button>
               </form>
-            ) : <Button type="button" disabled={disabled || !status?.enabled || !status.can_connect} onClick={() => { void prepare(); }}>{ko ? '연결 준비' : '准备连接'}</Button>}
+            ) : status?.status !== 'connected' && <Button type="button" disabled={disabled || !canPrepare} onClick={() => { void prepare(confirmedStatus.current); }}>{busy && canPrepare
+              ? (ko ? '연결 준비 중…' : '正在准备连接…') : notice || error || preparationAttempted.current
+                ? (ko ? '다시 연결 준비' : '重新准备连接') : connectLabel}</Button>}
             <Button type="button" variant="secondary" disabled={disabled || !status?.can_disconnect} onClick={() => { void disconnect(); }}>{ko ? '연결 해제' : '断开连接'}</Button>
             <Button type="button" variant="ghost" disabled={disabled} onClick={() => { void loadStatus(); }}>{ko ? '상태 확인' : '检查状态'}</Button>
           </div>
-          {launch && <p className="mt-2 text-sm text-slate-600">{ko ? '1분 안에 열어 주세요. 연결 화면은 새 창으로 열립니다. 팝업이 차단되면 이 사이트의 팝업을 허용한 뒤 다시 준비해 주세요.' : '请在一分钟内打开，连接页面将在新窗口中打开。如弹窗被拦截，请允许此网站弹窗后重新准备。'}</p>}
+          {launch && <p className="mt-2 text-sm text-slate-600">{ko ? '새 창에서 연결합니다. 1분 안에 눌러 주세요.' : '将在新窗口连接。请在一分钟内点击。'}</p>}
           <div className="mt-5 flex justify-end"><Button type="button" variant="ghost" onClick={() => { clearTicket(); onClose(); }}>{ko ? '닫기' : '关闭'}</Button></div>
         </DialogPanel>
       </div>

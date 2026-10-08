@@ -9,7 +9,13 @@ pins binding scope, source digest/version, executor, expiry, exact typed detail
 pins and a deployment-owned concurrency connector name. Reads do not create or
 renew it. Actual CAS/fence callables must still be supplied; WJ locks do not
 prevent edits made directly in MES. No manifest or connector is provisioned by
-this change, and the concrete detail decoder remains standalone-test-only.
+this change. A separately opted-in `production_qc` detail decoder now validates
+the exact work-order/task/equipment/process/material IDs and the WJ PartNo.
+Its `production_read_scope` records process/material IDs, PartNo, exact check
+type and a review reference; every relation and source type must be pinned.
+It permits first/production/periodic QC reads with no sample/quantity/inventory
+effects. The original standalone decoder is unchanged. This removes a local
+read limitation, but supplies no live binding, writer fence or write approval.
 
 The explicit `completed_areas` source mode requires both distinct inspectors'
 completed areas and all recorder/item history, without inventing a third
