@@ -2,6 +2,18 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
+## 최신 보완: 승인된 정상 재연결 시작, 공식 MES 로그인 인계
+
+사용자가 정상 WJ 로그인·MES 재연결에 `진행해`라고 승인했다. 기존 IAB에서 WJ production frontend를 열었으며 같은 `superuser` 계정으로 로그인되어 있었다. 사용자 메뉴 → MES 연결에서 `MES-CONN-AUTHORIZATION-CHANGED`를 실제 확인하고 **MES 다시 연결**을 눌렀다. 정상 UI의 one-use bridge/launch 준비와 공식 MES 이동만 수행했으며 강제 fingerprint 수정, 권한 추가, 임의 DB 수정은 하지 않았다. 이전의 DB 변경 0건은 직전 read-only probe에 대한 기록이다. 이번 정상 인증 시작은 지원 UI가 관리하는 bridge/session/attempt 메타데이터를 만들 수 있다.
+
+공식 `https://v3-ali.blacklake.cn/login` 화면으로 정상 이동했지만 MES browser login은 없었다. 공장번호·계정·비밀번호와 약관 동의가 필요하여 직접 입력 가능한 화면으로 인계했다. 지원 secure credential 입력 도구는 현재 노출되어 있지 않다. 비밀번호를 채팅으로 요청하거나 저장소/브라우저에서 추출하지 않았다. 동의 checkbox·자동 로그인 기본값은 변경하지 않았고 로그인 submit도 수행하지 않았다. 사용자 비밀번호 입력/약관 선택은 사용자가 공식 화면에서 직접 완료해야 한다. MES tab `9`와 WJ tab `8`을 handoff로 보존하고 브라우저를 표시했다. 티켓이 만료되면 WJ의 ‘다시 연결 준비’에서 새 정상 흐름을 시작한다.
+
+**추가로 확인된 APP 승인 경계:** deployed main `b857c50e`의 `mes_oauth/views.py:get_provider()`는 `callback_app_tokens.get_app_access_token()`을 호출한다. 이 함수는 매 callback마다 새 `AppTokenSupplier()`를 만들고, 현재 확인된 server mode에서 기존 appKey/appSecret로 `_issue()`를 최대 1번 호출한다. business 프로세스의 기존 APP cache를 재사용하는 경로가 아니다. 따라서 정상 MES 로그인 후 **‘WJ Lee 신원 확인’ 클릭은 APP token 발급을 포함**한다. 그 버튼은 누르지 않았으며 callback 자동 POST를 유발하지 않았다.
+
+필요한 별도 승인 범위는 **기존 tenant/앱/권한을 유지한 재연결 callback 1회에서 APP token 발급 POST 최대 1회**다. 대상은 `https://v3-ali.blacklake.cn/api/openapi/domain/api/v1/access_token/_get_access_token`; 새 appKey/appSecret/SSH key/권한/지속 접근을 추가하는 요청이 아니다. 이어지는 기존 USER authorization-code 교환과 userinfo 읽기는 승인된 정상 재인증 흐름이다. 실패/불확실 결과 뒤 임의 재발급이나 callback 반복은 하지 않는다. 이 APP 발급 승인이 오기 전 ‘신원 확인’을 누르도록 안내하지 않는다.
+
+현재 재인증은 **미완료**이며 재연결 성공·USER 유효성·master·부수효과 검증을 주장하지 않는다. 실제 工单 생성/수정/생산 조작과 배포·migration은 하지 않았다. 검토용 실제 로그인 전체 캡처 `output/plan-workflow/mes-reauth-login-handoff-full.jpg`, Library `libfile_2763de3d77188191b6ef22338b4241fa` version 1을 직접 열어 확인했다. 코드/schema 변경은 없으며 이 회차는 인증 UI와 배포 코드 읽기만 검증했다.
+
 ## 최신 보완: 기존 Render Web Shell 성공, USER 인증 binding 차단
 
 이 절이 아래 SSH 접속 실패·런타임 읽기 미완료 기록보다 우선한다. 추가 SSH 키 없이 **기존 로그인 상태의 Render Dashboard → WJ backend → Shell**로 런타임 읽기에 성공했다. 승인된 My Workspace `tea-d14drsripnbc73f9nje0`, backend `srv-d18e2pndiees73aq333g`, instance `529n4`에서 실행했다. 지원 경로는 [Render Web Shell](https://dashboard.render.com/web/srv-d18e2pndiees73aq333g/shell)이며 [공식 Shell/SSH 설명](https://render.com/docs/ssh)에 맞는 Dashboard 기능이다. Codex native 앱이나 차단된 앱 접근은 우회하지 않았다.
