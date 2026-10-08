@@ -89,8 +89,11 @@ function normalizeProductionStatus(data: Partial<ProductionStatusResponse> | nul
   };
 }
 
-export async function getProductionStatus(date: string) {
-  const response = await http.get<ProductionStatusResponse>(`/production/status/?date=${encodeURIComponent(date)}`);
+export async function getProductionStatus(date: string, options?: { skipAuth?: boolean }) {
+  const response = await http.get<ProductionStatusResponse>(
+    `/production/status/?date=${encodeURIComponent(date)}`,
+    options,
+  );
   return normalizeProductionStatus(response.data);
 }
 

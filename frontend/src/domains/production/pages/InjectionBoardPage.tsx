@@ -1244,7 +1244,7 @@ export function InjectionBoardPage() {
   });
   const statusQuery = useQuery({
     queryKey: ["production-status", requestedBusinessDate, "injection-board"],
-    queryFn: () => getProductionStatus(requestedBusinessDate),
+    queryFn: () => getProductionStatus(requestedBusinessDate, { skipAuth: true }),
     refetchInterval: BOARD_REFRESH_INTERVAL_MS,
     placeholderData: (previousData) => previousData,
   });
@@ -1303,7 +1303,7 @@ export function InjectionBoardPage() {
   });
   const previousStatusQuery = useQuery({
     queryKey: ["production-status", previousBusinessDate, "injection-board-history"],
-    queryFn: () => getProductionStatus(previousBusinessDate),
+    queryFn: () => getProductionStatus(previousBusinessDate, { skipAuth: true }),
     retry: 1,
     staleTime: 30 * 60_000,
     refetchOnWindowFocus: false,
