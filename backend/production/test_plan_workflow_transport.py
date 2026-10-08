@@ -98,6 +98,98 @@ class PlanTransportTests(TransactionTestCase):
     def send(self, transport=None):
         return dispatch_prepared_create(self.req.uid, transport or self.transport(), fixture=True)
 
+    def trial_review(self):
+        from .plan_workflow_trial import request_digest
+        now = datetime.now(timezone.utc)
+        return {'reference': 'SYNTHETIC-TRIAL-REVIEW', 'request_uid': str(self.req.uid),
+            'request_digest': request_digest(self.req), 'actor_id': self.user.pk,
+            'mes_user_id': 17000000000000009, 'origin': 'https://v3-ali.blacklake.cn',
+            'tenant': 'SYNTHETIC-TENANT', 'approved_at': now.isoformat(),
+            'expires_at': (now + timedelta(minutes=10)).isoformat(),
+            'test_master_reference': 'SYNTHETIC-TEST-MASTERS', 'side_effect_reference': 'SYNTHETIC-NO-EFFECTS',
+            'test_resource_code': self.req.intent['setup']['resource_code'],
+            'test_product_code': self.req.intent['part_no'], 'quantity': self.req.intent['quantity'],
+            'unit_id': self.req.intent['setup']['output_unit_id'],
+            **{key: True for key in ('no_dispatch','no_start','no_stock_movement','no_backflush','no_inspections')}}
+
+    def test_trial_permit_requires_exact_short_server_approval(self):
+        from .plan_workflow_trial import reviewed_trial
+        with override_settings(MES_PLAN_TRIAL_APPROVAL=None):
+            with self.assertRaises(WorkflowConflict): reviewed_trial(self.req)
+        for changes in ({'no_stock_movement': False}, {'actor_id': self.user.pk+1},
+                {'quantity': '2000'}, {'unit_id': '17000000000000099'},
+                {'test_master_reference': ''}, {'request_digest': '0'*64},
+                {'expires_at': (datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()},
+                {'approved_at': (datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat(),
+                 'expires_at': (datetime.now(timezone.utc)-timedelta(minutes=5)).isoformat()}):
+            with override_settings(MES_PLAN_TRIAL_APPROVAL={**self.trial_review(), **changes}):
+                with self.assertRaises(WorkflowConflict): reviewed_trial(self.req)
+        with override_settings(MES_PLAN_TRIAL_APPROVAL=self.trial_review()):
+            self.assertTrue(reviewed_trial(self.req).current())
+        self.assertEqual(self.calls, [])
+
+    def run_trial(self, *, timeout=False, missing_app=False):
+        from .plan_workflow_trial import dispatch_trial_create
+        from mes_oauth.session_guard import InspectionSession
+        from mes_oauth.app_tokens import AppCredentialUnavailable
+        session = InspectionSession(self.user.pk, 'SYNTHETIC-digest',
+            datetime.now(timezone.utc)+timedelta(minutes=20), {})
+        credential = InspectionUserAccessToken('SYNTHETIC-TRIAL-ONLY',time.time()+120,
+            user_id=17000000000000009)
+        operations = []
+        def broker(*args, **kwargs):
+            self.assertTrue(kwargs['policy_check']())
+            operations.append(kwargs['operation'])
+            # Match the existing broker's credential/session lock transaction.
+            with transaction.atomic():
+                return kwargs['callback'](credential)
+        def sender(url, **kwargs):
+            path = url.split(ROUTE_BASE)[1]
+            self.calls.append((path,parse_json_exact(kwargs['data'])))
+            if path == CREATE_PATH:
+                self.assertEqual(PlanMesRequest.objects.get(uid=self.req.uid).state,'sending')
+                if timeout: raise TimeoutError('SYNTHETIC timeout')
+                return response(self.create_result)
+            action = next(key for key, route in READ_ROUTES.items() if route == path)
+            return response(self.values[action])
+        with override_settings(MES_PLAN_TRIAL_APPROVAL=self.trial_review(),
+                MES_USER_OAUTH_ENABLED=True,MES_INSPECTION_ENABLED=True), \
+            patch('mes_oauth.vault.policy',return_value=SimpleNamespace(tenant='SYNTHETIC-TENANT')), \
+            patch('mes_oauth.vault.expected_user',return_value=17000000000000009), \
+            patch('mes_oauth.pilot_scope.pilot_route_scope_required',return_value=False), \
+            patch('mes_oauth.inspection_credentials.call_with_user_credential',side_effect=broker), \
+            patch('mes_oauth.app_tokens.get_existing_app_access_token',side_effect=AppCredentialUnavailable()), \
+            patch('mes_oauth.app_tokens.get_app_access_token') as issue:
+            if missing_app:
+                with self.assertRaises(AppCredentialUnavailable):
+                    dispatch_trial_create(self.req.uid,session,sender=sender)
+                result = None
+            else:
+                result = dispatch_trial_create(self.req.uid,session,provider=object(),sender=sender)
+                with self.assertRaises(WorkflowConflict):
+                    dispatch_trial_create(self.req.uid,session,provider=object(),sender=sender)
+            issue.assert_not_called()
+        return result, operations
+
+    def test_trial_bridge_create_and_readback_once_without_issuance(self):
+        result, operations = self.run_trial()
+        self.assertEqual(result['state'],'confirmed')
+        self.assertEqual(result['work_order_id'],WORK_ID)
+        self.assertEqual(operations,['read','save'])
+        self.assertEqual(len([path for path,_ in self.calls if path==CREATE_PATH]),1)
+        self.req.refresh_from_db();self.assertEqual(self.req.attempt,1)
+        self.assertTrue(self.req.events.filter(evidence__trial_reference='SYNTHETIC-TRIAL-REVIEW').exists())
+
+    def test_trial_bridge_timeout_stays_fenced_and_missing_app_never_issues(self):
+        result, _ = self.run_trial(missing_app=True)
+        self.assertIsNone(result);self.assertEqual(self.calls,[])
+        self.req.refresh_from_db();self.assertEqual(self.req.state,'disabled')
+        result, operations = self.run_trial(timeout=True)
+        self.assertEqual(result['state'],'uncertain')
+        self.assertEqual(operations,['read','save'])
+        self.req.refresh_from_db();self.assertEqual(self.req.state,'uncertain')
+        self.assertEqual(self.req.attempt,1)
+
     def test_create_and_all_campaign_reads_confirm_only_creation_preserving_large_id(self):
         result = self.send()
         self.assertEqual(result['state'], 'confirmed');self.assertFalse(result['production_totals_verified'])

@@ -37,7 +37,11 @@
 .plan-workflow__members > div { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .plan-workflow__editor { border-top: 1px solid #b9c7d9; padding-top: 8px; margin-top: 4px; display: grid; gap: 6px; }
 .plan-workflow__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
-.plan-workflow__input-row { display: grid; grid-template-columns: minmax(120px, 1.5fr) repeat(3, minmax(80px, 1fr)) minmax(100px, 1fr) auto; align-items: end; gap: 6px; margin: 8px 0; }
+.plan-workflow__input-row { display: grid; grid-template-columns: minmax(120px, 1.5fr) repeat(2, minmax(80px, 1fr)) minmax(120px, 1fr) auto; align-items: end; gap: 6px; margin: 4px 0; }
+.plan-workflow__material-summary { display: flex; gap: 8px 20px; flex-wrap: wrap; }
+.plan-workflow__diagnostics { color: #475d78; }
+.plan-workflow__editor > button { justify-self: start; }
+.plan-workflow__confirmation { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(230px, 1fr) auto; align-items: end; gap: 8px; }
 .plan-workflow .plan-workflow__check { flex-direction: row; align-items: center; gap: 8px; }
 .plan-workflow__blocked { color: #994718 !important; }
 .plan-workflow__approved { color: #235e43; }
@@ -51,4 +55,4 @@
 .plan-workflow button:active:not(:disabled) { background: #e6eef7; }
 .plan-workflow button:focus-visible, .plan-workflow input:focus-visible, .plan-workflow select:focus-visible, .plan-workflow summary:focus-visible { outline: 2px solid #007ea8; outline-offset: 2px; }
 @media(max-width: 1000px) { .plan-workflow__off { margin-left: 0; } .plan-workflow__input-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media(max-width: 760px) { .plan-workflow__orders { min-width: 800px; } .plan-workflow__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__input-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media(max-width: 760px) { .plan-workflow__orders { min-width: 800px; } .plan-workflow__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__input-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__confirmation { grid-template-columns: 1fr; } }

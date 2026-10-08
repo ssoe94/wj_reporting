@@ -303,6 +303,7 @@ def serialize_row(plan):
         'candidate_details': [{'uid': str(candidate.uid), 'snapshot': candidate.revisions.get(version=candidate.current_version).snapshot}
                               for candidate in PlanWorkIdentity.objects.filter(uid__in=work.candidates)] if work else [],
         'approval': {'id': approval.pk, 'snapshot': approval.snapshot, 'actor_id': approval.actor_id,
+                     'actor_name': (approval.actor.first_name or approval.actor.username) if approval.actor else '',
                      'approved_at': approval.created_at.isoformat()} if approval else None,
         'previous_approval': {'snapshot': previous_approval.snapshot} if previous_approval else None,
         'default_version': latest_default.version if latest_default else 0,

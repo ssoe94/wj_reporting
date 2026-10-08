@@ -54,7 +54,7 @@ elif preview:
     call_command('migrate', verbosity=0)
     from django.contrib.auth import get_user_model
     from rest_framework.authentication import BaseAuthentication
-    user = get_user_model().objects.create_user(username='SYNTHETIC-plan-qa', is_staff=True, is_superuser=True)
+    user = get_user_model().objects.create_user(username='SYNTHETIC-plan-qa', is_staff=True, is_superuser='--field-user' not in sys.argv)
     class SyntheticAuthentication(BaseAuthentication):
         def authenticate(self, request): return user, None
     from production.plan_workflow_views import PlanWorkflowView

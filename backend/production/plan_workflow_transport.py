@@ -31,7 +31,7 @@ class PlanTransportError(Exception):
 
 class PlanMesTransport:
     @sensitive_variables()
-    def __init__(self, *, origin, tenant, actor_id, mes_user_id, credential, sender=None):
+    def __init__(self, *, origin, tenant, actor_id, mes_user_id, credential, sender=None, _trial_permit=None):
         if (origin not in ORIGINS or type(credential) is not InspectionUserAccessToken
                 or type(actor_id) is not int or actor_id < 1 or type(mes_user_id) is not int
                 or credential.user_id != mes_user_id or not isinstance(tenant, str) or not tenant
@@ -39,13 +39,18 @@ class PlanMesTransport:
             raise PlanTransportError('credential_scope_required')
         self.origin, self.tenant, self.actor_id = origin, tenant, actor_id
         self.credential, self.sender = credential, sender
+        self._trial_permit = _trial_permit
         self.attempted = False
+
+    def _trial_allows(self, payload):
+        from .plan_workflow_trial import TrialPermit
+        return type(self._trial_permit) is TrialPermit and self._trial_permit.allows(self, payload)
 
     @sensitive_variables()
     def _post(self, path, payload, *, write=False, fixture=False):
         if path not in (*READ_ROUTES.values(), CREATE_PATH):
             raise PlanTransportError('route_not_supported')
-        if path == CREATE_PATH and (LIVE_WRITES_ENABLED is not False or fixture is not True
+        if path == CREATE_PATH and not self._trial_allows(payload) and (LIVE_WRITES_ENABLED is not False or fixture is not True
                 or self.sender is None or not self.credential.value.startswith('SYNTHETIC-')):
             raise WorkflowConflict('MES plan writer is disabled.')
         credential = self.credential
@@ -87,9 +92,9 @@ class PlanMesTransport:
             raise PlanTransportError('result_unverified') from None
 
     def send_create(self, contract, *, fixture=False):
-        # The same implementation is exercised with an injected synthetic sender;
-        # no settings flag or production credential can activate a real write.
-        if (LIVE_WRITES_ENABLED is not False or fixture is not True or self.sender is None
+        # Ordinary flags/credentials do not activate writes. Only synthetic IO
+        # or a current, exact server-reviewed trial permit reaches this route.
+        if not self._trial_allows(contract.get('payload')) and (LIVE_WRITES_ENABLED is not False or fixture is not True or self.sender is None
                 or not self.credential.value.startswith('SYNTHETIC-')):
             raise WorkflowConflict('MES plan writer is disabled.')
         if (self.attempted or contract.get('path') != CREATE_PATH
