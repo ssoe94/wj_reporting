@@ -2,6 +2,62 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
+## 최신 보완: 기존 인증으로 master·생성 계약·tenant 설정 읽기
+
+부모의 후속 지시에 따라 시험 물료 `0`의 대상 승인 답변을 기다리면서 **읽기만** 진행했다. 같은 南京万佳 / Lee 브라우저 인증을 재사용했고 APP 발급/재인증/credential 추출/업무 POST/운영 설정 저장은 **0회**다. 아래 사실은 합성 fixture가 아닌 실제 MES 화면 또는 공식 공개 문서다. 이 절의 확인 내용이 이전 ‘tenant 규칙 미검증’ 문구보다 우선하나, 모든 자동화·검사·재고 무영향을 검증한 것은 아니다.
+
+### 공식 API와 최소 필드
+
+기존 Ali static 문서는 web fetch 불가 및 로컬 DNS 조회 실패였다. 공식 HW API UI의 저장된 Ali 문서 ID `1686655055663528` 링크는 not-found였으나 **사이트 메뉴 → 工单导入**에서 동일 `/med/open/v2/work_order/_doimport` 경로가 현재 HW 문서 ID `1686645473258363`으로 열렸다. 경로 미지원/폐기라고 판정하지 않는다. HW 요청 도메인을 南京万佳 Ali tenant의 쓰기 도메인으로 대체하지 않는다. 로컬 기존 계약 ID를 무턱대고 교체하거나 API 호출하지 않았다.
+
+[공식 工单导入](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1686645473258363&url=%2Fmed%2Fopen%2Fv2%2Fwork_order%2F_doimport), 업데이트 2026-04-27. 펼친 parameter table에서 필수 표시를 확인했다.
+
+| 범위 | 공식 문서 필수 표시 | 첫 workflow의 추가 요구 |
+|---|---|---|
+| 최상위 | `code`, `outputMaterialOpenCOs`, `planStartTime`, `planFinishTime`; header `access_token` | UID/version, frozen approval/snapshot, request digest/idempotency, 검증된 tenant 상태/영향 근거 |
+| output 각 행 | `lineSeq`, `mainFlag`, `materialCode`, `plannedAmount` | 실제 unit/version, route/setup mapping, 확인된 입고 설정 |
+| input를 넣는 경우 | `materialCode`, `seq`; input control를 넣는 경우 `inputAmountNumerator`, `lineSeq` | 승인 원료·배합/소요량·unit/version; fallback ID나 `-` 금지 |
+| process plan를 넣는 경우 | `code`, `processNum`, `reportFlag` | 검증된 공정/route mapping |
+
+`status`, BOM/route 사용 flag, unitName/version, resourceCode, warehousing/autoWarehousingFlag는 표에서 optional이지만 **생략해도 안전하다는 의미가 아니다**. 초기 status와 자동화/재고 설정은 명시 확인해야 한다. API의 최소 필드와 안전한 원료확인 workflow의 최소 필드를 혼동하지 않는다. 용료를 비워 최소 工单을 만드는 별도 진단은 제품 생성시험과 다르며 현재 원료 승인 guard를 우회하지 않는다.
+
+[공식 WorkOrderStatusEnum](https://v3-hw-openapi.blacklake.cn/bizCode?bizKey=WorkOrderStatusEnum&current=1&pageSize=3&total=3): `DRAFT=0`, `CREATED=1`, `DISPATCHED=2`, `EXECUTING=3`, `FINISHED=4`, `CLOSED=5`. 초안 제출 `/med/open/v2/work_order/_batch_update_draft_flag` (문서 `1765432573329033`)와 下发 `/med/open/v2/work_order/_dispatch` (문서 `1686645473258362`)가 생성과 별도로 문서화돼 있다. 따라서 **계약상 status=0 또는 1로 下发/开工 요청을 하지 않는 생성 후보는 마련할 수 있다**. 다만 tenant가 해당 import 상태를 허용하는지와 생성 event 자동화를 실제 실행으로 검증하지 않았으므로 ‘无副作用 创建已验证’는 아니다. 초기 상태는 승인 대상과 함께 고정해야 한다.
+
+### 실제 master·설정 읽기
+
+| 실제 읽기 | 확인 / 한계 |
+|---|---|
+| 테스트 물료 BOM | `父项物料编号=0` + `父项物料名称=测试物料` 함께 조회해 빈 목록. 이름만 조회보다 범위를 좁혔지만 코드 text match semantics/권한 범위 밖 모든 BOM 부재까지 입증하지 않음 |
+| 테스트 물료 기존 工单 | `物料名称 等于` picker에서 실제 `测试物料`를 선택해 조회; 빈 목록·qty 합계 0. 이 조회 범위의 이력 없음이며 전역 연결 이력/재고 없음의 증거 아님 |
+| 工序 전체 목록 | 2건: `JG / 加工 / 1729493525363499 / 加工车间工作中心`, `ZS / 注塑 / 1729493415526513 / 注塑车间工作中心`. ID 문자열 보존. 둘 다 未废弃이고 기존 운영 공정이며 시험 전용으로 승인하지 않음 |
+| JG 상세 | 是否报工=是, 계획 보고량 弱管控, 다산출 범위 管控, SOP 실행단계/보고 template `-`. trace 관계 ‘单件顺序生产自动更新’. 단순 존재만으로 시험 부수효과 검증하지 않음 |
+| 工艺路线 | 전체 622건에서 이름 `测试` 조회가 최종 빈 목록. material code0에 적용되는 범용 경로가 없다는 뜻은 아니며 시험 route mapping 미확정 |
+| 设备台账 | `设备名称=测试` 조회 빈 목록. 실제 일반 생산 설비를 임의 시험 설비로 고르지 않음 |
+| 工单 설정 | 생산模式=生产任务, 指定用料=是, 자동 工序在制品=否, 用料清单可空=是. 자동완공=ON, 자동닫기=ON. 전자는 执行中·task 종료·보고량/입고량 100% 등 조건, 후자는 已完工·task 종료·보고/입고 조건. 下发 task code는 확인 下发 후 생성, 下发 설비필수=否/단일설비=否, default resource는 work center 설정. **읽은 선택 상태이며 저장 없이 取消로 닫음** |
+
+설정은 초안/新建 생성 즉시 자동완공·자동닫기라고 설명하지 않는다. 이는 표시된 조건상 추론이며 실제 생성 event, QC rule, 외부 webhook, 재고 예약/입출고/자동 下发·开工 전체 설정은 아직 미검증이다. 기존 `测试物料`의 投料 是否出库=是 / 是否倒冲=否는 **투입 동작** 규칙으로 별도 유지한다. 이것을 생성 시 자동 출고 발생 또는 생성 무영향으로 확대하지 않는다.
+
+### 종료·보관 경로와 확정 전 실행계획
+
+[공식 batch_close](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1686645473258368&url=%2Fmed%2Fopen%2Fv2%2Fwork_order%2Fbatch_close)는 code 또는 ID 중 하나를 받으며 둘 다 있으면 ID 우선. WorkOrderCloseTypeEnum은 `NORMAL_CLOSE=1`, `ABNORMAL_CLOSE=2`. response 예시가 top-level 성공과 **failAmount/failResults**를 함께 보여 HTTP200만으로 batch 성공을 판정하면 안 된다. 문서는 초안에서 close 가능성/자동 QC 취소/재고 회수/보관·복구를 설명하지 않는다. **안전한 close/archive 방법은 아직 확정하지 않았다.** reverse close 지원만으로 원복 안전성을 주장하지 않고 finish/close/delete를 자동 cleanup으로 실행하지 않는다.
+
+실제 시험 전 순서:
+1. 사용자의 `0 / 测试物料` 격리 대상 답변 및 정확한 input/BOM/version/unit/route/설비/최소 qty/start/end 확정. 工序 목록과 테스트명 검색으로 임의 선택하지 않는다.
+2. tenant 책임자가 생성 event·QC·재고·자동 下发/开工 영향과 해당 초기 상태의 import 허용을 확인하고 근거를 남김. 빈 용료 최소 생성 진단을 원하면 별도 범위를 명시하며 원료 workflow acceptance로 인정하지 않음.
+3. 가능한 정리 경로의 허용 상태/검사·재고 영향/이력보존을 확정. 검증 전에는 trial code를 보존하고 자동 후속 상태 변경하지 않는 선택이 필요.
+4. 정확한 payload/초기 status/digest/효과 근거를 단일 <=30분 scoped approval에 고정하고 기존 version·전송 잠금을 다시 검사. 운영 배포/0016 schema/trusted bridge 승인도 별도 충족 필요.
+5. 승인 후 **단건**만 생성; timeout/결과불명은 재전송 대신 exact code/ID의 base/output/BOM/process/task readback. planned qty와 reported/inbound 분리, QC/재고 전후 차이 확인. batch는 개별 row 실패를 지속 상태로 보존.
+
+이번에는 1번 답변이 아직 도착하지 않아 생성하지 않았다. 업데이트 writer/actual net-inbound adapter 미완성 경계는 이전과 동일하다. no-start 계약 확인이 새 QC 자동 생성 구현/검사 승계 검증을 의미하지 않는다.
+
+### 검토 deliverables
+
+- `output/plan-workflow/official-create-hw-rows.json`: 펼친 공식 필수/optional table 원본, 나머지 official `*-ax.txt`는 close/status/closeType/draft-submit 원본.
+- `mes-workorder-settings-readonly-ax.txt`, `mes-test-material-workorders-ax.txt`, `mes-test-material-bom-code-name-ax.txt`, `mes-process-master-ax.txt`, `mes-process-jg-detail-ax.txt`, route/equipment `*-search-ax.txt`: 실제 읽기 원본. secret 값 없음.
+- 실제 설정 캡처 Library `libfile_e215a6a0948c8191a0cd00d1d567bd1e` v0; 工单 빈 조회 화면 `libfile_3389a42f961481918a39def9440d5542` v0 (필터는 접혀 있어 선택 조건은 AX 근거와 함께 읽음); 공식 상태 화면 `libfile_3864fc681cb881918b9fba60eed37dd5` v0. 모두 직접 이미지 확인.
+- MES 실제 capture 1053×1291, 공식 status 1280×720; 기존 합성 workflow 1280×720 검증과 구분. 코드/schema 변경 없음, `git diff --check`만 새로 실행. 테스트/lint/build 재실행하지 않음.
+- 인증 WJ8/MES9와 읽기 MES10 탭 handoff 보존. 임시 공개 공식 문서 tab11 종료. APP 추가 발급·MES 쓰기·설정 저장·migration·배포·push·PR·원격 merge 0회.
+
 ## 최신 보완: 정상 재연결 성공·APP 1회·실제 시험 물료 후보 읽기
 
 이 절이 아래 재인증 대기와 fingerprint 차단 기록보다 우선한다. 사용자가 공식 MES 로그인을 완료했다고 알렸고 기존 `wj_report` APP token 발급 최대 1회를 명시 승인했다. 기존 IAB의 MES 개인정보 화면에서 **南京万佳 / Lee / 李宰荣**, WJ의 같은 superuser 계정을 확인했다. 이전 연결 준비는 만료되어 정상 UI에서 새 one-use bridge를 준비했고, 새 MES 창의 **WJ Lee 신원 확인 버튼을 정확히 1번** 눌렀다. 이중 클릭·callback 재시도·별도 APP 공급 함수 호출은 하지 않았다. 즉시 WJ 상태가 이전 값을 보여 추가 클릭하지 않고 DB 시도 기록을 먼저 읽었으며, 이후 서버 상태 읽기에서 연결 성공을 확인했다.
