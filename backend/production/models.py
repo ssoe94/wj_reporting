@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -8,6 +9,8 @@ class ProductionPlan(models.Model):
     """
     Stores a single production plan entry for a specific date, machine, and part.
     """
+    work_uid = models.UUIDField(null=True, editable=False, unique=True)
+    work_version = models.PositiveIntegerField(default=1, editable=False)
     plan_date = models.DateField(db_index=True)
     plan_type = models.CharField(max_length=20, db_index=True)  # 'injection' or 'machining'
     machine_name = models.CharField(max_length=100, db_index=True)
@@ -70,7 +73,7 @@ class ProductionPlanChangeLog(models.Model):
     class Meta:
         ordering = ['-created_at', '-id']
         indexes = [
-            models.Index(fields=['plan_date', 'plan_type', '-created_at']),
+            models.Index(fields=['plan_date', 'plan_type', '-created_at'], name='production__plan_da_295cf3_idx'),
         ]
 
     def __str__(self):
@@ -95,6 +98,7 @@ class ProductionPartCavity(models.Model):
 
 class ProductionPlanPart(models.Model):
     """Stores part number to model mappings derived from production plan uploads."""
+    id = models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")
     plan_type = models.CharField(max_length=20, db_index=True)
     part_no = models.CharField(max_length=100, db_index=True)
     model_name = models.CharField(max_length=100, null=True, blank=True, db_index=True)
@@ -152,8 +156,8 @@ class ProductionExecution(models.Model):
         unique_together = ('plan_date', 'plan_type', 'machine_name', 'part_no', 'lot_no', 'sequence')
         ordering = ['plan_date', 'machine_name', 'sequence']
         indexes = [
-            models.Index(fields=['plan_date', 'plan_type']),
-            models.Index(fields=['plan_type', 'machine_name']),
+            models.Index(fields=['plan_date', 'plan_type'], name='production__plan_da_997e03_idx'),
+            models.Index(fields=['plan_type', 'machine_name'], name='production__plan_ty_983761_idx'),
         ]
 
     def __str__(self):
@@ -302,9 +306,9 @@ class ProductionMesReportRecord(models.Model):
     class Meta:
         ordering = ['business_date', 'plan_type', 'equipment_key', 'part_no', 'report_time']
         indexes = [
-            models.Index(fields=['business_date', 'plan_type']),
-            models.Index(fields=['business_date', 'equipment_key', 'part_no']),
-            models.Index(fields=['report_time']),
+            models.Index(fields=['business_date', 'plan_type'], name='production__busine_9aa955_idx'),
+            models.Index(fields=['business_date', 'equipment_key', 'part_no'], name='production__busine_7f65d3_idx'),
+            models.Index(fields=['report_time'], name='production__report__64aafe_idx'),
         ]
 
     def __str__(self):
@@ -526,3 +530,93 @@ class MesTaskActionLog(models.Model):
 
     def __str__(self):
         return f"{self.machine_number} {self.task_code} {self.action} {self.outcome}"
+
+
+class PlanWorkflowLock(models.Model):
+    """Seeded rows serialize plan upload, edit, approval and request preparation."""
+    plan_type = models.CharField(max_length=20, primary_key=True)
+
+
+class PlanWorkIdentity(models.Model):
+    uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan_type = models.CharField(max_length=20, db_index=True)
+    current_version = models.PositiveIntegerField(default=1)
+    active = models.BooleanField(default=True)
+    resolution = models.CharField(max_length=24, default='identified')
+    candidates = models.JSONField(default=list)
+
+
+class PlanWorkRevision(models.Model):
+    work = models.ForeignKey(PlanWorkIdentity, on_delete=models.PROTECT, related_name='revisions')
+    version = models.PositiveIntegerField()
+    snapshot = models.JSONField()
+    fingerprint = models.CharField(max_length=64)
+    change = models.CharField(max_length=24)
+    reason = models.CharField(max_length=500, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['work', 'version'], name='plan_work_revision_uniq')]
+
+
+class PlanMaterialApproval(models.Model):
+    revision = models.ForeignKey(PlanWorkRevision, on_delete=models.PROTECT, related_name='approvals')
+    snapshot = models.JSONField()
+    fingerprint = models.CharField(max_length=64)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PlanMaterialDefault(models.Model):
+    plan_type = models.CharField(max_length=20)
+    part_no = models.CharField(max_length=100)
+    version = models.PositiveIntegerField()
+    effective_from = models.DateField()
+    snapshot = models.JSONField()
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['plan_type', 'part_no', 'version'], name='plan_material_default_uniq')]
+
+
+class PlanWorkOrder(models.Model):
+    uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=100, unique=True)
+    plan_type = models.CharField(max_length=20)
+    members = models.JSONField(default=list)
+    setup_fingerprint = models.CharField(max_length=64)
+    approved_snapshot = models.JSONField()
+    version = models.PositiveIntegerField(default=1)
+    mes_id = models.CharField(max_length=19, blank=True)
+    actual_started_at = models.DateTimeField(null=True)
+    reported_quantity = models.DecimalField(max_digits=25, decimal_places=10, default=0)
+    inbound_quantity = models.DecimalField(max_digits=25, decimal_places=10, default=0)
+    observed_at = models.DateTimeField(null=True)
+    observation_complete = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PlanMesRequest(models.Model):
+    uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    work_order = models.ForeignKey(PlanWorkOrder, on_delete=models.PROTECT, related_name='requests')
+    dedupe_key = models.CharField(max_length=64, unique=True)
+    operation = models.CharField(max_length=20)
+    state = models.CharField(max_length=24, default='disabled')
+    intent = models.JSONField()
+    contract = models.JSONField(default=dict)
+    blockers = models.JSONField(default=list)
+    attempt = models.PositiveIntegerField(default=0)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class PlanMesRequestEvent(models.Model):
+    request = models.ForeignKey(PlanMesRequest, on_delete=models.PROTECT, related_name='events')
+    state = models.CharField(max_length=24)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)

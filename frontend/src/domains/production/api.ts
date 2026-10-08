@@ -106,6 +106,8 @@ export type ProductionPlanDatesResponse = {
 
 export type ProductionPlanRecord = {
   id?: number;
+  work_uid?: string | null;
+  work_version?: number;
   machine_name: string | null;
   lot_no?: string | null;
   model_name?: string | null;
@@ -960,7 +962,7 @@ export async function uploadProductionPlanFile(file: File, planType: PlanType, t
 export type ProductionPlanUpdatePayload = Partial<
   Pick<
     ProductionPlanRecord,
-    "machine_name" | "lot_no" | "model_name" | "part_spec" | "part_no" | "planned_quantity" | "sequence"
+    "machine_name" | "lot_no" | "model_name" | "part_spec" | "part_no" | "planned_quantity" | "sequence" | "work_version"
   >
 >;
 

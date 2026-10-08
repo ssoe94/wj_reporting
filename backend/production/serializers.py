@@ -18,6 +18,8 @@ class ProductionPlanSerializer(serializers.ModelSerializer):
         model = ProductionPlan
         fields = [
             'id',
+            'work_uid',
+            'work_version',
             'plan_date',
             'plan_type',
             'machine_name',
@@ -33,7 +35,7 @@ class ProductionPlanSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'plan_date', 'plan_type', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'work_uid', 'work_version', 'plan_date', 'plan_type', 'created_at', 'updated_at']
 
     def validate(self, attrs):
         if 'part_spec' in attrs:

@@ -1,3 +1,4 @@
+import { PlanWorkflowPanel } from "../components/PlanWorkflowPanel";
 import { buildCavityEditPartNos } from "../cavity-edit-payload";
 import { refreshPlanQueriesAfterSave } from "../plan-save-refresh";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
@@ -1039,6 +1040,7 @@ export function ProductionPlansPage() {
     mutationFn: async (variables: {
       id: number;
       planType: PlanType;
+      workVersion?: number;
       updates: PlanEditDraft;
       cavityUpdate?: { recordKey: string; partNos: string[]; cavityPattern: string };
     }) => {
@@ -1063,6 +1065,7 @@ export function ProductionPlansPage() {
 
       const updatedPlan = await updateProductionPlanItem(selectedDate, variables.planType, variables.id, {
         ...normalizedUpdate,
+        work_version: variables.workVersion,
       });
       if (!updatedPlan) throw new Error(copy.rowUpdateError);
 
@@ -1135,6 +1138,7 @@ export function ProductionPlansPage() {
           if (!record.id) return Promise.resolve(null);
           return updateProductionPlanItem(selectedDate, variables.planType, record.id, {
             sequence: index + 1,
+            work_version: record.work_version,
           });
         }),
       );
@@ -1284,7 +1288,7 @@ export function ProductionPlansPage() {
     }
 
     setRowEditError("");
-    updateMutation.mutate({ id, planType, updates: editDraft, cavityUpdate });
+    updateMutation.mutate({ id, planType, workVersion: record.work_version, updates: editDraft, cavityUpdate });
   }
 
   function renderSummaryCard(
@@ -2343,6 +2347,8 @@ export function ProductionPlansPage() {
           String(machiningItems.length),
         )}
       </div>
+
+      {!isViewingLocalSample && <PlanWorkflowPanel date={selectedDate} language={language} />}
 
       <section className="panel">
         <div className="plan-table-header plan-table-header--compact">
