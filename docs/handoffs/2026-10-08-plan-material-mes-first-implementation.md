@@ -2,6 +2,27 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
+## 최신 보완: 기존 Render Web Shell 성공, USER 인증 binding 차단
+
+이 절이 아래 SSH 접속 실패·런타임 읽기 미완료 기록보다 우선한다. 추가 SSH 키 없이 **기존 로그인 상태의 Render Dashboard → WJ backend → Shell**로 런타임 읽기에 성공했다. 승인된 My Workspace `tea-d14drsripnbc73f9nje0`, backend `srv-d18e2pndiees73aq333g`, instance `529n4`에서 실행했다. 지원 경로는 [Render Web Shell](https://dashboard.render.com/web/srv-d18e2pndiees73aq333g/shell)이며 [공식 Shell/SSH 설명](https://render.com/docs/ssh)에 맞는 Dashboard 기능이다. Codex native 앱이나 차단된 앱 접근은 우회하지 않았다.
+
+읽기 스크립트는 Boolean·고정 enum만 출력했다. DB 검사는 `SET TRANSACTION READ ONLY` 안에서 수행했다. APP 재사용 확인은 `get_existing_app_access_token()`의 peek만 호출했고 `get_app_access_token()`/발급 함수는 호출하지 않았다. token·ciphertext·key·비밀값은 출력하거나 다른 경로에서 추출하지 않았다. MES provider HTTP 호출 **0**, credential 발급 **0**, DB/business/config 변경 **0**이다.
+
+| 실제 런타임 읽기 | 결과와 해석 |
+|---|---|
+| APP 공급 설정 | server / existing_mes / X-AUTH. 새 Django Shell 프로세스에는 재사용 APP 공급이 없음. process-local cache이므로 Gunicorn worker의 기존 공급까지 없다고 단정하지 않음 |
+| Vault 정책 | 정책 자체 유효. `vault._login()`에서 `login_unavailable` 차단 |
+| actor 18 / credential 18의 login | 계정 사용 가능, login 존재·미철회, absolute/idle 기간 및 clock contract/live 검사 모두 통과 |
+| 현재 인증 binding | **현재 계정의 authorization fingerprint와 저장된 login fingerprint 불일치** (`authorization_binding_matches=false`). 이 때문에 기존 USER 인증 재사용 불가 |
+| 새 workflow 설정 | reviewed contract / scoped trial approval 설정 없음. 기존 `MES_INSPECTION_ENABLED=true`는 새 검사 자동 생성 구현이나 신규 workflow 활성화 증거가 아님 |
+| 시험 master·tenant 부수효과 | 이번에는 실제 MES 호출 없이 멈춰 미검증 상태 유지 |
+
+이전 SQL 메타데이터의 기간 유효성은 재사용 승인 충분조건이 아니었다. 실제 런타임 guard가 현재 USER 인증을 거절함을 확인했다. fingerprint 불일치 원인이 역할·비밀번호·다른 변경 중 무엇인지 추측하지 않았으며 저장 fingerprint, 권한, 인증 row를 고쳐 맞추지 않았다. APP-only 경로로 USER lifecycle 거절을 우회하지 않는다. 기존 생산현황 조회 endpoint는 APP 공급이 없을 때 발급 fallback을 호출할 수 있어 이번 읽기에 사용하지 않았다.
+
+**필요한 사용자 행위/승인:** 같은 WJ 계정(actor 18)의 정상 WJ 로그인 및 MES 연결 재확인/재연결. 이는 새 session/USER credential이 생길 수 있는 단계이므로 현재의 ‘기존 인증만 재사용’ 읽기 승인 범위에서는 실행하지 않았다. SSH 키 추가는 필요 없다. USER binding을 먼저 해결한 뒤 런타임에서 APP 발급이 필요하면 기존 앱 자격증명을 이용한 해당 한 번의 발급을 별도로 승인받아야 한다. 대상은 기존 tenant의 `https://v3-ali.blacklake.cn/api/openapi/domain/api/v1/access_token/_get_access_token`이며 비밀값을 채팅으로 받지 않는다. 실제 master/side effects를 확인하기 전 생성 payload·최소 수량·request digest는 여전히 확정하지 않는다.
+
+검토 증거: 실제 1280×720 Render 화면 `output/plan-workflow/render-web-shell-read.jpg` (Library `libfile_818b92ae8a04819180f36329396dedfe`, version 0, `file_0000000052e081f8a27b50687642f950`), 마지막 binding probe 원본 JSON `output/plan-workflow/render-web-shell-read-results.json`. 이미지는 합성 UI fixture가 아닌 실제 Render runtime 읽기 화면이며 토큰/비밀값이 없다. 캡처를 직접 열어 확인했고 임시 Render 브라우저 탭을 닫았다. 이번 변경은 보고서만이며 코드·schema·배포를 수정하지 않았고 UI/build/backend 시험을 재실행하지 않았다.
+
 
 ## 최신 보완: compact minimal + 승인된 Render 읽기 (2026-10-08 13:39 UTC)
 
