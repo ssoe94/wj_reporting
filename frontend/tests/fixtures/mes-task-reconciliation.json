@@ -1,0 +1,619 @@
+{
+  "business_date": "2026-10-08",
+  "next_business_date": "2026-10-09",
+  "next_date_basis": "next_08h_window",
+  "machines": [
+    {
+      "machine_number": 1,
+      "plans": [
+        {
+          "plan_id": 100,
+          "plan_date": "2026-10-08",
+          "machine_number": 1,
+          "part_no": "PART-01",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "1:2026-10-08:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "100"
+          ],
+          "assessment": "plan_match"
+        },
+        {
+          "plan_id": 150,
+          "plan_date": "2026-10-09",
+          "machine_number": 1,
+          "part_no": "PART-01",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "1:2026-10-09:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "100"
+          ],
+          "assessment": "next_plan_match"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "100",
+          "task_code": "T100",
+          "work_order_code": "WO1",
+          "part_no": "PART-01",
+          "machine_number": 1,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "plan_match",
+          "reasons": [
+            "today_plan_membership_only"
+          ]
+        }
+      ],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 2,
+      "plans": [
+        {
+          "plan_id": 200,
+          "plan_date": "2026-10-08",
+          "machine_number": 2,
+          "part_no": "PART-02",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "2:2026-10-08:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "200",
+            "299"
+          ],
+          "assessment": "task_link_review"
+        },
+        {
+          "plan_id": 250,
+          "plan_date": "2026-10-09",
+          "machine_number": 2,
+          "part_no": "PART-02",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "2:2026-10-09:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "200",
+            "299"
+          ],
+          "assessment": "next_plan_match"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "200",
+          "task_code": "T200",
+          "work_order_code": "WO1",
+          "part_no": "PART-02",
+          "machine_number": 2,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "task_link_review",
+          "reasons": [
+            "multiple_tasks_or_plan_lots"
+          ]
+        },
+        {
+          "task_id": "299",
+          "task_code": "T299",
+          "work_order_code": "WO1",
+          "part_no": "PART-02",
+          "machine_number": 2,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": "2026-02-01T08:00:00+08:00",
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "task_link_review",
+          "reasons": [
+            "multiple_tasks_or_plan_lots",
+            "opened_long_ago"
+          ]
+        }
+      ],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 3,
+      "plans": [
+        {
+          "plan_id": 300,
+          "plan_date": "2026-10-08",
+          "machine_number": 3,
+          "part_no": "PART-03",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "3:2026-10-08:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [],
+          "assessment": "no_open_task"
+        },
+        {
+          "plan_id": 350,
+          "plan_date": "2026-10-09",
+          "machine_number": 3,
+          "part_no": "PART-03",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "3:2026-10-09:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [],
+          "assessment": "no_open_task"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "399",
+          "task_code": "T399",
+          "work_order_code": "WO1",
+          "part_no": "OLD-PART",
+          "machine_number": 3,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": "2026-02-01T08:00:00+08:00",
+          "planned_quantity": 100,
+          "reported_quantity": 100,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "outside_plans",
+          "assessment": "pause_review",
+          "reasons": [
+            "running_outside_plans",
+            "opened_long_ago",
+            "reported_quantity_reached"
+          ]
+        }
+      ],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 4,
+      "plans": [
+        {
+          "plan_id": 400,
+          "plan_date": "2026-10-08",
+          "machine_number": 4,
+          "part_no": "PART-04",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "4:2026-10-08:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "400"
+          ],
+          "assessment": "start_needed"
+        },
+        {
+          "plan_id": 450,
+          "plan_date": "2026-10-09",
+          "machine_number": 4,
+          "part_no": "PART-04",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "4:2026-10-09:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "400"
+          ],
+          "assessment": "next_plan_match"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "400",
+          "task_code": "T400",
+          "work_order_code": "WO1",
+          "part_no": "PART-04",
+          "machine_number": 4,
+          "status": 3,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "start_needed",
+          "reasons": [
+            "today_plan_membership_only"
+          ]
+        }
+      ],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 5,
+      "plans": [
+        {
+          "plan_id": 500,
+          "plan_date": "2026-10-08",
+          "machine_number": 5,
+          "part_no": "PART-05",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "5:2026-10-08:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [],
+          "assessment": "no_open_task"
+        },
+        {
+          "plan_id": 550,
+          "plan_date": "2026-10-09",
+          "machine_number": 5,
+          "part_no": "PART-05",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "5:2026-10-09:0",
+          "parallel_parts": [],
+          "group_incomplete": false,
+          "matching_task_ids": [],
+          "assessment": "no_open_task"
+        }
+      ],
+      "tasks": [],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 6,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 7,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 8,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 9,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 10,
+      "plans": [
+        {
+          "plan_id": 1000,
+          "plan_date": "2026-10-08",
+          "machine_number": 10,
+          "part_no": "AAN30078443",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "10:2026-10-08:0",
+          "parallel_parts": [
+            "AAN30078443",
+            "AAN30078444"
+          ],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "1000"
+          ],
+          "assessment": "plan_match"
+        },
+        {
+          "plan_id": 1050,
+          "plan_date": "2026-10-09",
+          "machine_number": 10,
+          "part_no": "AAN30078443",
+          "lot_no": "L1",
+          "sequence": 1,
+          "planned_quantity": 100,
+          "group_id": "10:2026-10-09:0",
+          "parallel_parts": [
+            "AAN30078443",
+            "AAN30078444"
+          ],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "1000"
+          ],
+          "assessment": "next_plan_match"
+        },
+        {
+          "plan_id": 1001,
+          "plan_date": "2026-10-08",
+          "machine_number": 10,
+          "part_no": "AAN30078444",
+          "lot_no": "L1",
+          "sequence": 5,
+          "planned_quantity": 100,
+          "group_id": "10:2026-10-08:0",
+          "parallel_parts": [
+            "AAN30078443",
+            "AAN30078444"
+          ],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "1001"
+          ],
+          "assessment": "plan_match"
+        },
+        {
+          "plan_id": 1051,
+          "plan_date": "2026-10-09",
+          "machine_number": 10,
+          "part_no": "AAN30078444",
+          "lot_no": "L1",
+          "sequence": 5,
+          "planned_quantity": 100,
+          "group_id": "10:2026-10-09:0",
+          "parallel_parts": [
+            "AAN30078443",
+            "AAN30078444"
+          ],
+          "group_incomplete": false,
+          "matching_task_ids": [
+            "1001"
+          ],
+          "assessment": "next_plan_match"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "1000",
+          "task_code": "T1000",
+          "work_order_code": "WO1",
+          "part_no": "AAN30078443",
+          "machine_number": 10,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "plan_match",
+          "reasons": [
+            "today_plan_membership_only"
+          ]
+        },
+        {
+          "task_id": "1001",
+          "task_code": "T1001",
+          "work_order_code": "WO1",
+          "part_no": "AAN30078444",
+          "machine_number": 10,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "today",
+          "assessment": "plan_match",
+          "reasons": [
+            "today_plan_membership_only"
+          ]
+        }
+      ],
+      "plan_scope": "present",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 11,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 12,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 13,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 14,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 15,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 16,
+      "plans": [],
+      "tasks": [],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    },
+    {
+      "machine_number": 17,
+      "plans": [],
+      "tasks": [
+        {
+          "task_id": "1701",
+          "task_code": "T1701",
+          "work_order_code": "WO1",
+          "part_no": "UNPLANNED-PART",
+          "machine_number": 17,
+          "status": 2,
+          "identity_complete": true,
+          "actual_start": null,
+          "planned_quantity": 100,
+          "reported_quantity": 10,
+          "inbound_quantity": null,
+          "quantity_unit": "pcs",
+          "plan_relation": "outside_plans",
+          "assessment": "unknown",
+          "reasons": [
+            "today_plan_missing"
+          ]
+        }
+      ],
+      "plan_scope": "incomplete",
+      "observation": {
+        "state": "insufficient_data",
+        "sample_count": 0,
+        "first_at": null,
+        "last_at": null
+      }
+    }
+  ],
+  "unmapped_tasks": [],
+  "data_freshness": {
+    "queried_at": "2026-10-08T14:00:00+08:00",
+    "mes_complete": true,
+    "plan_complete": true,
+    "assignment_complete": true,
+    "snapshot_kind": "current",
+    "list_may_lag": true
+  },
+  "warnings": [],
+  "old_open_days": 14
+}

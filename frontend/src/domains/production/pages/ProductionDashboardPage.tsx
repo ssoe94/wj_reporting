@@ -53,6 +53,7 @@ import {
 import { describeLocalAiHistory } from "@/domains/ai/local-ai-history";
 import { useAuth } from "@/contexts/AuthContext";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { MesTaskReconciliationPanel } from "@/domains/production/components/MesTaskReconciliationPanel";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
   buildInjectionTransitionAnalysis,
@@ -6258,6 +6259,7 @@ export function ProductionDashboardPage() {
           </section>
         </div>
       , document.body) : null}
+      <MesTaskReconciliationPanel businessDate={businessDate} />
     </section>
   );
 }
