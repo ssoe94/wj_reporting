@@ -25,7 +25,6 @@ import InspectionRequestDetail from './InspectionRequestDetail';
 import NewInspectionRequest from './NewInspectionRequest';
 import RoleSettings from './RoleSettings';
 import InspectionRoomTeam from './InspectionRoomTeam';
-import MesDetailPreview from './MesDetailPreview';
 import './InspectionRequestsPage.css';
 
 export default function InspectionRequestsPage() {
@@ -287,9 +286,8 @@ export default function InspectionRequestsPage() {
             : detailError ? <div className="inspection-detail"><div className="inspection-message is-error" role="alert">{detailError}</div><button type="button" className="inspection-button" onClick={() => { if (ownsSession()) setDetailRetry((value) => value + 1); }}>{text.retry}</button></div>
               : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} onOpenSettings={capabilities.can_manage_role_settings ? openRoleSettings : undefined} /> : <div className="inspection-empty">{text.select}</div>}
       </div>}
-      {canViewKanban && !showRoleSettings && !creating && selectedId === null && <div className="inspection-station-placeholder">{selectedMachine === null ? (lang === 'ko' ? '설비를 선택하면 검사 항목을 바로 입력할 수 있습니다.' : '选择设备后可直接填写检验项目。') : (lang === 'ko' ? '이 설비에는 표시된 검사요청이 없습니다.' : '此设备没有显示的检验申请。')}</div>}
+      {canViewKanban && !showRoleSettings && !creating && selectedId === null && <div className="inspection-station-placeholder">{selectedMachine === null ? (lang === 'ko' ? '설비를 선택해 검사요청을 확인하세요.' : '请选择设备查看检验申请。') : (lang === 'ko' ? '표시된 WJ 검사요청이 없습니다. MES 현재 검사요청은 미확인입니다.' : '没有显示的 WJ 检验申请。MES 当前检验申请尚未确认。')}</div>}
       {!canViewKanban && !assignedOnly && <section className="inspection-workspace" ref={listRef} tabIndex={-1}>{requestList}</section>}
-      {inspector?.id === 18 && <details className="inspection-fold inspection-secondary-tool"><summary>{lang === 'ko' ? 'MES 검사 기준 조회' : '查询 MES 检验标准'}</summary><MesDetailPreview actorId={inspector.id} sessionId={sessionId} lang={lang} disabled={editorLocked || isLoggingOut} /></details>}
 
     </>}
     </fieldset>}

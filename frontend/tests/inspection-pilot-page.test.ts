@@ -293,20 +293,25 @@ test('full scope preserves station selection, session-bound details and kanban p
   } finally { fixture.cleanup(); }
 });
 
-test('MES metadata preview is visible only for actor18 with accepted inspection access', async () => {
+test('fixed QC diagnostics never appear as the selected machine or part inspection criteria', async () => {
   for (const actorId of [12, 18]) {
-    for (const capabilities of [pilot, { ...full, can_view: false }]) {
+    for (const capabilities of [pilot, full, { ...full, can_view: false }]) {
       const fixture = harness(deferred(), actorId);
       try {
         await fixture.settle();
         assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
         fixture.reply.resolve(capabilities); await fixture.settle();
-        const preview = fixture.nodes().find((node) => node.type === 'MesDetailPreview');
-        if (actorId === 18 && capabilities.can_view) {
-          assert.ok(preview);
-          assert.deepEqual(preview.props, { actorId: 18, sessionId: SESSION, lang: 'ko', disabled: false });
-        } else assert.equal(preview, undefined);
-        assert.ok(fixture.calls.every((call) => ['capabilities', 'list'].includes(call.kind)), 'mounting preview adds no business request');
+        assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
+        if (capabilities.can_view && capabilities.can_view_kanban) {
+          fixture.stationPicker()!.props.onMachine(17, null); await fixture.settle();
+          assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
+          fixture.stationPicker()!.props.onMachine(17, 42); await fixture.settle();
+          assert.ok(fixture.nodes().some((node) => node.type === 'InspectionRequestDetail'));
+          assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
+          fixture.stationPicker()!.props.onDate('2026-10-05'); await fixture.settle();
+          assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
+        }
+        assert.ok(fixture.calls.every((call) => ['capabilities', 'list', 'kanban', 'detail'].includes(call.kind)), 'machine selection cannot dispatch fixed-QC reads');
       } finally { fixture.cleanup(); }
     }
   }
