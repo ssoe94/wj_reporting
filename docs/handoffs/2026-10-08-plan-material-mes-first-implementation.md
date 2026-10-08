@@ -2,6 +2,75 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
+
+## 최신 보완: compact minimal + 승인된 Render 읽기 (2026-10-08 13:39 UTC)
+
+이 절이 아래 이전 화면/접속 보류 기록보다 우선한다. 변경 기준은 사용자의 최신 compact minimal 요청이다.
+
+### 실제 디자인 기준과 수정
+
+이 화면의 이전 변경 기록에는 Product Design audit와 기존 14px 글자·38px 조작 크기를 적용했다고 적혀 있다. Apple 디자인 스킬은 이 화면 작업에서 호출하지 않았다. 저장소에 `DESIGN.md`는 없다. `AGENTS.md`는 Apple 요청/모션에만 해당 스킬을 쓰도록 되어 있으며, 넓은 panel surface를 유지하라는 일반 문구가 있다. `design-qa.md`의 검사 화면 및 `frontend/design/implementation-guidelines.md`의 Assembly 불량 입력 기준은 이 화면의 구현 기준이 아니다.
+
+실제 높이 원인은 직접 추가한 세로 구조였다: 원료 요약, 날짜별 확인 버튼 목록, 안내, 폼 제목, 원료 입력, 추가 버튼, 확인 영역이 차례로 쌓였다. 특정 Apple 문서 탓으로 판정하지 않았다. `AGENTS.md`에 이 화면에 한정한 compact minimal 기준을 추가해 이전 broad-panel/Product Design layout 방향보다 우선하게 했다. 무관한 문서·글로벌 스킬·접근성 기준은 삭제하지 않았다.
+
+- 기본 원료 셀을 누르면 곧바로 선택 가능하다. 상세 버튼을 먼저 펼치는 단계는 필요 없다.
+- 행 바로 아래 두 줄만 사용한다: 날짜/계획량 선택·배합/실제 단위·필요량·원료 추가, 그리고 근거·확인·저장/취소. 추가 원료는 작은 한 행씩 늘어난다.
+- 설명·중복 원료명·날짜별 버튼 목록·관리자 설정을 원료 펼침에서 제거했다. 관리자 연결/default 편집은 표 밖 별도 접기 영역으로 이동했다.
+- 같은 연속 工单의 D1/D2/D3 승인 대상은 한 드롭다운에서 고른다. D3 300개/필요량 6kg과 연속 工单 총 2,300개를 혼동하지 않도록 수량을 각각 표시한다. 승인 UID/version은 서버 검증에 유지된다.
+- 직접 셀 편집을 시작한 뒤 ‘접기’를 눌러도 실제로 닫히도록 수정했다. 초안이 있으면 버림/계속 편집을 먼저 선택한다.
+
+### 1280×720 측정과 실제 캡처
+
+같은 6개 합성 工单 fixture, 정상 현장 계정, 본문 14px/실측 14.4px, 약 38px 조작 크기에서 측정했다. 운영 MES 화면이나 master가 아니다.
+
+| 측정 | 이전 e0fd50f6 | 이번 화면 |
+|---|---:|---:|
+| 펼친 단일원료 subrow 전체 | 377.09px | 89.52px (76.3% 감소) |
+| 원료 편집 form | 268.02px | 79.94px |
+| 접힌 workflow 전체(6개 행) | 601.59px | 498.82px |
+| 보통 工单 행 | 56.75px | 약 52px |
+| 긴 합성 품번 행 | 74.77px | 70.74px |
+| 2원료 subrow 전체 | 이번 전 측정 없음 | 131.48px, 원료 1행 추가 약 42px |
+| 접힌 표에서 전체 표시 행 | 6 | 6 (fixture가 6개뿐) |
+| 원료 편집 중 전체 표시 행 | 1 | 6 |
+
+수정 전 편집 캡처의 section top은 0.38px, 최종 편집은 93.93px다. 뒤쪽 작업을 더 보이게 하려고 글자를 줄인 것은 아니다. 최종 subrow는 2줄/약 90px이며 한국어·중국어 모두 가로 document overflow가 없다. 측정 원본 JSON은 `output/plan-workflow/minimal-{before,after-*}-metrics.json`이다. CUA native 캡처의 반환 canvas에 생긴 빈 오른쪽/아래 여백만 잘라 1280×720 JPEG로 전달했다. 원본 `*-native-raw.jpg`를 보존했으며 화면 내용을 재배치하거나 합성하지 않았다. clip 기반 캡처의 fixed header 겹침 버전은 검토용으로 전달하지 않았다.
+
+| 검토 이미지 | Library ID / version |
+|---|---|
+| 이번 한국어 단일원료 편집 | `libfile_a85fd25d47b881918f8993a25c4737ba` / 0 |
+| 이번 한국어 접힌 표 | `libfile_990b943be6dc819182a289aedd098b8a` / 0 |
+| 이번 중국어 단일원료 편집 | `libfile_48ce77387998819188b6d37fc412ecf2` / 0 |
+| 이전 현장 입력 캡처(이력) | `libfile_d457f71963a081918e50b517eae76a5f` / 0 |
+
+실행한 검증: TypeScript 및 전체 modern/legacy fixture build 통과(30.41초, 기존 큰 bundle 경고), 해당 컴포넌트 ESLint 0오류/0경고, Node 계산/plan-save-refresh 5개 통과, `git diff --check`, 브라우저 스크립트 문법 검사. 갱신한 자동 브라우저 스크립트는 실행하지 않았다. CUA 실제 앱 조작으로 한국어/중국어, 셀 즉시 편집, 날짜 3개 선택 및 D3 계산, Space 확인, 취소/계속 편집, 변경 시 재확인 해제, 2원료 계산/제거, 409 초안 보존→최신 계획 확인→저장, 로컬 준비 요청 1건/disabled, 가공 빈 상태, workflow 503 중 기존 계획 유지까지 확인했다. Backend/schema 변경은 없으므로 직전 141개(138 통과/3 PG 전용 skip)와 migration check 결과를 재사용한다. 이번 UI 변경에서 PG나 실제 MES 검증을 새로 실행한 것은 아니다.
+
+### Render 읽기 결과: 실제 운영 메타데이터
+
+사용자가 승인한 **My Workspace `tea-d14drsripnbc73f9nje0`**를 명시하여 Render connector의 read-only 조회를 수행했다. 이전 workspace 선택 승인 보류는 해소됐다. 운영 배포/설정/migration/DB 쓰기는 하지 않았다.
+
+- backend `srv-d18e2pndiees73aq333g`, `https://wj-reporting-backend.onrender.com`, frontend `srv-d18dvc7diees73apvcgg`, `https://wj-reporting.onrender.com`. 기존 WJ Postgres `dpg-d1e8l895pdvs73bpvh90-a`를 읽었다.
+- live backend commit은 `b857c50edb0cfc5f6cb602c80b5caa2120211920`(PR97), deploy `dep-db3mr3e0tbcc73860lu0`, 완료 2026-10-08 10:18:13 UTC. 이번 로컬 workflow 코드는 배포되지 않았다. production migration은 `0015_mestaskactionlog`까지이며 **0016 미적용**이다.
+- vault에는 actor 18/superuser의 저장 credential이 1건 있다. 계정 활성, ciphertext 존재, 미철회, overall/provider/idle/consent 기간 및 동일 digest의 active login 연결은 모두 유효였다. earliest expiry는 2026-10-09 00:30:21 UTC, last_used_at은 2026-10-08 03:19:15 UTC. **메타데이터 유효성이지 provider userinfo·복호화·작업 쓰기 권한 검증이 아니다.** token/ciphertext/key 값은 조회하거나 출력하지 않았다.
+- 2026-10-08 00:02:05 UTC에 저장된 실제 MES inventory snapshot 252는 2,590개 inventory 객체/1,100개 distinct material ID다. 검사한 unit ID/name 누락 또는 `-` 행은 0개였다. 모든 객체에 inventory `version`이 있으나 중첩 material master `version`은 0개다. **inventory version을 material version으로 대체하지 않는다.** 이 snapshot은 전체 material/BOM master, 최신 매핑 또는 쓰기 허용 증거가 아니다.
+- 이 inventory snapshot의 code/name에서 test/pilot/测试/试验/시험/样品 후보는 발견되지 않았다. ‘회사의 시험 master가 없다’는 뜻이 아니며 정상 품목을 임의 시험 대상으로 선택하지 않았다.
+- 공식 [Render SSH 문서](https://render.com/docs/ssh)와 connector가 반환한 대상 주소를 사용했다. 임시 known_hosts의 Oregon 공개 지문은 공식 지문과 일치했다. 기존 SSH 인증 연결은 `Permission denied (publickey)`로 실패했고 로컬 공개키 파일도 없었다. 새 SSH 키·토큰·앱 자격증명은 발급하지 않았다. 런타임 APP token 재사용 여부, 실제 MES master/detail 및 자동 처리 설정의 추가 읽기는 이 경로에서 막혔다. 이 결과는 자동 승인 심사 거절이 아니라 SSH 서버 인증 거절이다.
+
+### 시험계획의 고정 범위와 남은 실제 대상
+
+시험 순서는 한 건 생성→ID/기본정보/입력·산출 원료/BOM/공정계획 재조회→계획 수량/end 변경→원료 재확인→허용 상태 재조회로 유지한다. 불확실 결과는 재전송 없이 조회만 한다. 검사 생성·下达·开工·입출고·backflush·기존 QC 재실행은 포함하지 않는다.
+
+현재 시험 제품·원료 master version·설비/금형/route·부수효과 증거가 없으므로 **실제 시험 target/code/최소 수량/시간/digest를 아직 확정하지 않았다.** 승인된 ‘시험 생성 의도’를 정상 생산 master 사용이나 새 credential 발급 승인으로 확대하지 않았다. 필요한 다음 단계:
+
+1. 기존에 승인된 Render 런타임 읽기 경로를 연결해 APP 공급 상태를 값 없이 확인한다. 기존 APP/USER 인증만 재사용하며 발급/갱신이 필요한 경우 해당 한 동작의 별도 승인을 받는다. 새 SSH key 등록도 별도 보안 접근 변경이다.
+2. 회사 시험 제품/원료의 정확한 MES ID·code·master version·unit, 시험 설비·금형·공정/route, 기존 격리 시험 工单 근거를 읽는다. 자동 dispatch/start/재고이동/backflush/검사 생성이 발생하지 않는 tenant 설정/읽기 근거를 확인한다.
+3. 후보를 먼저 보고하고 정확한 생성 payload/request digest/actor/승인 만료를 고정한다. `MES_PLAN_TRIAL_APPROVAL`의 부수효과 attestations는 추측으로 채우지 않는다.
+4. 별도 배포/운영 schema 적용과 trusted bridge 실행 경로 승인이 필요하다. 0016 적용 또는 배포를 읽기 작업의 일부로 수행하지 않는다. 현재 settings.py에는 새 approval/contract 객체의 env parser가 없으므로 환경변수만 넣으면 활성화된다고 설명하지 않는다.
+5. 수량/end update sender, 허용 상태와 task 수량 전달, campaign 전체 생산보고·취소/반전 포함 순입고 adapter는 아직 완료되지 않았다. ‘생성→수정’ 운영 수용은 이 구현/검증까지 끝난 뒤에만 주장할 수 있다.
+
+원본 checkout `9039735f`의 `.claude/settings.local.json` 수정과 `output/`를 다시 대조했고 그대로 보존했다. 독립 브랜치에만 변경했고 push/PR/merge/deploy는 하지 않았다.
+
+
 ## 최신 보완: 현장용 원료 상세와 한 건 시험 생성 bridge
 
 사용자의 후속 지시로 `50d9e858` 이후 펼침 영역을 다시 정리했다. 내부 UID/version, 원본 시각, 로컬 준비번호, 조회되지 않은 실적의 `?`와 개발 용어를 일반 펼침에서 제거했다. 감사 데이터와 immutable snapshot은 삭제하지 않았다. 제품·설비 연결, BOM/물료 version·ID는 기존 superuser에게만 기본적으로 접힌 **관리자 연결 설정**으로 표시한다. 전송 기록과 로컬 준비번호는 **관리자 기록**에 격리했다. 일반 현장 계정의 DOM에는 이 진단 입력 자체가 없다.
