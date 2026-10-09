@@ -1,5 +1,6 @@
 import hashlib
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
@@ -645,3 +646,27 @@ class MesCreateDiagnosticEvent(models.Model):
     state = models.CharField(max_length=24)
     evidence = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class MesCreateDiagnosticPermit(models.Model):
+    """One immutable activation and one reconnect APP budget for the exact draft."""
+    request = models.OneToOneField(MesCreateDiagnostic, primary_key=True, on_delete=models.PROTECT,
+                                  related_name='approval')
+    snapshot = models.JSONField()
+    snapshot_digest = models.CharField(max_length=64)
+    approved_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    auth_app_attempt = models.PositiveSmallIntegerField(default=0)
+    auth_oauth_attempt = models.CharField(max_length=64, blank=True)
+    auth_claimed_at = models.DateTimeField(null=True)
+    auth_completed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        default_permissions = ()
+        constraints = [
+            models.CheckConstraint(condition=models.Q(expires_at__gt=models.F('approved_at')) &
+                models.Q(expires_at__lte=models.F('approved_at') + timedelta(minutes=30)),
+                name='mes_diagnostic_permit_short'),
+            models.CheckConstraint(condition=models.Q(auth_app_attempt__in=[0, 1]),
+                name='mes_diagnostic_app_max_one'),
+        ]

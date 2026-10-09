@@ -21,7 +21,7 @@ const metadata = (patch: Record<string, unknown> = {}) => ({ enabled: true, stat
   reason: 'connection_missing', expires_at: null, can_connect: true, can_disconnect: false,
   mode: 'stored_identity', live_ready: false, ...patch });
 
-function fixture(lang = 'ko') {
+function fixture(lang = 'ko', diagnosticRequestUid?: string) {
   const hooks: any[] = [], effects: (() => void)[] = [], cleanups: (() => void)[] = [];
   const listeners = new Map<string, Set<() => void>>(), subscriptions = new Set<() => void>();
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -75,7 +75,7 @@ function fixture(lang = 'ko') {
   const render = () => {
     if (!active) return;
     index = 0; renderPending = false;
-    tree = exports.default({ onClose: () => { closed += 1; unmount(); } });
+    tree = exports.default({ onClose: () => { closed += 1; unmount(); }, diagnosticRequestUid });
     effects.splice(0).forEach(effect => effect());
   };
   const flush = async () => { for (let turn = 0; turn < 8; turn += 1) { await Promise.resolve(); if (renderPending) render(); } };
@@ -127,6 +127,25 @@ test('a valid connected identity is reused without issuing another bridge ticket
   assert.match(f.text(), /21:59/);
   assert.ok(!f.buttons().some(button => button.props.children === 'MES 연결'));
   f.unmount();
+});
+
+test('explicit diagnostic reconnect pins the exact UID without changing ordinary connected reuse', async () => {
+  const uid = '00000000-0000-4000-8000-000000000018';
+  for (const lang of ['ko', 'zh']) {
+    const f = fixture(lang, uid);
+    await f.status(metadata({ status: 'connected', reason: 'metadata_valid', can_connect: true, can_disconnect: true }));
+    assert.deepEqual(f.calls.map(call => call.path), ['/mes-connection/', '/mes-connection/launch/']);
+    assert.deepEqual(f.calls[1].body, { diagnostic_request_uid: uid });
+    assert.equal(f.calls[1].options.skipAuthRefresh, true);
+    await f.launch(); assert.ok(f.form());
+    assert.match(f.text(), /00000000-0000-4000-8000-000000000018/);
+    f.focus(); await f.status(metadata({ status: 'connected', can_connect: true }));
+    assert.equal(f.calls.filter(call => call.path.endsWith('/launch/')).length, 1, 'status refresh cannot consume another APP grant');
+    f.unmount();
+  }
+  for (const patch of [{ can_connect: false, status: 'connected' }, { status: 'blocked' }, { enabled: false }]) {
+    const f = fixture('ko', uid); await f.status(metadata(patch)); assert.equal(f.calls.length, 1); f.unmount();
+  }
 });
 
 test('disabled, blocked and server-denied statuses never prepare; failed status reads cannot grant connection', async () => {

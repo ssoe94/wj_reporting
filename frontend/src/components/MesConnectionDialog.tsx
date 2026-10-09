@@ -12,7 +12,7 @@ import {
   type MesConnectionStatus, type MesLaunch,
 } from '../domains/auth/mes-connection';
 
-export default function MesConnectionDialog({ onClose }: { onClose: () => void }) {
+export default function MesConnectionDialog({ onClose, diagnosticRequestUid }: { onClose: () => void; diagnosticRequestUid?: string }) {
   const { lang } = useLang();
   const { isLoggingOut } = useAuth();
   const ko = lang === 'ko';
@@ -54,7 +54,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
   const prepare = useCallback(async (candidate: MesConnectionStatus | null) => {
     if (!isCurrent() || inFlight.current || loggingOut.current || !sessionId
       || candidate !== confirmedStatus.current || !candidate?.enabled || !candidate.can_connect
-      || !['disconnected', 'reconnect_required'].includes(candidate.status)) return;
+      || !(diagnosticRequestUid ? ['disconnected', 'reconnect_required', 'connected'] : ['disconnected', 'reconnect_required']).includes(candidate.status)) return;
     // Preparing only the current WJ account's one-use bridge ticket makes no
     // provider request. The user still opens MES with a native form gesture.
     preparationAttempted.current = true;
@@ -67,8 +67,9 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     const controller = new AbortController();
     request.current = controller;
     try {
-      const response = await api.post('/mes-connection/launch/', {}, {
+      const response = await api.post('/mes-connection/launch/', diagnosticRequestUid ? { diagnostic_request_uid: diagnosticRequestUid } : {}, {
         signal: controller.signal, authSessionId: sessionId,
+        ...(diagnosticRequestUid ? { skipAuthRefresh: true } : {}),
       });
       if (!isCurrent() || request.current !== controller || controller.signal.aborted) return;
       const prepared = parseMesLaunch(response.data, sessionId, startedAt);
@@ -92,7 +93,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
         if (mounted.current) setBusy(false);
       }
     }
-  }, [clearTicket, isCurrent, sessionId]);
+  }, [clearTicket, diagnosticRequestUid, isCurrent, sessionId]);
 
   const loadStatus = useCallback(async () => {
     if (!isCurrent() || inFlight.current) return;
@@ -203,6 +204,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     try {
       const response = await api.post('/mes-connection/disconnect/', {}, {
         signal: request.current.signal, authSessionId: sessionId,
+        ...(diagnosticRequestUid ? { skipAuthRefresh: true } : {}),
       });
       if (!isCurrent()) return;
       if (!isDisconnectConfirmed(response.data)) throw new Error('Unconfirmed disconnect');
@@ -230,8 +232,8 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
   const disabled = busy || isLoggingOut;
   const diagnostic = status ? mesConnectionDiagnostic(status.reason, ko ? 'ko' : 'zh') : null;
   const canPrepare = status?.enabled && status.can_connect
-    && ['disconnected', 'reconnect_required'].includes(status.status);
-  const connectLabel = status?.status === 'reconnect_required'
+    && (diagnosticRequestUid ? ['disconnected', 'reconnect_required', 'connected'] : ['disconnected', 'reconnect_required']).includes(status.status);
+  const connectLabel = diagnosticRequestUid || status?.status === 'reconnect_required'
     ? (ko ? 'MES 다시 연결' : '重新连接 MES') : (ko ? 'MES 연결' : '连接 MES');
   const expiry = status?.expires_at ? new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -243,6 +245,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
       <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4">
         <DialogPanel className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
           <DialogTitle className="text-xl font-bold text-slate-900">{ko ? 'MES 연결' : 'MES 连接'}</DialogTitle>
+          {diagnosticRequestUid && <p className="mt-2 text-sm text-slate-700">{ko ? '이 단건 준비번호에만 연결합니다' : '仅连接此单工单准备编号'}: <span className="break-all">{diagnosticRequestUid}</span></p>}
           <p className="mt-4 text-base text-slate-700" aria-live="polite">
             {status ? labels[status.status] : busy ? (ko ? '연결 상태 확인 중…' : '正在检查连接状态…') : (ko ? '연결 상태를 확인해 주세요.' : '请检查连接状态。')}
           </p>
@@ -254,7 +257,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
           )}
           {status?.status === 'connected' && (
             <div className="mt-2 text-sm text-slate-600">
-              <p>{status.mode === 'stored_identity'
+              <p>{diagnosticRequestUid ? (ko ? '이 준비번호의 승인 범위로 MES 신원을 다시 확인합니다.' : '按此准备编号的批准范围重新确认 MES 身份。') : status.mode === 'stored_identity'
                 ? (ko ? '현재 사용자의 유효한 MES 연결을 자동으로 재사용합니다.' : '自动复用当前用户的有效 MES 连接。')
                 : (ko ? '현재 사용자의 MES 신원을 확인했습니다.' : '已确认当前用户的 MES 身份。')}</p>
               {expiry && <p>{ko ? '연결 만료 예정' : '连接预计到期'}: {expiry} ({ko ? '중국시간' : '中国时间'})</p>}
@@ -294,7 +297,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
                 <input ref={ticketInput} type="hidden" name="ticket" value={launch.ticket} readOnly autoComplete="off" />
                 <Button type="submit" disabled={disabled}>{connectLabel}</Button>
               </form>
-            ) : status?.status !== 'connected' && <Button type="button" disabled={disabled || !canPrepare} onClick={() => { void prepare(confirmedStatus.current); }}>{busy && canPrepare
+            ) : (diagnosticRequestUid || status?.status !== 'connected') && <Button type="button" disabled={disabled || !canPrepare} onClick={() => { void prepare(confirmedStatus.current); }}>{busy && canPrepare
               ? (ko ? '연결 준비 중…' : '正在准备连接…') : notice || error || preparationAttempted.current
                 ? (ko ? '다시 연결 준비' : '重新准备连接') : connectLabel}</Button>}
             <Button type="button" variant="secondary" disabled={disabled || !status?.can_disconnect} onClick={() => { void disconnect(); }}>{ko ? '연결 해제' : '断开连接'}</Button>

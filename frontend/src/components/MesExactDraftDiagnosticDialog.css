@@ -1,0 +1,20 @@
+.mes-exact-draft-root { position: fixed; inset: 0; z-index: 120; font-size: 14px; line-height: 1.45; }
+.mes-exact-draft-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .4); }
+.mes-exact-draft-layout { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.mes-exact-draft-panel { width: 680px; max-width: 100%; max-height: calc(100vh - 32px); overflow-y: auto; background: #fff; color: #243547; border: 1px solid #d0dce7; border-radius: 10px; box-shadow: 0 18px 48px rgba(15, 23, 42, .2); }
+.mes-exact-draft-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: #f0f5fa; border-bottom: 1px solid #d0dce7; }
+.mes-exact-draft-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.mes-exact-draft-header span { font-size: 14px; }
+.mes-exact-draft-body { padding: 12px 16px; }
+.mes-exact-draft-flow { margin: 0 0 10px; }
+.mes-exact-draft-scope, .mes-exact-draft-permit { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 5px 10px; margin: 0; }
+.mes-exact-draft-scope dt, .mes-exact-draft-permit dt { color: #52657a; }
+.mes-exact-draft-scope dd, .mes-exact-draft-permit dd { margin: 0; overflow-wrap: anywhere; }
+.mes-exact-draft-status { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; margin: 12px 0; padding: 8px 10px; background: #eef4fa; border-radius: 5px; font-weight: 600; }
+.mes-exact-draft-notice { margin: 10px 0 0; color: #805c20; }
+.mes-exact-draft-result { margin-top: 10px; padding-top: 8px; border-top: 1px solid #d0dce7; }
+.mes-exact-draft-result p { margin: 3px 0; }
+.mes-exact-draft-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.mes-exact-draft-actions button, .mes-exact-draft-footer button { font-size: 14px; min-height: 36px; }
+.mes-exact-draft-footer { display: flex; justify-content: flex-end; padding: 10px 16px; border-top: 1px solid #d0dce7; }
+@media (max-width: 540px) { .mes-exact-draft-header { align-items: flex-start; flex-direction: column; gap: 3px; } .mes-exact-draft-scope, .mes-exact-draft-permit { grid-template-columns: 80px minmax(0, 1fr); } }

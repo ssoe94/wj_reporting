@@ -195,7 +195,7 @@ class AppTokenTests(SimpleTestCase):
         status = self.supplier.status()
         self.assertEqual(set(status), {'http_attempts', 'provider_expire_seconds',
                                       'issued_at', 'usable_for_seconds', 'supply_mode', 'credential_source',
-                                      'app_token_header'})
+                                      'app_token_header', 'available', 'reason'})
         self.assertEqual(status['http_attempts'], 1)
         self.assertEqual(status['provider_expire_seconds'], 7200)
         self.assertEqual(status['usable_for_seconds'], 3540)

@@ -6,6 +6,7 @@ workers can issue separately; this is not a deployment-wide issuance quota.
 """
 import json
 from datetime import datetime, timezone
+import os
 import re
 import threading
 import time
@@ -115,11 +116,28 @@ class AppTokenSupplier:
         self._attempts = 0
         self._provider_seconds = None
         self._issued_at = None
+        self._cache_owner_pid = os.getpid()
+
+    def _existing_state(self):
+        """Inspect under the caller's lock without changing or obtaining supply."""
+        if getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is not True:
+            return False, 'oauth_disabled', 0
+        try:
+            mode, _, _ = _configuration()
+            if mode == 'static':
+                return True, 'static_supply', 0
+            now = self._clock()
+            if (self._binding == app_credential_binding() and self._token is not None
+                    and self._cache_owner_pid == os.getpid() and now < self._deadline):
+                return True, 'cached_supply', max(0, int(self._deadline - now))
+            return False, 'existing_supply_unavailable', 0
+        except Exception:
+            return False, 'app_credential_unconfigured', 0
 
     def status(self):
         """Server diagnostics only: no token, key, secret, payload or identity."""
         with self._lock:
-            remaining = max(0, int(self._deadline - self._clock())) if self._token else 0
+            available, reason, remaining = self._existing_state()
             mode = getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_SOURCE', 'static')
             source = getattr(settings, 'MES_USER_OAUTH_APP_CREDENTIAL_SOURCE', 'dedicated')
             header = getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token')
@@ -129,7 +147,36 @@ class AppTokenSupplier:
                     'app_token_header': header if type(header) is str and header in APP_TOKEN_HEADERS else 'unknown',
                     'provider_expire_seconds': self._provider_seconds,
                     'issued_at': self._issued_at,
-                    'usable_for_seconds': remaining}
+                    'usable_for_seconds': remaining,
+                    'available': available, 'reason': reason}
+
+    @sensitive_variables()
+    def _accept_callback_supply(self, source):
+        """Accept a verified callback's in-memory cache without renewing its TTL.
+
+        The callback owns its lock while calling this method. The source and
+        destination must use the same process and monotonic clock domain.
+        No token is returned, serialized, logged, or fetched by this operation.
+        """
+        with self._lock:
+            if getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is not True:
+                return False
+            try:
+                mode, _, _ = _configuration()
+                if (mode != 'server' or source._clock is not self._clock
+                        or source._cache_owner_pid != os.getpid()
+                        or source._binding != app_credential_binding()
+                        or source._token is None or self._clock() >= source._deadline):
+                    return False
+                self._binding, self._token = source._binding, source._token
+                self._deadline = source._deadline
+                self._provider_seconds = source._provider_seconds
+                self._issued_at = source._issued_at.isoformat()
+                self._cache_owner_pid = os.getpid()
+                self._retry_after = 0
+                return True
+            except Exception:
+                return False
 
     @sensitive_variables()
     def peek_existing(self):
@@ -146,6 +193,7 @@ class AppTokenSupplier:
             if mode == 'static':
                 return key
             if (self._binding == app_credential_binding() and self._token is not None
+                    and self._cache_owner_pid == os.getpid()
                     and self._clock() < self._deadline):
                 return self._token
             raise AppCredentialUnavailable('app_credential_existing_supply_unavailable')
@@ -158,10 +206,11 @@ class AppTokenSupplier:
         with self._lock:
             mode, key, secret = _configuration()
             binding = app_credential_binding()
-            if binding != self._binding:
+            if binding != self._binding or self._cache_owner_pid != os.getpid():
                 self._binding, self._token = binding, None
                 self._deadline = self._retry_after = 0
                 self._provider_seconds = self._issued_at = None
+                self._cache_owner_pid = os.getpid()
             if mode == 'static':
                 return key
             now = self._clock()
@@ -179,6 +228,7 @@ class AppTokenSupplier:
                     raise AppCredentialUnavailable('app_credential_expired')
                 self._token, self._deadline = token, deadline
                 self._provider_seconds, self._issued_at = duration, issued_at
+                self._cache_owner_pid = os.getpid()
                 self._retry_after = 0
                 return token
             except Exception:
@@ -242,3 +292,17 @@ def get_app_access_token():
 
 def app_token_status():
     return _supplier.status()
+
+
+def app_supply_readiness():
+    """Pure, bounded metadata for the current serving worker; never issues APP."""
+    status = app_token_status()
+    available = status.get('available') is True
+    reasons = {'oauth_disabled', 'static_supply', 'cached_supply',
+               'existing_supply_unavailable', 'app_credential_unconfigured'}
+    reason = status.get('reason')
+    remaining = status.get('usable_for_seconds')
+    return {'available': available,
+            'reason': reason if type(reason) is str and reason in reasons else 'existing_supply_unavailable',
+            'usable_for_seconds': remaining if available and type(remaining) is int
+                and 0 <= remaining <= MAX_CACHE_SECONDS else 0}

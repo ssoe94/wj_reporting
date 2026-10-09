@@ -142,7 +142,7 @@ jobs:
             production.test_plan_workflow production.test_plan_workflow_transport \
             production.test_plan_workflow_read_context production.test_plan_workflow_performance \
             production.test_plan_workflow_concurrency production.test_mes_create_diagnostic \
-            production.test_plan_workflow_credentials
+            production.test_plan_workflow_credentials production.test_mes_create_diagnostic_views
 
       - name: Validate isolated plan workflow and additive schema
         if: steps.scope.outputs.backend_required != 'false'

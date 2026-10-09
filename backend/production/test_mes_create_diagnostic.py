@@ -1,5 +1,6 @@
 """Synthetic provider responses in disposable DB; all real network forbidden."""
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch, Mock
@@ -10,11 +11,12 @@ from django.contrib.auth import get_user_model
 from django.db import transaction, connection, close_old_connections
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from mes_oauth.session_guard import InspectionSession
 from quality.inspection_transport import InspectionUserAccessToken
 from . import mes_create_diagnostic as d
 from .mes_execution_contract import encode_exact_json, parse_json_exact
-from .models import MesCreateDiagnostic
+from .models import MesCreateDiagnostic, MesCreateDiagnosticPermit
 from .plan_workflow import WorkflowConflict
 
 WORK_ID = '17000000000000007'
@@ -33,19 +35,23 @@ def response(body):
 
 
 class DiagnosticTests(TransactionTestCase):
+
     def setUp(self):
         self.user = get_user_model().objects.create_user(pk=d.ACTOR_ID, username='SYNTHETIC-diagnostic', is_superuser=True)
         self.req = d.prepare_diagnostic(self.user)
         self.session = InspectionSession(d.ACTOR_ID, 'SYNTHETIC-session', timezone.now() + timedelta(minutes=30), {})
         self.credential = InspectionUserAccessToken('SYNTHETIC-NETWORK-FORBIDDEN', time.time()+3600, user_id=int(d.MES_USER_ID))
         now = timezone.now()
-        self.approval = {'reference': 'SYNTHETIC-APPROVAL-ONLY', 'request_uid': str(self.req.uid),
+        self.approval = {'reference': d.APPROVAL_REFERENCE, 'request_uid': str(self.req.uid),
             'payload_digest': d.PAYLOAD_DIGEST, 'code': d.CODE, 'actor_id': d.ACTOR_ID,
             'mes_user_id': d.MES_USER_ID, 'origin': d.ORIGIN, 'tenant': d.TENANT,
             'tenant_reference': 'SYNTHETIC-TENANT',
             'approved_at': (now-timedelta(seconds=1)).isoformat(), 'expires_at': (now+timedelta(minutes=20)).isoformat(),
             'max_attempts': 1, 'accept_unknown_common_automation': True, 'preserve_draft': True,
             'read_scope': 'exact_order_and_code0_effect_window'}
+        MesCreateDiagnosticPermit.objects.create(request=self.req, snapshot=self.approval,
+            snapshot_digest=d.digest(self.approval), approved_at=parse_datetime(self.approval['approved_at']),
+            expires_at=parse_datetime(self.approval['expires_at']))
         self.calls, self.operations = [], []
         self.created = False
         self.timeout = False
@@ -61,13 +67,23 @@ class DiagnosticTests(TransactionTestCase):
         self.inputs = []
         self.processes = {'processes': [], 'relations': [], 'originalProcessRoute': None}
         config = SimpleNamespace(tenant='SYNTHETIC-TENANT')
-        for context in (override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL=self.approval,
-                MES_INSPECTION_ENABLED=True, MES_USER_OAUTH_ENABLED=True),
+        for context in (override_settings(MES_INSPECTION_ENABLED=True, MES_USER_OAUTH_ENABLED=True),
                 patch('mes_oauth.vault.policy', return_value=config),
                 patch('mes_oauth.vault.expected_user', return_value=int(d.MES_USER_ID)),
                 patch('mes_oauth.inspection_credentials.call_with_user_credential', side_effect=self.broker),
                 patch('mes_oauth.app_tokens.get_app_access_token', side_effect=AssertionError('APP issuance forbidden'))):
             context.__enter__(); self.addCleanup(context.__exit__, None, None, None)
+
+    @contextmanager
+    def approval_override(self, changes):
+        snapshot = {**self.approval, **changes}
+        MesCreateDiagnosticPermit.objects.filter(request=self.req).update(
+            snapshot=snapshot, snapshot_digest=d.digest(snapshot))
+        try:
+            yield
+        finally:
+            MesCreateDiagnosticPermit.objects.filter(request=self.req).update(
+                snapshot=self.approval, snapshot_digest=d.digest(self.approval))
 
     def broker(self, session, **kwargs):
         self.assertIs(session, self.session)
@@ -122,8 +138,8 @@ class DiagnosticTests(TransactionTestCase):
         self.assertEqual(self.calls, [])
 
     def test_missing_approval_cannot_acquire_credentials_or_send(self):
-        with override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL=None), \
-                patch('mes_oauth.app_tokens.get_existing_app_access_token') as app:
+        MesCreateDiagnosticPermit.objects.filter(request=self.req).delete()
+        with patch('mes_oauth.app_tokens.get_existing_app_access_token') as app:
             with self.assertRaises(WorkflowConflict): self.execute_fixture()
         app.assert_not_called(); self.assertEqual(self.operations, []); self.assertEqual(self.calls, [])
 
@@ -135,7 +151,7 @@ class DiagnosticTests(TransactionTestCase):
             {'read_scope': 'all'}, {'expires_at': (timezone.now()+timedelta(hours=1)).isoformat()},
             {'expires_at': (timezone.now()-timedelta(seconds=1)).isoformat()}]
         for changeset in changes:
-            with self.subTest(changeset=changeset), override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL={**self.approval, **changeset}):
+            with self.subTest(changeset=changeset), self.approval_override(changeset):
                 with self.assertRaises(WorkflowConflict): self.execute_fixture()
         self.assertEqual(self.calls, [])
 
@@ -173,8 +189,8 @@ class DiagnosticTests(TransactionTestCase):
         self.assertEqual(self.execute_fixture()['state'], 'uncertain')
         self.req.refresh_from_db(); self.assertEqual((self.req.state,self.req.attempt), ('uncertain',1))
         with self.assertRaises(WorkflowConflict): self.execute_fixture()
-        with override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL=None):
-            self.assertEqual(self.execute_fixture(read_only=True)['state'], 'draft_observed')
+        MesCreateDiagnosticPermit.objects.filter(request=self.req).delete()
+        self.assertEqual(self.execute_fixture(read_only=True)['state'], 'draft_observed')
         self.assertEqual(sum(route==d.CREATE_PATH for route,_ in self.calls),1)
 
     def test_process_restart_reservation_remains_fenced(self):
@@ -300,7 +316,7 @@ class DiagnosticTests(TransactionTestCase):
     def test_approval_change_after_committed_reservation_cannot_send(self):
         baseline=d.DiagnosticTransport(self.credential,sender=self.sender).baseline()
         permit=d.reviewed_permit(self.req); d.reserve(self.req,permit,baseline)
-        with override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL={**self.approval,'reference':'changed'}):
+        with self.approval_override({'reference': 'changed'}):
             with self.assertRaises(WorkflowConflict):
                 d.DiagnosticTransport(self.credential,sender=self.sender).post('create',self.req.payload,req=self.req,permit=permit)
         self.assertFalse(self.created); self.req.refresh_from_db();self.assertEqual(self.req.attempt,1)
@@ -324,3 +340,116 @@ class DiagnosticTests(TransactionTestCase):
         self.assertCountEqual(outcomes,['reserved','blocked'])
         self.req.refresh_from_db();self.assertEqual(self.req.attempt,1)
         self.assertEqual(self.req.events.filter(state='sending').count(),1)
+
+
+class DiagnosticApprovalBudgetTests(TransactionTestCase):
+    """Durable single-APP fences, independent of provider HTTP or credentials."""
+
+    def setUp(self):
+        from injection.models import UserProfile
+        self.user = get_user_model().objects.create_user(pk=d.ACTOR_ID,
+            username='SYNTHETIC-APP-BUDGET', is_superuser=True, is_staff=True)
+        UserProfile.objects.get_or_create(user=self.user)
+        self.req = d.activate_diagnostic(self.user, 'SYNTHETIC-TENANT')
+        self.approval = self.req.approval
+        for context in (patch('mes_oauth.vault.policy', return_value=SimpleNamespace(tenant='SYNTHETIC-TENANT')),
+                patch('mes_oauth.vault.expected_user', return_value=int(d.MES_USER_ID))):
+            context.__enter__()
+            self.addCleanup(context.__exit__, None, None, None)
+
+    def attempt(self, nonce='A', *, pinned=True):
+        from mes_oauth.models import OAuthAttempt
+        now = timezone.now()
+        return OAuthAttempt.objects.create(nonce_digest=nonce * 64, actor_id=d.ACTOR_ID,
+            session_digest='S' * 64, policy_digest='P' * 64,
+            diagnostic_request_uid=self.req.pk if pinned else None,
+            expected_user_id=d.MES_USER_ID, status='processing', consumed_at=now,
+            expires_at=now + timedelta(minutes=5))
+
+    def test_claim_reads_fresh_processing_state_and_survives_later_rollback(self):
+        from mes_oauth.models import OAuthAttempt
+        attempt = self.attempt()
+        attempt.status = 'pending'  # The caller's pre-CAS instance is stale.
+        receipt = d.claim_callback_app_budget(d.ACTOR_ID, attempt)
+        receipt.assert_current()
+        with self.assertRaises(RuntimeError):
+            with transaction.atomic():
+                OAuthAttempt.objects.filter(pk=attempt.pk).update(status='rejected')
+                raise RuntimeError('SYNTHETIC callback store rollback')
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.auth_app_attempt, 1)
+        self.assertEqual(self.req.events.filter(state='auth_reserved').count(), 1)
+        with self.assertRaises(WorkflowConflict):
+            d.claim_callback_app_budget(d.ACTOR_ID, self.attempt('B'))
+        self.assertEqual(self.req.events.filter(state='auth_reserved').count(), 1)
+
+    def test_pinned_claim_requires_its_own_commit_but_ordinary_callback_is_unchanged(self):
+        with transaction.atomic():
+            self.assertIsNone(d.claim_callback_app_budget(d.ACTOR_ID, self.attempt('C', pinned=False)))
+            with self.assertRaises(WorkflowConflict):
+                d.claim_callback_app_budget(d.ACTOR_ID, self.attempt('D'))
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.auth_app_attempt, 0)
+        self.assertFalse(self.req.events.filter(state='auth_reserved').exists())
+
+    def test_completed_publication_requires_verified_callback_and_original_grant(self):
+        from mes_oauth.models import OAuthAttempt
+        attempt = self.attempt()
+        receipt = d.claim_callback_app_budget(d.ACTOR_ID, attempt)
+        with self.assertRaises(WorkflowConflict):
+            receipt.assert_completed()
+        with self.assertRaises(WorkflowConflict):
+            d.finish_callback_app_budget(receipt, succeeded=True)
+        OAuthAttempt.objects.filter(pk=attempt.pk).update(status='verified', verified_at=timezone.now())
+        d.finish_callback_app_budget(receipt, succeeded=True)
+        receipt.assert_completed()
+        d.finish_callback_app_budget(receipt, succeeded=False)  # Does not rewrite success.
+        self.assertEqual(self.req.events.filter(state='auth_verified').count(), 1)
+        self.assertFalse(self.req.events.filter(state='auth_failed').exists())
+        with patch('production.mes_create_diagnostic.timezone.now',
+                return_value=self.approval.expires_at + timedelta(seconds=1)):
+            with self.assertRaises(WorkflowConflict):
+                receipt.assert_completed()
+
+    def test_failure_never_refunds_and_expired_scope_never_blocks_an_unpinned_callback(self):
+        receipt = d.claim_callback_app_budget(d.ACTOR_ID, self.attempt())
+        d.finish_callback_app_budget(receipt, succeeded=False)
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.auth_app_attempt, 1)
+        self.assertEqual(self.req.events.filter(state='auth_failed').count(), 1)
+        with self.assertRaises(WorkflowConflict):
+            receipt.assert_completed()
+        with patch('production.mes_create_diagnostic.timezone.now',
+                return_value=self.approval.expires_at + timedelta(seconds=1)):
+            self.assertIsNone(d.claim_callback_app_budget(d.ACTOR_ID, self.attempt('B', pinned=False)))
+            with self.assertRaises(WorkflowConflict):
+                d.claim_callback_app_budget(d.ACTOR_ID, self.attempt('C'))
+
+    def test_postgres_concurrent_callback_claims_commit_at_most_one_budget(self):
+        if connection.vendor != 'postgresql':
+            self.skipTest('PostgreSQL concurrency check')
+        attempts = [self.attempt('A'), self.attempt('B')]
+        barrier, outcomes = threading.Barrier(2), []
+
+        def worker(attempt):
+            close_old_connections()
+            try:
+                barrier.wait(timeout=5)
+                try:
+                    d.claim_callback_app_budget(d.ACTOR_ID, attempt)
+                    outcomes.append('claimed')
+                except WorkflowConflict:
+                    outcomes.append('blocked')
+            finally:
+                close_old_connections()
+
+        threads = [threading.Thread(target=worker, args=(attempt,)) for attempt in attempts]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertCountEqual(outcomes, ['claimed', 'blocked'])
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.auth_app_attempt, 1)
+        self.assertEqual(self.req.events.filter(state='auth_reserved').count(), 1)

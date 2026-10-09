@@ -12,6 +12,9 @@ class OAuthAttempt(models.Model):
     policy_digest = models.CharField(max_length=64, editable=False)
     code_digest = models.CharField(max_length=64, unique=True, null=True, editable=False)
     expected_user_id = models.CharField(max_length=19, editable=False)
+    # Only an explicitly launched exact diagnostic carries this pin. Normal
+    # OAuth attempts remain unscoped; no actor-wide callback interception.
+    diagnostic_request_uid = models.UUIDField(null=True, editable=False)
     status = models.CharField(max_length=16, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
@@ -48,6 +51,7 @@ class MESLoginTicket(models.Model):
     expires_at = models.DateTimeField()
     consumed_at = models.DateTimeField(null=True)
     login_revision = models.PositiveBigIntegerField(default=1)
+    diagnostic_request_uid = models.UUIDField(null=True, editable=False)
 
     class Meta:
         default_permissions = ()
