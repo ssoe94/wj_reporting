@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { api } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { canSetHrPermission, hrPermissionPayload } from '../../domains/auth/hr-grant';
 import { Shield, RefreshCcw, User, UserPlus, Users, Key, Edit, UserCheck, UserX, X } from 'lucide-react';
 
 interface SignupRequest {
@@ -22,6 +24,7 @@ interface EditablePermissions {
   can_edit_development: boolean;
   can_confirm_moulds: boolean;
   is_admin: boolean;
+  can_manage_hr: boolean;
 }
 
 interface UserProfile extends EditablePermissions {
@@ -53,6 +56,7 @@ function createEmptyPermissions(): EditablePermissions {
     can_edit_development: false,
     can_confirm_moulds: false,
     is_admin: false,
+    can_manage_hr: false,
   };
 }
 
@@ -69,7 +73,7 @@ function createEmptyUserForm(): UserFormState {
 function getApiErrorMessage(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== 'object') return fallback;
   const data = payload as Record<string, unknown>;
-  for (const key of ['first_name', 'username', 'email', 'department', 'is_active', 'is_admin', 'detail', 'error']) {
+  for (const key of ['first_name', 'username', 'email', 'department', 'is_active', 'is_admin', 'can_manage_hr', 'detail', 'error']) {
     const value = data[key];
     if (Array.isArray(value) && value.length > 0) return String(value[0]);
     if (typeof value === 'string' && value) return value;
@@ -78,7 +82,8 @@ function getApiErrorMessage(payload: unknown, fallback: string) {
 }
 
 function getPermissionSummary(profile: UserProfile) {
-  if (profile.is_admin) return '관리자 (모든 권한)';
+  if (profile.is_superuser) return 'superuser · 인사관리 포함';
+  if (profile.is_admin) return profile.can_manage_hr ? '관리자 · 인사관리' : '관리자';
 
   const editable: string[] = [];
   if (profile.can_edit_injection) editable.push('사출');
@@ -87,11 +92,14 @@ function getPermissionSummary(profile: UserProfile) {
   if (profile.can_edit_sales) editable.push('영업/재고');
   if (profile.can_edit_development) editable.push('개발/ECO');
   if (profile.can_confirm_moulds) editable.push('금형 확인·확정');
+  if (profile.can_manage_hr) editable.push('인사관리');
 
   return editable.length > 0 ? `${editable.join(', ')} 편집 권한` : '조회 전용';
 }
 
 export default function UserApproval() {
+  const { user } = useAuth();
+  const canGrantHr = canSetHrPermission(user);
   const [requests, setRequests] = useState<SignupRequest[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,12 +150,12 @@ export default function UserApproval() {
   );
 
   // 승인 핸들러
-  const handleApproveRequest = async (requestId: number, permissions: any) => {
+  const handleApproveRequest = async (requestId: number, permissions: EditablePermissions) => {
     setActionLoading(true);
     setError(null);
     setNewPassword(null);
     try {
-      const response = await api.post(`/admin/approval-requests/${requestId}/approve/`, { permissions });
+      const response = await api.post(`/admin/approval-requests/${requestId}/approve/`, { permissions: hrPermissionPayload(permissions, user) });
       setNewPassword(response.data.temporary_password);
       setActionSuccess('사용자 가입이 승인되었습니다');
       setApprovalModal({ open: true, request: null }); // Keep modal open for password display (using resetPasswordModal's structure or similar)
@@ -213,6 +221,7 @@ export default function UserApproval() {
         can_edit_development: profile.can_edit_development,
         can_confirm_moulds: profile.can_confirm_moulds,
         is_admin: profile.is_admin,
+        can_manage_hr: Boolean(profile.can_manage_hr),
       },
     });
     setEditUserModal({ open: true, user: profile });
@@ -229,7 +238,7 @@ export default function UserApproval() {
         username: editUserForm.username.trim(),
         email: editUserForm.email.trim(),
         department: editUserForm.department.trim(),
-        ...editUserForm.permissions,
+        ...hrPermissionPayload(editUserForm.permissions, user, editUserModal.user ?? undefined),
       });
       setActionSuccess('사용자 정보가 성공적으로 수정되었습니다');
       setEditUserModal({ open: false, user: null });
@@ -269,7 +278,7 @@ export default function UserApproval() {
         username: createUserForm.username.trim(),
         email: createUserForm.email.trim(),
         department: createUserForm.department.trim(),
-        permissions: createUserForm.permissions,
+        permissions: hrPermissionPayload(createUserForm.permissions, user),
       });
       const initialPassword = String(response.data?.initial_password || '');
       setActionSuccess(
@@ -495,7 +504,7 @@ export default function UserApproval() {
 
       {createUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-4 py-8">
-          <Card className="w-full max-w-2xl shadow-2xl">
+          <Card className="w-full max-w-2xl max-h-[calc(100dvh-4rem)] overflow-y-auto shadow-2xl">
             <CardContent className="pt-6">
               <div className="mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -557,6 +566,7 @@ export default function UserApproval() {
                 <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-gray-400">초기 권한 설정</h4>
                 <PermissionCheckboxList
                   permissions={createUserForm.permissions}
+                  canGrantHr={canGrantHr}
                   onSelectionChange={(permissions) => setCreateUserForm((current) => ({ ...current, permissions }))}
                 />
               </div>
@@ -582,7 +592,7 @@ export default function UserApproval() {
       {/* 승인 모달 (권한 설정 포함) */}
       {approvalModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto pt-10 pb-10">
-          <Card className="w-full max-w-md mx-4 shadow-2xl">
+          <Card className="w-full max-w-md max-h-[calc(100dvh-5rem)] overflow-y-auto mx-4 shadow-2xl">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -613,6 +623,7 @@ export default function UserApproval() {
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">초기 권한 설정</h4>
                     <PermissionCheckboxList
                       permissions={approvalPermissions}
+                      canGrantHr={canGrantHr}
                       onSelectionChange={setApprovalPermissions}
                     />
                   </div>
@@ -744,7 +755,7 @@ export default function UserApproval() {
       {/* 사용자 정보 수정 모달 */}
       {editUserModal.open && editUserModal.user && editUserForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-4 py-8">
-          <Card className="w-full max-w-2xl shadow-xl">
+          <Card className="w-full max-w-2xl max-h-[calc(100dvh-4rem)] overflow-y-auto shadow-xl">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -813,6 +824,8 @@ export default function UserApproval() {
                 <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-gray-400">권한 설정</h4>
                 <PermissionCheckboxList
                   permissions={editUserForm.permissions}
+                  canGrantHr={canGrantHr}
+                  target={editUserModal.user ?? undefined}
                   onSelectionChange={(permissions) => setEditUserForm((current) => current && ({ ...current, permissions }))}
                 />
               </div>
@@ -918,9 +931,13 @@ export default function UserApproval() {
 function PermissionCheckboxList({
   permissions,
   onSelectionChange,
+  canGrantHr,
+  target,
 }: {
   permissions: EditablePermissions;
   onSelectionChange: (permissions: EditablePermissions) => void;
+  canGrantHr: boolean;
+  target?: UserProfile;
 }) {
   const handleChange = (key: keyof EditablePermissions, value: boolean) => {
     onSelectionChange({ ...permissions, [key]: value });
@@ -937,7 +954,7 @@ function PermissionCheckboxList({
         />
         <div>
           <div className="font-bold text-gray-900 text-sm">관리자</div>
-          <div className="text-[10px] text-gray-500 uppercase font-black">Full access included</div>
+          <div className="text-xs text-gray-500">일반 업무 관리 · 인사 권한은 별도 지정</div>
         </div>
       </label>
 
@@ -959,6 +976,20 @@ function PermissionCheckboxList({
           <div className="font-semibold text-gray-700 text-xs">{permission.label}</div>
         </label>
       ))}
+      <label className="flex items-start gap-3 p-3 rounded-lg border border-blue-100 bg-blue-50/50">
+        <input
+          type="checkbox"
+          checked={permissions.can_manage_hr}
+          disabled={!canGrantHr || target?.is_superuser || (target?.is_active === false && !target.can_manage_hr)}
+          onChange={(event) => handleChange('can_manage_hr', event.target.checked)}
+          className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        />
+        <div>
+          <div className="font-semibold text-gray-800 text-sm">인사관리 권한</div>
+          <div className="text-xs text-gray-600 mt-1">인원 배치 · 급여 업로드 · 인건비 조회 및 집계</div>
+          <div className="text-xs text-gray-500 mt-1">{target?.is_superuser ? 'superuser는 자동 적용됩니다.' : target?.is_active === false ? '사용 중지 계정은 인사 페이지에 접근할 수 없습니다.' : canGrantHr ? '부여·해제는 superuser만 가능합니다.' : 'superuser에게 권한 지정을 요청하세요.'}</div>
+        </div>
+      </label>
     </div>
   );
 }

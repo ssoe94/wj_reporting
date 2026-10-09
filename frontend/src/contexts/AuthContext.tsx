@@ -5,6 +5,7 @@ import api from '../lib/api';
 import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
+import { canAccessHr, isHrRoute } from '../domains/auth/hr-access';
 import { canUseInspectionBeta, isInspectionBetaRoute, parseInspectionAccess } from '../domains/auth/inspection-beta-access';
 import type { InspectionAccess } from '../domains/auth/inspection-beta-access';
 import { abortAuthActivity, AuthRefreshError, isDefinitiveSessionRejection, recordAuthActivity, refreshAccessToken } from '../domains/auth/auth-refresh';
@@ -56,6 +57,7 @@ interface User {
   email: string;
   is_staff: boolean;
   is_superuser?: boolean;
+  can_access_hr?: boolean;
   groups: string[];
   department?: string;
   is_using_temp_password?: boolean;
@@ -366,6 +368,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     inspectionAccess?.sessionId === identity?.sessionId ? inspectionAccess?.value ?? null : null);
   const canAccessRoute = (route: string): boolean => {
     if (!user) return false;
+    if (isHrRoute(route)) return canAccessHr(user);
     if (isInspectionBetaRoute(route)) return canAccessInspection;
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);
     if (user.is_staff || hasPermission('is_admin')) return true;

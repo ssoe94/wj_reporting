@@ -256,3 +256,111 @@ Acceptance scope: the selected desktop inspection workflow, implemented in the e
 - [x] Browser interactions and full/focused visual comparison completed.
 - [x] Local preview kept available with synthetic data.
 - [ ] Production database migration, PostgreSQL CI and live MES role acceptance are separate release work.
+
+---
+
+# HR compact UI QA — 2026-10-09
+
+Final target: the user's latest instruction to turn raw classification ideas into a compact working UI. The original image geometry is not the final layout requirement.
+
+Source visual truth:
+- `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-7269994e-64b6-466d-827f-3afbff1da29a.png` (2454×989): seven functional cost groups, repeated names scoped by group.
+- `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-a6d6d5d9-d205-4ea3-9ba5-a93dcd7a06f9.png` (4560×2565): reporting hierarchy used in the secondary organization view.
+
+Implementation: `http://127.0.0.1:5186/hr/labor-cost?month=2026-10`, synthetic employees and salaries. Actual supplied payroll was parsed read-only; no real payroll amounts were supplied or imported.
+
+Evidence:
+- `docs/reviews/assets/hr-labor-cost-20261009/compact-cost-desktop.jpg`, desktop CSS viewport 1920×1200.
+- `docs/reviews/assets/hr-labor-cost-20261009/compact-cost-mobile.jpg`, mobile CSS viewport 390×843.
+- `/private/tmp/wj-hr-qa-20261009/functional-before-comparison.png`: combined source + first implementation, normalized to the same width. It exposed amount wrapping and a sprawling diagram.
+- `/private/tmp/wj-hr-qa-20261009/organization-comparison.png`: combined source + reporting graph; relationships and names matched, long role wrapping was corrected.
+- The final layout was inspected together with these visual references. It retains the seven groups and their functions but replaces their large literal geometry with responsive cards per the user's corrective instruction.
+
+Density normalization: in-app browser viewport dimensions use a 1.612 scale on this host. Requested 1191×744 produced DOM 1920×1200; requested 242×523 produced DOM 390×843. Screenshot clip coordinates were normalized by the measured ratio. The retained desktop raster is 1921×1200 pixels and mobile is 390×844 pixels; the measured CSS sizes are 1920×1200 and 390×843. Browser chrome is excluded. Source references were scaled proportionally without altering their content for combined comparisons.
+
+Findings and fixes:
+1. P1: literal large canvas and duplicate bars/table hid the useful cost overview. Replaced by one summary strip and seven small cards; removed default zoom/canvas, repeated descriptions and long bars. Detailed table, reporting view, editing and grants are closed by default.
+2. P2: monetary values wrapped across digits. All final values are one line at 14px, with CNY currency stated in the summary. No ellipsis or discarded precision.
+3. P1: duplicate CS/操作工 destinations were ambiguous. All selectors and row labels include the actual ancestor path.
+4. P2: notices moved targets during dragging. Personnel notices now float outside layout; cancellation preserves assignments.
+5. P1: month selection could leave old data labelled as another month. The hook rejects mismatched month snapshots, month input commits immediately, URL/tab/reload preserve the selected period. January/February same-code import was verified through the UI and API.
+6. P2: missing amounts resembled zero cost. Null salaries are distinct, incomplete totals/shares remain unknown, and empty no-person cells are quiet. Known partial sums appear only when informative.
+
+Required fidelity surfaces:
+- Typography: existing Korean/Chinese fonts; working names and money 14–16px, headings 16–22px, ancillary metadata 12–13px. No split monetary strings.
+- Layout: desktop header about 67px. Seven card bottoms measured below 800px within a 1200px viewport. Mobile uses one-column readable cards and internal table scrolling, document width <=390px.
+- Color: existing navy/gray-blue tokens, restrained white surfaces; amber only indicates a real missing/unclassified status. The colorful source hierarchy was not spread across salary cards.
+- Asset quality: no rasterized functional controls or invented image assets. Cards, controls and reporting connectors are code-native UI primitives. Existing company logo is retained.
+- Copy/content: original functional labels, correct scoped names and reference manager names; source departments remain separate, wages use the user's confirmed 应发工资 basis. No inferred employee placement or fabricated salary.
+
+Primary interaction checks: scope selection, same-month tab navigation, upload mapping, other-month exclusion, import validation/confirmation, automatic cell allocation, drawer with descendants, employee button move/save/readback, incomplete amount display, desktop/mobile layout. Console errors: none observed. Drag start/cancel observed; native automated drop completion remains a field-validation gap, not claimed as acceptance.
+
+No actionable P0/P1/P2 compact-layout issues remain in the inspected states. Remaining acceptance: actual pointer drops, actual company file with supplied wages and corrected missing May employee code, production/PostgreSQL deployment.
+
+final result: passed
+
+---
+
+# HR option 3 allocation board and private code display — 2026-10-09
+
+This section supersedes the earlier HR layout and native-drop acceptance notes above.
+
+Source visual truth: `docs/reviews/assets/hr-labor-cost-20261009/option3/selected-concept.png`, the third displayed image selected by the user (1586×992 pixels). User amendments take precedence: employees appear as codes, numeric codes are padded to at least five digits, and names are not shown by default.
+
+Implementation: `http://127.0.0.1:5186/hr/personnel?month=2026-10`, isolated local API and disposable SQLite. All 67 employees and the 536,000 CNY total are synthetic. No source payroll names or amounts were copied into fixtures or Git.
+
+Evidence (under `docs/reviews/assets/hr-labor-cost-20261009/option3/`):
+- `personnel-desktop.png`: Korean default allocation view, 1921×1200 pixels / measured 1920×1200 CSS viewport.
+- `cost-desktop-zh.png`: Chinese read-only cost view, same dimensions.
+- `personnel-mobile.png`: Korean responsive view, 390×844 pixels / measured 390×843 CSS viewport.
+- `comparison-full.png`: source and implementation placed together, implementation proportionally normalized to source width 1586. Both have nearly identical aspect ratio. Existing app navigation is retained; it has more entries and takes more space than the mock.
+- `comparison-detail.png`: combined close comparison of the summary, typography, functional cells and codes. The reference's names/avatars are intentionally replaced by the user's five-digit codes. The reference illustrates an active drag; the retained full-view capture is the idle saved state. Active movement and its amounts were checked through native pointer input and the detail movement preview rather than claiming an identical interaction-state capture.
+
+Findings and comparison history:
+1. P1 fixed: the first one-code-per-row implementation pushed the dock below the 1200px viewport. At desktop widths of 1700px and above, compact code pills now use two columns. All seven lanes and the six-person dock fit: dock bottom measured 1148px. Additional unoccupied management cells stay out of the main view.
+2. P1 fixed: default employee names leaked through cards, detail lists, import preview and reporting diagram. The default UI now uses codes; one selected person's name requires the explicit name button, and closes/reset on selection dismissal, month/data changes. Original identifiers remain unchanged for mutations.
+3. P2 fixed: padding could create display aliases (11 and 00011). Colliding displays include a small original-code annotation; move keys remain distinct. Unit tests cover collisions, nonnumeric codes and codes longer than five digits.
+4. P2 fixed: null cost shares previously rendered zero-width tracks. Unknown shares now render no lane meter; incomplete total displays remain unknown with a separately labelled known subtotal.
+5. P2 fixed: dragging to off-screen destinations had no auto-scroll. Active pointer dragging now scrolls the viewport and horizontal lane container at their edges, updating the drop target even with a stationary pointer. Native mobile edge drag produced 37px vertical movement and narrow-desktop edge drag produced 10px horizontal movement.
+6. P2 fixed: small mobile percentage segments clipped digits. Narrow-screen bars omit labels for shares below 15%; values remain in the corresponding department headers and the chart's accessible description. Post-fix mobile image was inspected.
+
+Required fidelity surfaces:
+- Typography: retained existing Korean/Chinese system font stack and readable codes/money; 14px working code pills, 14–17px values, 19px lane titles. Compact integer money omits .00 while fractional amounts retain both decimals. No names or initials substitute for the requested codes.
+- Layout rhythm: one heading/tab/month/action row, one total-and-share ribbon, seven equal lanes with function zones, and a six-person search dock. Small desktop uses internal horizontal scrolling; mobile stacks lanes and preserves approximately 44px drag handles. No page-level horizontal overflow was observed at 1920, 1200 or 390 CSS px.
+- Colors/tokens: existing navy, gray-blue surface and white cards; restrained navy-to-gray blue distribution segments, sufficient text contrast, semantic amber only for missing values. Existing site shell retained intentionally.
+- Asset fidelity: existing supplied WJ logo retained as an image; no decorative bitmap assets were required. Icons reuse the site's installed Lucide set. Charts and controls are functional code, not a rasterized mock.
+- Copy/content: original seven functional groups and scoped repeated labels retained; 应发工资 basis, explicit source department, missing costs and original identity keys preserved. Extra explanatory mock copy and fictional HR badge were omitted from the working screen.
+
+Primary behavior observed: native drag 00001 from injection operator to materials raw; injection 28/216000 → 27/208800 and materials 6/48000 → 7/55200, while total 67/536000 remains unchanged. Save and reload preserve the move; reverse drag/save restores the fixture. Dropping outside a target cancels without enabling save. A detail button move of original code 245 saves/reloads as display 00245 while its DOM identity remains 245. Name reveal and close/reopen hiding were observed. September's missing salary leaves overall total unknown; October and empty August remain distinct. Cost view has no drag handles. Chinese and mobile views were inspected.
+
+Checks: 36 HR frontend tests, TypeScript/Vite/legacy build, selected changed-file ESLint (no errors or warnings), and git diff whitespace check passed. Build retains the existing large-chunk warning. Fresh final-preview console error log was empty. No backend/schema/auth changes were made in this iteration.
+
+Remaining test limits: the pre-existing browser-native discard confirmation caused the automation tab to stop responding; its confirmation acceptance was not verified. A fresh saved-state preview was opened without saving that temporary test move. This is not counted as a completed discard test. Physical touchscreen acceptance, production/PostgreSQL behavior, real payroll reconciliation, and re-running the full import UI after this visual-only preview change are not claimed. Import preview code display was reviewed in code and the source-code formatting/import tests passed.
+
+Implementation checklist: completed visual comparison, privacy/display changes, exact move previews, native move/save/reload, responsive fixes, affected tests and build. No actionable P0/P1/P2 visual findings remain in the inspected states. The feature remains local and un-deployed.
+
+final result: passed
+
+---
+
+# HR department / management / work hierarchy correction — 2026-10-09
+
+The user's latest clarification supersedes the earlier interpretation of management labels and the decision to hide empty management cells. The source means a department contains manager labor and separate worker/function labor. The selected option 3 remains the density/layout direction, but its prior labels are not the semantic authority.
+
+Implemented hierarchy: neutral department header and whole-department total → always-visible manager assignment cell plus work subtotal → individual work functions. Parent headers and work subtotals are roster controls, never drop targets. The existing group ID remains the manager assignment key; descendants comprise work, including additional nested functions. No employee is reclassified from their job title and no persisted IDs or schema changed. Import previews, move notices, destination paths and the cost ribbon use the same distinction.
+
+Cost proof with disposable synthetic data: native drag moved original code `1` / display `00001` from injection operator to injection manager, then save/reload retained it. Department total stayed 28 people / 216,000 CNY; managers became 1 / 7,200 and work became 27 / 208,800. Company total stayed 67 / 536,000. A reverse move preview showed manager 1→0 and 7,200→0, work 27→28 and 208,800→216,000, with unchanged department/company totals. It was closed without applying. The work-only roster contains 27 people and excludes 00001. Cost-page role table matches these figures and its board has no movement handles.
+
+Evidence under `docs/reviews/assets/hr-labor-cost-20261009/hierarchy/`:
+- `personnel-desktop.png`: final allocation hierarchy, 1920×1200 CSS / 1921×1200 raster.
+- `cost-desktop.png`: read-only hierarchy and role composition, same dimensions.
+- `personnel-mobile.png`: 390×843 CSS / 390×844 raster, single-column hierarchy without document horizontal overflow.
+- `same-department-preview.png`: manager/work before-and-after values for a same-department move.
+
+Visual findings: the first hierarchy revision pushed the personnel dock 22px below the tested desktop viewport. Compact function padding, two code chips plus the remainder count, and the short Korean feeding label corrected this; final board bottom was 990px and dock bottom 1193px. Department, manager and work totals stay distinct through nesting, restrained blue surfaces and a manager/work composition strip. Empty manager cells remain available. Korean and Chinese paths were checked; all displayed identities remain codes by default. Fresh preview console error log was empty.
+
+Checks: 42 HR frontend tests passed, including six added tests for role partitioning, deeper descendants, same-department moves, independent missing costs, invalid graphs and stable assignment paths. Changed-file ESLint, full TypeScript/Vite/legacy build and whitespace checks passed. Existing large-chunk build warning remains. Independent read-only code review found no numeric duplication or destination-key issue.
+
+This is local implementation and synthetic browser verification only. No backend, permissions, migrations, production data or deployment were changed. Existing real-file reconciliation, physical-device and production acceptance limits remain. No actionable hierarchy defect remains in the inspected states.
+
+final result: passed

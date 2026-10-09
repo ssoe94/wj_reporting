@@ -214,3 +214,53 @@ class DevelopmentTaskHistory(models.Model):
 
     def __str__(self):
         return f'{self.task_id} {self.action} {self.actor_label}'
+
+
+class HrAccessGrant(models.Model):
+    """Explicit HR authorization, independent of ordinary admin/staff permissions."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='hr_access_grant')
+    enabled = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class HrAccessHistory(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    user_label = models.CharField(max_length=200)
+    enabled = models.BooleanField()
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class HrMonthWorkspace(models.Model):
+    """Validated monthly payroll and organization snapshot; never a live roster."""
+    month = models.CharField(max_length=7, unique=True)
+    currency = models.CharField(max_length=3, default='CNY')
+    cost_basis = models.CharField(max_length=30, default='employer_total')
+    cost_basis_label = models.CharField(max_length=100, blank=True, default='')
+    departments = models.JSONField(default=list)
+    employees = models.JSONField(default=list)
+    source = models.JSONField(null=True, default=None)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-month']
+
+
+class HrWorkspaceHistory(models.Model):
+    workspace = models.ForeignKey(HrMonthWorkspace, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    action = models.CharField(max_length=30)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-id']
+        constraints = [models.UniqueConstraint(fields=['workspace', 'version'], name='hr_history_workspace_version')]

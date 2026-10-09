@@ -132,12 +132,14 @@ api.interceptors.response.use(
         : `API가 예상하지 않은 응답을 반환했습니다. (HTTP ${responseStatus})`;
     }
     
-    // 일반 에러 로깅
-    console.error('[API Error]', {
-      url: originalRequest?.url,
-      method: originalRequest?.method,
-      status: error.response?.status,
-    });
+    // Keep HR failures out of logs; other endpoints log only request metadata.
+    if (!originalRequest?.url?.startsWith('/analytics/hr/')) {
+      console.error('[API Error]', {
+        url: originalRequest?.url,
+        method: originalRequest?.method,
+        status: error.response?.status,
+      });
+    }
     
     return Promise.reject(error);
   }

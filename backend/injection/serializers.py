@@ -190,6 +190,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(source='user.is_active', required=False)
     is_staff = serializers.BooleanField(source='user.is_staff', read_only=True)
     is_superuser = serializers.BooleanField(source='user.is_superuser', read_only=True)
+    can_manage_hr = serializers.BooleanField(required=False)
 
     class Meta:
         model = UserProfile
@@ -200,9 +201,20 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'can_view_sales', 'can_view_development',
             'can_edit_injection', 'can_edit_assembly', 'can_edit_quality',
             'can_edit_sales', 'can_edit_development', 'can_confirm_moulds',
-            'is_admin', 'created_at', 'updated_at'
+            'is_admin', 'can_manage_hr', 'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        from analytics.models import HrAccessGrant
+        data = super().to_representation(instance)
+        data['can_manage_hr'] = bool(instance.user.is_superuser or HrAccessGrant.objects.filter(user_id=instance.user_id, enabled=True).exists())
+        return data
+
+    def validate_can_manage_hr(self, value):
+        from analytics.hr_access_service import require_hr_grant_manager
+        require_hr_grant_manager(getattr(self.context.get('request'), 'user', None))
+        return value
 
     def validate_username(self, value):
         value = value.strip()
@@ -276,6 +288,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        hr_enabled = validated_data.pop('can_manage_hr', None)
         user_data = validated_data.pop('user', {})
         user = instance.user
         user_update_fields = []
@@ -292,7 +305,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         if user_update_fields:
             user.save(update_fields=user_update_fields)
 
-        return super().update(instance, validated_data)
+        instance = super().update(instance, validated_data)
+        if hr_enabled is not None:
+            from analytics.hr_access_service import set_hr_access
+            set_hr_access(user, hr_enabled, self.context['request'].user)
+        return instance
 
 
 class UserPermissionSelectionSerializer(serializers.Serializer):
@@ -303,6 +320,12 @@ class UserPermissionSelectionSerializer(serializers.Serializer):
     can_edit_development = serializers.BooleanField(required=False, default=False)
     can_confirm_moulds = serializers.BooleanField(required=False, default=False)
     is_admin = serializers.BooleanField(required=False, default=False)
+    can_manage_hr = serializers.BooleanField(required=False)
+
+    def validate_can_manage_hr(self, value):
+        from analytics.hr_access_service import require_hr_grant_manager
+        require_hr_grant_manager(getattr(self.context.get('request'), 'user', None))
+        return value
 
 
 class AdminUserCreateSerializer(serializers.Serializer):
@@ -340,6 +363,7 @@ class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True) # 기존 중첩 프로필 유지
     is_staff = serializers.BooleanField(read_only=True)
     is_superuser = serializers.BooleanField(read_only=True)
+    can_access_hr = serializers.SerializerMethodField()
     groups = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     is_using_temp_password = serializers.SerializerMethodField()
@@ -349,7 +373,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'is_staff', 'is_superuser', 'groups',
+            'is_staff', 'is_superuser', 'can_access_hr', 'groups',
             'permissions',
             'is_using_temp_password', 'password_reset_required',
             'profile',
@@ -360,6 +384,10 @@ class UserSerializer(serializers.ModelSerializer):
             return list(obj.groups.values_list('name', flat=True))
         except Exception:
             return []
+
+    def get_can_access_hr(self, obj):
+        from analytics.hr_permissions import can_access_hr
+        return can_access_hr(obj)
 
     def _get_profile(self, obj):
         try:

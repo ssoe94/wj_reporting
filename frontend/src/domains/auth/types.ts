@@ -39,6 +39,8 @@ export type CurrentUser = {
   username: string;
   email: string;
   is_staff: boolean;
+  is_superuser?: boolean;
+  can_access_hr?: boolean;
   groups: string[];
   department?: string;
   is_using_temp_password?: boolean;
