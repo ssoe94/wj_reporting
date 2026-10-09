@@ -12,7 +12,9 @@ from .serializers import (
     AdminUserCreateSerializer,
     UserProfileSerializer,
     UserRegistrationRequestSerializer,
+    UserPermissionSelectionSerializer,
 )
+from analytics.hr_access_service import set_hr_access
 from .permissions import AdminOnlyPermission
 
 import secrets
@@ -57,7 +59,11 @@ class SignupApprovalApproveView(APIView):
         if signup_req.status != 'pending':
             return Response({'detail': 'Request already processed'}, status=status.HTTP_400_BAD_REQUEST)
 
-        perms = (request.data or {}).get('permissions', {}) or {}
+        permission_serializer = UserPermissionSelectionSerializer(
+            data=(request.data or {}).get('permissions', {}) or {}, context={'request': request},
+        )
+        permission_serializer.is_valid(raise_exception=True)
+        perms = permission_serializer.validated_data
         def bool_flag(key: str) -> bool:
             return bool(perms.get(key, False))
 
@@ -118,6 +124,9 @@ class SignupApprovalApproveView(APIView):
             'updated_at',
         ])
 
+        if 'can_manage_hr' in perms:
+            set_hr_access(user, perms['can_manage_hr'], request.user)
+
         signup_req.status = 'approved'
         signup_req.approved_by = request.user
         signup_req.approved_at = timezone.now()
@@ -159,7 +168,7 @@ class AdminUserCreateView(APIView):
 
     @transaction.atomic
     def post(self, request):
-        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer = AdminUserCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         permissions = data.get('permissions', {})
@@ -201,6 +210,8 @@ class AdminUserCreateView(APIView):
             'password_reset_required',
             'updated_at',
         ])
+        if 'can_manage_hr' in permissions:
+            set_hr_access(user, permissions['can_manage_hr'], request.user)
         response_data = UserProfileSerializer(profile).data
         response_data['initial_password'] = initial_password
         response = Response(response_data, status=status.HTTP_201_CREATED)

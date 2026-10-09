@@ -11,8 +11,9 @@ from rest_framework.views import APIView
 
 from .hr_contract import ImportSerializer, SaveImportSerializer, LayoutSerializer, preview_payload, validate_month
 from .hr_permissions import IsHrAuthorized, IsHrSuperuser
+from .hr_access_service import set_hr_access
 from .hr_service import save_import, save_layout, workspace_payload
-from .models import HrAccessGrant, HrAccessHistory, HrMonthWorkspace
+from .models import HrAccessGrant, HrMonthWorkspace
 
 
 def validated_input(request, serializer_type):
@@ -86,18 +87,8 @@ class HrAccessDetailView(HrBaseView):
         if not isinstance(request.data, dict) or set(request.data) != {'granted'} or type(request.data['granted']) is not bool:
             raise serializers.ValidationError({'granted': 'granted 참/거짓만 입력해 주세요.'})
         target = get_object_or_404(get_user_model().objects.select_for_update(), pk=user_id)
-        enabled = request.data['granted']
-        if target.is_superuser:
-            raise serializers.ValidationError({'granted': 'superuser는 이미 인사 접근 권한이 있습니다.'})
-        if enabled and not target.is_active:
-            raise serializers.ValidationError({'granted': '활성 계정에만 인사 담당자 권한을 지정할 수 있습니다.'})
-        grant, _ = HrAccessGrant.objects.get_or_create(user=target)
-        if grant.enabled != enabled:
-            grant.enabled = enabled
-            grant.updated_by = request.user
-            grant.save(update_fields=['enabled', 'updated_by', 'updated_at'])
-            HrAccessHistory.objects.create(
-                user=target, user_label=(target.get_full_name() or target.username)[:200], enabled=enabled,
-                actor=request.user, actor_label=(request.user.get_full_name() or request.user.username)[:200],
-            )
+        try:
+            set_hr_access(target, request.data['granted'], request.user)
+        except serializers.ValidationError as error:
+            raise serializers.ValidationError({'granted': error.detail['can_manage_hr']}) from error
         return Response(access_payload())
