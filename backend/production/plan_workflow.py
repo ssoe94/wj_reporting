@@ -8,11 +8,12 @@ from decimal import Decimal, InvalidOperation, localcontext
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
 from .mes_execution_contract import mes_id
+from .plan_workflow_read_context import (PlanWorkflowReadContext, group_execution_records,
+                                         order_read_context)
 from .models import (ProductionPlan, ProductionExecution, PlanWorkflowLock, PlanWorkIdentity, PlanWorkRevision,
                      PlanMaterialApproval, PlanMaterialDefault, PlanWorkOrder,
                      PlanMesRequest, PlanMesRequestEvent)
@@ -297,25 +298,29 @@ def setup_snapshot(approval):
     return result
 
 
-def serialize_row(plan):
-    work = PlanWorkIdentity.objects.filter(uid=plan.work_uid).first()
-    revision = work.revisions.filter(version=plan.work_version).first() if work else None
-    approval = revision.approvals.order_by('-id').first() if revision else None
+def serialize_row(plan, context=None):
+    if context is None:
+        context = PlanWorkflowReadContext(plan.plan_date, plan.plan_date, plan.plan_type)
+    context.load_display()
+    work = context.works.get(plan.work_uid)
+    candidate_uids = {str(uuid.UUID(uid)) for uid in work.candidates} if work else set()
+    approval = context.approval(plan)
+    row_snapshot = snapshot(plan)
     previous_approval = None
     if work and not approval:
-        previous_approval = PlanMaterialApproval.objects.filter(revision__work=work, revision__version__lt=plan.work_version).order_by('-id').first()
-        if previous_approval and any(previous_approval.revision.snapshot[key] != snapshot(plan)[key] for key in ('part_no', 'machine_name')):
+        previous_approval = next((item for item in context.approvals_by_work[work.uid]
+                                  if item.revision.version < plan.work_version), None)
+        if previous_approval and any(previous_approval.revision.snapshot[key] != row_snapshot[key] for key in ('part_no', 'machine_name')):
             previous_approval = None
-    default = PlanMaterialDefault.objects.filter(plan_type=plan.plan_type, part_no=plan.part_no,
-        effective_from__lte=plan.plan_date).order_by('-effective_from', '-version').first()
-    latest_default = PlanMaterialDefault.objects.filter(plan_type=plan.plan_type, part_no=plan.part_no).order_by('-version').first()
-    row_snapshot = snapshot(plan)
+    defaults = context.defaults[plan.part_no]
+    default = next((item for item in defaults if item.effective_from <= plan.plan_date), None)
+    latest_default = max(defaults, key=lambda item: item.version, default=None)
     return {'id': plan.pk, 'uid': str(plan.work_uid) if plan.work_uid else None, 'version': plan.work_version,
         **row_snapshot, 'quantity_valid': valid_plan_quantity(row_snapshot['planned_quantity']),
         'identity_state': work.resolution if work else 'confirmation',
         'candidates': work.candidates if work else [],
-        'candidate_details': [{'uid': str(candidate.uid), 'snapshot': candidate.revisions.get(version=candidate.current_version).snapshot}
-                              for candidate in PlanWorkIdentity.objects.filter(uid__in=work.candidates)] if work else [],
+        'candidate_details': [item for uid, item in context.candidate_details.items()
+                              if uid in candidate_uids] if work else [],
         'approval': {'id': approval.pk, 'snapshot': approval.snapshot, 'actor_id': approval.actor_id,
                      'actor_name': (approval.actor.first_name or approval.actor.username) if approval.actor else '',
                      'approved_at': approval.created_at.isoformat()} if approval else None,
@@ -327,33 +332,30 @@ def serialize_row(plan):
 def execution_records(plan):
     # A direct edit can change sequence while retaining its explicit UID. Check
     # historical composite keys conservatively; never assign these as MES totals.
-    snapshots = list(PlanWorkRevision.objects.filter(work_id=plan.work_uid).values_list('snapshot', flat=True))
-    snapshots.append(snapshot(plan))
-    keys = {(row['plan_date'], row['plan_type'], row['machine_name'], row['part_no'] or '',
-             row['lot_no'], row['sequence']) for row in snapshots}
-    query = Q(pk__in=[])
-    for values in keys:
-        query |= Q(**dict(zip(('plan_date', 'plan_type', 'machine_name', 'part_no', 'lot_no', 'sequence'), values)))
-    return ProductionExecution.objects.filter(query).values_list('pk', 'actual_qty')
+    return group_execution_records([[plan]], snapshot)[0].items()
 
 
-def preview(start, end, plan_type):
+def preview(start, end, plan_type, context=None):
     """Consecutive injection days only after explicit setup/material approval.
 
     Read all machine rows around the requested window so boundaries never split an
     existing campaign silently. Multiple rows/day, missing approvals, gaps and
     intervening products are hard boundaries; they are never skipped.
     """
-    machines = ProductionPlan.objects.filter(plan_type=plan_type, plan_date__range=(start, end)).values_list('machine_name', flat=True).distinct()
-    plans = list(ProductionPlan.objects.filter(plan_type=plan_type, machine_name__in=machines).order_by('machine_name', 'plan_date', 'sequence', 'id')[:5001])
-    truncated = len(plans) > 5000
-    plans = plans[:5000]
+    context = context or PlanWorkflowReadContext(start, end, plan_type)
+    plans, truncated = context.plans, context.truncated
     counts = Counter((row.machine_name, str(row.plan_date)) for row in plans)
     groups, current = [], None
     for plan in plans:
-        row = serialize_row(plan)
-        approval = row['approval']
-        setup = setup_snapshot(PlanMaterialApproval.objects.get(pk=approval['id'])) if approval else None
+        # Grouping needs identity/current approval, not display defaults,
+        # actor/candidate serialization or historical execution SQL per row.
+        work = context.works.get(plan.work_uid)
+        approval = context.approval(plan)
+        row_snapshot = snapshot(plan)
+        row = {'uid': str(plan.work_uid) if plan.work_uid else None,
+               'identity_state': work.resolution if work else 'confirmation',
+               'quantity_valid': valid_plan_quantity(row_snapshot['planned_quantity'])}
+        setup = setup_snapshot(approval) if approval else None
         blockers = ['plan_scope_truncated'] if truncated else []
         if not row['quantity_valid']: blockers.append('plan_quantity_review')
         if row['identity_state'] != 'identified': blockers.append('identity_confirmation')
@@ -369,31 +371,33 @@ def preview(start, end, plan_type):
             current = {'plan_type': plan_type, 'machine_name': plan.machine_name, 'part_no': plan.part_no,
                 'lot_no': plan.lot_no or '', 'first_date': str(plan.plan_date), 'last_date': str(plan.plan_date),
                 'members': [], 'quantity': '0', 'setup': setup, 'setup_fingerprint': setup_hash,
-                'blockers': blockers, 'approval_ids': [], 'versions': {}, '_executions': {}}
+                'blockers': blockers, 'approval_ids': [], 'versions': {}, '_plans': []}
             groups.append(current)
-        current['_executions'].update(dict(execution_records(plan)))
+        current['_plans'].append(plan)
         current['members'].append(row['uid'])
         current['versions'][row['uid']] = plan.work_version
-        if approval: current['approval_ids'].append(approval['id'])
+        if approval: current['approval_ids'].append(approval.pk)
         current['last_date'] = str(plan.plan_date)
         if row['quantity_valid']:
-            with localcontext() as context:
-                context.prec = 100
-                current['quantity'] = format(Decimal(current['quantity']) + Decimal(row['planned_quantity']), 'f')
+            with localcontext() as numeric_context:
+                numeric_context.prec = 100
+                current['quantity'] = format(Decimal(current['quantity']) + Decimal(row_snapshot['planned_quantity']), 'f')
         else:
             # An invalid row is its own hard boundary, still visible verbatim.
-            current['quantity'] = row['planned_quantity']
+            current['quantity'] = row_snapshot['planned_quantity']
+    groups = [group for group in groups if group['last_date'] >= str(start) and group['first_date'] <= str(end)]
+    executions = group_execution_records([group.pop('_plans') for group in groups], snapshot)
+    by_member, unresolved, pending_disabled = order_read_context(plan_type) if groups else ({}, set(), {})
     results = []
-    for group in groups:
-        if group['last_date'] < str(start) or group['first_date'] > str(end): continue
+    for group, execution in zip(groups, executions):
         # Validate totals after grouping; never split a continuous campaign just
         # to make each outgoing quantity fit the write limit.
         if not valid_plan_quantity(group['quantity']) and 'plan_quantity_review' not in group['blockers']:
             group['blockers'].append('plan_quantity_review')
         group['planned_start'] = datetime.combine(date.fromisoformat(group['first_date']), time(8), SHANGHAI).isoformat()
         group['planned_end'] = datetime.combine(date.fromisoformat(group['last_date']) + timedelta(days=1), time(8), SHANGHAI).isoformat()
-        overlaps = [order for order in PlanWorkOrder.objects.filter(plan_type=plan_type)
-                    if set(order.members) & set(group['members'])]
+        overlaps = list({order.uid: order for uid in group['members']
+                         for order in by_member.get(uid, ())}.values())
         group['operation'] = 'create'
         group['work_order_code'] = None
         group['mes_id'] = None
@@ -420,7 +424,7 @@ def preview(start, end, plan_type):
                 if ('plan_quantity_review' not in group['blockers']
                         and Decimal(group['quantity']) < max(order.reported_quantity, order.inbound_quantity)):
                     group['blockers'].append('below_produced_or_inbound')
-                if order.requests.filter(state__in=['sending', 'uncertain', 'readback_pending', 'review']).exists():
+                if order.uid in unresolved:
                     group['blockers'].append('readback_required')
                 if ('plan_quantity_review' not in group['blockers']
                         and digest(order.approved_snapshot) == digest(_intent(group))):
@@ -428,12 +432,11 @@ def preview(start, end, plan_type):
                     if not order.mes_id:
                         from .plan_workflow_contract import build_contract
                         contract, blockers = build_contract(order, _intent(group))
-                        pending = order.requests.filter(state='disabled').order_by('-created_at').first()
+                        pending = pending_disabled.get(order.uid)
                         if pending and (digest(pending.contract) != digest(contract) or pending.blockers != blockers):
                             group['operation'] = 'prepare'
-        executions = group.pop('_executions')
         if ('plan_quantity_review' not in group['blockers']
-                and Decimal(group['quantity']) < sum(executions.values(), Decimal('0'))):
+                and Decimal(group['quantity']) < sum(execution.values(), Decimal('0'))):
             group['blockers'].append('below_existing_execution_review')
         group['key'] = digest(_intent(group))
         results.append(group)
