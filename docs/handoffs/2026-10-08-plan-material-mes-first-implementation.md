@@ -2,6 +2,47 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
+## 최신 보완: code0 격리 제품 확인 반영·1个 생성전용 진단 계획 (2026-10-09)
+
+부모가 전달한 사용자 ‘맞아’는 `测试物料 / code 0`의 격리 시험 제품 적합성 확인이다. **대상 제품은 확정**했으므로 이를 다시 질문하지 않는다. 재고출고, 실생산 조작, 임의 운영 설비 선택까지 승인한 것으로 확대하지 않는다. 부모의 이번 범위는 설비 미배정·미下达/미开工·수량 1个의 생성전용 계획 구체화다. 이번에도 업무 쓰기·추가 APP 발급은 하지 않았다. 같은 南京万佳/Lee browser login으로 읽었다.
+
+### 구체적 생성 후보
+
+[검토용 JSON](2026-10-09-mes-create-only-review.json)은 **실행 파일이나 승인 permit이 아니다**. candidate payload 및 SHA256를 고정해 부모가 내용을 검토할 수 있게 했다.
+
+| 후보 | 고정안 |
+|---|---|
+| 대상 | 南京万佳, actor18/Lee, material ID 문자열 `1734569511470476`, code 문자열 `0`, qty 문자열 `1`, 실제 unitName `个` |
+| code / 외부번호 / identifier | `WJ-IT-CREATE-20261009-001` (실행 직전 exact code 부재 재조회; 이미 존재하면 생성하지 않음) |
+| 초기 상태 | `status=0` 草稿. 공식 enum 근거 있으며 tenant import 허용/자동화는 아래 확인 대상 |
+| 예정 시각 | **2026-10-10 08:00 → 2026-10-11 08:00 Asia/Shanghai**. 생성일 당일 08시가 이미 지났으므로 미래 08시 사용. 실제 시작 시각을 쓰지 않음 |
+| 미배정 | resourceCode, input, process plan, processRouteCode, outputProcessCode를 보내지 않음; 실제 운영 설비/공정/금형을 임의 선택하지 않음 |
+| version / ID | optional material version은 미검증 문자열을 보내지 않음. 최소 공식 API는 unitName을 받으며 numeric unit ID를 필수로 요구하지 않음; full workflow의 numeric unit/version 승인 요구를 없애지는 않음 |
+| 식별/인증 | code로 외부 시험 흔적 보존. APP/USER 공급은 기존 유효 인증만, 추가 발급/갱신/fallback 금지 |
+| 시험 후 | **초안 및 audit를 보존**. 下达/开工/完工/关闭/삭제/입출고/검사 실행 없음. 안전 미검증 close를 cleanup으로 사용하지 않아 이 시험의 선행 조건에서 제외 |
+
+[공식 import](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1686645473258363&url=%2Fmed%2Fopen%2Fv2%2Fwork_order%2F_doimport)의 펼친 테이블에서 `resourceCode`, `processRouteCode`, `processPlanOpenCOs`, input은 모두 optional임을 다시 확인했다. BOM/route/SOP 사용 및 warehousing/autoWarehousing flag는 optional이고 상세 의미/생략 default는 아직 확인되지 않아 값을 추측해 `0`으로 넣지 않았다. 이 candidate는 **생략한 flag가 기존 BOM/route/setup를 자동 복원하거나 재고/검사를 일으키지 않는다는 영향 검토 전 전송 불가**다. default 검토로 payload를 바꾸면 digest도 새로 고정한다.
+
+candidate SHA256: `f2e0c07365a74b4a52979fe541640fa32085a7ffcfad255b86e157fdf21ffa29` (UTF8, ensure_ascii=False, sorted compact JSON). 기존 `plan_workflow_trial.request_digest`의 request UID/intent/contract digest와는 별도이며 현재 승인 permit으로 재사용할 수 없다.
+
+### 검사·재고 영향 읽기 및 묶은 확인 사항
+
+실제 检验方案 전체 목록은 456건이었다. `关联物料` picker에서 **`0 / 测试物料`를 선택**한 조회는 빈 목록이다. 전후 AX와 필터 선택/빈 결과 각각 실제 capture를 저장했다. 이것은 해당 제품 직접关联 규칙을 읽은 결과다. 공통·분류별·외부 event 자동화 전체 부재라고 확대하지 않는다. 참고로 기존 통용검 시험方案 `WJ-IT-20261007-PARTIAL-CFG01`의 상세도 읽었지만 code0 연결/생성시 무검사 보장의 근거로 사용하지 않았다.
+
+앞 회차의 실제 工单 설정은 생산任务 모드, 用料清单可空=是, 自动生成工序在制品=否다. 자동완공/자동닫기는 실행/완공 및 보고량·입고량 조건이다. 이번 계획은 process/task/원료를 보내지 않고 보고·입고를 하지 않으므로 **직접 생산·투입·입고 동작을 수행하지 않는다**. 그러나 생성 event의 예약/출고/QC/외부 연동 무영향은 위 설정만으로 증명되지 않는다. `测试物料`의 投料 是否出库=是는 투입 행위 규칙이며 생성만의 출고를 뜻하지 않는다. 실제 stock 이동/예약도 별도로 확인해야 한다.
+
+**부모가 묶어서 확인할 업무 사실은 하나다:** 南京万佳에서 위 **1个·초안·설비/공정/원료 미배정 payload**를 import할 때, (a) status0 허용 및 자동 下达/开工/task 없음, (b) 생략한 SOP/BOM/route/입고 flag가 운영 setup를 상속하지 않음, (c) 재고 이동·예약·backflush 및 제품/분류/공통/외부 QC 자동 생성 없음. 공급자 또는 tenant 책임자의 근거로 확정할 사항이며 ‘제품이 테스트용’이라는 답변과 다르다. 제품/설비/입력원료/numeric unit ID를 이 최소 진단의 미확정 필수 대상으로 다시 묻지 않는다.
+
+운영 실행 경로의 기술 경계는 별도다. 기존 production material trial bridge는 입력 원료·resource·route/version을 검증하는 end-to-end 계약이고, 현재 code0 최소 payload를 그대로 실행할 수 없다. **guard를 풀어 우회하지 않았다.** API 진단으로 실행하려면 기존 발급 없는 supply를 재사용하고 단일 exact payload에 한정된 별도 검토 경로가 필요하다. 기존 branch의 workflow 배포/0016 schema/trusted bridge도 이번 회차에서 승인·변경되지 않았다. 실제 USER auth 유효성은 정상 gate에서 다시 검사하되 APP cache 부재라면 추가 발급하지 않고 멈춘다.
+
+### 실행/수용 기준과 후속 전체시험
+
+효과가 확인되고 실행 경로가 준비된 뒤 exact code 사전 부재 확인 → 영속 단건 reservation → 한 번만 생성 → 문자열 ID/code로 base/output/BOM/process/task 및 QC/재고 전후 읽기 순서다. timeout/불확실 결과면 code/ID 조회로 해결하고 자동 재전송하지 않는다. 단건이어서 batch 전송하지 않는다. accepted 기준은 草稿, planned 1个, 미배정 resource/route/process/input, actualStart 없음, reported/inbound=0, 연결 생산 task/QC/재고 변화 없음이다. 예상과 다르면 후속 생산 조작 없이 불확실/차이 이력을 남긴다.
+
+이 시험은 **생성 전용 진단**이며 승인 원료 snapshot, BOM/단위/소요량, 품번 기본원료 추천, immutable plan version, 연속 사출 campaign 생성/qty-end 수정 전체 acceptance를 완료하지 않는다. 전체 시험에는 실제 승인 input/version/unit/배합·route/setup와 2300→3200 수정 계약 및 실제 생산/순입고 adapter가 여전히 필요하다. 해당 범위를 이 최소 시험에 몰아 추가 질문하지 않는다.
+
+검토 JSON Library `libfile_170918dd32f08191920fd09a77f1d5f7` v0. 실제 검사 filter capture `libfile_02f2d8801be481918f1a5d9bfdfb580a` v0, 같은 조회의 빈 결과 capture `libfile_792a93b89ae881919bab1313db2bc7c9` v0 (1053×1291). 모든 local xattrs 적용 및 이미지 직접 확인. 이번 변경은 보고서+review JSON이며 코드/schema 변경 없음. JSON parse/digest/시간/미배정 필드 검증과 git diff --check만 실행; 기존 backend/lint/build/1280×720 합성 화면 시험은 재실행하지 않았다. 기존 WJ8/MES9/MES10 tab은 handoff, 공개 docs 임시12는 닫았다. push/PR/merge/deploy/migration/생산 조작 없음.
+
 ## 최신 보완: 기존 인증으로 master·생성 계약·tenant 설정 읽기
 
 부모의 후속 지시에 따라 시험 물료 `0`의 대상 승인 답변을 기다리면서 **읽기만** 진행했다. 같은 南京万佳 / Lee 브라우저 인증을 재사용했고 APP 발급/재인증/credential 추출/업무 POST/운영 설정 저장은 **0회**다. 아래 사실은 합성 fixture가 아닌 실제 MES 화면 또는 공식 공개 문서다. 이 절의 확인 내용이 이전 ‘tenant 규칙 미검증’ 문구보다 우선하나, 모든 자동화·검사·재고 무영향을 검증한 것은 아니다.

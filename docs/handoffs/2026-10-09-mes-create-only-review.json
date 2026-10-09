@@ -1,0 +1,69 @@
+{
+  "schema": "WJ-create-only-review-v1",
+  "executable": false,
+  "state": "blocked_effect_review",
+  "tenant": "南京万佳",
+  "actor_id": 18,
+  "mes_account": "Lee",
+  "product_confirmation": "user confirmed code0 as isolated test material",
+  "product_id": "1734569511470476",
+  "quantity_scope": "proposed creation only: 1 个",
+  "origin": "https://v3-ali.blacklake.cn",
+  "path": "/med/open/v2/work_order/_doimport",
+  "official_hw_document_id": "1686645473258363",
+  "planned_start_shanghai": "2026-10-10T08:00:00+08:00",
+  "planned_end_shanghai": "2026-10-11T08:00:00+08:00",
+  "payload_candidate": {
+    "code": "WJ-IT-CREATE-20261009-001",
+    "externalOrderCode": "WJ-IT-CREATE-20261009-001",
+    "identifier": "WJ-IT-CREATE-20261009-001",
+    "status": 0,
+    "planStartTime": 1791590400000,
+    "planFinishTime": 1791676800000,
+    "outputMaterialOpenCOs": [
+      {
+        "lineSeq": "0",
+        "mainFlag": 1,
+        "materialCode": "0",
+        "plannedAmount": "1",
+        "unitName": "个"
+      }
+    ]
+  },
+  "payload_candidate_sha256": "f2e0c07365a74b4a52979fe541640fa32085a7ffcfad255b86e157fdf21ffa29",
+  "omitted_by_design": [
+    "resourceCode",
+    "inputMaterialOpenV2COs",
+    "processPlanOpenCOs",
+    "outputMaterialOpenCOs[].processRouteCode",
+    "outputMaterialOpenCOs[].outputProcessCode",
+    "outputMaterialOpenCOs[].version",
+    "customFields"
+  ],
+  "unresolved_provider_defaults": [
+    "enableSop",
+    "specifiedMaterial",
+    "useBomFlag",
+    "useProcessRouteFlag",
+    "outputMaterialOpenCOs[].warehousing",
+    "outputMaterialOpenCOs[].autoWarehousingFlag"
+  ],
+  "effect_review_required": [
+    "tenant accepts status0 import without automatic dispatch/start/task creation",
+    "omitted BOM/route/SOP flags do not resolve inherited production setup",
+    "creation causes no inventory movement/backflush/reservation or automatic QC from category/global/external rules"
+  ],
+  "runtime_requirements": [
+    "no APP issuance/refresh; valid existing authorized supply only",
+    "code absence preflight; one attempt; durable reservation before write",
+    "dedicated reviewed diagnostic path; do not bypass production material approval guards"
+  ],
+  "postconditions": [
+    "exact code/id readback, status0 and no actual start",
+    "quantity1 unit个; no equipment/route/process/input inheritance",
+    "reported/inbound quantities0; no linked task/QC/inventory change"
+  ],
+  "on_ambiguous_result": "fence; lookup exact code/id; never retry blind",
+  "cleanup": "preserve draft with audit marker; no finish/close/delete/production操作",
+  "end_to_end_material_workflow_verified": false
+}
