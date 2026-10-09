@@ -56,8 +56,10 @@ test('period ambiguity, cross-year selection, unmapped costs and negative gross 
 test('company template and multi-line tab paste are readable without private fixtures', async () => {
   const book=await readWorkbook(new File([createTemplateCsv()],'payroll.csv'));
   const mapped=suggestColumnMapping(getHeaderColumns(book.sheets[0],0));
-  const result=parsePayrollRows(book.sheets[0].rows,{headerRowIndex:0,columns:mapped,targetMonth:'2026-01',classificationMode:'file',allowMissingCost:false});
-  assert.equal(result.rows[0].code,'0001'); assert.equal(result.rows[0].department_id,'injection-operator');
+  assert.throws(()=>parsePayrollRows(book.sheets[0].rows,{headerRowIndex:0,columns:mapped,targetMonth:'2026-01',classificationMode:'file',allowMissingCost:false}),/가져올 직원이 없습니다/);
+  const completed=await readWorkbook(new File([createTemplateCsv()+'2026-01,00001,样例员工,职员,注塑,10.00,注塑管理,操作工\r\n'],'payroll.csv'));
+  const imported=parsePayrollRows(completed.sheets[0].rows,{headerRowIndex:0,columns:mapped,targetMonth:'2026-01',classificationMode:'file',allowMissingCost:false});
+  assert.equal(imported.rows[0].code,'00001'); assert.equal(imported.rows[0].department_id,'injection-operator');
   const tab='2026年\t工号\t姓名\t职务\t部门\t应发工资\t可视化部门\t可视化职能\r\n1月\t0007\t样例员工\t"财务部长兼\n办公室主任"\t管理部\t\t管理部门\t财务\r\n2月\t0007\t样例员工\t职员\t管理部\t\t管理部门\t财务\r\n';
   const parsed=await readWorkbook(new File([tab],'copied-table.txt'));
   const mapping=suggestColumnMapping(getHeaderColumns(parsed.sheets[0],0));

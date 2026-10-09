@@ -298,7 +298,7 @@ export async function readWorkbook(file: File): Promise<HrWorkbook> {
 }
 
 export function createTemplateCsv(): string {
-  return '\uFEFF月份,工号,姓名,职务,部门,应发工资,可视化部门,可视化职能\r\n2026-01,0001,样例员工,职员,注塑,10000.00,注塑管理,操作工\r\n';
+  return '\uFEFF月份,工号,姓名,职务,部门,应发工资,可视化部门,可视化职能\r\n';
 }
 
 export function downloadTemplate(): void {
