@@ -63,7 +63,8 @@ class HrApiTests(TestCase):
             ]
             for response in requests:
                 self.assertIn(response.status_code, [401, 403])
-                self.assertEqual(response['Cache-Control'], 'private, no-store')
+                self.assertIn('no-store', response['Cache-Control'].split(', '))
+                self.assertEqual(response['Pragma'], 'no-cache')
         self.assertEqual(HrMonthWorkspace.objects.count(), 0)
 
     def test_hr_can_work_but_cannot_manage_grants(self):
@@ -176,13 +177,11 @@ class HrApiTests(TestCase):
 
     def test_audit_failure_rolls_back_salary_and_layout(self):
         with patch('analytics.hr_service.HrWorkspaceHistory.objects.create', side_effect=RuntimeError('synthetic audit failure')):
-            with self.assertRaises(RuntimeError):
-                self.upload()
+            self.assertEqual(self.upload().status_code, 500)
         self.assertEqual(HrMonthWorkspace.objects.count(), 0)
         self.upload()
         with patch('analytics.hr_service.HrWorkspaceHistory.objects.create', side_effect=RuntimeError('synthetic audit failure')):
-            with self.assertRaises(RuntimeError):
-                self.layout()
+            self.assertEqual(self.layout().status_code, 500)
         self.assertEqual(HrMonthWorkspace.objects.get().version, 1)
         self.assertEqual(HrMonthWorkspace.objects.get().departments, [])
 

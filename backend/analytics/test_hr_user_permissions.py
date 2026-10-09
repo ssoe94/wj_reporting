@@ -94,7 +94,9 @@ class HrUserPermissionTests(TestCase):
         self.assertEqual(self.edit(can_manage_hr=True).status_code, 200)
         self.assertEqual(HrAccessHistory.objects.count(), 1)
         self.client.patch(f'/api/analytics/hr/access/{self.target.pk}/', {'granted': False}, format='json')
-        listing = self.client.get('/api/admin/user-profiles/').data
+        response = self.client.get('/api/admin/user-profiles/')
+        self.assertEqual(response.status_code, 200)
+        listing = response.data['results']
         profile = next(item for item in listing if item['user'] == self.target.pk)
         self.assertFalse(profile['can_manage_hr'])
         self.assertEqual(HrAccessHistory.objects.count(), 2)
@@ -117,10 +119,9 @@ class HrUserPermissionTests(TestCase):
 
     def test_audit_failure_rolls_back_account_and_profile_changes(self):
         with patch('analytics.hr_access_service.HrAccessHistory.objects.create', side_effect=RuntimeError('synthetic audit failure')):
-            with self.assertRaises(RuntimeError):
-                self.client.post('/api/admin/users/', self.payload(can_manage_hr=True), format='json')
-            with self.assertRaises(RuntimeError):
-                self.edit(first_name='must not persist', can_manage_hr=True)
+            created = self.client.post('/api/admin/users/', self.payload(can_manage_hr=True), format='json')
+            self.assertEqual(created.status_code, 500)
+            self.assertEqual(self.edit(first_name='must not persist', can_manage_hr=True).status_code, 500)
         self.assertFalse(User.objects.filter(username='new-hr').exists())
         self.target.refresh_from_db()
         self.assertEqual(self.target.first_name, '')

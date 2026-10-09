@@ -14,7 +14,14 @@ settings.configure(
     DEFAULT_AUTO_FIELD='django.db.models.BigAutoField', USE_TZ=True,
     SESSION_ENGINE='django.contrib.sessions.backends.signed_cookies',
     PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],
-    REST_FRAMEWORK={'DEFAULT_AUTHENTICATION_CLASSES': [], 'UNAUTHENTICATED_USER': 'django.contrib.auth.models.AnonymousUser'},
+    MIDDLEWARE=['config.middleware.NoCacheAPIMiddleware'],
+    REST_FRAMEWORK={
+        'DEFAULT_AUTHENTICATION_CLASSES': [],
+        'UNAUTHENTICATED_USER': 'django.contrib.auth.models.AnonymousUser',
+        'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+        'PAGE_SIZE': 100,
+        'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
+    },
 )
 import django
 django.setup()
