@@ -2,7 +2,48 @@
 
 2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
 
-## 최신 보완: code0 격리 제품 확인 반영·1个 생성전용 진단 계획 (2026-10-09)
+## 최신 보완: 단건 진단 구현·사용자 생성 승인·런타임 준비 부족으로 미실행 (2026-10-09)
+
+부모가 전달한 사용자 **‘진행해’**는 앞서 명시한 `测试物料 / code0 / 1个 / 草稿` 한 건의 생성과 직후 작업·재고·QC 조회에 대한 승인이다. 회사 공통 자동화가 아직 검증되지 않았다는 공개된 위험을 수용한 승인이다. 앞 회차의 ‘영향 없음 확정 후 승인 대기’는 **현재의 남은 업무 승인 조건이 아니다**. 제품 적합성이나 동일 생성 시험을 다시 승인받을 필요가 없다. 下达·开工·입출고·종료·닫기·삭제, 추가 APP 발급, 운영 배포/설정/마이그레이션을 승인한 것으로 확대하지 않았다.
+
+실제 실행 전 Render Web Shell에서 읽기만 수행한 결과:
+
+- 실행 서비스 `srv-d18e2pndiees73aq333g`, instance `529n4`, 현재 commit **b857c50**.
+- 운영 production migration은 **0015까지**. 새 `production_mescreatediagnostic` / `production_mescreatediagnosticevent` 테이블은 없음. 따라서 현재 배포에는 이 별도 경로의 영속 단건 잠금이 없다.
+- `get_existing_app_access_token()`은 **확인한 서버 셸 프로세스에서 기존 공급 없음**. Gunicorn 프로세스 캐시의 존재/부재까지 단정하지 않으며 그 메모리나 token을 추출하지 않았다. APP 발급·refresh·callback은 추가 실행하지 않았다.
+- 생성 HTTP 시도 **0회**, 추가 APP 발급 **0회**. 실제 생성 ID/status/수량/시간 및 생성 후 task/재고/QC 관측은 아직 없음. 승인된 1회 생성 예산은 사용하지 않았다.
+- 같은 MES 사용자 화면의 `工单编号 contains WJ-IT-CREATE-20261009-001 + 物料名称 equals 测试物料` 조회는 **暂无数据**. 이것은 해당 UI 필터의 결과이며 전체 tenant exact-code API 부재나 생성 권한 검증으로 확대하지 않는다. 전송 직전에 공식 exact-code 조회를 다시 해야 한다.
+
+실제 capture: 런타임 사전 확인 `libfile_d74aba58f6b88191be68cef294fadc6f` v0 (1265×712), MES code 조회 `libfile_26617bcc5f9c81919a6c3625102930e9` v0 (1280×720). 둘 다 합성 화면이 아니다. 원본 AX와 PNG는 `output/plan-workflow/diagnostic-*preflight*`에 있다. token/secret은 출력·저장하지 않았다.
+
+### 완료한 로컬 구현
+
+`backend/production/mes_create_diagnostic.py`는 기존 material workflow writer와 독립된 trusted server bridge다. HTTP URL, Celery/worker 경로, 환경 flag, cleanup 호출을 추가하지 않았다. 기존 `PlanMesTransport` / `MES_PLAN_TRIAL_APPROVAL`의 원료·설비·route/version guard를 변경하지 않았다. 일반 계획 writer는 계속 OFF다.
+
+- 승인된 **exact code·payload SHA256·actor18·MES Lee ID·南京万佳·ALI origin**만 허용. 승인 snapshot의 모든 키와 request UID를 고정하며 max_attempts=1, 승인 활성 구간 최대30분, 공통 자동화 위험 수용·초안 보존·정해진 읽기 scope를 요구한다. 일반 flag나 USER credential만으로 생성되지 않는다. 코드에 실제 운영 승인 설정을 설치하지 않았다.
+- 별도 `MesCreateDiagnostic` / `MesCreateDiagnosticEvent`와 신규 additive **0017**. `(tenant, code)` 고유 제약과 prepared/attempt0→sending/attempt1의 DB compare-and-swap이 다른 호출·프로세스 재시작·동시 요청에도 재전송을 막는다. 예약·승인 digest·전후 관측 이력을 보존하고, 이미 관측한 부수효과의 review 상태는 후속 빈 조회로 지우지 않는다.
+- 기존 same-user credential broker로 현재 계정·세션·consent·policy를 재검증한다. APP provider는 **existing-only** 공급으로 명시하여 broker의 평상시 발급 fallback을 차단한다. 저장/조회 거절에서 APP 대체·다른 header·다른 endpoint·다른 계정으로 우회하지 않는다.
+- 전송 전에 exact-code 부재, code0 제품 재고/QC baseline을 읽고, 현재 쓰기 lease 안에서 전송 직전 exact-code 부재를 재확인한다. 요청 예약을 IO 전에 별도 transaction으로 commit한다. 생성은 문서화된 `_doimport` 한 번이며 batch/재시도 없음. timeout, 잘린 결과, 부분 실패, needCheck 불확실은 영속 uncertain으로 남기고 exact code/ID **읽기만** 허용한다.
+- 생성 후 base→inputs/outputs/processes→연결 task→제품 전체 유형 QC·재고·전체 방향 재고변동→base를 읽는다. 전후 base/updatedAt 변경, 숨겨진 필드, 조회 거절, ID/수량/단위 차이, 미완전 목록은 확인 대기/검토로 남긴다. MES ID는 wire의 Python 정수와 영속/보고의 문자열로 보존한다. 실제 status/quantity/단위/planned times/actual start와 조회된 provider default flag를 별도로 기록한다.
+- 각 목록은 최대25행의 **완전한 한 페이지**만 수용한다. total>25/누락/부분 pagination은 0으로 취급하지 않는다. 재고 변동은 action/direction/operator/특정 창고 필터를 생략하므로 출고·이동·조정도 놓치지 않도록 준비했다. 제품 재고/QC의 변화는 단건 생성에 대한 인과관계가 확정되지 않아도 보수적으로 review한다.
+
+조회가 모두 일치해도 결과 이름은 `draft_observed`다. 계획량1个·초안·미배정 상태와 해당 관측 창의 task/제품 재고/QC 차이를 뜻할 뿐, 생산보고·순입고 totals, 예약/backflush, 권한으로 보이지 않는 기록, 지연/외부/공통 자동화 부재, 전체 원료 workflow E2E 검증을 뜻하지 않는다. 실제 task 상세는 앞 회차 URL_NO_PERMISSION이며 이 코드에서 대체 권한으로 열지 않는다. 상세 없이 연결 task가 발견되면 추가 조작 없이 review한다.
+
+### 새로 검증한 범위
+
+- PostgreSQL disposable fixture: **163/163 통과**, 단건 진단22개 포함. 2개 동시 reservation에서 정확히1개만 commit되는 시험 통과. 기존 plan upload/plan workflow/production writer OFF/transport/ID·계약 회귀 포함.
+- SQLite: **163 실행,159 통과, PostgreSQL 전용4 skip**. 실제 MES network를 전역 차단하고 `SYNTHETIC-` credential/provider 응답만 사용했다. 실제 계정의 생성/조회 권한 검증이 아니다.
+- migration drift 없음; 새0017을 disposable DB에 적용하여 테스트. PostgreSQL SQL은 신규2개 table + 고유/FK/index만 포함하며 기존 테이블 drop/rename/update 없음. 운영 적용 없음. `git diff --check` 통과.
+- 로그: `diagnostic-full-postgres-tests.log`, `diagnostic-full-sqlite-tests.log`, `diagnostic-postgres-migration.sql`. frontend 변경은 없으므로 이번에 lint/build/원료 panel UI 회귀를 중복 실행하지 않았다. 앞 회차 1280×720 합성 원료 UI 증거와 이번 실제 MES 읽기 capture를 구분한다.
+- 원본 checkout은 계속9039735f, `.claude/settings.local.json`과 output 변경 그대로. 이 독립 branch에서만 변경했고 push/PR/merge/deploy 없음.
+
+### 현재 막힘과 정확한 다음 운영 단계
+
+생성 업무 승인은 확보되어 있다. 실제 실행의 남은 조건은 **이 검증된 별도 journal/bridge를 사용할 승인된 런타임**과 그 **동일 프로세스의 기존 유효 APP 공급**이다. 현재 서비스에서 실행하려면 로컬 code의 공개/배포와 unapplied production0016→0017 schema 검토·적용, request UID 생성 후 short-lived trusted 승인 snapshot 설치가 필요하다. 원래 위임의 ‘운영 설정/마이그레이션·배포는 실행하지 말고 대상과 필요승인 보고’ 제한을 이 생성 승인만으로 해제하지 않았다. 추가 APP 발급은 승인 범위 밖이며 기존 공급이 없으면 계속 중단한다. 같은 사용자 생성 동의를 다시 묻는 대신 이 런타임 준비 범위만 부모에게 보고한다.
+
+준비 이후 동일 exact payload의 code 부재 재조회→영속 잠금→max1 생성→직후 관측 순서다. 자동 부수효과/권한 거절이면 추가 조작 없이 이력을 보존해 보고한다. 이번 최소 초안 진단은 승인된 원료 snapshot·immutable plan version·BOM/소요량·연속 사출2300→3200 수정 전체 수용시험을 대체하지 않는다.
+
+## 이전 보완 기록: code0 격리 제품 확인 반영·1个 생성전용 진단 계획 (2026-10-09)
 
 부모가 전달한 사용자 ‘맞아’는 `测试物料 / code 0`의 격리 시험 제품 적합성 확인이다. **대상 제품은 확정**했으므로 이를 다시 질문하지 않는다. 재고출고, 실생산 조작, 임의 운영 설비 선택까지 승인한 것으로 확대하지 않는다. 부모의 이번 범위는 설비 미배정·미下达/미开工·수량 1个의 생성전용 계획 구체화다. 이번에도 업무 쓰기·추가 APP 발급은 하지 않았다. 같은 南京万佳/Lee browser login으로 읽었다.
 

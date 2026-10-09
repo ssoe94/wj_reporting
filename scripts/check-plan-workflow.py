@@ -45,9 +45,9 @@ urls.urlpatterns = [path('api/injection/monitoring-dates/', InjectionMonitoringD
 sys.modules[urls.__name__] = urls
 from django.core.management import call_command
 if '--make-migrations' in sys.argv:
-    call_command('makemigrations', 'production', name='plan_material_workflow')
+    call_command('makemigrations', 'production', name='mes_create_diagnostic' if '--diagnostic' in sys.argv else 'plan_material_workflow')
 elif '--sql-migration' in sys.argv:
-    call_command('sqlmigrate', 'production', '0016')
+    call_command('sqlmigrate', 'production', '0017' if '--diagnostic' in sys.argv else '0016')
 elif '--migration-check' in sys.argv:
     call_command('makemigrations', 'production', check=True, dry_run=True)
 elif preview:
@@ -82,7 +82,9 @@ elif preview:
         call_command('runserver', '127.0.0.1:8029', use_reloader=False)
 else:
     from django.test.runner import DiscoverRunner
-    labels = ['production.test_plan_workflow', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
+    labels = ['production.test_mes_create_diagnostic', 'production.test_plan_workflow', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
         'production.test_plan_workflow_concurrency', 'production.test_mes_delivery', 'production.test_mes_task_actions', 'injection.tests']
+    if '--diagnostic' in sys.argv:
+        labels = ['production.test_mes_create_diagnostic']
     with patch('requests.sessions.Session.request', side_effect=AssertionError('MES network forbidden in isolated tests')):
         raise SystemExit(DiscoverRunner(verbosity=2).run_tests(labels))

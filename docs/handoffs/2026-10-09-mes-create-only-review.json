@@ -1,7 +1,7 @@
 {
   "schema": "WJ-create-only-review-v1",
   "executable": false,
-  "state": "blocked_effect_review",
+  "state": "approved_runtime_blocked",
   "tenant": "南京万佳",
   "actor_id": 18,
   "mes_account": "Lee",
@@ -48,11 +48,6 @@
     "outputMaterialOpenCOs[].warehousing",
     "outputMaterialOpenCOs[].autoWarehousingFlag"
   ],
-  "effect_review_required": [
-    "tenant accepts status0 import without automatic dispatch/start/task creation",
-    "omitted BOM/route/SOP flags do not resolve inherited production setup",
-    "creation causes no inventory movement/backflush/reservation or automatic QC from category/global/external rules"
-  ],
   "runtime_requirements": [
     "no APP issuance/refresh; valid existing authorized supply only",
     "code absence preflight; one attempt; durable reservation before write",
@@ -65,5 +60,40 @@
   ],
   "on_ambiguous_result": "fence; lookup exact code/id; never retry blind",
   "cleanup": "preserve draft with audit marker; no finish/close/delete/production操作",
-  "end_to_end_material_workflow_verified": false
+  "end_to_end_material_workflow_verified": false,
+  "human_approval": {
+    "source_thread_id": "01a118bc-2ae5-736e-838d-47329cc5401d",
+    "user_answer": "진행해",
+    "scope": "one draft, code0, quantity1个, no assignments, preserve record; immediate read-only task/inventory/QC observation; disclosed common automation unknowns accepted"
+  },
+  "disclosed_and_accepted_risks": [
+    "tenant accepts status0 import without automatic dispatch/start/task creation",
+    "omitted BOM/route/SOP flags do not resolve inherited production setup",
+    "creation causes no inventory movement/backflush/reservation or automatic QC from category/global/external rules"
+  ],
+  "runtime_blockers": [
+    "deployed b857c50 has only production migrations through0015; dedicated journal tables absent",
+    "existing-only APP supply unavailable in checked server shell process; Gunicorn cache not inspected or extracted"
+  ],
+  "live_result": {
+    "create_http_attempts": 0,
+    "new_app_issuance_attempts": 0,
+    "work_order_id": null,
+    "status": null,
+    "quantity": null,
+    "times": null,
+    "effect_readback_performed": false
+  },
+  "ui_absence_observation": {
+    "code_contains": "WJ-IT-CREATE-20261009-001",
+    "material_name_equals": "测试物料",
+    "result": "暂无数据",
+    "scope": "MES browser filter only; exact-code API absence preflight still required at dispatch"
+  },
+  "diagnostic_implementation": "backend/production/mes_create_diagnostic.py; separate models and additive0017, not deployed",
+  "observation_limits": [
+    "reported/inbound net totals are not decoded by the limited diagnostic",
+    "inventory reservation/backflush and global/delayed automation are not fully observable",
+    "same-process existing APP supply is required; a connected USER status alone is insufficient"
+  ]
 }

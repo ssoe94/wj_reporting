@@ -620,3 +620,28 @@ class PlanMesRequestEvent(models.Model):
     state = models.CharField(max_length=24)
     evidence = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class MesCreateDiagnostic(models.Model):
+    """Single reviewed diagnostic, independent of production plans/materials."""
+    uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.CharField(max_length=128)
+    code = models.CharField(max_length=100)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    payload = models.JSONField()
+    payload_digest = models.CharField(max_length=64)
+    state = models.CharField(max_length=24, default='prepared')
+    attempt = models.PositiveIntegerField(default=0)
+    mes_id = models.CharField(max_length=19, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['tenant', 'code'], name='mes_create_diagnostic_code_uniq')]
+
+
+class MesCreateDiagnosticEvent(models.Model):
+    request = models.ForeignKey(MesCreateDiagnostic, on_delete=models.PROTECT, related_name='events')
+    state = models.CharField(max_length=24)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
