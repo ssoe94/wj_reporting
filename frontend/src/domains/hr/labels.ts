@@ -1,4 +1,32 @@
 import { COMPANY_CLASSIFICATION, COMPANY_ORGANIZATION } from './company-catalog.ts';
+import type { HrDepartment } from './types.ts';
+
+const GROUP_LABELS: Record<string, [string, string]> = {
+  injection: ['사출', '注塑'], quality: ['품질', '品质'], machining: ['가공', '加工'], sales: ['영업', '营业'],
+  materials: ['자재', '资材'], 'mold-maintenance': ['금형·공무', '模具/公务'], administration: ['관리부문', '管理部门'],
+};
+
+/** Department totals are distinct from the manager assignment stored at the group ID. */
+export function hrGroupLabel(id: string, sourceName: string | undefined, lang: string): string {
+  const canonical = COMPANY_CLASSIFICATION.nodes.find((node) => node.id === id);
+  const translated = GROUP_LABELS[id];
+  return translated && (!sourceName || sourceName === canonical?.name || sourceName === HR_CLASSIFICATION_KO[id])
+    ? translated[lang === 'ko' ? 0 : 1] : hrDepartmentLabel(id, sourceName, lang);
+}
+
+export function hrAssignmentPath(id: string, departments: HrDepartment[], lang: string): string {
+  const names: string[] = []; const seen = new Set<string>(); let next: string | null = id;
+  while (next !== null && !seen.has(next)) {
+    seen.add(next);
+    const node = departments.find((item) => item.id === next) ?? COMPANY_CLASSIFICATION.nodes.find((item) => item.id === next);
+    if (GROUP_LABELS[next]) {
+      names.unshift(lang === 'ko' ? (next === id ? '관리자' : '작업·실무') : (next === id ? '管理人员' : '作业·实务'));
+      names.unshift(hrGroupLabel(next, node?.name, lang));
+    } else names.unshift(hrDepartmentLabel(next, node?.name, lang));
+    next = node?.parent_id ?? null;
+  }
+  return names.join(' › ');
+}
 
 // Initial Korean wording. Keep translations separate from source names and stable IDs.
 export const HR_CLASSIFICATION_KO: Record<string, string> = {
@@ -13,7 +41,7 @@ export const HR_CLASSIFICATION_KO: Record<string, string> = {
   'injection-operator': '작업자',
   'injection-mold-change': '금형교체',
   'injection-5s': '5S 관리',
-  'injection-feeding': '재료투입·입고',
+  'injection-feeding': '투입·입고',
   machining: '가공관리',
   'machining-operator': '작업자',
   sales: '영업관리',

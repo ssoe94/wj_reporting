@@ -54,6 +54,30 @@ function totalAmount(total: GroupTotal): string | null {
   return total.missing > 0 ? null : centsToAmount(total.cents);
 }
 
+export type HrCostBucket = { count: number; amount: string | null; knownAmount: string; missingCount: number };
+export type HrDepartmentCostBreakdown = { management: HrCostBucket; operations: HrCostBucket; total: HrCostBucket };
+
+/** A group's direct assignments are managers; every descendant is work within that group. */
+export function getDepartmentCostBreakdowns(departments: HrDepartment[], employees: HrEmployee[], groupIds: string[]): Map<string, HrDepartmentCostBreakdown> {
+  validateAssignments(employees, departments);
+  const byId = new Map(departments.map((department) => [department.id, department]));
+  const empty = (): GroupTotal => ({ count: 0, cents: 0, missing: 0 });
+  const groups = new Map(groupIds.filter((id) => byId.has(id)).map((id) => [id, { management: empty(), operations: empty(), total: empty() }]));
+  for (const employee of employees) {
+    let id = employee.department_id;
+    while (id !== null) {
+      const group = groups.get(id);
+      if (group) {
+        addEmployee(group.total, employee);
+        addEmployee(employee.department_id === id ? group.management : group.operations, employee);
+      }
+      id = byId.get(id)!.parent_id;
+    }
+  }
+  const bucket = (value: GroupTotal): HrCostBucket => ({ count: value.count, amount: totalAmount(value), knownAmount: centsToAmount(value.cents), missingCount: value.missing });
+  return new Map([...groups].map(([id, value]) => [id, { management: bucket(value.management), operations: bucket(value.operations), total: bucket(value.total) }]));
+}
+
 /**
  * Draft-only preview for the affected root groups, including unassigned staff.
  * A null total means at least one employee's amount remains unentered.

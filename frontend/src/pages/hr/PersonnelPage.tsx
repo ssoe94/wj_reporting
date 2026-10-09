@@ -11,7 +11,7 @@ import HrCostRibbon from './HrCostRibbon';
 import { formatEmployeeCode } from '../../domains/hr/visualization';
 import { centsToAmount } from '../../domains/hr/import';
 import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
-import { hrDepartmentLabel } from '../../domains/hr/labels';
+import { hrAssignmentPath, hrDepartmentLabel } from '../../domains/hr/labels';
 import { HrLoadState, HrShell, HrSource, currentHrMonth, isHrConflict, layoutSummary, localHrError, money, safeHrError, useHrWorkspace } from './hrCommon';
 
 type LayoutDraft = { departments: HrDepartment[]; employees: HrEmployee[] };
@@ -144,7 +144,7 @@ export default function PersonnelPage() {
       const next = moveEmployee(draft.employees, code, target, draft.departments);
       setDraft({ ...draft, employees: next }); setSaveError('');
       const targetDepartment = draft.departments.find((item) => item.id === target);
-      const name = targetDepartment ? hrDepartmentLabel(targetDepartment.id, targetDepartment.name, lang) : (ko ? '미배치 명단' : '待配置名单');
+      const name = targetDepartment ? hrAssignmentPath(targetDepartment.id, departments, lang) : (ko ? '미배치 명단' : '待配置名单');
       setNotice(ko ? `${formatEmployeeCode(employee.code)} 사번을 ${name}(으)로 이동했습니다. 변경 저장이 필요합니다.` : `已将 ${formatEmployeeCode(employee.code)} 移至 ${name}，请保存更改。`);
     } catch (failure) { setSaveError(safeHrError(failure, ko ? '인원을 이동하지 못했습니다.' : '无法移动人员。')); }
   }

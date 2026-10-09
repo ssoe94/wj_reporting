@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatEmployeeCode, getEmployeeCodeCollisions, getMovePreview } from "../src/domains/hr/visualization.ts";
+import { formatEmployeeCode, getDepartmentCostBreakdowns, getEmployeeCodeCollisions, getMovePreview } from "../src/domains/hr/visualization.ts";
+import { moveEmployee } from "../src/domains/hr/layout.ts";
+import { hrAssignmentPath, hrGroupLabel } from "../src/domains/hr/labels.ts";
 import type { HrDepartment, HrEmployee } from "../src/domains/hr/types.ts";
 
 const departments: HrDepartment[] = [
@@ -142,4 +144,63 @@ test("frozen source objects and arrays are supported without mutation", () => {
   const units = departments.map((department) => Object.freeze({ ...department }));
   Object.freeze(staff); Object.freeze(units);
   assert.equal(getMovePreview(units, staff, "11", "sales-cs")!.employeeCode, "11");
+});
+
+test("department manager and work buckets partition direct and all descendant assignments exactly once", () => {
+  const nested = [...departments, { id: 'quality-cs-sub', name: '하위 작업', parent_id: 'quality-cs', function: '' }];
+  const staff = [...employees, { code: 'deep', name: '추가 직원', title: '관리자', amount: '10.05', department_id: 'quality-cs-sub' }];
+  const result = getDepartmentCostBreakdowns(nested, staff, ['quality', 'sales']).get('quality')!;
+  assert.deepEqual(result.management, { count: 1, amount: '0.20', knownAmount: '0.20', missingCount: 0 });
+  assert.deepEqual(result.operations, { count: 2, amount: '110.15', knownAmount: '110.15', missingCount: 0 });
+  assert.deepEqual(result.total, { count: 3, amount: '110.35', knownAmount: '110.35', missingCount: 0 });
+  assert.equal(staff[staff.length - 1].department_id, 'quality-cs-sub');
+});
+
+test("missing management cost does not make known work costs unknown, and vice versa", () => {
+  const managersMissing = employees.map((person) => person.code === '245' ? { ...person, amount: null } : person);
+  const first = getDepartmentCostBreakdowns(departments, managersMissing, ['quality']).get('quality')!;
+  assert.equal(first.management.amount, null);
+  assert.equal(first.operations.amount, '100.10');
+  assert.equal(first.total.amount, null);
+  const workersMissing = employees.map((person) => person.code === '11' ? { ...person, amount: null } : person);
+  const second = getDepartmentCostBreakdowns(departments, workersMissing, ['quality']).get('quality')!;
+  assert.equal(second.management.amount, '0.20');
+  assert.equal(second.operations.amount, null);
+  assert.equal(second.operations.missingCount, 1);
+});
+
+test("same-department manager-to-work moves change role costs while retaining department and company totals", () => {
+  const before = getDepartmentCostBreakdowns(departments, employees, ['quality']).get('quality')!;
+  const moved = moveEmployee(employees, '245', 'quality-cs', departments);
+  const after = getDepartmentCostBreakdowns(departments, moved, ['quality']).get('quality')!;
+  assert.deepEqual(after.management, { count: 0, amount: '0.00', knownAmount: '0.00', missingCount: 0 });
+  assert.equal(after.operations.amount, '100.30');
+  assert.deepEqual(after.total, before.total);
+  assert.deepEqual(getDepartmentCostBreakdowns(departments, moveEmployee(moved, '245', 'quality', departments), ['quality']).get('quality'), before);
+});
+
+test("unassigned and executive employees do not leak into department role totals; empty manager cells stay zero", () => {
+  const staff = [...employees, { code: 'exec', name: '경영', title: '', amount: '900.00', department_id: 'board-chairman' }];
+  const result = getDepartmentCostBreakdowns(departments, staff, ['quality', 'sales', 'missing']);
+  assert.equal(result.size, 2);
+  assert.equal(result.get('sales')!.management.amount, '0.00');
+  assert.equal(result.get('sales')!.total.amount, '200.25');
+  assert.equal(result.get('quality')!.total.amount, '100.30');
+});
+
+test("invalid assignment graphs reject role breakdowns instead of producing partial or looping totals", () => {
+  assert.throws(() => getDepartmentCostBreakdowns(departments, [...employees, employees[0]], ['quality']));
+  assert.throws(() => getDepartmentCostBreakdowns(departments, [{ ...employees[0], department_id: 'missing' }], ['quality']));
+  const cycle = departments.map((department) => department.id === 'quality' ? { ...department, parent_id: 'quality-cs' } : department);
+  assert.throws(() => getDepartmentCostBreakdowns(cycle, employees, ['quality']));
+});
+
+test("department totals and assignment paths distinguish manager placement from work without changing IDs", () => {
+  assert.equal(hrGroupLabel('injection', '注塑管理', 'ko'), '사출');
+  assert.equal(hrGroupLabel('injection', '注塑管理', 'zh'), '注塑');
+  assert.equal(hrAssignmentPath('injection', [], 'ko'), '사출 › 관리자');
+  assert.equal(hrAssignmentPath('injection-operator', [], 'ko'), '사출 › 작업·실무 › 작업자');
+  assert.equal(hrAssignmentPath('quality-cs', departments, 'ko'), '품질 › 작업·실무 › 고객대응');
+  assert.equal(hrAssignmentPath('sales-cs', departments, 'ko'), '영업 › 작업·실무 › 고객대응');
+  assert.equal(hrGroupLabel('injection', '사용자 수정 부서', 'ko'), '사용자 수정 부서');
 });

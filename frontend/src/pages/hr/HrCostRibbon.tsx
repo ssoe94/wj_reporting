@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useLang } from '../../i18n';
 import type { HrCurrency, HrDepartment, HrEmployee } from '../../domains/hr/types';
-import { hrDepartmentLabel } from '../../domains/hr/labels';
+import { hrGroupLabel } from '../../domains/hr/labels';
 import { compactMoney, layoutSummary } from './hrCommon';
 import './hr-cost-ribbon.css';
 
@@ -18,7 +18,7 @@ export default function HrCostRibbon({ departments, employees, currency, basis, 
     const ai = ORDER.indexOf(a.id); const bi = ORDER.indexOf(b.id);
     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
   });
-  const parts = roots.map((item, index) => ({ id: item.id, name: hrDepartmentLabel(item.id, item.name, lang), cents: summary.totals.get(item.id)?.total ?? null,
+  const parts = roots.map((item, index) => ({ id: item.id, name: hrGroupLabel(item.id, item.name, lang), cents: summary.totals.get(item.id)?.total ?? null,
     count: summary.totals.get(item.id)?.headcount ?? 0, color: COLORS[index % COLORS.length] }));
   if (summary.unassignedCount) parts.push({ id: '__unassigned', name: ko ? '미배치' : '待配置', cents: summary.unassigned, count: summary.unassignedCount, color: '#697584' });
   const visible = parts.filter((item) => item.count > 0);

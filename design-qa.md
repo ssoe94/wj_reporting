@@ -1171,3 +1171,27 @@ Remaining test limits: the pre-existing browser-native discard confirmation caus
 Implementation checklist: completed visual comparison, privacy/display changes, exact move previews, native move/save/reload, responsive fixes, affected tests and build. No actionable P0/P1/P2 visual findings remain in the inspected states. The feature remains local and un-deployed.
 
 final result: passed
+
+---
+
+# HR department / management / work hierarchy correction — 2026-10-09
+
+The user's latest clarification supersedes the earlier interpretation of management labels and the decision to hide empty management cells. The source means a department contains manager labor and separate worker/function labor. The selected option 3 remains the density/layout direction, but its prior labels are not the semantic authority.
+
+Implemented hierarchy: neutral department header and whole-department total → always-visible manager assignment cell plus work subtotal → individual work functions. Parent headers and work subtotals are roster controls, never drop targets. The existing group ID remains the manager assignment key; descendants comprise work, including additional nested functions. No employee is reclassified from their job title and no persisted IDs or schema changed. Import previews, move notices, destination paths and the cost ribbon use the same distinction.
+
+Cost proof with disposable synthetic data: native drag moved original code `1` / display `00001` from injection operator to injection manager, then save/reload retained it. Department total stayed 28 people / 216,000 CNY; managers became 1 / 7,200 and work became 27 / 208,800. Company total stayed 67 / 536,000. A reverse move preview showed manager 1→0 and 7,200→0, work 27→28 and 208,800→216,000, with unchanged department/company totals. It was closed without applying. The work-only roster contains 27 people and excludes 00001. Cost-page role table matches these figures and its board has no movement handles.
+
+Evidence under `docs/reviews/assets/hr-labor-cost-20261009/hierarchy/`:
+- `personnel-desktop.png`: final allocation hierarchy, 1920×1200 CSS / 1921×1200 raster.
+- `cost-desktop.png`: read-only hierarchy and role composition, same dimensions.
+- `personnel-mobile.png`: 390×843 CSS / 390×844 raster, single-column hierarchy without document horizontal overflow.
+- `same-department-preview.png`: manager/work before-and-after values for a same-department move.
+
+Visual findings: the first hierarchy revision pushed the personnel dock 22px below the tested desktop viewport. Compact function padding, two code chips plus the remainder count, and the short Korean feeding label corrected this; final board bottom was 990px and dock bottom 1193px. Department, manager and work totals stay distinct through nesting, restrained blue surfaces and a manager/work composition strip. Empty manager cells remain available. Korean and Chinese paths were checked; all displayed identities remain codes by default. Fresh preview console error log was empty.
+
+Checks: 42 HR frontend tests passed, including six added tests for role partitioning, deeper descendants, same-department moves, independent missing costs, invalid graphs and stable assignment paths. Changed-file ESLint, full TypeScript/Vite/legacy build and whitespace checks passed. Existing large-chunk build warning remains. Independent read-only code review found no numeric duplication or destination-key issue.
+
+This is local implementation and synthetic browser verification only. No backend, permissions, migrations, production data or deployment were changed. Existing real-file reconciliation, physical-device and production acceptance limits remain. No actionable hierarchy defect remains in the inspected states.
+
+final result: passed
