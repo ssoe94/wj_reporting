@@ -5,12 +5,13 @@ import { selectBoardInspection } from '../injection-quality-binding';
 import { boardPartQueryOptions } from "../board-part-api";
 import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch";
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
 import { getBoardCycleTime, getBoardTone, isMesDataReadyForBusinessDate, type BoardTone } from "@/domains/production/board-machine-status";
 import { needsFieldPartNoReview } from "@/domains/production/injection-transition-analysis";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
@@ -801,58 +802,6 @@ type TimelineTooltip = {
   detail: string;
   product?: string;
 };
-
-const MARQUEE_GAP_PX = 40;
-const MARQUEE_SPEED_PX_PER_SEC = 32;
-
-/**
- * Keeps the card frame fixed. When the content is wider than its line, it flows
- * right-to-left as a seamless loop instead of being cut off; the copy used for
- * the loop is inert so buttons are not duplicated for keyboard or screen readers.
- * With reduced motion the line stays still and the model name is shortened.
- */
-function MarqueeLine({ className, title, watch, children }: {
-  className: string;
-  title?: string;
-  watch: string;
-  children: ReactNode;
-}) {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [shift, setShift] = useState(0);
-
-  useLayoutEffect(() => {
-    const frame = frameRef.current;
-    const content = contentRef.current;
-    if (!frame || !content) return undefined;
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    const measure = () => {
-      const overflow = content.scrollWidth - frame.clientWidth;
-      setShift(!reduced?.matches && overflow > 1 ? content.scrollWidth + MARQUEE_GAP_PX : 0);
-    };
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    observer?.observe(frame);
-    observer?.observe(content);
-    reduced?.addEventListener?.("change", measure);
-    return () => {
-      observer?.disconnect();
-      reduced?.removeEventListener?.("change", measure);
-    };
-  }, [watch]);
-
-  const style = shift
-    ? { "--marquee-shift": `${shift}px`, "--marquee-duration": `${Math.max(6, shift / MARQUEE_SPEED_PX_PER_SEC).toFixed(1)}s` } as CSSProperties
-    : undefined;
-  return (
-    <div className={`${className} injection-board-marquee${shift ? " is-flowing" : ""}`} ref={frameRef} title={title}>
-      <div className="injection-board-marquee__track" style={style}>
-        <div className="injection-board-marquee__content" ref={contentRef}>{children}</div>
-        {shift ? <div aria-hidden="true" className="injection-board-marquee__content" inert>{children}</div> : null}
-      </div>
-    </div>
-  );
-}
 
 const TIMELINE_TICK_HOURS = [4, 8, 12, 16, 20];
 /** Sporadic setup or test shots do not make an unplanned machine "producing", so no stop hatching. */

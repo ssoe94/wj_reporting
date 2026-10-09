@@ -6,14 +6,12 @@ import {
   BadgeCheck,
   Boxes,
   Clock3,
-  Database,
   Expand,
   FileText,
   History,
   Info,
   LayoutGrid,
   ListFilter,
-  Map as MapIcon,
   MapPin,
   Maximize2,
   Minimize2,
@@ -71,19 +69,24 @@ import {
   mergedActivityBasis,
   normalizedModelCode,
 } from "@/domains/moulds/machine-plan-comparison";
+import { MachineGlyph } from "@/domains/moulds/components/MachineGlyph";
+import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import styles from "./MouldManagementPage.module.css";
 
 const USE_REMOTE_MOULD_API_IN_DEVELOPMENT = import.meta.env.VITE_USE_REMOTE_MOULD_API === "true";
 
 const COPY = {
   ko: {
-    eyebrow: "사출 금형 관리",
+    eyebrow: "MOULD LIVE BOARD",
     title: "금형 실시간 현황판",
     description: "장착 설비와 A/B/C/S 보관 위치를 한 화면에서 확인합니다.",
     search: "금형 검색",
     searchPlaceholder: "금형 코드, 금형명, 모델, 위치 검색",
     filter: "상태 필터",
     finalChangedAt: "최종 변경 시각",
+    screenRefreshed: "화면 갱신",
+    staleShort: "지연",
+    clearSelection: "선택 해제",
     refresh: "위치 빠른 새로고침",
     loading: "금형 현황을 불러오는 중입니다.",
     loadError: "MES API를 불러오지 못했습니다. API 권한과 서버 연결 상태를 확인해주세요.",
@@ -184,13 +187,20 @@ const COPY = {
     noTimestamp: "시각 미확인",
     storageInventory: "보관 인벤토리",
     storageHint: "A/B/C/S 좌표는 MES 위치 마스터를 기준으로 표시합니다.",
-    coordinateGuide: "좌표 안내",
     focusZone: "존 확대",
     overviewMode: "전체 배치",
     touchHint: "존을 확대하면 터치 셀이 커집니다.",
     zoneOverview: "구역 요약",
     zoneOverviewHint: "A/B/C/S 구역을 선택하면 좌표 배치가 확대됩니다.",
     emptyCells: "빈 좌표",
+    emptyCellsShort: "빈 칸",
+    unusedSixShort: "6개월+ 미사용",
+    unusedTwelveShort: "12개월+ 미사용",
+    legendStored: "보관 중",
+    legendTitle: "격자 색 안내",
+    idleInsight: "6개월 이상 미사용 {count}개 · 보관 금형의 {rate}%",
+    idleInsightAction: "이관 검토",
+    reviewMore: "{first} 외 {rest}칸",
     searchResults: "검색 결과",
     noCoordinateMatch: "일치 좌표 없음",
     dragZoneHint: "드래그하여 이동",
@@ -198,7 +208,6 @@ const COPY = {
     sZoneHint: "별도 보관 위치를 확대해 확인합니다.",
     storedCount: "보관",
     occupiedCells: "사용 좌표",
-    occupancyRate: "보관 점유율",
     mouldRecords: "금형",
     dataIssues: "데이터 이슈",
     duplicateLocations: "중복 좌표",
@@ -293,13 +302,16 @@ const COPY = {
     machineStoppedState: "비가동",
   },
   zh: {
-    eyebrow: "注塑模具管理",
+    eyebrow: "MOULD LIVE BOARD",
     title: "模具实时看板",
     description: "在一个屏幕上查看安装设备及 A/B/C/S 存放位置。",
     search: "搜索模具",
     searchPlaceholder: "搜索模具编号、名称、型号或位置",
     filter: "状态筛选",
     finalChangedAt: "最后变更时间",
+    screenRefreshed: "画面刷新",
+    staleShort: "延迟",
+    clearSelection: "取消选择",
     refresh: "快速刷新位置",
     loading: "正在加载模具现状。",
     loadError: "MES API 暂不可用，请检查 API 权限和服务器连接。",
@@ -400,13 +412,20 @@ const COPY = {
     noTimestamp: "时间未确认",
     storageInventory: "存放位置",
     storageHint: "A/B/C/S 坐标基于 MES 位置主数据。",
-    coordinateGuide: "坐标说明",
     focusZone: "放大区域",
     overviewMode: "全部布局",
     touchHint: "放大区域后可使用更大的触控单元格。",
     zoneOverview: "区域概览",
     zoneOverviewHint: "选择 A/B/C/S 区域后查看放大坐标。",
     emptyCells: "空坐标",
+    emptyCellsShort: "空位",
+    unusedSixShort: "闲置6个月+",
+    unusedTwelveShort: "闲置12个月+",
+    legendStored: "存放中",
+    legendTitle: "格子颜色说明",
+    idleInsight: "闲置6个月以上 {count}个 · 占存放模具 {rate}%",
+    idleInsightAction: "建议评估移库",
+    reviewMore: "{first} 等{total}处",
     searchResults: "搜索结果",
     noCoordinateMatch: "无匹配坐标",
     dragZoneHint: "拖动查看",
@@ -414,7 +433,6 @@ const COPY = {
     sZoneHint: "放大查看独立存放位置。",
     storedCount: "存放",
     occupiedCells: "已用坐标",
-    occupancyRate: "库位占用率",
     mouldRecords: "模具",
     dataIssues: "数据问题",
     duplicateLocations: "重复坐标",
@@ -845,6 +863,15 @@ function validationLabel(validation: ModelValidation, copy: Copy) {
   }[validation];
 }
 
+function fillTemplate(template: string, values: Record<string, string | number>) {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
+}
+
+function reviewCoordinateText(coordinates: string[], copy: Copy) {
+  if (coordinates.length <= 2) return coordinates.join(", ");
+  return fillTemplate(copy.reviewMore, { first: coordinates[0], rest: coordinates.length - 1, total: coordinates.length });
+}
+
 const MACHINE_STATUS_TONE_ORDER: MachineStatusTone[] = ["match", "check", "mismatch", "idle"];
 
 function statusToneLabel(tone: MachineStatusTone, copy: Copy) {
@@ -865,31 +892,6 @@ function statusToneClass(tone: MachineStatusTone) {
     idle: styles.toneIdle,
     loading: styles.toneLoading,
   }[tone];
-}
-
-// Long MES models carry a colour/spec suffix after the first dot; show it on its own line.
-function splitModelCode(model: string): [string, string] {
-  const dot = model.indexOf(".");
-  return dot >= 3 && dot < model.length - 1 ? [model.slice(0, dot), model.slice(dot)] : [model, ""];
-}
-
-function MachineGlyph() {
-  return (
-    <svg aria-hidden="true" className={styles.machineGlyph} viewBox="0 0 64 44">
-      <rect className={styles.machineGlyphShade} height="5" rx="1.5" width="60" x="2" y="35" />
-      <rect height="4" rx="1" width="6" x="6" y="39" />
-      <rect height="4" rx="1" width="6" x="52" y="39" />
-      <rect height="22" rx="2" width="6" x="4" y="12" />
-      <rect height="22" rx="2" width="5" x="21" y="12" />
-      <rect className={styles.machineGlyphShade} height="2" width="13" x="9" y="15" />
-      <rect className={styles.machineGlyphShade} height="2" width="13" x="9" y="29" />
-      <rect className={styles.machineGlyphMould} height="14" rx="1" width="9" x="11" y="16" />
-      <path d="M26 21 L30 19 L30 27 L26 25 Z" />
-      <rect height="10" rx="2.5" width="30" x="30" y="18" />
-      <path d="M41 6 H53 L50 18 H44 Z" />
-      <rect className={styles.machineGlyphShade} height="7" rx="1" width="10" x="46" y="28" />
-    </svg>
-  );
 }
 
 function validationClass(validation: ModelValidation) {
@@ -1312,6 +1314,25 @@ function number(value: number | null | undefined, language: "ko" | "zh") {
   return new Intl.NumberFormat(language === "ko" ? "ko-KR" : "zh-CN").format(value);
 }
 
+function shortDateTime(value: string | null | undefined, fallback: string) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function shortTime(epochMs: number) {
+  return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Shanghai" }).format(new Date(epochMs));
+}
+
 function dateTime(value: string | null | undefined, language: "ko" | "zh", fallback: string) {
   if (!value) return fallback;
   const date = new Date(value);
@@ -1631,6 +1652,7 @@ export function MouldManagementPage() {
   const [filter, setFilter] = useState<ViewFilter>("all");
   const [machineViewMode, setMachineViewMode] = useState<MachineViewMode>(readMachineViewMode);
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
+  const [selectionPinned, setSelectionPinned] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("movement");
   const [detailOpen, setDetailOpen] = useState(false);
   const [statusListOpen, setStatusListOpen] = useState(false);
@@ -1711,6 +1733,7 @@ export function MouldManagementPage() {
   });
   const usingFallback = developmentFallback;
   const board = usingFallback ? FALLBACK_MOULD_BOARD : boardQuery.data;
+  const dataStateLabel = usingFallback ? copy.fallbackBadge : board?.dataFreshness.stale ? copy.staleBadge : copy.liveBadge;
   const fallbackProductionLinks = useMemo(
     () => buildFallbackMachineProductionLinks(usingFallback ? board : undefined),
     [board, usingFallback],
@@ -1885,6 +1908,7 @@ export function MouldManagementPage() {
       let inactiveSix = 0;
       let inactiveTwelve = 0;
       const matchingCoordinates: string[] = [];
+      const reviewCoordinates: string[] = [];
       let matchingMoulds = 0;
 
       cells.forEach(({ location }) => {
@@ -1895,7 +1919,10 @@ export function MouldManagementPage() {
         if (recordCount > 0) occupied += 1;
         mouldRecords += recordCount;
         if ((records?.length ?? 0) > 1) conflicts += 1;
-        if (records?.some((mould) => mould.confirmationRequired)) reviewDue += 1;
+        if (records?.some((mould) => mould.confirmationRequired)) {
+          reviewDue += 1;
+          reviewCoordinates.push(location.code);
+        }
         if (search.trim() && matchingRecords.length) {
           matchingCoordinates.push(location.code);
           matchingMoulds += matchingRecords.length;
@@ -1918,8 +1945,10 @@ export function MouldManagementPage() {
         empty: Math.max(0, cells.length - occupied),
         conflicts,
         reviewDue,
+        reviewCoordinates,
         inactiveSix,
         inactiveTwelve,
+        idleRate: mouldRecords ? Math.round(((inactiveSix + inactiveTwelve) / mouldRecords) * 100) : 0,
         fillRate: cells.length ? Math.round((occupied / cells.length) * 100) : 0,
         matchingCoordinates,
         matchingMoulds,
@@ -2068,7 +2097,7 @@ export function MouldManagementPage() {
       runState,
       recommendations,
       visible,
-      selected: mountedMoulds.some((item) => item.instanceId === selectedInstanceId),
+      selected: selectionPinned && mountedMoulds.some((item) => item.instanceId === selectedInstanceId),
     };
   });
   const machineToneCounts = machineOverviewItems.reduce<Record<MachineStatusTone, number>>(
@@ -2095,6 +2124,7 @@ export function MouldManagementPage() {
 
   const selectMould = (instanceId: string) => {
     setSelectedInstanceId(instanceId);
+    setSelectionPinned(true);
     setStatusListOpen(false);
     setVerificationMachineNumber(null);
     setConflictListOpen(false);
@@ -2198,13 +2228,20 @@ export function MouldManagementPage() {
             <span className={styles.srOnly}>{copy.search}</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.searchPlaceholder} type="search" />
           </label>
-          <div className={styles.freshness}>
-            <Clock3 aria-hidden="true" size={18} />
-            <span><small>{copy.finalChangedAt}</small><strong>{dateTime(finalChangedAt, language, copy.noTimestamp)}</strong></span>
+          <div className={`${styles.metaBox} ${styles.metaChanged}`}>
+            <span>{copy.finalChangedAt}</span>
+            <strong>{shortDateTime(finalChangedAt, copy.noTimestamp)}</strong>
           </div>
-          <span className={styles.autoRefresh}>{copy.autoRefresh}</span>
+          <div className={styles.metaBox} title={`${dataStateLabel} · ${copy.autoRefresh}`}>
+            <span>
+              {copy.screenRefreshed}
+              <i aria-label={dataStateLabel} className={usingFallback ? styles.fallbackDot : board?.dataFreshness.stale ? styles.staleDot : styles.liveDot} role="img" />
+              {board?.dataFreshness.stale && !usingFallback ? <em>{copy.staleShort}</em> : null}
+            </span>
+            <strong>{boardQuery.dataUpdatedAt ? shortTime(boardQuery.dataUpdatedAt) : "-"}</strong>
+          </div>
           <div className={styles.languageSwitch} aria-label="Language">
-            <button aria-pressed={language === "ko"} className={language === "ko" ? styles.languageActive : ""} onClick={() => setLanguage("ko")} type="button">KOR</button>
+            <button aria-pressed={language === "ko"} className={language === "ko" ? styles.languageActive : ""} onClick={() => setLanguage("ko")} type="button">한국어</button>
             <button aria-pressed={language === "zh"} className={language === "zh" ? styles.languageActive : ""} onClick={() => setLanguage("zh")} type="button">中文</button>
           </div>
           <button
@@ -2238,18 +2275,17 @@ export function MouldManagementPage() {
           ))}
         </div>
         <div className={styles.boardStatus}>
-          {selectedDetail && visibleIds.has(selectedDetail.instanceId) ? (
-            <button className={styles.selectedPeek} onClick={() => setDetailOpen(true)} title={copy.openSelected} type="button">
-              <small>{copy.selectedMould}</small><strong>{selectedDetail.mouldCode}</strong><span>{displayLocation(selectedDetail)}</span>
-            </button>
-          ) : null}
-          <div className={styles.dataState}>
-            <Database aria-hidden="true" size={17} />
-            <span className={usingFallback ? styles.fallbackBadge : board?.dataFreshness.stale ? styles.staleBadge : styles.liveBadge}>
-              {usingFallback ? copy.fallbackBadge : board?.dataFreshness.stale ? copy.staleBadge : copy.liveBadge}
+          {usingFallback ? <small>{copy.fallbackNotice}</small> : null}
+          {selectionPinned && selectedDetail && visibleIds.has(selectedDetail.instanceId) ? (
+            <span className={styles.selectedPeek}>
+              <button onClick={() => setDetailOpen(true)} title={copy.openSelected} type="button">
+                <small>{copy.selectedMould}</small><strong>{selectedDetail.mouldCode}</strong><span>{displayLocation(selectedDetail)}</span>
+              </button>
+              <button aria-label={copy.clearSelection} onClick={() => setSelectionPinned(false)} title={copy.clearSelection} type="button">
+                <X aria-hidden="true" size={16} />
+              </button>
             </span>
-            {usingFallback ? <small>{copy.fallbackNotice}</small> : null}
-          </div>
+          ) : null}
         </div>
       </div>
 
@@ -2281,8 +2317,15 @@ export function MouldManagementPage() {
             </div>
             {machineViewMode === "graphic" ? (
               <div className={styles.machineGraphicGrid}>
-                {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, statusTone, runState, activeProductionModel, productionModelLabel, productionModelCaption, recommendations, visible, selected }) => {
-                  const [modelHead, modelTail] = splitModelCode(activeProductionModel);
+                {machineOverviewItems.map(({ machine, mountedMoulds, productionLink, validation, statusTone, runState, activeProductionModel, productionModelLabel, productionModelCaption, recommendations, visible, selected }) => {
+                  const partNumbers = productionLink?.partNos.filter((partNo) => partNo && partNo !== "-").join(" · ") ?? "";
+                  const cavityCaption = productionLink?.mode === "multi_cavity" && activeProductionModel !== "-"
+                    ? `${productionLink.partNos.length} ${copy.partCount} · ${copy.cavityProduction}` : "";
+                  const modelLine = [productionModelCaption, cavityCaption, activeProductionModel, partNumbers].filter(Boolean).join(" · ");
+                  const mountedLine = mountedMoulds.map((item) => item.mouldCode).join(" · ") || "-";
+                  const mouldLine = recommendations.length
+                    ? `${mountedLine} · ${copy.recommendedLocation} ${recommendations.map((item) => `${item.mould.mouldCode} ${displayLocation(item.mould)}`).join(" · ")}`
+                    : mountedLine;
                   const runLabel = runState === "running" ? copy.machineRunningState : runState === "stopped" ? copy.machineStoppedState : "";
                   return (
                     <button
@@ -2297,27 +2340,18 @@ export function MouldManagementPage() {
                       <strong className={styles.machineGraphicTitle}>{machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}</strong>
                       <span className={styles.machineGraphicBody}>
                         <span className={styles.machineGraphicArt} title={runLabel || undefined}>
-                          <MachineGlyph />
+                          <MachineGlyph className={styles.machineGlyph} />
                           <i className={`${styles.machineToneBadge} ${statusToneClass(statusTone)}`} title={validationLabel(validation, copy)}>{statusToneLabel(statusTone, copy)}</i>
                         </span>
                         <span className={styles.machineGraphicInfo}>
-                          {productionModelCaption ? <small>{productionModelCaption}</small> : null}
-                          <strong title={activeProductionModel === "-" ? undefined : activeProductionModel}>
-                            {modelHead}{modelTail ? <span>{modelTail}</span> : null}
-                          </strong>
-                          {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? (
-                            <em>{productionLink.partNos.length} {copy.partCount} · {copy.cavityProduction}</em>
-                          ) : null}
-                          <b>{mountedMoulds.length > 1 ? `${copy.shortConflict} ${mountedMoulds.length}${copy.listCount}` : mounted?.mouldCode || "-"}</b>
+                          <MarqueeLine className={styles.machineModelLine} title={modelLine === "-" ? undefined : modelLine} watch={modelLine}>
+                            <strong>{modelLine}</strong>
+                          </MarqueeLine>
+                          <MarqueeLine className={styles.machineMouldLine} title={mouldLine} watch={mouldLine}>
+                            <b>{mouldLine}</b>
+                          </MarqueeLine>
                         </span>
                       </span>
-                      {recommendations.length ? (
-                        <span className={styles.machineRecommendationLine}>
-                          <small>{copy.recommendedLocation}</small>
-                          <strong>{recommendations.length === 1 ? recommendations[0].mould.mouldCode : `${recommendations.length}${copy.listCount}`}</strong>
-                          <em title={recommendations.map((item) => displayLocation(item.mould)).join(" · ")}>{recommendationLocationText(recommendations)}</em>
-                        </span>
-                      ) : null}
                     </button>
                   );
                 })}
@@ -2370,19 +2404,11 @@ export function MouldManagementPage() {
           <section className={styles.storagePanel} aria-labelledby="mould-storage-title">
             <div className={styles.panelHeader}>
               <div><p>{copy.stored}</p><h2 id="mould-storage-title">{copy.storageInventory}</h2><span>{copy.touchHint}</span></div>
-              <div className={styles.cellLegend}>
-                {storageConflictGroups.length || unmappedStorageMoulds.length ? (
-                  <button className={styles.panelIssueButton} onClick={() => openConflictList()} type="button">
-                    <AlertTriangle aria-hidden="true" size={16} />{copy.dataIssues}<strong>{storageConflictGroups.length + unmappedStorageMoulds.length}</strong>
-                  </button>
-                ) : null}
-                <span className={styles.coordinateGuide}><MapIcon aria-hidden="true" size={18} />{copy.coordinateGuide}</span>
-                <span><i className={styles.legendUsage} />{copy.usageLegend}</span>
-                {visibleStorageConflictCount ? <span><i className={styles.legendConflict} />{copy.duplicateLocations}</span> : null}
-                <span className={styles.inactivityLegendIntro}><strong>{copy.inactivityLegend}</strong><small>{copy.inactivityBasis}</small></span>
-                <span><i className={styles.legendInactiveSix} />{copy.unusedSixMonths}</span>
-                <span><i className={styles.legendInactiveTwelve} />{copy.unusedTwelveMonths}</span>
-              </div>
+              {storageConflictGroups.length || unmappedStorageMoulds.length ? (
+                <button className={styles.panelIssueButton} onClick={() => openConflictList()} type="button">
+                  <AlertTriangle aria-hidden="true" size={16} />{copy.dataIssues}<strong>{storageConflictGroups.length + unmappedStorageMoulds.length}</strong>
+                </button>
+              ) : null}
             </div>
             <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : styles.zoneListOverview}`}>
               {!focusedZone ? (
@@ -2409,36 +2435,31 @@ export function MouldManagementPage() {
                           onClick={() => setFocusedZone(zone.code)}
                           style={{
                             "--zone-fill-rate": `${summary.fillRate}%`,
+                            "--zone-preview-columns": summary.previewColumnCount,
+                            "--zone-preview-rows": Math.ceil(summary.previewCells.length / Math.max(1, summary.previewColumnCount)),
                           } as CSSProperties}
                           type="button"
                         >
-                          <span className={styles.zoneSummaryTopline}>
-                            <span className={styles.zoneSummaryIdentity}>
-                              <span className={styles.zoneSummaryMonogram}>{zone.code}</span>
-                              <span>
+                          <span className={styles.zoneSummaryLayout}>
+                            <span className={styles.zoneSummaryTopline}>
+                              <span className={styles.zoneSummaryIdentity}>
+                                <span className={styles.zoneSummaryMonogram}>{zone.code}</span>
                                 <strong>{zoneLabel}</strong>
-                                <small>{copy.occupiedCells} {summary.occupied}/{summary.capacity}</small>
                               </span>
-                            </span>
-                            <span className={styles.zoneSummaryControls}>
-                              {summary.reviewDue ? (
-                                <span className={styles.zoneSummaryAlert} title={copy.usageLegend}>
-                                  <AlertTriangle aria-hidden="true" size={15} />
-                                  {copy.checkpointCells} <strong>{summary.reviewDue}{copy.coordinateUnit}</strong>
+                              <span className={styles.zoneSummaryControls}>
+                                {summary.reviewCoordinates.length ? (
+                                  <span className={styles.zoneSummaryAlert} title={`${copy.usageLegend}: ${summary.reviewCoordinates.join(", ")}`}>
+                                    <AlertTriangle aria-hidden="true" size={15} />
+                                    {copy.checkpointCells} <strong>{reviewCoordinateText(summary.reviewCoordinates, copy)}</strong>
+                                  </span>
+                                ) : null}
+                                <span className={styles.zoneSummaryAction}>
+                                  <Expand aria-hidden="true" size={18} />
                                 </span>
-                              ) : null}
-                              <span className={styles.zoneSummaryAction}>
-                                <Expand aria-hidden="true" size={18} />
                               </span>
                             </span>
-                          </span>
 
-                          <span className={styles.zoneSummaryVisual}>
-                            <span
-                              aria-hidden="true"
-                              className={styles.zonePreviewMap}
-                              style={{ "--zone-preview-columns": summary.previewColumnCount } as CSSProperties}
-                            >
+                            <span aria-hidden="true" className={styles.zonePreviewMap}>
                               {summary.previewCells.map((cell) => {
                                 const { location } = cell;
                                 const records = mouldsByLocation.get(locationGroupKey(location));
@@ -2456,36 +2477,37 @@ export function MouldManagementPage() {
                                 );
                               })}
                             </span>
-                            <span className={styles.zoneSummaryOccupancy}>
-                              <strong>{summary.fillRate}%</strong>
-                              <small>{zone.code === "C" ? copy.occupancyRate : `${summary.occupied}/${summary.capacity}`}</small>
-                              <span aria-hidden="true"><i /></span>
-                            </span>
-                          </span>
 
-                          <span className={styles.zoneSummaryMetrics}>
-                            <span><small>{copy.occupiedCells}</small><strong>{summary.occupied}<span className={styles.zoneMetricDenominator}>/{summary.capacity}</span></strong></span>
-                            <span><small>{copy.mouldRecords}</small><strong>{summary.mouldRecords}</strong></span>
-                            <span><small>{copy.emptyCells}</small><strong>{summary.empty}</strong></span>
-                            <span><small>{copy.conflictCount}</small><strong>{summary.conflicts}</strong></span>
+                            <span className={styles.zoneSummaryStats}>
+                              <span className={styles.zoneSummaryOccupancy}>
+                                <strong>{summary.fillRate}%</strong>
+                                <small>{summary.occupied}/{summary.capacity}</small>
+                                <span aria-hidden="true"><i /></span>
+                              </span>
+                              <span className={styles.zoneSummaryMetrics}>
+                                <span><small>{copy.emptyCellsShort}</small><strong>{summary.empty}</strong></span>
+                                <span><small>{copy.unusedSixShort}</small><strong>{summary.inactiveSix + summary.inactiveTwelve}</strong></span>
+                                <span><small>{copy.unusedTwelveShort}</small><strong>{summary.inactiveTwelve}</strong></span>
+                                {summary.conflicts ? <span className={styles.zoneMetricConflict}><small>{copy.conflictCount}</small><strong>{summary.conflicts}</strong></span> : null}
+                              </span>
+                            </span>
+                            {searchActive ? (
+                              <span className={`${styles.zoneSearchResult} ${hasSearchMatch ? styles.zoneSearchResultMatched : ""}`}>
+                                <span><Search aria-hidden="true" size={15} /><strong>{copy.searchResults}</strong><b>{summary.matchingMoulds}{copy.listCount}</b></span>
+                                {hasSearchMatch ? (
+                                  <span className={styles.zoneSearchCoordinates}>
+                                    {displayedCoordinates.map((coordinate) => <i key={coordinate}>{coordinate}</i>)}
+                                    {remainingCoordinates > 0 ? <i>+{remainingCoordinates}</i> : null}
+                                  </span>
+                                ) : <small>{copy.noCoordinateMatch}</small>}
+                              </span>
+                            ) : summary.mouldRecords ? (
+                              <span className={`${styles.zoneSummaryInsight} ${summary.inactiveSix + summary.inactiveTwelve > 0 ? styles.zoneSummaryInsightAction : ""}`}>
+                                {fillTemplate(copy.idleInsight, { count: summary.inactiveSix + summary.inactiveTwelve, rate: summary.idleRate })}
+                                {summary.inactiveSix + summary.inactiveTwelve > 0 ? <b> · {copy.idleInsightAction}</b> : null}
+                              </span>
+                            ) : null}
                           </span>
-
-                          {searchActive ? (
-                            <span className={`${styles.zoneSearchResult} ${hasSearchMatch ? styles.zoneSearchResultMatched : ""}`}>
-                              <span><Search aria-hidden="true" size={15} /><strong>{copy.searchResults}</strong><b>{summary.matchingMoulds}{copy.listCount}</b></span>
-                              {hasSearchMatch ? (
-                                <span className={styles.zoneSearchCoordinates}>
-                                  {displayedCoordinates.map((coordinate) => <i key={coordinate}>{coordinate}</i>)}
-                                  {remainingCoordinates > 0 ? <i>+{remainingCoordinates}</i> : null}
-                                </span>
-                              ) : <small>{copy.noCoordinateMatch}</small>}
-                            </span>
-                          ) : (
-                            <span className={styles.zoneSummaryAges}>
-                              <span><i className={styles.zoneAgeSix} /><span className={styles.zoneSummaryAgeLabel}>{copy.unusedSixMonths}</span><strong>{summary.inactiveSix}</strong></span>
-                              <span><i className={styles.zoneAgeTwelve} /><span className={styles.zoneSummaryAgeLabel}>{copy.unusedTwelveMonths}</span><strong>{summary.inactiveTwelve}</strong></span>
-                            </span>
-                          )}
                         </button>
                       );
                     })}
@@ -2542,7 +2564,7 @@ export function MouldManagementPage() {
                             {row.cells.map(({ location }) => {
                               const occupants = mouldsByLocation.get(locationGroupKey(location)) ?? [];
                               const occupant = occupants[0];
-                              const selected = occupants.some((item) => item.instanceId === selectedInstanceId);
+                              const selected = selectionPinned && occupants.some((item) => item.instanceId === selectedInstanceId);
                               const visible = occupants.length ? occupants.some((item) => visibleIds.has(item.instanceId)) : filter === "all" && !search.trim();
                               const conflict = occupants.length > 1;
                               const occupantCodes = occupants.map((item) => item.mouldCode).join(", ");
@@ -2596,6 +2618,15 @@ export function MouldManagementPage() {
                   </section>
                 );
               }) : <div className={styles.emptyState}><MapPin aria-hidden="true" size={20} />{copy.noLayout}</div>}
+            </div>
+            <div aria-label={copy.legendTitle} className={styles.storageLegend} role="note">
+              <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewOccupied}`} />{copy.legendStored}</span>
+              <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewInactiveSix}`} />{copy.unusedSixMonths}</span>
+              <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewInactiveTwelve}`} />{copy.unusedTwelveMonths}</span>
+              <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewEmpty}`} />{copy.emptyCells}</span>
+              <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewAlert}`} />{copy.usageLegend}</span>
+              {visibleStorageConflictCount ? <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewConflict}`} />{copy.duplicateLocations}</span> : null}
+              <small>{copy.inactivityLegend} · {copy.inactivityBasis}</small>
             </div>
           </section>
         </div>

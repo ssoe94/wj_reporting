@@ -9736,47 +9736,18 @@ select {
 }
 
 /* Part line: fixed frame; long content flows right-to-left (see MarqueeLine). */
-.injection-board-card__part.injection-board-marquee {
+.injection-board-card__part.marquee-line {
   display: block;
 }
 
-.injection-board-marquee__track {
-  display: flex;
-  gap: 40px;
-  width: max-content;
-}
-
-.injection-board-marquee__content {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.injection-board-card__part .injection-board-marquee__content > * {
+.injection-board-card__part .marquee-line__content > * {
   flex: 0 0 auto;
   overflow: visible;
   text-overflow: clip;
 }
 
-.injection-board-marquee.is-flowing .injection-board-marquee__track {
-  animation: injection-board-marquee var(--marquee-duration, 10s) linear infinite;
-}
-
-.injection-board-marquee.is-flowing:hover .injection-board-marquee__track,
-.injection-board-marquee.is-flowing:focus-within .injection-board-marquee__track {
-  animation-play-state: paused;
-}
-
-@keyframes injection-board-marquee {
-  0%, 12% { transform: translateX(0); }
-  100% { transform: translateX(calc(-1 * var(--marquee-shift, 0px))); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .injection-board-marquee__track { width: 100%; }
-  .injection-board-marquee__content { max-width: 100%; min-width: 0; }
-  .injection-board-card__part .injection-board-marquee__content > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .injection-board-card__part .marquee-line__content > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
 
 .injection-board-card__metrics {
