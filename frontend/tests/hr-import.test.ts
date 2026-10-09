@@ -33,7 +33,7 @@ test("mapped import preserves formatted employee codes and normalizes one explic
 test("header selection is explicit and only unique recognized headers are suggested", () => {
   const sheet = { name: "工资", rows: [["2026年9月"], ["工号", "姓名", "岗位", "人工成本"]] };
   const columns = getHeaderColumns(sheet, 1);
-  assert.deepEqual(suggestColumnMapping(columns), { code: 0, name: 1, title: 2, amount: 3 });
+  assert.deepEqual(suggestColumnMapping(columns), { code: 0, name: 1, title: 2, amount: 3, period: null, source_department: null, classification_group: null, classification_function: null, classification_code: null });
   assert.deepEqual(parseMappedRows([...sheet.rows, ["0001", "李员工", "生产", "10.00"]], {
     headerRowIndex: 1, columns: { code: 0, name: 1, title: 2, amount: 3 },
   }), [{ code: "0001", name: "李员工", title: "生产", amount: "10.00" }]);
@@ -108,7 +108,7 @@ test("employee count is bounded and empty sheets cannot produce an accepted impo
   assert.throws(() => parseMappedRows([headers, ["", "", "", ""]], mapping), /가져올 직원/);
   const csv = createTemplateCsv();
   assert.equal(csv.charCodeAt(0), 0xfeff);
-  assert.ok(csv.includes("code,name,title,amount\r\n0001,"));
+  assert.ok(csv.includes('工号,姓名,职务,部门,应发工资,可视化部门,可视化职能'));
 });
 
 test("real XLSX and UTF-8 CSV files keep zero-padded employee codes", async () => {
@@ -121,11 +121,11 @@ test("real XLSX and UTF-8 CSV files keep zero-padded employee codes", async () =
   const imported = await readWorkbook(new File([buffer], "工资.xlsx"));
   assert.equal(parseMappedRows(imported.sheets[0].rows, mapping)[0].code, "0007");
 
-  const csv = await readWorkbook(new File([createTemplateCsv()], "인건비.csv"));
+  const csv = await readWorkbook(new File(['\uFEFFcode,name,title,amount\r\n0001,홍길동,생산 담당,10000.00\r\n'], "인건비.csv"));
   const row = parseMappedRows(csv.sheets[0].rows, mapping)[0];
   assert.equal(row.code, "0001");
   assert.equal(row.name, "홍길동");
   assert.equal(row.amount, "10000.00");
-  await assert.rejects(() => readWorkbook(new File(["x"], "payroll.xls")), /XLSX 또는 CSV/);
+  await assert.rejects(() => readWorkbook(new File(["x"], "payroll.xls")), /XLSX, CSV/);
   await assert.rejects(() => readWorkbook(new File([], "payroll.xlsx")), /빈 파일/);
 });

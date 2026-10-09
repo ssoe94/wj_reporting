@@ -7,6 +7,9 @@ import { getHrAccess, updateHrAccess, updateHrWorkspace } from '../../domains/hr
 import { buildAssignments, getDepartmentTree, getDescendantIds, moveEmployee, validateDepartments, MAX_DEPARTMENTS } from '../../domains/hr/layout';
 import type { HrAccessUser, HrDepartment, HrEmployee, HrWorkspace } from '../../domains/hr/types';
 import HrImportPanel from './HrImportPanel';
+import CompanyClassificationChart from './CompanyClassificationChart';
+import { centsToAmount } from '../../domains/hr/import';
+import { COMPANY_CLASSIFICATION, getClassificationLabel } from '../../domains/hr/company-structure';
 import { HrLoadState, HrShell, HrSource, currentHrMonth, isHrConflict, layoutSummary, localHrError, money, safeHrError, useHrWorkspace } from './hrCommon';
 
 type LayoutDraft = { departments: HrDepartment[]; employees: HrEmployee[] };
@@ -38,14 +41,14 @@ function HrAccessPanel() {
     finally { setBusyId(null); }
   }
   const visible = users.filter((user) => `${user.name} ${user.username}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
-  return <section className="hr-panel hr-access"><div className="hr-section-heading"><div><h2><ShieldCheck size={18} />{ko ? '인사 담당자 접근 권한' : '人事负责人访问权限'}</h2><p>{ko ? 'superuser가 인사 담당자를 지정합니다. 지정된 활성 계정은 두 페이지의 조회와 편집이 가능합니다.' : '由 superuser 指定人事负责人。已授权的有效账号可查看和编辑这两个页面。'}</p></div></div>
+  return <div className="hr-access">
     {error && <div role="alert" className="hr-alert is-error">{error}<button className="hr-button" onClick={() => setReload((value) => value + 1)} disabled={busyId !== null}>{ko ? '다시 불러오기' : '重新加载'}</button></div>}
     {loading ? <p role="status">{ko ? '권한을 불러오는 중입니다.' : '正在加载权限。'}</p> : <>
       <label className="hr-search"><Search size={17} /><input aria-label={ko ? '계정 검색' : '搜索账号'} placeholder={ko ? '이름·계정 검색' : '搜索姓名或账号'} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="hr-table-scroll hr-access-table"><table><thead><tr><th>{ko ? '계정' : '账号'}</th><th>{ko ? '이름' : '姓名'}</th><th>{ko ? '상태' : '状态'}</th><th>{ko ? '인사 담당자' : '人事负责人'}</th></tr></thead><tbody>{visible.map((user) => <tr key={user.id}><td>{user.username}</td><td>{user.name || '—'}</td><td>{user.is_superuser ? 'SUPERUSER' : !user.is_active ? (ko ? '비활성' : '已停用') : (ko ? '활성' : '有效')}</td><td>{user.is_superuser ? (ko ? '기본 접근' : '默认访问') : <label className="hr-checkbox"><input type="checkbox" checked={user.granted} disabled={busyId !== null || !user.is_active} onChange={() => void toggle(user)} aria-label={`${user.name || user.username} ${ko ? '인사 담당자 권한' : '人事负责人权限'}`} />{busyId === user.id ? (ko ? '저장 중…' : '正在保存…') : user.granted ? (ko ? '허용' : '允许') : (ko ? '미허용' : '未允许')}</label>}</td></tr>)}</tbody></table></div>
       {!visible.length && <p className="hr-muted">{ko ? '조건에 맞는 계정이 없습니다.' : '没有符合条件的账号。'}</p>}
     </>}
-  </section>;
+  </div>;
 }
 
 export default function PersonnelPage() {
@@ -98,6 +101,14 @@ export default function PersonnelPage() {
   const departments = draft?.departments ?? EMPTY_DEPARTMENTS;
   const employees = draft?.employees ?? EMPTY_EMPLOYEES;
   const summary = useMemo(() => layoutSummary(departments, employees), [departments, employees]);
+  const companyNodes = workspace?.company_structure?.classification.nodes ?? EMPTY_DEPARTMENTS;
+  const hasCompanyCells = companyNodes.some((node) => departments.some((department) => department.id === node.id));
+  const chartSummary = useMemo(() => ({departments: departments.map((department) => {
+    const stats = summary.totals.get(department.id)!;
+    return {id:department.id, direct_total:stats.direct === null ? null : centsToAmount(stats.direct), total:stats.total === null ? null : centsToAmount(stats.total),
+      known_direct_total:centsToAmount(stats.knownDirect), known_total:centsToAmount(stats.knownTotal),
+      direct_count:stats.directCount,headcount:stats.headcount,direct_missing_cost_count:stats.directMissingCount,missing_cost_count:stats.missingCount};
+  })}), [departments, summary]);
   const tree = useMemo(() => getDepartmentTree(departments), [departments]);
   const forbiddenParents = useMemo(() => departmentForm && !departmentForm.isNew ? getDescendantIds(departments, departmentForm.id) : new Set<string>(), [departments, departmentForm]);
   const roster = useMemo(() => employees.filter((employee) => (rosterScope === 'all' || !employee.department_id)
@@ -107,6 +118,17 @@ export default function PersonnelPage() {
   const visiblePage = Math.min(rosterPage, pageCount - 1);
   const visibleRoster = roster.slice(visiblePage * 50, (visiblePage + 1) * 50);
   useEffect(() => { setRosterPage(0); }, [search, rosterScope, rosterDepartment]);
+
+  function applyCompanyCells() {
+    if (!draft || busy) return;
+    const known = new Set(departments.map((department) => department.id));
+    const next = [...departments, ...companyNodes.filter((node) => !known.has(node.id)).map((node) => ({...node}))];
+    try { validateDepartments(next); setDraft({...draft, departments:next}); setNotice(ko ? '회사 부문·기능 분류도를 적용했습니다. 변경 저장이 필요합니다.' : '已应用公司部门·职能分类图，请保存更改。'); }
+    catch (failure) { setSaveError(localHrError(failure, lang, ko ? '분류도를 적용하지 못했습니다.' : '无法应用分类图。')); }
+  }
+  function moveFromChart(code: string, target: string | null) {
+    dropAccepted.current = true; draggingCode.current = null; setDragging(null); setDropTarget(null); move(code,target);
+  }
 
   function changeMonth(next: string) {
     if (busy || next === month) return;
@@ -161,13 +183,13 @@ export default function PersonnelPage() {
   function drop(event: DragEvent, target: string | null) {
     event.preventDefault(); event.stopPropagation();
     const code = event.dataTransfer.getData(DRAG_TYPE);
-    if (!draggingCode.current || code !== draggingCode.current || busy) return;
+    if (!employees.some((employee) => employee.code === code) || busy) return;
     dropAccepted.current = true; draggingCode.current = null; move(code, target); setDragging(null); setDropTarget(null);
   }
   function dropProps(target: string | null) {
     const key = target ?? '__unassigned';
     return {
-      onDragOver: (event: DragEvent) => { if (draggingCode.current && !busy) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; setDropTarget(key); } },
+      onDragOver: (event: DragEvent) => { if (!busy && Array.from(event.dataTransfer.types).includes(DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; setDropTarget(key); } },
       onDragLeave: (event: DragEvent) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDropTarget((value) => value === key ? null : value); },
       onDrop: (event: DragEvent) => drop(event, target),
     };
@@ -198,13 +220,13 @@ export default function PersonnelPage() {
   }
   function employeeCard(employee: HrEmployee, compact = false) {
     const destination = destinations[employee.code] ?? employee.department_id ?? '';
-    const currentName = departments.find((item) => item.id === employee.department_id)?.name;
-    return <article key={employee.code} className={`hr-employee${dragging === employee.code ? ' is-dragging' : ''}${compact ? ' is-compact' : ''}`} draggable={!busy}
+    const currentName = employee.department_id ? getClassificationLabel(employee.department_id) : null;
+    return <article key={employee.code} className={`hr-employee is-condensed${dragging === employee.code ? ' is-dragging' : ''}${compact ? ' is-compact' : ''}`} draggable={!busy}
       onDragStart={(event) => dragStart(event, employee)} onDragEnd={dragEnd}>
-      <div className="hr-employee-heading"><GripVertical size={17} className="hr-grip" aria-hidden="true" /><div><strong>{employee.name}</strong><span>{employee.code}{employee.title ? ` · ${employee.title}` : ''}</span></div><b>{money(employee.amount, workspace!.currency, lang)}</b></div>
-      {!compact && <span className="hr-employee-current">{currentName ?? (ko ? '미배치' : '待配置')}</span>}
-      <button className="hr-employee-edit" disabled={busy} aria-expanded={moveEditorCode === employee.code} aria-label={`${employee.name} ${ko ? '배치 변경' : '更改配置'}`} onClick={() => setMoveEditorCode((value) => value === employee.code ? null : employee.code)}><Edit3 size={14} />{ko ? '배치 변경' : '更改配置'}</button>
-      {moveEditorCode === employee.code && <div className="hr-employee-move"><select aria-label={`${employee.name} ${ko ? '이동할 부서' : '目标部门'}`} value={destination} disabled={busy} onChange={(event) => setDestinations((value) => ({ ...value, [employee.code]: event.target.value }))}><option value="">{ko ? '미배치' : '待配置'}</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
+      <div className="hr-employee-heading"><GripVertical size={15} className="hr-grip" aria-hidden="true" /><div><strong title={employee.name}>{employee.name}</strong></div><b>{money(employee.amount, workspace!.currency, lang)}</b>
+        <button className="hr-icon-button hr-employee-edit" disabled={busy} aria-expanded={moveEditorCode === employee.code} title={ko ? '배치 변경' : '更改配置'} aria-label={`${employee.name} ${ko ? '배치 변경' : '更改配置'}`} onClick={() => setMoveEditorCode((value) => value === employee.code ? null : employee.code)}><Edit3 size={14} /></button></div>
+      <span className="hr-employee-current" title={[employee.code, employee.title, employee.source_department, currentName].filter(Boolean).join(' · ')}>{employee.code}{employee.title ? ` · ${employee.title}` : ''}{employee.source_department ? ` · ${employee.source_department}` : currentName ? ` · ${currentName}` : ''}</span>
+      {moveEditorCode === employee.code && <div className="hr-employee-move"><select aria-label={`${employee.name} ${ko ? '이동할 부서' : '目标部门'}`} value={destination} disabled={busy} onChange={(event) => setDestinations((value) => ({ ...value, [employee.code]: event.target.value }))}><option value="">{ko ? '미배치' : '待配置'}</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.parent_id ? `${departments.find((parent)=>parent.id===department.parent_id)?.name ?? ''} / ${department.name}` : department.name}</option>)}</select>
         <button className="hr-button" disabled={busy || destination === (employee.department_id ?? '')} onClick={() => move(employee.code, destination || null)}>{ko ? '이동' : '移动'}</button></div>}
     </article>;
   }
@@ -219,10 +241,9 @@ export default function PersonnelPage() {
           <button className="hr-icon-button" onClick={() => beginDepartment(department)} disabled={busy} aria-label={`${department.name} ${ko ? '부서 편집' : '编辑部门'}`}><Edit3 size={17} /></button>
           <button className="hr-icon-button" onClick={() => beginDepartment(undefined, department.id)} disabled={busy || departments.length >= MAX_DEPARTMENTS} aria-label={`${department.name} ${ko ? '하위 부서 추가' : '添加下级部门'}`}><Plus size={17} /></button>
           <button className="hr-icon-button" onClick={() => removeDepartment(department)} disabled={busy} aria-label={`${department.name} ${ko ? '빈 부서 삭제' : '删除空部门'}`}><Trash2 size={16} /></button></div></div>
-        <div className="hr-department-figures"><span>{ko ? '직접 배치' : '直接配置'} <strong>{members.length} {ko ? '명' : '人'}</strong></span><span>{ko ? '직접 인건비' : '直接成本'} <strong>{money(totals?.direct ?? 0, workspace!.currency, lang)}</strong></span>
-          {node.children.length > 0 && <span>{ko ? '하위 포함' : '含下级'} <strong>{totals?.headcount ?? 0} {ko ? '명' : '人'} · {money(totals?.total ?? 0, workspace!.currency, lang)}</strong></span>}</div>
-        <div className="hr-department-members">{members.length ? members.slice(0, 12).map((employee) => employeeCard(employee, true)) : <div className="hr-drop-empty"><Users size={20} /><p>{dragging ? (ko ? '여기에 놓아 배치하세요' : '放到此处配置') : (ko ? '인원을 여기로 끌어 놓거나, 명단에서 배치 변경을 누른 뒤 부서를 선택하고 이동하세요.' : '将人员拖至此处，或在名单中点击更改配置后选择部门并移动。')}</p></div>}</div>
-        {members.length > 12 && <button className="hr-button hr-department-more" onClick={() => { setRosterScope('all'); setRosterDepartment(department.id); setSearch(''); setRosterPage(0); }}>{ko ? `이 부서 전체 ${members.length}명 명단 보기` : `查看该部门全部 ${members.length} 人名单`}</button>}
+        <div className="hr-department-figures"><span>{ko ? '직접 배치' : '直接配置'} <strong>{members.length} {ko ? '명' : '人'}</strong></span><span>{ko ? '직접 인건비' : '直接成本'} <strong>{money(totals ? totals.direct : 0, workspace!.currency, lang)}</strong></span>
+          {node.children.length > 0 && <span>{ko ? '하위 포함' : '含下级'} <strong>{totals?.headcount ?? 0} {ko ? '명' : '人'} · {money(totals ? totals.total : 0, workspace!.currency, lang)}</strong></span>}</div>
+        {members.length > 0 && <button className="hr-text-button" onClick={() => { setRosterScope('all'); setRosterDepartment(department.id); setSearch(''); setRosterPage(0); }}>{ko ? '인원 명단 보기' : '查看人员名单'} ({members.length})</button>}
       </section>
       {node.children.length > 0 && <>
         <button className="hr-tree-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(department.id)) next.delete(department.id); else next.add(department.id); return next; })}>{isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}{ko ? '하위 부서' : '下级部门'} {node.children.length}</button>
@@ -234,33 +255,53 @@ export default function PersonnelPage() {
   return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy}>
     {!allowed || loading || error || !workspace || !draft ? <HrLoadState allowed={allowed} loading={loading} error={error} retry={refresh} /> : <>
       <HrSource workspace={workspace} />
-      <HrImportPanel workspace={workspace} disabled={dirty || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 인건비를 가져왔습니다. 일치하는 사번의 배치를 유지했습니다.' : '已导入月度人工成本，并保留匹配员工编号的配置。'); }} />
-      <div className="hr-layout-toolbar"><div><h2>{ko ? '부서·기능별 인원 배치도' : '部门·职能人员配置图'}</h2><p>{ko ? '드래그하여 배치하거나 각 인원의 부서 선택·이동 버튼을 사용하세요. 아래 합계는 작성 중인 배치 기준입니다.' : '可拖动配置，也可使用每位员工的部门选择和移动按钮。下方合计按当前草稿配置计算。'}</p></div>
-        <div className="hr-actions"><button className="hr-button" disabled={busy || departments.length >= MAX_DEPARTMENTS} onClick={() => beginDepartment()}><Plus size={17} />{ko ? '부서 추가' : '添加部门'}</button><button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={17} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button></div></div>
-      {dirty && <div className="hr-alert is-warning"><span>{ko ? '저장하지 않은 배치 변경이 있습니다. 집계 페이지에는 저장한 배치만 반영됩니다.' : '有尚未保存的配置更改，汇总页面仅显示已保存的配置。'}</span><button className="hr-button" disabled={busy} onClick={discard}><Undo2 size={16} />{ko ? '변경 버리기' : '放弃更改'}</button></div>}
+      <HrImportPanel workspace={workspace} disabled={dirty || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />
+      <div className="hr-summary-strip" aria-label={ko ? '작성 중인 배치 집계' : '当前配置汇总'}>
+        <div><span>{ko ? '인원 / 분류' : '人员 / 分类'}</span><strong>{employees.length} {ko ? '명' : '人'} <small>· {departments.length} {ko ? '분류' : '分类'}</small></strong></div>
+        <div><span>{ko ? '월 인건비' : '月人工成本'}</span><strong>{workspace.source ? money(summary.total, workspace.currency, lang) : '—'}</strong>
+          {!summary.costComplete && <small>{ko ? `미입력 ${summary.missingCostCount}명 · 확인 소계 ` : `未填写 ${summary.missingCostCount} 人 · 已确认小计 `}{money(summary.knownTotal, workspace.currency, lang)}</small>}</div>
+        <div><span>{ko ? '배치' : '已配置'}</span><strong>{summary.assignedCount} {ko ? '명' : '人'} <small>· {money(summary.assigned, workspace.currency, lang)}</small></strong></div>
+        <div><span>{ko ? '미배치' : '待配置'}</span><strong>{summary.unassignedCount} {ko ? '명' : '人'} <small>· {money(summary.unassigned, workspace.currency, lang)}</small></strong></div>
+      </div>
+      <div className="hr-compact-toolbar">
+        <span className="hr-muted">{dirty ? (ko ? '저장 전 배치' : '配置尚未保存') : (ko ? '명단에서 끌어 놓아 배치' : '从名单拖动配置')}</span>
+        <div className="hr-actions">
+          <button className="hr-button" disabled={busy || companyNodes.every((node)=>departments.some((department)=>department.id===node.id))} onClick={applyCompanyCells}>{ko ? '회사 분류 적용' : '应用公司分类'}</button>
+          {dirty && <button className="hr-button" disabled={busy} onClick={discard}><Undo2 size={15} />{ko ? '변경 버리기' : '放弃更改'}</button>}
+          <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '배치 저장' : '保存配置')}</button>
+        </div>
+      </div>
       {saveError && <p role="alert" className="hr-alert is-error">{saveError}</p>}
-      {conflict && <div role="alert" className="hr-alert is-warning"><span>{ko ? '서버 최신 버전과 충돌했습니다. 작성한 배치를 확인한 뒤 명시적으로 다시 불러와 주세요.' : '与服务器最新版本冲突，请确认当前配置后主动重新加载。'}</span><button className="hr-button" disabled={busy} onClick={loadLatest}>{ko ? '최신 내용 불러오기' : '加载最新资料'}</button></div>}
-      <p className="hr-notice" role="status" aria-live="polite">{notice}</p>
-      <div className="hr-kpis is-layout"><div><span>{ko ? '인건비 총계' : '人工成本总计'}</span><strong>{money(summary.total, workspace.currency, lang)}</strong></div><div><span>{ko ? '배치 인원·인건비' : '已配置人数·成本'}</span><strong>{summary.assignedCount} {ko ? '명' : '人'}</strong><small>{money(summary.assigned, workspace.currency, lang)}</small></div><div><span>{ko ? '미배치 인원·인건비' : '待配置人数·成本'}</span><strong>{summary.unassignedCount} {ko ? '명' : '人'}</strong><small>{money(summary.unassigned, workspace.currency, lang)}</small></div><div><span>{ko ? '부서' : '部门'}</span><strong>{departments.length}</strong><small>{ko ? '최대 200개 · 최대 8단계' : '最多 200 个 · 最多 8 级'}</small></div></div>
-      {departmentForm && <section className="hr-panel hr-department-editor" aria-label={ko ? '부서 정보 편집' : '编辑部门信息'}><div className="hr-section-heading"><h2>{departmentForm.isNew ? (ko ? '새 부서' : '新部门') : (ko ? '부서 편집' : '编辑部门')}</h2><button className="hr-icon-button" aria-label={ko ? '편집 취소' : '取消编辑'} onClick={() => setDepartmentForm(null)}><X size={18} /></button></div>
-        <form onSubmit={(event) => { event.preventDefault(); applyDepartment(); }}><div className="hr-form-grid"><label className="hr-field">{ko ? '부서명' : '部门名称'}<input autoFocus maxLength={100} required value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} /></label><label className="hr-field">{ko ? '상위 부서' : '上级部门'}<select value={departmentForm.parent_id ?? ''} onChange={(event) => setDepartmentForm({ ...departmentForm, parent_id: event.target.value || null })}><option value="">{ko ? '최상위 부서' : '顶级部门'}</option>{departments.filter((item) => item.id !== departmentForm.id && !forbiddenParents.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-          <label className="hr-field">{ko ? '담당 기능' : '负责职能'}<textarea rows={2} maxLength={500} value={departmentForm.function} placeholder={ko ? '예: 사출 생산, 설비 보전, 품질 검사' : '例如：注塑生产、设备维护、质量检验'} onChange={(event) => setDepartmentForm({ ...departmentForm, function: event.target.value })} /></label>
-          {formError && <p role="alert" className="hr-alert is-error">{formError}</p>}
-          <div className="hr-actions"><button type="submit" className="hr-button is-primary"><Check size={16} />{ko ? '배치도에 반영' : '应用到配置图'}</button><button type="button" className="hr-button" onClick={() => setDepartmentForm(null)}>{ko ? '취소' : '取消'}</button></div></form>
-      </section>}
-      <div className={`hr-personnel-layout${dragging ? ' is-dragging' : ''}`}>
-        <aside className={`hr-roster hr-panel${dropTarget === '__unassigned' ? ' is-drop-target' : ''}`} {...dropProps(null)}><div className="hr-section-heading"><h2>{ko ? '인원 명단' : '人员名单'}</h2><span>{roster.length} {ko ? '명' : '人'}</span></div>
-          <div className="hr-roster-tabs"><button aria-pressed={rosterScope === 'unassigned' && !rosterDepartment} onClick={() => { setRosterScope('unassigned'); setRosterDepartment(null); }}>{ko ? '미배치' : '待配置'} ({summary.unassignedCount})</button><button aria-pressed={rosterScope === 'all' && !rosterDepartment} onClick={() => { setRosterScope('all'); setRosterDepartment(null); }}>{ko ? '전체' : '全部'} ({employees.length})</button></div>
+      {conflict && <div role="alert" className="hr-alert is-warning"><span>{ko ? '최신 버전과 충돌했습니다. 초안을 확인한 뒤 다시 불러오세요.' : '与最新版本冲突，请确认草稿后重新加载。'}</span><button className="hr-button" disabled={busy} onClick={loadLatest}>{ko ? '최신 내용 불러오기' : '加载最新资料'}</button></div>}
+      {notice && <p className="hr-floating-notice" role="status" aria-live="polite">{notice}</p>}
+      <div className={`hr-personnel-layout is-compact${dragging ? ' is-dragging' : ''}`}>
+        <aside className={`hr-roster hr-panel is-compact${dropTarget === '__unassigned' ? ' is-drop-target' : ''}`} {...dropProps(null)}>
+          <div className="hr-section-heading"><h2>{ko ? '인원 명단' : '人员名单'}</h2><span>{roster.length} {ko ? '명' : '人'}</span></div>
+          <div className="hr-roster-tabs"><button aria-pressed={rosterScope === 'unassigned' && !rosterDepartment} onClick={() => { setRosterScope('unassigned'); setRosterDepartment(null); }}>{ko ? '미배치' : '待配置'} {summary.unassignedCount}</button><button aria-pressed={rosterScope === 'all' && !rosterDepartment} onClick={() => { setRosterScope('all'); setRosterDepartment(null); }}>{ko ? '전체' : '全部'} {employees.length}</button></div>
           {rosterDepartment && <div className="hr-roster-filter"><span>{departments.find((item) => item.id === rosterDepartment)?.name}</span><button className="hr-icon-button" aria-label={ko ? '부서 필터 해제' : '清除部门筛选'} onClick={() => setRosterDepartment(null)}><X size={16} /></button></div>}
-          <label className="hr-search"><Search size={17} /><input aria-label={ko ? '인원 검색' : '搜索人员'} value={search} placeholder={ko ? '이름·사번·직책 검색' : '搜索姓名、编号或职务'} onChange={(event) => setSearch(event.target.value)} /></label>
-          <p className="hr-muted">{dragging ? (ko ? '여기에 놓으면 미배치로 이동합니다.' : '放到此处移回待配置名单。') : (ko ? '터치·키보드: 배치 변경 → 부서 선택 → 이동.' : '触屏或键盘：更改配置 → 选择部门 → 移动。')}</p>
-          <div className="hr-roster-list">{visibleRoster.map((employee) => employeeCard(employee))}{!roster.length && <div className="hr-drop-empty"><Users size={24} /><p>{employees.length === 0 ? (ko ? '인건비 테이블을 올리면 인원 명단이 표시됩니다.' : '上传人工成本表后显示人员名单。') : search || rosterDepartment ? (ko ? '조건에 맞는 인원이 없습니다.' : '没有符合条件的人员。') : (ko ? '모든 인원을 배치했습니다.' : '全部人员已完成配置。')}</p></div>}</div>
+          <label className="hr-search"><Search size={16} /><input aria-label={ko ? '인원 검색' : '搜索人员'} value={search} placeholder={ko ? '이름·사번·직책' : '姓名·编号·职务'} onChange={(event) => setSearch(event.target.value)} /></label>
+          {dragging && <p className="hr-muted">{ko ? '여기에 놓으면 미배치' : '放到此处移回待配置'}</p>}
+          <div className="hr-roster-list">{visibleRoster.map((employee) => employeeCard(employee))}{!roster.length && <div className="hr-drop-empty"><Users size={20} /><p>{employees.length === 0 ? (ko ? '월별 자료를 올려 주세요.' : '请上传月度资料。') : search || rosterDepartment ? (ko ? '일치하는 인원이 없습니다.' : '没有匹配人员。') : (ko ? '모두 배치했습니다.' : '全部已配置。')}</p></div>}</div>
           {pageCount > 1 && <div className="hr-pagination"><button className="hr-button" disabled={visiblePage === 0} onClick={() => setRosterPage(visiblePage - 1)}>{ko ? '이전' : '上一页'}</button><span>{visiblePage + 1} / {pageCount}</span><button className="hr-button" disabled={visiblePage >= pageCount - 1} onClick={() => setRosterPage(visiblePage + 1)}>{ko ? '다음' : '下一页'}</button></div>}
         </aside>
-        <section className="hr-org" aria-label={ko ? '조직 배치도' : '组织配置图'}>{tree.length ? tree.map(renderDepartment) : <div className="hr-panel hr-state"><Users size={30} /><h3>{ko ? '첫 부서를 만들어 주세요.' : '请创建第一个部门。'}</h3><p>{ko ? '부서와 하위 조직을 만들고 담당 기능을 기록한 뒤, 인원을 배치할 수 있습니다.' : '创建部门及下级组织，填写负责职能后即可配置人员。'}</p><button className="hr-button" onClick={() => beginDepartment()} disabled={busy}><Plus size={16} />{ko ? '부서 추가' : '添加部门'}</button></div>}</section>
+        <section className="hr-org" aria-label={ko ? '부문·기능 배치도' : '部门·职能配置图'}>{hasCompanyCells ? <CompanyClassificationChart departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={moveFromChart} disabled={busy} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><button className="hr-button" onClick={applyCompanyCells} disabled={busy}>{ko ? '분류도 적용' : '应用分类图'}</button></div>}</section>
       </div>
-      {workspace.history.length > 0 && <details className="hr-panel hr-history"><summary>{ko ? '저장 이력' : '保存历史'} ({workspace.history.length})</summary><ol>{workspace.history.map((entry) => <li key={entry.version}><strong>v{entry.version}</strong> {entry.action} · {entry.actor} · {new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'short' }).format(new Date(entry.created_at))}</li>)}</ol></details>}
-      {user?.is_superuser === true && <HrAccessPanel />}
+      <details className="hr-panel hr-disclosure" open={departmentForm ? true : undefined}>
+        <summary>{ko ? '분류 편집' : '编辑分类'}{departmentForm ? (ko ? ' · 편집 중' : ' · 编辑中') : ''}</summary>
+        <div className="hr-compact-toolbar"><span className="hr-muted">{departments.length} / {MAX_DEPARTMENTS} · {ko ? '최대 8단계' : '最多 8 级'}</span><button className="hr-button" disabled={busy || departments.length >= MAX_DEPARTMENTS} onClick={() => beginDepartment()}><Plus size={15} />{ko ? '추가 분류' : '添加分类'}</button></div>
+        {departmentForm && <section className="hr-department-editor" aria-label={ko ? '부서 정보 편집' : '编辑部门信息'}>
+          <div className="hr-section-heading"><h2>{departmentForm.isNew ? (ko ? '새 분류' : '新分类') : (ko ? '분류 편집' : '编辑分类')}</h2><button className="hr-icon-button" aria-label={ko ? '편집 취소' : '取消编辑'} onClick={() => setDepartmentForm(null)}><X size={17} /></button></div>
+          <form onSubmit={(event) => { event.preventDefault(); applyDepartment(); }}>
+            <div className="hr-form-grid"><label className="hr-field">{ko ? '이름' : '名称'}<input autoFocus maxLength={100} required value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} /></label><label className="hr-field">{ko ? '상위 분류' : '上级分类'}<select disabled={COMPANY_CLASSIFICATION.nodes.some((node)=>node.id===departmentForm.id)} value={departmentForm.parent_id ?? ''} onChange={(event) => setDepartmentForm({ ...departmentForm, parent_id: event.target.value || null })}><option value="">{ko ? '최상위' : '顶级'}</option>{departments.filter((item) => item.id !== departmentForm.id && !forbiddenParents.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
+            <label className="hr-field">{ko ? '담당 기능' : '负责职能'}<textarea rows={2} maxLength={500} value={departmentForm.function} onChange={(event) => setDepartmentForm({ ...departmentForm, function: event.target.value })} /></label>
+            {formError && <p role="alert" className="hr-alert is-error">{formError}</p>}
+            <div className="hr-actions"><button type="submit" className="hr-button is-primary"><Check size={15} />{ko ? '반영' : '应用'}</button><button type="button" className="hr-button" onClick={() => setDepartmentForm(null)}>{ko ? '취소' : '取消'}</button></div>
+          </form>
+        </section>}
+        <div className="hr-org">{tree.map(renderDepartment)}</div>
+      </details>
+      {workspace.history.length > 0 && <details className="hr-panel hr-history hr-disclosure"><summary>{ko ? '저장 이력' : '保存历史'} ({workspace.history.length})</summary><ol>{workspace.history.map((entry) => <li key={entry.version}><strong>v{entry.version}</strong> {entry.action} · {entry.actor} · {new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'short' }).format(new Date(entry.created_at))}</li>)}</ol></details>}
+      {user?.is_superuser === true && <details className="hr-panel hr-disclosure"><summary><ShieldCheck size={16} /> {ko ? '인사 담당자 권한' : '人事负责人权限'}</summary><HrAccessPanel /></details>}
     </>}
   </HrShell>;
 }

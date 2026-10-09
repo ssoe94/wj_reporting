@@ -249,8 +249,90 @@ class HrApiTests(TestCase):
         self.assertEqual(response['version'], 1)
         self.assertEqual([entry['version'] for entry in response['history']], [1])
 
+    def test_explicit_classification_import_keeps_source_department_and_month(self):
+        data = import_data(); data.update(month=MONTH, apply_classification=True, cost_basis='gross_salary')
+        data['rows'][0].update(period=MONTH, source_department='原始品质', department_id='quality-cs')
+        data['rows'][1].update(period=MONTH, source_department='原始营业', department_id='sales-cs')
+        data['rows'][2].update(period=MONTH, source_department='原始注塑', department_id=None)
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['employees'][0]['source_department'], '原始品质')
+        self.assertEqual(response.data['employees'][0]['department_id'], 'quality-cs')
+        by_id = {entry['id']: entry for entry in response.data['summary']['departments']}
+        self.assertEqual(by_id['quality']['total'], '100.10')
+        self.assertEqual(by_id['sales']['total'], '200.20')
+        self.assertEqual(response.data['company_structure']['organization']['nodes'][0]['name'], '李泓九')
+
+    def test_missing_cost_never_becomes_zero_in_total_rate_or_hierarchy(self):
+        data = import_data(); data.update(month=MONTH, apply_classification=True, allow_missing_cost=True)
+        data['rows'][0].update(amount=None, period=MONTH, department_id='injection-operator')
+        data['rows'][1].update(period=MONTH, department_id='injection-operator')
+        data['rows'][2].update(period=MONTH, department_id=None)
+        data['expected_total'] = None
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200)
+        summary = response.data['summary']
+        self.assertIsNone(summary['total']); self.assertIsNone(summary['assigned_total'])
+        self.assertEqual(summary['known_total'], '200.50'); self.assertEqual(summary['missing_cost_count'], 1)
+        self.assertEqual(summary['employee_count'], 3); self.assertFalse(summary['cost_complete'])
+        by_id = {entry['id']: entry for entry in summary['departments']}
+        self.assertIsNone(by_id['injection-operator']['direct_total'])
+        self.assertIsNone(by_id['injection']['total']); self.assertIsNone(by_id['injection']['share'])
+        self.assertEqual(by_id['injection']['known_total'], '200.20')
+        self.assertEqual(by_id['injection']['headcount'], 2)
+        self.assertIsNone(response.data['source']['total'])
+
+    def test_all_missing_roster_requires_explicit_flag_and_stays_unknown(self):
+        data = import_data(); data['rows'] = [{**row, 'amount': None} for row in data['rows']]; data['expected_total'] = None
+        self.assertEqual(self.upload(data).status_code, 400)
+        data['allow_missing_cost'] = True
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200); self.assertIsNone(response.data['summary']['total'])
+        self.assertEqual(response.data['summary']['known_cost_count'], 0)
+        self.assertEqual(response.data['summary']['missing_cost_count'], 3)
+
+    def test_period_path_and_unknown_classification_rejected_before_mutation(self):
+        data = import_data(); data.update(month='2026-09'); data['rows'][0]['period'] = '2026-09'
+        self.assertEqual(self.upload(data).status_code, 400)
+        data['month'] = MONTH
+        self.assertEqual(self.upload(data).status_code, 400)
+        data = import_data(); data.update(apply_classification=True)
+        for row in data['rows']: row['department_id'] = 'invalid-function'
+        self.assertEqual(self.upload(data).status_code, 400)
+        data.pop('apply_classification')
+        self.assertEqual(self.upload(data).status_code, 400)
+        self.assertEqual(HrMonthWorkspace.objects.count(), 0)
+
+    def test_same_file_explicit_reapply_restores_file_classification_after_manual_move(self):
+        data = import_data(); data.update(apply_classification=True)
+        for row in data['rows']: row['department_id'] = 'quality-cs'
+        self.assertEqual(self.upload(data).status_code, 200)
+        current = self.client.get(self.url()).data
+        changed = self.layout(version=1, departments=current['departments'], assignments=[{'code':row['code'],'department_id':'sales-cs'} for row in ROWS])
+        self.assertEqual(changed.status_code, 200)
+        data['version'] = 2
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200); self.assertEqual(response.data['version'], 3)
+        self.assertEqual({row['department_id'] for row in response.data['employees']}, {'quality-cs'})
+
 
 class HrContractTests(TestCase):
+    def test_generated_frontend_catalog_matches_backend_source(self):
+        from pathlib import Path
+        from .hr_company_structure import frontend_catalog_source, COMPANY_DEPARTMENTS
+        root = Path(__file__).resolve().parents[2]
+        self.assertEqual((root / 'frontend/src/domains/hr/company-catalog.ts').read_text(), frontend_catalog_source())
+        self.assertEqual(len({node['id'] for node in COMPANY_DEPARTMENTS}), len(COMPANY_DEPARTMENTS))
+        self.assertNotIn('李泓九', frontend_catalog_source())
+        self.assertNotIn('曹娅娟', frontend_catalog_source())
+
+    def test_fixed_function_cells_cannot_move_to_a_different_cost_group(self):
+        from copy import deepcopy
+        from .hr_company_structure import COMPANY_DEPARTMENTS
+        changed = deepcopy(COMPANY_DEPARTMENTS)
+        next(node for node in changed if node['id'] == 'quality-cs')['parent_id'] = 'sales'
+        self.assertFalse(LayoutSerializer(data={'version':0,'departments':changed,'assignments':[]}).is_valid())
+
     def test_bounds_and_depth(self):
         data = import_data(); data.pop('version'); data.pop('expected_total')
         data['rows'] = [ROWS[0]] * 5001

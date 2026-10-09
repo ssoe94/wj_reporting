@@ -1087,3 +1087,45 @@ final result: passed
 - 1529×1917 CSS viewport에서 중국어 긴 날짜와 음수 기온 -18.8°C를 확인했다. 날짜→위치 간격은 약 6.88px, 기온 단위→글로브 시각 영역은 약 13.61px로 겹침이 없다. 캡션은 한 줄로 영역 안에 들어온다. 한국어 기본 상태와 중국어 다크 상태도 확인했다.
 - `npm run build` 및 `git diff --check` 통과. 브라우저 오류 로그 없음. 기존 큰 JS 청크 경고는 유지된다. CSS 미세 조정으로 별도 단위 테스트는 추가하지 않았다.
 - 이 변경은 `codex/overview-header-balance-20260908`의 로컬 구현·미리보기 검증이다. 앞서 배포된 PR #39 이후의 추가 변경이며 아직 운영에 배포하지 않았다.
+
+---
+
+# HR compact UI QA — 2026-10-09
+
+Final target: the user's latest instruction to turn raw classification ideas into a compact working UI. The original image geometry is not the final layout requirement.
+
+Source visual truth:
+- `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-7269994e-64b6-466d-827f-3afbff1da29a.png` (2454×989): seven functional cost groups, repeated names scoped by group.
+- `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-a6d6d5d9-d205-4ea3-9ba5-a93dcd7a06f9.png` (4560×2565): reporting hierarchy used in the secondary organization view.
+
+Implementation: `http://127.0.0.1:5186/hr/labor-cost?month=2026-10`, synthetic employees and salaries. Actual supplied payroll was parsed read-only; no real payroll amounts were supplied or imported.
+
+Evidence:
+- `docs/reviews/assets/hr-labor-cost-20261009/compact-cost-desktop.jpg`, desktop CSS viewport 1920×1200.
+- `docs/reviews/assets/hr-labor-cost-20261009/compact-cost-mobile.jpg`, mobile CSS viewport 390×843.
+- `/private/tmp/wj-hr-qa-20261009/functional-before-comparison.png`: combined source + first implementation, normalized to the same width. It exposed amount wrapping and a sprawling diagram.
+- `/private/tmp/wj-hr-qa-20261009/organization-comparison.png`: combined source + reporting graph; relationships and names matched, long role wrapping was corrected.
+- The final layout was inspected together with these visual references. It retains the seven groups and their functions but replaces their large literal geometry with responsive cards per the user's corrective instruction.
+
+Density normalization: in-app browser viewport dimensions use a 1.612 scale on this host. Requested 1191×744 produced DOM 1920×1200; requested 242×523 produced DOM 390×843. Screenshot clip coordinates were normalized by the measured ratio. The retained desktop raster is 1921×1200 pixels and mobile is 390×844 pixels; the measured CSS sizes are 1920×1200 and 390×843. Browser chrome is excluded. Source references were scaled proportionally without altering their content for combined comparisons.
+
+Findings and fixes:
+1. P1: literal large canvas and duplicate bars/table hid the useful cost overview. Replaced by one summary strip and seven small cards; removed default zoom/canvas, repeated descriptions and long bars. Detailed table, reporting view, editing and grants are closed by default.
+2. P2: monetary values wrapped across digits. All final values are one line at 14px, with CNY currency stated in the summary. No ellipsis or discarded precision.
+3. P1: duplicate CS/操作工 destinations were ambiguous. All selectors and row labels include the actual ancestor path.
+4. P2: notices moved targets during dragging. Personnel notices now float outside layout; cancellation preserves assignments.
+5. P1: month selection could leave old data labelled as another month. The hook rejects mismatched month snapshots, month input commits immediately, URL/tab/reload preserve the selected period. January/February same-code import was verified through the UI and API.
+6. P2: missing amounts resembled zero cost. Null salaries are distinct, incomplete totals/shares remain unknown, and empty no-person cells are quiet. Known partial sums appear only when informative.
+
+Required fidelity surfaces:
+- Typography: existing Korean/Chinese fonts; working names and money 14–16px, headings 16–22px, ancillary metadata 12–13px. No split monetary strings.
+- Layout: desktop header about 67px. Seven card bottoms measured below 800px within a 1200px viewport. Mobile uses one-column readable cards and internal table scrolling, document width <=390px.
+- Color: existing navy/gray-blue tokens, restrained white surfaces; amber only indicates a real missing/unclassified status. The colorful source hierarchy was not spread across salary cards.
+- Asset quality: no rasterized functional controls or invented image assets. Cards, controls and reporting connectors are code-native UI primitives. Existing company logo is retained.
+- Copy/content: original functional labels, correct scoped names and reference manager names; source departments remain separate, wages use the user's confirmed 应发工资 basis. No inferred employee placement or fabricated salary.
+
+Primary interaction checks: scope selection, same-month tab navigation, upload mapping, other-month exclusion, import validation/confirmation, automatic cell allocation, drawer with descendants, employee button move/save/readback, incomplete amount display, desktop/mobile layout. Console errors: none observed. Drag start/cancel observed; native automated drop completion remains a field-validation gap, not claimed as acceptance.
+
+No actionable P0/P1/P2 compact-layout issues remain in the inspected states. Remaining acceptance: actual pointer drops, actual company file with supplied wages and corrected missing May employee code, production/PostgreSQL deployment.
+
+final result: passed

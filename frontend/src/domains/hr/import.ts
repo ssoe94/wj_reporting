@@ -1,4 +1,5 @@
 import type { HrImportRow } from "./types.ts";
+import { resolveClassification } from './company-structure.ts';
 
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 export const MAX_IMPORT_ROWS = 5000;
@@ -21,6 +22,11 @@ export type HrColumnMapping = {
   name: number | null;
   title: number | null;
   amount: number | null;
+  period: number | null;
+  source_department: number | null;
+  classification_group: number | null;
+  classification_function: number | null;
+  classification_code: number | null;
 };
 export type HrImportMapping = {
   headerRowIndex: number;
@@ -120,15 +126,82 @@ export function suggestColumnMapping(headers: HrHeaderColumn[]): HrColumnMapping
     code: ["code", "employee code", "employee id", "사번", "직원번호", "인원코드", "员工编号", "工号"],
     name: ["name", "employee name", "성명", "이름", "직원명", "姓名", "员工姓名"],
     title: ["title", "job title", "직책", "직급", "직무", "职位", "职务", "岗位"],
-    amount: ["amount", "employer total", "labor cost", "인건비", "총인건비", "회사부담총액", "회사 부담 총액", "人工成本", "公司负担总额"],
+    amount: ["amount", "employer total", "labor cost", "인건비", "총인건비", "회사부담총액", "회사 부담 총액", "人工成本", "公司负担总额", '应发工资'],
+    period: ['month', 'period', '월', '년월', '月份', '年月', '工资月份'],
+    source_department: ['部门', '原始部门', '원본부서', '원래부서', '부서'],
+    classification_group: ['可视化部门', '可视化部門', '시각화부문', '시각화부서'],
+    classification_function: ['可视化职能', '可视化功能', '시각화기능', '시각화 기능'],
+    classification_code: ['可视化编码', '可视化代码', '시각화코드', '시각화 박스 코드'],
   };
-  const mapping: HrColumnMapping = { code: null, name: null, title: null, amount: null };
+  const mapping: HrColumnMapping = { code: null, name: null, title: null, amount: null, period: null, source_department: null, classification_group: null, classification_function: null, classification_code: null };
   for (const field of Object.keys(aliases) as (keyof HrColumnMapping)[]) {
-    const candidates = headers.filter(({ label }) => aliases[field].includes(label.trim().toLowerCase()));
+    const normalize = (value: string) => value.replace(/\s+/g, '').toLowerCase();
+    const candidates = headers.filter(({ label }) => aliases[field].map(normalize).includes(normalize(label)) || (field === 'period' && /^(19|20|21)\d{2}年$/.test(label.trim())));
     // A duplicate matching header requires an explicit choice.
     if (candidates.length === 1) mapping[field] = candidates[0].index;
   }
   return mapping;
+}
+
+export type HrPayrollMapping = { headerRowIndex: number; columns: HrColumnMapping; targetMonth: string; classificationMode: 'preserve' | 'file'; allowMissingCost: boolean };
+export type HrPayrollParseResult = { rows: HrImportRow[]; excluded_row_count: number; missing_cost_count: number };
+
+export function parsePayrollPeriod(value: string, targetMonth: string, header: string): string {
+  const text = value.replace(/\s+/g, '');
+  const full = text.match(/^((?:19|20|21)\d{2})[-/年](\d{1,2})月?$/);
+  const short = text.match(/^(\d{1,2})月?$/);
+  const year = full?.[1] ?? header.match(/((?:19|20|21)\d{2})年/)?.[1] ?? targetMonth.slice(0, 4);
+  const month = Number(full?.[2] ?? short?.[1]);
+  if ((!full && !short) || month < 1 || month > 12 || !Number.isInteger(month)) throw new Error('급여 월을 확인해 주세요.');
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/** Each file row has its own payroll month. Filter before employee-code uniqueness. */
+export function parsePayrollRows(rows: HrImportCell[][], mapping: HrPayrollMapping): HrPayrollParseResult {
+  const { headerRowIndex, columns, targetMonth, classificationMode, allowMissingCost } = mapping;
+  if (!/^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(targetMonth)) throw new Error('대상 월을 정확하게 선택해 주세요.');
+  if (!Number.isInteger(headerRowIndex) || headerRowIndex < 0 || headerRowIndex >= rows.length) throw new Error('제목 행을 선택해 주세요.');
+  if (rows.length > MAX_WORKSHEET_ROWS) throw new Error(`시트는 ${MAX_WORKSHEET_ROWS}행까지 읽을 수 있습니다.`);
+  if (columns.code === null || columns.name === null || (columns.amount === null && !allowMissingCost)) throw new Error('사번, 이름, 인건비 열을 선택해 주세요.');
+  if (classificationMode === 'file' && columns.classification_code == null && (columns.classification_group == null || columns.classification_function == null)) throw new Error('시각화 부문과 기능 열을 모두 선택해 주세요.');
+  const activeColumns = [columns.code, columns.name, columns.title, columns.amount, columns.period, columns.source_department,
+    ...(classificationMode === 'file' ? columns.classification_code != null ? [columns.classification_code] : [columns.classification_group, columns.classification_function] : [])].filter((index): index is number => index != null);
+  if (activeColumns.some((index) => !Number.isInteger(index) || index < 0 || index >= MAX_IMPORT_COLUMNS) || new Set(activeColumns).size !== activeColumns.length) throw new Error('각 항목은 서로 다른 열을 선택해 주세요.');
+  const result: HrImportRow[] = []; const codes = new Set<string>(); let excluded = 0; let missing = 0;
+  const periodHeader = columns.period == null ? '' : cellText(rows[headerRowIndex][columns.period]);
+  for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (row.every(isBlankCell)) continue;
+    try {
+      const period = columns.period == null ? targetMonth : parsePayrollPeriod(cellText(row[columns.period]), targetMonth, periodHeader);
+      if (period !== targetMonth) { excluded += 1; continue; }
+      if (result.length >= MAX_IMPORT_ROWS) throw new Error(`직원은 ${MAX_IMPORT_ROWS}명까지 올릴 수 있습니다.`);
+      const code = cellText(row[columns.code!]); const name = cellText(row[columns.name!]);
+      const title = columns.title == null ? '' : cellText(row[columns.title]);
+      const sourceDepartment = columns.source_department == null ? '' : cellText(row[columns.source_department]);
+      if (!code) throw new Error('사번이 비어 있습니다.');
+      if (!name) throw new Error('이름이 비어 있습니다.');
+      if (code.length > 64 || name.length > 100 || title.length > 100 || sourceDepartment.length > 100) throw new Error('사번은 64자, 이름과 직책 및 원본 부서는 100자까지 사용할 수 있습니다.');
+      if (codes.has(code)) throw new Error('같은 월에 중복 사번이 있습니다.');
+      let amount: string | null = null;
+      if (columns.amount != null && !isBlankCell(row[columns.amount])) {
+        const cell = details(row[columns.amount]); assertUsableCell(cell);
+        const cents = amountToCents(cell.value);
+        if (cents > MAX_EMPLOYEE_AMOUNT_CENTS) throw new Error('직원 한 명의 인건비는 999999999.99까지 입력할 수 있습니다.');
+        amount = centsToAmount(cents);
+      } else if (!allowMissingCost) throw new Error('인건비가 비어 있습니다. 인원 명단만 먼저 가져오려면 금액 미입력 허용을 선택해 주세요.');
+      if (amount === null) missing += 1;
+      const departmentId = classificationMode === 'file' ? resolveClassification({
+        code: columns.classification_code == null ? '' : cellText(row[columns.classification_code]),
+        group: columns.classification_group == null ? '' : cellText(row[columns.classification_group]),
+        function: columns.classification_function == null ? '' : cellText(row[columns.classification_function]),
+      }) : undefined;
+      codes.add(code);
+      result.push({ code, name, title, amount, period, source_department: sourceDepartment, ...(classificationMode === 'file' ? {department_id: departmentId} : {}) });
+    } catch (failure) { throw new Error(`${rowIndex + 1}행: ${failure instanceof Error ? failure.message : '입력값을 확인해 주세요.'}`); }
+  }
+  if (!result.length) throw new Error('선택한 월에 가져올 직원이 없습니다.');
+  return { rows: result, excluded_row_count: excluded, missing_cost_count: missing };
 }
 
 export function parseMappedRows(rows: HrImportCell[][], mapping: HrImportMapping): HrImportRow[] {
@@ -174,15 +247,17 @@ export function parseMappedRows(rows: HrImportCell[][], mapping: HrImportMapping
 }
 
 export async function readWorkbook(file: File): Promise<HrWorkbook> {
-  if (!/\.(xlsx|csv)$/i.test(file.name)) throw new Error("XLSX 또는 CSV 파일을 선택해 주세요.");
+  if (!/\.(xlsx|csv|tsv|txt)$/i.test(file.name)) throw new Error("XLSX, CSV 또는 TSV/TXT 파일을 선택해 주세요.");
   if (file.size > MAX_IMPORT_BYTES) throw new Error("파일은 10MB까지 올릴 수 있습니다.");
   if (file.size === 0) throw new Error("빈 파일은 올릴 수 없습니다.");
   const [buffer, XLSX] = await Promise.all([file.arrayBuffer(), import("xlsx")]);
   let workbook;
   try {
     // raw preserves leading zeros in CSV; XLSX formatted text is kept per cell below.
-    workbook = XLSX.read(buffer, {
-      type: "array", cellFormula: true, cellText: true, raw: true,
+    const textFile = /\.(csv|tsv|txt)$/i.test(file.name);
+    const input = textFile ? new TextDecoder('utf-8', { fatal: true }).decode(buffer) : buffer;
+    workbook = XLSX.read(input, {
+      type: textFile ? 'string' : 'array', cellFormula: true, cellText: true, raw: true,
       sheetRows: MAX_WORKSHEET_ROWS + 1,
     });
   } catch {
@@ -223,7 +298,7 @@ export async function readWorkbook(file: File): Promise<HrWorkbook> {
 }
 
 export function createTemplateCsv(): string {
-  return "\uFEFFcode,name,title,amount\r\n0001,홍길동,생산 담당,10000.00\r\n";
+  return '\uFEFF月份,工号,姓名,职务,部门,应发工资,可视化部门,可视化职能\r\n2026-01,0001,样例员工,职员,注塑,10000.00,注塑管理,操作工\r\n';
 }
 
 export function downloadTemplate(): void {

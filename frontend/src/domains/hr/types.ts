@@ -12,7 +12,10 @@ export type HrImportRow = {
   code: string;
   name: string;
   title: string;
-  amount: string;
+  amount: string | null;
+  period?: string;
+  source_department?: string;
+  department_id?: string | null;
 };
 
 export type HrEmployee = HrImportRow & {
@@ -23,14 +26,22 @@ export type HrAssignment = Pick<HrEmployee, "code" | "department_id">;
 
 export type HrDepartmentSummary = {
   id: string;
-  direct_total: string;
-  total: string;
+  direct_total: string | null;
+  total: string | null;
+  known_direct_total: string;
+  known_total: string;
+  direct_missing_cost_count: number;
+  missing_cost_count: number;
   direct_count: number;
   headcount: number;
-  share: string;
+  share: string | null;
 };
 
 export type HrWorkspace = {
+  company_structure: {
+    classification: {version:string;nodes:HrDepartment[];leaders:{id:string;label:string}[];groups:{id:string;label:string;row:number;column:number;children:string[]}[]};
+    organization: {nodes:{id:string;label:string;name:string;parent_id:string|null}[];edges:{from:string;to:string}[]};
+  };
   month: string;
   currency: HrCurrency;
   cost_basis: HrCostBasis;
@@ -42,12 +53,18 @@ export type HrWorkspace = {
     filename: string;
     fingerprint: string;
     row_count: number;
-    total: string;
+    total: string | null;
+    known_total: string;
+    missing_cost_count: number;
   };
   summary: {
-    total: string;
-    assigned_total: string;
-    unassigned_total: string;
+    total: string | null;
+    known_total: string;
+    known_cost_count: number;
+    missing_cost_count: number;
+    cost_complete: boolean;
+    assigned_total: string | null;
+    unassigned_total: string | null;
     employee_count: number;
     assigned_count: number;
     unassigned_count: number;
@@ -72,18 +89,24 @@ export type HrImportPayload = {
   cost_basis: HrCostBasis;
   cost_basis_label: string;
   source_filename: string;
+  month?: string;
+  apply_classification?: boolean;
+  allow_missing_cost?: boolean;
 };
 
 export type HrImportPreview = {
   rows: HrImportRow[];
-  total: string;
+  total: string | null;
+  known_total: string;
+  missing_cost_count: number;
+  known_cost_count: number;
   row_count: number;
   fingerprint: string;
 };
 
 export type HrImportCommit = HrImportPayload & {
   version: number;
-  expected_total: string;
+  expected_total: string | null;
 };
 
 export type HrLayoutUpdate = {

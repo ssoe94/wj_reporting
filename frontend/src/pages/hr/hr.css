@@ -2,9 +2,67 @@
 .hr-page {
   --hr-bg: #f3f5f9; --hr-surface: #fff; --hr-text: #20364e; --hr-muted: #52697c;
   --hr-border: #dce3eb; --hr-accent: #284c70; --hr-soft: #eff4f8; --hr-navy: #1d3655;
-  max-width: 1740px; min-height: 100%; margin: 0 auto; padding: 28px; color: var(--hr-text);
+  max-width: 1740px; min-height: 100%; margin: 0 auto; padding: 16px; color: var(--hr-text);
   background: var(--hr-bg); font-size: 15px; font-variant-numeric: tabular-nums;
 }
+.hr-work-header { display:flex; align-items:center; gap:18px; padding:10px 14px; margin-bottom:10px; background:#fff; border:1px solid var(--hr-border); border-radius:8px; }
+.hr-work-title { display:flex; align-items:baseline; gap:10px; margin-right:auto; min-width:0; }
+.hr-work-title > span { color:var(--hr-muted); font-size:13px; white-space:nowrap; }
+.hr-work-title h1 { margin:0; color:var(--hr-navy); font-size:22px; font-weight:750; white-space:nowrap; }
+.hr-work-header .hr-tabs a { min-height:38px; padding:7px 11px; font-size:14px; white-space:nowrap; }
+.hr-work-header .hr-month { font-size:13px; gap:7px; }
+.hr-work-header .hr-month input { min-height:38px; max-width:164px; padding:6px 8px; }
+.hr-summary-strip { display:grid; grid-template-columns:minmax(240px,1.5fr) repeat(3,minmax(120px,1fr)); background:#fff; border:1px solid var(--hr-border); border-radius:8px; margin:10px 0 14px; overflow:hidden; }
+.hr-summary-strip > div, .hr-summary-strip > button, .hr-summary-strip > a { min-width:0; padding:11px 16px; background:transparent; border:0; border-inline-end:1px solid var(--hr-border); text-align:start; text-decoration:none; }
+.hr-summary-strip > :last-child { border-inline-end:0; }
+.hr-summary-strip > button:hover, .hr-summary-strip > a:hover { background:var(--hr-soft); }
+.hr-summary-strip span { display:block; color:var(--hr-muted); font-size:13px; line-height:1.4; }
+.hr-summary-strip strong { display:block; color:var(--hr-text); font-size:25px; line-height:1.4; font-weight:750; }
+.hr-summary-strip small { color:var(--hr-muted); font-size:12px; font-weight:450; line-height:1.5; }
+.hr-summary-strip strong small { margin-inline-start:5px; font-size:14px; }
+.hr-summary-strip span small { margin-inline-start:6px; }
+.hr-summary-strip .is-attention strong { color:#9a6020; }
+.hr-compact-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.hr-compact-toolbar h2 { font-size:17px; }
+.hr-compact-toolbar .hr-button { min-height:38px; padding:7px 10px; font-size:14px; }
+.hr-personnel-layout.is-compact { grid-template-columns:280px minmax(0,1fr); gap:12px; }
+.hr-roster.is-compact { display:flex; flex-direction:column; max-height:520px; padding:12px; }
+.hr-roster.is-compact .hr-roster-list { flex:1; min-height:0; overflow:auto; padding-right:3px; }
+.hr-roster.is-compact .hr-search { margin-bottom:7px; }
+.hr-roster.is-compact .hr-section-heading { margin-bottom:7px; }
+.hr-roster.is-compact .hr-section-heading h2 { font-size:16px; }
+.hr-roster.is-compact .hr-muted { margin:6px 0; font-size:12px; }
+.hr-employee.is-condensed { padding:9px; margin-bottom:7px; }
+.hr-employee.is-condensed strong, .hr-employee.is-condensed b { font-size:14px; }
+.hr-employee.is-condensed .hr-employee-current { font-size:12px; margin:3px 0; }
+.hr-import.is-compact { padding:12px 14px; margin-bottom:10px; }
+.hr-import.is-compact h2 { font-size:16px; }
+.hr-import.is-compact .hr-section-heading { margin:0; align-items:center; }
+.hr-import.is-compact .hr-button { min-height:38px; padding:7px 10px; font-size:14px; }
+.hr-import.is-compact .hr-import-body { margin-top:10px; padding-top:12px; }
+.hr-import-mapping { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px 12px; }
+.hr-import-mapping .hr-field { margin-bottom:5px; }
+.hr-import-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.hr-import-heading > div:first-child { display:flex; align-items:baseline; gap:10px; }
+.hr-import-heading h2 { font-size:16px; }
+.hr-import-heading small, .hr-mapping-summary { color:var(--hr-muted); font-size:13px; }
+.hr-import-review { display:flex; align-items:center; flex-wrap:wrap; gap:7px 16px; font-size:14px; margin:10px 0; }
+.hr-import-values { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:baseline; margin:10px 0; }
+.hr-import-values > div { display:flex; align-items:baseline; gap:8px; }
+.hr-import-values span, .hr-import-values small { font-size:13px; color:var(--hr-muted); }
+.hr-import-values strong { font-size:20px; color:var(--hr-text); }
+.hr-import-settings { margin:8px 0; font-size:14px; }
+.hr-import-settings > summary { cursor:pointer; min-height:28px; font-size:13px; color:var(--hr-muted); }
+.hr-import.is-compact .hr-table-scroll table th, .hr-import.is-compact .hr-table-scroll table td { padding:7px 9px; font-size:13px; }
+.hr-disclosure { margin:10px 0; padding:10px 14px; background:#fff; border:1px solid var(--hr-border); border-radius:7px; }
+.hr-disclosure > summary { cursor:pointer; font-size:14px; font-weight:650; min-height:24px; }
+.hr-disclosure[open] > summary { margin-bottom:12px; }
+.hr-secondary-views { display:grid; grid-template-columns:1fr; gap:0; }
+.hr-empty-intake { font-size:14px; padding:8px 0; color:var(--hr-muted); }
+.hr-empty-intake a { margin-left:8px; color:var(--hr-accent); font-weight:650; }
+.hr-floating-notice { position:fixed; z-index:70; inset-inline-end:20px; bottom:20px; max-width:calc(100vw - 40px); margin:0; padding:9px 13px; border:1px solid #c5d4e3; border-radius:7px; background:#edf4fa; color:var(--hr-accent); box-shadow:0 3px 12px #19344d18; font-size:14px; line-height:1.5; pointer-events:none; }
+@media (max-width:1000px) { .hr-work-header { gap:8px; flex-wrap:wrap; } .hr-work-title { margin-right:auto; } .hr-personnel-layout.is-compact { grid-template-columns:240px minmax(0,1fr); } .hr-summary-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } .hr-summary-strip > :nth-child(2) { border-inline-end:0; } .hr-summary-strip > :nth-child(-n+2) { border-bottom:1px solid var(--hr-border); } }
+@media (max-width:700px) { .hr-page { padding:10px; } .hr-work-header { padding:9px 10px; } .hr-work-title h1 { font-size:20px; } .hr-work-title > span { display:none; } .hr-work-header .hr-tabs { order:3; width:100%; } .hr-work-header .hr-month { margin-left:auto; } .hr-summary-strip > div, .hr-summary-strip > button, .hr-summary-strip > a { padding:9px 12px; } .hr-summary-strip strong { font-size:23px; } .hr-personnel-layout.is-compact { grid-template-columns:1fr; } .hr-roster.is-compact { position:static; max-height:320px; } .hr-import-mapping { grid-template-columns:repeat(2,minmax(0,1fr)); }  }
 .hr-page button, .hr-page input, .hr-page select, .hr-page textarea { font: inherit; color: inherit; }
 .hr-page button { cursor: pointer; }
 .hr-page button:disabled { cursor: default; opacity: .55; }
@@ -39,7 +97,7 @@
 .hr-button.is-quiet { border-color: transparent; background: transparent; font-weight: 500; }
 .hr-icon-button { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--hr-muted); }
 .hr-icon-button:hover { background: var(--hr-soft); }
-.hr-source { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 8px 0 17px; color: var(--hr-muted); font-size: 13px; overflow-wrap: anywhere; }
+.hr-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 4px 0 8px; color: var(--hr-muted); font-size: 12px; overflow-wrap: anywhere; }
 .hr-source strong { color: var(--hr-text); margin-right: 4px; }
 .hr-muted { color: var(--hr-muted); font-size: 14px; }
 .hr-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -213,3 +271,5 @@
   .hr-page { --hr-border: #75889b; --hr-muted: #304d69; }
   .hr-cost-box.is-selected, .hr-department-box.is-drop-target, .hr-roster.is-drop-target { outline-width: 3px; }
 }
+
+@media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month input, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }

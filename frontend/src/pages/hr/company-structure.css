@@ -1,0 +1,82 @@
+.company-classification-compact { min-width: 0; }
+.company-classification-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(230px, calc((100% - 30px) / 4))), 1fr)); gap: 10px; align-items: stretch; }
+.company-group-card { min-width: 0; padding: 10px; border: 1px solid var(--hr-border, #dce3eb); border-radius: 8px; background: #fff; }
+.company-group-card.is-unavailable { background: #f7f9fb; }
+.company-group-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; margin: 0 0 6px; padding: 4px 2px 9px; border: 0; border-bottom: 1px solid var(--hr-border, #dce3eb); border-radius: 4px 4px 0 0; background: transparent; text-align: left; color: var(--hr-text, #20364e); }
+.company-group-header > strong { min-width: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.company-group-stat { display: flex; flex-direction: column; flex-shrink: 0; align-items: flex-end; gap: 3px; }
+.company-group-stat > span:first-child { color: var(--hr-muted, #52697c); font-size: 13px; line-height: 1.4; }
+.company-compact-price { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.company-compact-price strong { color: var(--hr-text, #20364e); font-size: 14px; line-height: 1.4; font-weight: 650; white-space: nowrap; }
+.company-compact-price small { color: #73531b; font-size: 12px; line-height: 1.4; white-space: nowrap; }
+.company-compact-price.is-empty strong { color: var(--hr-muted, #52697c); font-weight: 400; }
+.company-group-functions { display: flex; flex-direction: column; gap: 2px; }
+.company-function-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 38px; width: 100%; padding: 6px 5px; border: 0; border-radius: 4px; background: #f4f7fa; color: var(--hr-text, #20364e); text-align: left; font-size: 14px; }
+.company-function-label { min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.company-function-count { color: var(--hr-muted, #52697c); font-size: 13px; white-space: nowrap; }
+.company-function-row.is-empty { background: #fafbfd; color: var(--hr-muted, #52697c); }
+.company-function-row.is-empty .company-function-count { color: var(--hr-muted, #52697c); }
+.company-group-header:hover, .company-function-row:hover, .company-leader-cell:hover { background: #eaf1f7; }
+.company-group-header.is-selected, .company-function-row.is-selected { background: #e6eef6; }
+.company-group-header.is-drop-target, .company-function-row.is-drop-target, .company-leader-cell.is-drop-target { outline: 2px solid #4b779e; outline-offset: -2px; background: #dcebf7; }
+.company-leaders-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.company-leader-cell { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 9px 12px; border: 1px solid var(--hr-border, #dce3eb); border-radius: 6px; background: #fff; color: var(--hr-text, #20364e); font-size: 14px; text-align: left; }
+.company-leader-cell > span:first-child { flex: 1; min-width: 0; }
+.company-leader-cell > span:nth-child(2) { color: var(--hr-muted, #52697c); font-size: 12px; white-space: nowrap; }
+.company-extra-compact { margin-top: 10px; padding: 0 10px; border: 1px solid var(--hr-border, #dce3eb); border-radius: 6px; background: #fff; font-size: 14px; }
+.company-extra-compact summary { min-height: 44px; line-height: 44px; cursor: pointer; }
+.company-extra-compact > div { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 10px; }
+.company-people-drawer { margin-top: 12px; padding: 14px; border: 1px solid #c4d3e1; border-radius: 8px; background: #fff; }
+.company-people-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+.company-people-heading h3 { margin: 0; font-size: 16px; line-height: 1.5; }
+.company-people-heading h3 span { margin-left: 8px; font-size: 13px; color: var(--hr-muted, #52697c); font-weight: 400; }
+.company-people-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.company-people-toolbar .hr-search { max-width: 310px; }
+.company-people-table-scroll { width: 100%; max-height: 330px; overflow: auto; }
+.hr-page .company-people-drawer table { min-width: 460px; font-size: 14px; }
+.hr-page .company-people-drawer td, .hr-page .company-people-drawer th { padding: 7px 9px; }
+.company-people-drawer td small { display: block; margin-top: 2px; color: var(--hr-muted, #52697c); font-size: 12px; }
+.company-people-move { display: flex; align-items: center; gap: 5px; }
+.company-people-move select { min-width: 130px; max-width: 240px; min-height: 40px; padding: 6px; border: 1px solid var(--hr-border, #dce3eb); border-radius: 5px; background: #fff; font-size: 13px; }
+.company-people-move button { min-height: 40px; padding: 7px 9px; font-size: 13px; }
+.company-chart-notice { margin: 7px 0 0; color: var(--hr-accent, #284c70); font-size: 13px; }
+.company-chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.company-chart-heading h2 { font-size: 16px; margin: 0; }
+.company-chart-heading p { max-width: 700px; margin: 4px 0 0; color: var(--hr-muted, #52697c); font-size: 13px; line-height: 1.5; }
+.company-chart-controls { display: flex; align-items: center; flex-shrink: 0; gap: 5px; }
+.company-chart-controls > span { min-width: 38px; font-size: 12px; text-align: center; color: var(--hr-muted, #52697c); }
+.company-chart-controls .hr-icon-button { width: 36px; height: 36px; border: 1px solid var(--hr-border, #dce3eb); background: #fff; }
+.company-chart-controls .hr-button { min-height: 36px; padding: 5px 8px; font-size: 13px; }
+.company-chart-viewport { width: 100%; max-height: 420px; overflow: auto; border: 1px solid var(--hr-border, #dce3eb); border-radius: 6px; background: #fff; overscroll-behavior: contain; }
+.company-chart-stage { position: relative; min-width: 100%; }
+.company-chart-canvas { position: absolute; top: 0; transform-origin: top left; }
+.company-organization { margin: 0; }
+.company-organization-canvas { background: #fff; }
+.company-organization-lines { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.company-organization-lines path { stroke: #315c88; stroke-width: 3; fill: none; }
+.company-organization-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 176px; height: 176px; padding: 17px; border: 1px solid #36658c; border-radius: 50%; background: #315c88; color: #fff; text-align: center; }
+.company-organization-node.is-chairman { width: 210px; height: 210px; background: #1d3655; border-color: #1d3655; }
+.company-organization-node.is-deputy { width: 192px; height: 192px; background: #436f94; border-color: #436f94; }
+.company-organization-node.is-manager { background: #527c9e; border-color: #527c9e; }
+.company-organization-node.is-support { width: 158px; height: 158px; background: #e6eef5; color: #20364e; border-color: #87a2bb; }
+.company-organization-node.is-qa { background: #376780; border-color: #376780; }
+.company-organization-node strong { display: block; font-size: 25px; font-weight: 750; line-height: 1.45; white-space: pre-line; }
+.company-organization-node[data-organization-node="sales-operations"] strong { font-size: 23px; white-space: nowrap; }
+.company-organization-node span { display: block; margin-top: 6px; font-size: 26px; font-weight: 800; line-height: 1.4; }
+.company-organization-accessible { margin-top: 8px; font-size: 13px; }
+.company-organization-accessible summary { min-height: 36px; line-height: 36px; cursor: pointer; }
+.company-organization-accessible li { line-height: 1.8; }
+@media (max-width: 1350px) { .company-classification-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(230px, calc((100% - 20px) / 3))), 1fr)); } }
+@media (max-width: 1050px) { .company-classification-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(230px, calc((100% - 10px) / 2))), 1fr)); } .company-leaders-compact { grid-template-columns: 1fr; } }
+@media (max-width: 650px) {
+  .company-classification-grid { grid-template-columns: 1fr; gap: 8px; }
+  .company-function-row { min-height: 44px; }
+  .company-group-header { min-height: 52px; }
+  .company-people-drawer { padding: 10px; }
+  .company-people-move select, .company-people-move button { min-height: 44px; }
+  .company-chart-heading { flex-direction: column; }
+  .company-chart-controls .hr-icon-button { width: 44px; height: 44px; }
+  .company-chart-controls .hr-button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .company-classification-compact *, .company-chart * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media (prefers-contrast: more) { .company-group-card, .company-chart-viewport { border-color: #6d849a; } .company-function-row.is-empty { color: #304d69; } }

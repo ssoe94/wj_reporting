@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { LockKeyhole, RefreshCw, Users } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { canAccessHr } from '../../domains/auth/hr-access';
 import { useLang } from '../../i18n';
@@ -13,15 +13,19 @@ import './hr.css';
 export type HrLang = 'ko' | 'zh';
 
 export function currentHrMonth() {
+  const selected = new URLSearchParams(window.location.search).get('month');
+  if (selected && /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(selected)) return selected;
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}`;
 }
 
-export function money(value: string | number, currency: HrCurrency, lang: HrLang) {
+export function money(value: string | number | null, currency: HrCurrency, lang: HrLang) {
+  if (value === null) return '—';
   const cents = typeof value === 'number' ? value : amountToCents(value);
-  return new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'zh-CN', {
+  const formatted = new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'zh-CN', {
     style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(cents / 100);
+  return currency === 'CNY' ? formatted.replace('CN¥', '¥') : formatted;
 }
 
 export function safeHrError(error: unknown, fallback: string) {
@@ -102,22 +106,22 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children }:
 }) {
   const { lang } = useLang();
   const ko = lang === 'ko';
+  const location = useLocation(); const navigate = useNavigate();
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    if (query.get('month') === month) return;
+    query.set('month', month);
+    navigate({pathname:location.pathname,search:query.toString()}, {replace:true});
+  }, [month, location.pathname, location.search, navigate]);
   return <main className="hr-page">
-    <header className="hr-hero">
-      <div><div className="hr-eyebrow">WJ DATA CENTER · {ko ? '인사·총무' : '人事·总务'}</div>
-        <h1>{page === 'personnel' ? (ko ? '인원 배치' : '人员配置') : (ko ? '인건비 집계' : '人工成本汇总')}</h1>
-        <p>{page === 'personnel'
-          ? (ko ? '월별 인건비 자료를 확인하고, 부서와 기능에 맞춰 인원을 배치합니다.' : '确认月度人工成本资料，按部门与职能配置人员。')
-          : (ko ? '부서의 직접 인건비와 하위 조직을 포함한 합계를 함께 확인합니다.' : '查看部门直接人工成本及包含下级组织的汇总。')}</p></div>
-      <span className="hr-private"><LockKeyhole size={16} />{ko ? 'SUPERUSER · 인사 담당자' : 'SUPERUSER · 人事负责人'}</span>
-    </header>
-    <div className="hr-page-toolbar">
+    <header className="hr-work-header">
+      <div className="hr-work-title"><span>{ko ? '인사·총무' : '人事·总务'}</span><h1>{page === 'personnel' ? (ko ? '인원 배치' : '人员配置') : (ko ? '인건비 집계' : '人工成本汇总')}</h1></div>
       <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
-        <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to="/hr/personnel"><Users size={17} />{ko ? '인원 배치' : '人员配置'}</Link>
-        <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to="/hr/labor-cost">{ko ? '인건비 집계·시각화' : '成本汇总·可视化'}</Link>
+        <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
+        <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
       </nav>
-      <label className="hr-month">{ko ? '대상 월' : '统计月份'}<input type="month" value={month} disabled={monthDisabled} onChange={(event) => { if (/^\d{4}-\d{2}$/.test(event.target.value)) onMonthChange(event.target.value); }} /></label>
-    </div>
+      <label className="hr-month">{ko ? '대상 월' : '月份'}<input type="month" value={month} disabled={monthDisabled} onInput={(event) => { if (/^\d{4}-\d{2}$/.test(event.currentTarget.value)) onMonthChange(event.currentTarget.value); }} /></label>
+    </header>
     {children}
   </main>;
 }
@@ -146,23 +150,30 @@ export function HrSource({ workspace }: { workspace: HrWorkspace }) {
 }
 
 export function layoutSummary(departments: HrDepartment[], employees: HrEmployee[]) {
-  const totals = new Map(departments.map((department) => [department.id, { direct: 0, total: 0, directCount: 0, headcount: 0 }]));
-  let total = 0; let assigned = 0; let assignedCount = 0;
+  const totals = new Map(departments.map((department) => [department.id, { direct: 0 as number | null, total: 0 as number | null, knownDirect: 0, knownTotal: 0, directMissingCount: 0, missingCount: 0, directCount: 0, headcount: 0 }]));
+  let knownTotal = 0; let knownAssigned = 0; let assignedCount = 0; let missingCostCount = 0; let assignedMissing = 0;
   for (const employee of employees) {
-    const cents = amountToCents(employee.amount); total += cents;
+    const unknown = employee.amount === null;
+    const cents = unknown ? 0 : amountToCents(employee.amount); knownTotal += cents; missingCostCount += Number(unknown);
     if (!employee.department_id) continue;
     const direct = totals.get(employee.department_id);
     if (!direct) continue;
-    assigned += cents; assignedCount += 1; direct.direct += cents; direct.directCount += 1;
+    knownAssigned += cents; assignedCount += 1; assignedMissing += Number(unknown);
+    direct.knownDirect += cents; direct.directCount += 1; direct.directMissingCount += Number(unknown);
+    direct.direct = direct.directMissingCount ? null : direct.knownDirect;
     let id: string | null = employee.department_id;
     const visited = new Set<string>();
     while (id && !visited.has(id)) {
       visited.add(id);
       const branch = totals.get(id);
       if (!branch) break;
-      branch.total += cents; branch.headcount += 1;
+      branch.knownTotal += cents; branch.headcount += 1; branch.missingCount += Number(unknown);
+      branch.total = branch.missingCount ? null : branch.knownTotal;
       id = departments.find((department) => department.id === id)?.parent_id ?? null;
     }
   }
-  return { total, assigned, unassigned: total - assigned, assignedCount, unassignedCount: employees.length - assignedCount, totals };
+  return { total: missingCostCount ? null : knownTotal, assigned: assignedMissing ? null : knownAssigned,
+    unassigned: missingCostCount - assignedMissing ? null : knownTotal - knownAssigned,
+    knownTotal, knownAssigned, missingCostCount, costComplete: missingCostCount === 0,
+    assignedCount, unassignedCount: employees.length - assignedCount, totals };
 }

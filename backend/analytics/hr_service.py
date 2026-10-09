@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from .hr_contract import HrConflict, preview_payload, summarize
 from .models import HrMonthWorkspace, HrWorkspaceHistory
+from .hr_company_structure import COMPANY_DEPARTMENTS, company_catalog
 
 
 def lock_month(month):
@@ -26,11 +27,11 @@ def snapshot(workspace):
 def workspace_payload(workspace, month=None):
     if workspace is None:
         return {
-            'month': month, 'currency': 'CNY', 'cost_basis': 'employer_total', 'cost_basis_label': '', 'version': 0,
-            'departments': [], 'employees': [], 'source': None, 'summary': summarize([], []), 'updated_at': None, 'history': [],
+            'month': month, 'currency': 'CNY', 'cost_basis': 'gross_salary', 'cost_basis_label': '应发工资', 'version': 0,
+            'departments': [], 'employees': [], 'source': None, 'summary': summarize([], []), 'updated_at': None, 'history': [], 'company_structure': company_catalog(),
         }
     return {
-        **snapshot(workspace), 'summary': summarize(workspace.departments, workspace.employees),
+        **snapshot(workspace), 'summary': summarize(workspace.departments, workspace.employees), 'company_structure': company_catalog(),
         'updated_at': workspace.updated_at.isoformat(),
         'history': [{'version': entry.version, 'action': entry.action, 'actor': entry.actor_label, 'created_at': entry.created_at.isoformat()} for entry in workspace.history.filter(version__lte=workspace.version)[:20]],
     }
@@ -70,17 +71,33 @@ def persist(workspace, month, values, user, action):
 def save_import(month, data, user):
     workspace = lock_month(month)
     check_version(workspace, data['version'])
+    if data.get('month') and data['month'] != month:
+        raise serializers.ValidationError({'month': '가져올 급여 월과 저장 대상 월이 다릅니다.'})
     preview = preview_payload(data)
-    if Decimal(preview['total']) != data['expected_total']:
+    actual_total = Decimal(preview['total']) if preview['total'] is not None else None
+    if actual_total != data['expected_total']:
         raise serializers.ValidationError({'expected_total': '미리보기 합계와 업로드 금액이 다릅니다.'})
-    if workspace and workspace.source and workspace.source.get('fingerprint') == preview['fingerprint']:
-        return workspace
     previous = {employee['code']: employee['department_id'] for employee in workspace.employees} if workspace else {}
-    employees = [{**row, 'department_id': previous.get(row['code'])} for row in preview['rows']]
+    apply_classification = data.get('apply_classification', False)
+    assignment_matches = not apply_classification or all(previous.get(row['code']) == row['department_id'] for row in preview['rows'])
+    if workspace and workspace.source and workspace.source.get('fingerprint') == preview['fingerprint'] and assignment_matches:
+        return workspace
+    departments = list(workspace.departments) if workspace else []
+    if apply_classification:
+        known = {department['id'] for department in departments}
+        departments.extend(dict(item) for item in COMPANY_DEPARTMENTS if item['id'] not in known)
+        if len(departments) > 200:
+            raise serializers.ValidationError({'rows': '회사 분류도와 기존 부서의 합계가 200개를 초과합니다.'})
+        from .hr_contract import validate_departments
+        validate_departments(departments)
+        valid_ids = {department['id'] for department in departments}
+        if any(row.get('department_id') is not None and row['department_id'] not in valid_ids for row in preview['rows']):
+            raise serializers.ValidationError({'rows': '존재하지 않는 시각화 분류 ID입니다.'})
+    employees = [{**row, 'department_id': row['department_id'] if apply_classification else previous.get(row['code'])} for row in preview['rows']]
     return persist(workspace, month, {
         'currency': data['currency'], 'cost_basis': data['cost_basis'], 'cost_basis_label': data['cost_basis_label'],
-        'departments': workspace.departments if workspace else [], 'employees': employees,
-        'source': {'filename': data['source_filename'], 'fingerprint': preview['fingerprint'], 'row_count': preview['row_count'], 'total': preview['total']},
+        'departments': departments, 'employees': employees,
+        'source': {'filename': data['source_filename'], 'fingerprint': preview['fingerprint'], 'row_count': preview['row_count'], 'total': preview['total'], 'known_total': preview['known_total'], 'missing_cost_count': preview['missing_cost_count']},
     }, user, 'import')
 
 
