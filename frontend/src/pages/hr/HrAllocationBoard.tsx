@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { COMPANY_CLASSIFICATION, HR_DEPARTMENT_ORDER } from '../../domains/hr/company-structure';
 import { hrAssignmentPath, hrDepartmentLabel, hrGroupLabel } from '../../domains/hr/labels';
@@ -24,6 +24,9 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   const previousFocus = useRef<HTMLElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const capture = useRef<HTMLElement | null>(null);
+  const suppressPointerClick = useRef(false);
+  const disclosureId = useId();
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<Drag | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [revealName, setRevealName] = useState(false);
@@ -86,19 +89,20 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   function cost(value: string | null) { return value === null ? (ko ? '미확정' : '待确认') : compactMoney(value, currency, lang); }
   function codeLabel(code: string) { return `${formatEmployeeCode(code)}${collisions.has(code) ? ` (${ko ? '원본' : '原编号'} ${code})` : ''}`; }
   function amount(value: string | null | undefined) { return value == null ? (ko ? '미입력' : '未填写') : compactMoney(value, currency, lang); }
-  function endDrag(cancelled = false) {
+  const endDrag = useCallback((cancelled = false) => {
     const current = dragRef.current; dragRef.current = null; setDrag(null);
+    if (current?.active) suppressPointerClick.current = true;
     if (capture.current && current && capture.current.hasPointerCapture(current.pointer)) capture.current.releasePointerCapture(current.pointer);
     capture.current = null;
     if (cancelled && current?.active) setNotice(ko ? '이동을 취소했습니다.' : '已取消移动。');
-  }
+  }, [ko]);
   useEffect(() => {
     // An import, saved response or month remount must never retain a revealed identity.
-    setRevealName(false); setSelection(null); setDrag(null); dragRef.current = null;
-  }, [employees]);
-  useEffect(() => { if (disabled) { setDrag(null); dragRef.current = null; } }, [disabled]);
+    setRevealName(false); setSelection(null); endDrag();
+  }, [employees, endDrag]);
+  useEffect(() => { if (disabled) endDrag(true); }, [disabled, endDrag]);
   useEffect(() => {
-    const cancel = () => { dragRef.current = null; setDrag(null); };
+    const cancel = () => endDrag(true);
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { cancel(); setSelection(null); setRevealName(false); }
       if (event.key === 'Tab' && dialog.current) {
@@ -109,8 +113,13 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
       }
     };
     window.addEventListener('keydown', key); window.addEventListener('blur', cancel);
-    return () => { window.removeEventListener('keydown', key); window.removeEventListener('blur', cancel); };
-  }, []);
+    return () => {
+      window.removeEventListener('keydown', key); window.removeEventListener('blur', cancel);
+      const current = dragRef.current; dragRef.current = null;
+      if (current && capture.current?.hasPointerCapture(current.pointer)) capture.current.releasePointerCapture(current.pointer);
+      capture.current = null;
+    };
+  }, [endDrag]);
   useEffect(() => {
     if (!dragCode || !canEdit || !root.current) return;
     const board = root.current;
@@ -150,8 +159,10 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   function openPerson(person: HrEmployee) { previousFocus.current = document.activeElement as HTMLElement; setRevealName(false); setDestination(person.department_id ?? ''); setSelection({ type: 'person', code: person.code }); }
   function openFunction(id: string, children = false, excludeSelf = false) { if (!byId.has(id)) return; previousFocus.current = document.activeElement as HTMLElement; setRevealName(false); setLimit(20); setSelection({ type: 'function', id, children, excludeSelf }); }
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>, person: HrEmployee) {
+    suppressPointerClick.current = false;
     if (!canEdit || event.button !== 0) return;
-    const rect = event.currentTarget.closest('.hr-person-pill')!.getBoundingClientRect();
+    setNotice('');
+    const rect = (event.currentTarget.closest('.hr-person-pill') ?? event.currentTarget).getBoundingClientRect();
     const value: Drag = { code: person.code, pointer: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, active: false, target: undefined };
     dragRef.current = value; capture.current = event.currentTarget; event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -166,11 +177,22 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   }
   function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const current = dragRef.current; if (!current || current.pointer !== event.pointerId) return;
-    const preview = current.active && current.target !== undefined && canEdit ? getMovePreview(departments, employees, current.code, current.target) : null;
+    const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-hr-drop]');
+    const value = hit && root.current?.contains(hit) ? hit.dataset.hrDrop : undefined;
+    const target = value === UNASSIGNED ? null : value && byId.has(value) ? value : undefined;
+    const preview = current.active && target !== undefined && canEdit ? getMovePreview(departments, employees, current.code, target) : null;
     endDrag(!preview?.changes);
-    if (preview?.changes && current.target !== undefined) onMove?.(current.code, current.target);
+    if (preview?.changes && target !== undefined) {
+      onMove?.(current.code, target);
+    }
   }
   function staffPill(person: HrEmployee, dock = false) {
+    if (!dock) return <button key={person.code} type="button" className={`hr-person-badge${canEdit ? ' is-movable' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}`} data-person-code={person.code}
+      aria-label={`${codeLabel(person.code)} ${person.name} ${ko ? '상세' : '详情'}`} title={canEdit ? (ko ? '드래그하여 이동 · 클릭하여 상세 보기' : '拖动配置 · 点击查看详情') : undefined}
+      onPointerDown={(event) => startDrag(event, person)} onPointerMove={trackDrag} onPointerUp={finishDrag} onPointerCancel={() => endDrag(true)} onLostPointerCapture={() => { if (dragRef.current) endDrag(true); }}
+      onClick={(event) => { if (event.detail > 0 && suppressPointerClick.current) { suppressPointerClick.current = false; return; } openPerson(person); }}>
+      {canEdit && <GripVertical size={12} aria-hidden="true" />}<strong>{formatEmployeeCode(person.code)}</strong><span className="hr-badge-name" title={person.name}>· {person.name}</span>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
+    </button>;
     return <div key={person.code} className={`hr-person-pill${dock ? ' is-dock' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}`} data-person-code={person.code}>
       <button type="button" className="hr-person-open" onClick={() => openPerson(person)} aria-label={`${codeLabel(person.code)} ${ko ? '상세' : '详情'}`}>
         <strong>{formatEmployeeCode(person.code)}</strong>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
@@ -182,11 +204,15 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   function functionCell(id: string, management = false) {
     const stats = totals.get(id); const people = peopleByCell.get(id) ?? []; const available = byId.has(id);
     const hovered = drag?.active && drag.target === id;
-    return <section key={id} className={`hr-function-cell${management ? ' is-management' : ''}${hovered ? ' is-drop-target' : ''}${!available ? ' is-unavailable' : ''}`} data-hr-drop={canEdit && available ? id : undefined} aria-label={path(id)}>
-      <button type="button" className="hr-function-title" disabled={!available} onClick={() => openFunction(id)}><strong>{management ? (ko ? '관리자 인건비' : '管理人员成本') : label(id)}</strong><span>{stats?.direct_count ?? 0}{ko ? '명' : '人'}</span><b>{stats ? cost(stats.direct_total) : '—'}</b></button>
-      {people.length > 0 && <div className="hr-function-people">{people.slice(0, 2).map((person) => staffPill(person))}</div>}
-      {people.length > 2 && <button type="button" className="hr-function-more" onClick={() => openFunction(id)}>+{people.length - 2}{ko ? '명 더 보기' : '人 查看更多'}</button>}
-      {people.length === 0 && <span className="hr-function-empty">{onMove ? (ko ? (management ? '관리자를 여기에 배치' : '여기에 배치') : (management ? '将管理人员拖到此处' : '拖到此处')) : (ko ? '배치 없음' : '暂无人员')}</span>}
+    const expanded = expandedCells.has(id); const peopleId = `${disclosureId}-${id}`;
+    return <section key={id} className={`hr-function-cell${expanded ? ' is-expanded' : ''}${management ? ' is-management' : ''}${hovered ? ' is-drop-target' : ''}${!available ? ' is-unavailable' : ''}`} data-hr-drop={canEdit && available ? id : undefined} aria-label={path(id)}>
+      <button type="button" className="hr-function-title" disabled={!available} aria-expanded={expanded} aria-controls={peopleId} aria-label={`${path(id)} ${expanded ? (ko ? '인원 접기' : '收起人员') : (ko ? '인원 펼치기' : '展开人员')}`}
+        onClick={() => setExpandedCells((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })}>
+        <strong>{management ? (ko ? '관리자 인건비' : '管理人员成本') : label(id)}</strong><span>{stats?.direct_count ?? 0}{ko ? '명' : '人'}</span><b>{stats ? cost(stats.direct_total) : '—'}</b><ChevronDown size={16} className="hr-function-chevron" aria-hidden="true" />
+      </button>
+      <div id={peopleId} className="hr-function-people" hidden={!expanded}>{expanded && people.map((person) => staffPill(person))}
+        {expanded && people.length === 0 && <span className="hr-function-empty">{onMove ? (ko ? '여기에 배치' : '拖到此处') : (ko ? '배치 없음' : '暂无人员')}</span>}
+      </div>
       {stats?.direct_missing_cost_count ? <small className="hr-function-missing">{ko ? '금액 미입력' : '金额未填'} {stats.direct_missing_cost_count}{ko ? '명' : '人'}</small> : null}
       {hovered && <span className="hr-drop-hint">{movePreview?.changes ? (ko ? '여기로 이동' : '移到此处') : (ko ? '현재 배치' : '当前位置')}</span>}
     </section>;
@@ -206,6 +232,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
 
   return <div ref={root} className={`hr-allocation-board${drag?.active ? ' is-dragging' : ''}`}>
     <p className="hr-hierarchy-key">{ko ? '부서 합계' : '部门合计'} = <span className="is-management">{ko ? '관리자 인건비' : '管理人员成本'}</span> + <span className="is-operations">{ko ? '작업·실무 인건비' : '作业·实务成本'}</span></p>
+    <p className="hr-board-interaction-hint">{onMove ? (ko ? '화살표로 인원을 펼치고, 사번 배지를 끌어서 이동하세요. 접힌 블록에도 놓을 수 있습니다.' : '点击箭头展开人员，拖动工号标签即可配置，也可放入收起的分类。') : (ko ? '화살표를 누르면 배치된 인원을 확인할 수 있습니다.' : '点击箭头查看已配置人员。')}</p>
     <p className="hr-board-scroll-hint">{ko ? '좌우로 이동하여 모든 부문을 확인하세요.' : '左右滑动查看所有部门。'}</p>
     <div className="hr-lanes-scroll" tabIndex={0} role="region" aria-label={ko ? '부문별 인원 배치판' : '部门人员配置板'}><div className="hr-department-lanes">
       {groups.map((group) => {
