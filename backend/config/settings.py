@@ -435,6 +435,7 @@ INSPECTION_PILOT_USER_IDS = config('INSPECTION_PILOT_USER_IDS', default='[]')
 
 # Identity verification only. Activation/deployment/app grants are separately approved.
 MES_USER_OAUTH_ENABLED = config('MES_USER_OAUTH_ENABLED', default=False, cast=bool)
+MES_PLAN_WRITES_ENABLED = config('MES_PLAN_WRITES_ENABLED', default=False, cast=bool)
 MES_USER_OAUTH_CALLBACK_ORIGIN = 'https://wj-reporting-backend.onrender.com'
 MES_USER_OAUTH_PROVIDER_ORIGIN = 'https://v3-ali.blacklake.cn'
 MES_USER_OAUTH_LAUNCH_URL = config('MES_USER_OAUTH_LAUNCH_URL', default='')

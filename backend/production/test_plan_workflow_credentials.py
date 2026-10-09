@@ -253,7 +253,9 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         configuration = override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(groups))
         configuration.enable()
         self.addCleanup(configuration.disable)
-        prepared = prepare(day, day, 'injection', [groups[0]['key']], self.user)[0]
+        from .plan_workflow_contract import build_legacy_contract
+        prepared = prepare(day, day, 'injection', [groups[0]['key']], self.user,
+            contract_builder=build_legacy_contract)[0]
         req = PlanMesRequest.objects.select_related('work_order').get(uid=prepared['uid'])
         return req
 

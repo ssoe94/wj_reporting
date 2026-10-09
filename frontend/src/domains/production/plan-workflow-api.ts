@@ -15,8 +15,9 @@ export type WorkflowGroup = { key: string; machine_name: string; part_no: string
   planned_start: string; planned_end: string; operation: string; blockers: string[]; work_order_code: string | null;
   mes_id?: string | null; versions?: Record<string, number>;
   members: string[]; reported_quantity: string | null; inbound_quantity: string | null };
-export type WorkflowRequest = { uid: string; work_order_code: string; operation: string; state: string; blockers: string[] };
-export type WorkflowData = { write_enabled: false; can_edit: boolean; can_manage_defaults: boolean; rows: WorkflowRow[];
+export type WorkflowRequest = { uid: string; work_order_code: string; operation: string; state: string; blockers: string[];
+  attempt?: number; mes_id?: string | null; last_result?: Record<string, unknown>; can_send?: boolean; can_recheck?: boolean };
+export type WorkflowData = { write_enabled: boolean; can_edit: boolean; can_manage_defaults: boolean; rows: WorkflowRow[];
   catalog: { dataset_id: number | null; refreshed_at: string | null; materials: MaterialOption[] };
   preview: WorkflowGroup[]; requests: WorkflowRequest[] };
 export type WorkflowScope = { start: string; end: string; plan_type: PlanType };
@@ -50,11 +51,18 @@ export const workflowLabels: Record<string, [string, string]> = {
   uncertain: ["결과 불확실 · 재조회", "结果不确定 · 需复查"],
   readback_pending: ["재조회 대기", "待复查"],
   sending: ["결과 확인 중", "正在确认结果"],
+  checking: ["생성 전 조회 중 · 재전송 금지", "创建前查询中 · 禁止重发"],
   review: ["담당자 확인 대기", "待负责人确认"],
   create: ["신규 工单 준비", "准备新工单"], update: ["수량·종료시간 변경", "修改数量及结束时间"],
   prepare: ["기존 준비안 변경", "修改现有准备方案"], unchanged: ["변경 없음", "无变更"],
   complete_creation_readback_required: ["생성 결과를 다시 조회하세요. 재전송하지 마세요", "请复查创建结果，不要重复发送"],
   connection_or_read_authority_required: ["MES 연결을 확인한 뒤 다시 조회하세요", "确认MES连接后再复查"],
   permission_required: ["조회 권한을 MES 담당자에게 요청하세요", "请向MES负责人申请查询权限"],
+  prepared: ["준비 저장됨 · MES 전송 전", "准备已保存 · 尚未发送MES"],
+  success: ["생성 성공", "创建成功"], already_exists: ["기존 工单 확인됨", "已确认现有工单"],
+  created: ["생성 성공", "创建成功"],
+  failed: ["생성 실패 · 결과 확인 필요", "创建失败 · 需核对结果"],
+  blocked: ["생성 차단 · 확인 필요", "创建受阻 · 需核对"],
+  writer_disabled: ["MES 생성 OFF · 준비·원료 확인은 사용 가능", "MES创建关闭 · 仍可准备及确认原料"],
   campaign_bom_readback_adapter_required: ["원료와 전체 생산기간을 MES 담당자가 확인해야 합니다", "请MES负责人确认原料及完整生产期间"],
 };

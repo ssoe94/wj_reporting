@@ -124,6 +124,15 @@ def fetch_user_token(app_token: str) -> str:
         return app_token
 
 
+def get_app_access_token(force_refresh: bool = False) -> str:
+    """Shared service APP cache only; never use USER_CODE or a USER token."""
+    app_token = cache.get(APP_TOKEN_CACHE_KEY)
+    expires = cache.get(TOKEN_EXPIRES_KEY)
+    if force_refresh or not app_token or (expires and expires - time.time() < 120):
+        app_token = fetch_app_token()
+    return app_token
+
+
 def get_access_token(force_refresh: bool = False) -> str:
     """최종 액세스 토큰 가져오기 (환경변수 > 사용자토큰 > 앱토큰 순서)"""
     if ACCESS_TOKEN_ENV and not force_refresh:

@@ -1,6 +1,8 @@
-from datetime import date
+from datetime import date, timedelta
+from uuid import UUID
 from collections.abc import Mapping
 from django.db import transaction
+from django.db.models import Prefetch
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,7 +12,40 @@ from .models import ProductionPlan, PlanMesRequest, PlanMesRequestEvent, PlanMat
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .plan_workflow import (lock_type, serialize_row, material_catalog, approve_materials,
                             resolve_identity, preview, prepare, text, WorkflowConflict)
+from .plan_workflow import digest
 from .plan_workflow_read_context import PlanWorkflowReadContext
+from .plan_service_transport import (writes_enabled, PlanMesServiceTransport, dispatch_service_batch,
+                                    recheck_service_creation, READBACK_STATES)
+
+
+def request_summary(row, current_keys):
+    event = row.audit_events[0] if getattr(row, 'audit_events', []) else None
+    evidence = event.evidence if event else {}
+    latest = {key: evidence[key] for key in ('outcome', 'mes_id', 'blockers', 'verified_scope') if key in evidence}
+    return {'uid': str(row.uid), 'work_order_code': row.work_order.code,
+        'operation': row.operation, 'state': row.state, 'blockers': row.blockers,
+        'intent': row.intent, 'contract': row.contract, 'attempt': row.attempt,
+        'mes_id': row.work_order.mes_id or evidence.get('mes_id', ''), 'last_result': latest,
+        'can_send': (row.operation == 'create' and row.state in ('disabled', 'prepared', 'failed')
+            and row.attempt == 0 and not row.blockers and not row.work_order.mes_id
+            and row.contract.get('authentication') == 'service_app'
+            and current_keys.get(row.work_order.code) == digest(row.intent)),
+        'can_recheck': row.operation == 'create' and row.state in READBACK_STATES}
+
+
+def selected_request(uid, start, end, plan_type):
+    try:
+        if type(uid) is not str:
+            raise ValueError()
+        uid = str(UUID(uid))
+        req = PlanMesRequest.objects.select_related('work_order').get(uid=uid, work_order__plan_type=plan_type)
+        first = date.fromisoformat(req.intent['planned_start'][:10])
+        last = date.fromisoformat(req.intent['planned_end'][:10]) - timedelta(days=1)
+        if first > end or last < start:
+            raise ValueError()
+        return req
+    except (ValueError, TypeError, KeyError, PlanMesRequest.DoesNotExist):
+        raise WorkflowConflict('Request is outside the selected plan scope.') from None
 
 
 def scope(data):
@@ -40,48 +75,40 @@ class PlanWorkflowView(APIView):
         start, end, plan_type = scope(request.query_params)
         if not user_can_view_plan(request.user, plan_type): raise PermissionDenied()
         context = PlanWorkflowReadContext(start, end, plan_type)
-        return Response({'write_enabled': False, 'rows': [serialize_row(row, context) for row in context.rows],
-            'catalog': material_catalog(), 'preview': preview(start, end, plan_type, context),
+        groups = preview(start, end, plan_type, context)
+        current_keys = {group['work_order_code']: group['key'] for group in groups
+            if group['work_order_code'] and not group['blockers']}
+        return Response({'write_enabled': writes_enabled(), 'rows': [serialize_row(row, context) for row in context.rows],
+            'catalog': material_catalog(), 'preview': groups,
             'can_edit': request.user.is_active and user_can_edit_plan(request.user, plan_type),
             'can_manage_defaults': request.user.is_active and request.user.is_superuser,
-            'requests': [{'uid': str(row.uid), 'work_order_code': row.work_order.code,
-                'operation': row.operation, 'state': row.state, 'blockers': row.blockers,
-                'intent': row.intent, 'contract': row.contract}
-                for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order').order_by('-created_at')[:100]]})
+            'requests': [request_summary(row, current_keys)
+                for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order')
+                    .prefetch_related(Prefetch('events', queryset=PlanMesRequestEvent.objects.order_by('-id'),
+                        to_attr='audit_events')).order_by('-created_at')[:100]]})
 
     def post(self, request):
         start, end, plan_type = scope(request.data)
         if not request.user.is_active or not user_can_edit_plan(request.user, plan_type): raise PermissionDenied()
         action = request.data.get('action')
         if action == 'prepare':
-            return Response({'write_enabled': False, 'results': prepare(start, end, plan_type,
+            return Response({'write_enabled': writes_enabled(), 'results': prepare(start, end, plan_type,
                 request.data.get('keys'), request.user)})
+        if action == 'send':
+            if set(request.data) - {'start', 'end', 'plan_type', 'action', 'request_uids'}:
+                raise ValidationError('Unexpected send fields.')
+            if not writes_enabled():
+                return Response({'detail': 'mes_plan_writes_disabled', 'write_enabled': False}, status=409)
+            def factory(uid):
+                selected_request(uid, start, end, plan_type)
+                return PlanMesServiceTransport(actor_id=request.user.pk)
+            return Response({'write_enabled': True,
+                'results': dispatch_service_batch(request.data.get('request_uids'), factory)})
         if action == 'recheck':
-            # Existing credential/authority rules still apply. No alternate token fallback.
-            if not request.user.is_superuser: raise PermissionDenied()
-            from mes_oauth.session_guard import InspectionSession
-            from .mes_read_status import read_mes_production_status
-            try:
-                req = PlanMesRequest.objects.select_related('work_order').get(uid=request.data.get('request_uid'), work_order__plan_type=plan_type)
-            except (ValueError, PlanMesRequest.DoesNotExist): raise ValidationError('Invalid request.') from None
-            if req.state not in ('sending', 'uncertain', 'readback_pending', 'review'):
-                raise WorkflowConflict('No unresolved transmission to recheck.')
-            if req.operation == 'create' and req.contract.get('readback_binding'):
-                from .plan_workflow_transport import recheck_creation_for_session
-                return Response(recheck_creation_for_session(req.uid, InspectionSession.from_request(request)))
-            observed = read_mes_production_status(InspectionSession.from_request(request),
-                date.fromisoformat(req.intent['planned_start'][:10]), req.work_order.code)
-            # Current four-read projection cannot prove BOM and campaign-wide qty.
-            # Persist observation, keep replay fenced, never mark confirmed from HTTP 200.
-            with transaction.atomic():
-                lock_type(plan_type)
-                req = PlanMesRequest.objects.select_for_update().get(pk=req.pk)
-                if req.state not in ('sending', 'uncertain', 'readback_pending', 'review'): raise WorkflowConflict()
-                PlanMesRequestEvent.objects.create(request=req, state=req.state,
-                    evidence={'read_state': observed['state'], 'checked_scope': 'business_day_only',
-                              'full_snapshot_verified': False})
-            return Response({'state': req.state, 'observation': observed,
-                             'blockers': ['campaign_bom_readback_adapter_required']})
+            if set(request.data) - {'start', 'end', 'plan_type', 'action', 'request_uid'}:
+                raise ValidationError('Unexpected recheck fields.')
+            req = selected_request(request.data.get('request_uid'), start, end, plan_type)
+            return Response(recheck_service_creation(req.uid, PlanMesServiceTransport(actor_id=request.user.pk)))
         with transaction.atomic():
             lock_type(plan_type)
             if type(request.data.get('plan_id')) is not int: raise ValidationError('Invalid plan ID.')

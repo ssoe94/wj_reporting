@@ -1,8 +1,8 @@
-"""Pure v2 preparation contract, verified against Blacklake docs 2026-10-08.
+"""Factory contract entry point and preserved legacy diagnostic contract.
 
-1686655055663528: import; 1686655055663530: qty/finish base edit.
-Tenant initial status/reportFlag/manual-warehousing values have no documented
-meaning in v2 examples. Explicit reviewed server configuration is mandatory.
+The factory build_contract uses the approved snapshot and service APP contract
+without a tenant/product allowlist. build_legacy_contract retains the historical
+review configuration only for isolated diagnostics and their regression tests.
 No transport, credentials, dispatch, inspection, auto start or close lives here.
 """
 from datetime import datetime
@@ -15,7 +15,7 @@ CREATE_PATH = '/med/open/v2/work_order/_doimport'
 UPDATE_PATH = '/med/open/v2/work_order/_update_work_order_base_info'
 
 
-def build_contract(order, intent):
+def build_legacy_contract(order, intent):
     if Decimal(intent['quantity']) <= 0:
         return {}, ['positive_plan_quantity_required']
     review = getattr(settings, 'MES_PLAN_REVIEWED_CONTRACT', None)
@@ -67,3 +67,9 @@ def build_contract(order, intent):
     return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686655055663528', 'tenant': review['tenant'],
             'readback_binding': binding,
             'review_reference': review['reference']}, []
+
+
+def build_contract(order, intent):
+    """Factory contract uses the immutable human-approved setup, no allowlist."""
+    from .plan_service_contract import build_contract as build_service_contract
+    return build_service_contract(order, intent)

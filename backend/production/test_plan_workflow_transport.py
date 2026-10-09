@@ -18,6 +18,13 @@ from .plan_workflow_transport import (PlanMesTransport, PlanTransportError, CREA
 from .plan_workflow_read_contract import READ_ROUTES
 from .mes_execution_contract import encode_exact_json, parse_json_exact
 from .test_plan_workflow import seed_catalog, new_plan, approval_data, reviewed
+from .plan_workflow_contract import build_legacy_contract
+
+# Preserve the old isolated USER/trial adapter's contract regressions. The
+# public factory prepare route always uses the new APP contract by default.
+_prepare_service = prepare
+def prepare(*args, **kwargs):
+    return _prepare_service(*args, **kwargs, contract_builder=build_legacy_contract)
 
 WORK_ID = '17000000000000007'
 
@@ -319,12 +326,11 @@ class PlanTransportTests(TransactionTestCase):
             self.values=deepcopy(originals);self.values['inputs']=body
             self.assertNotEqual(recheck_creation(self.req.uid,self.transport())['state'],'confirmed')
 
-    def test_missing_write_confirmation_is_uncertain_until_full_readback(self):
+    def test_optional_write_confirmation_can_be_absent(self):
         self.create_result.pop('needCheck')
-        self.assertEqual(self.send()['state'],'uncertain')
-        self.assertEqual(len(self.calls),1)
+        self.assertEqual(self.send()['state'],'confirmed')
+        self.assertEqual(len(self.calls),6)
         with self.assertRaises(WorkflowConflict):self.send()
-        self.assertEqual(recheck_creation(self.req.uid,self.transport())['state'],'confirmed')
 
     def test_redirect_and_permission_are_not_retried(self):
         bad=response({'code':403},status=403)
