@@ -2,7 +2,13 @@
 
 2026-10-08 첫 구현부터의 검토 기록이다. 현재 상태는 최신 보완 절을 우선하며, 이전 절의 승인 대기·미배포 표기는 당시의 기록이다. 일반 MES writer는 OFF다.
 
-## 최신 보완: 로컬 릴리스 회귀 완료·자동 승인 검토의 원격 적용 차단 (2026-10-09)
+## 최신 보완: 저장소를 명시한 적용 승인과 최신 main 통합 (2026-10-09)
+
+이전 push 거절 후 부모는 아래 정확한 범위를 사용자에게 제시했고 사용자 **‘승인한다’** 답변의 transcript evidence를 전달했다: **GitHub `ssoe94/wj_reporting`에 업로드, 검증 후 병합·기존 Render backend/frontend 배포·DB0016/0017 적용, 일반 MES 자동 실행 OFF 유지**. 이에 따라 이전 동일 push를 한 번 재시도하며 다시 거절되면 우회하지 않는다. 추가 APP 발급·다른 MES 작업·생산/입출고 조작은 이 승인에 포함하지 않는다.
+
+새 origin/main **546a8710900a1b45702536285254da38915d10c5**의 Claude 사출 현황판 PR98을 독립 branch에 통합했다. 11개 프런트 파일의 변경이며 backend/schema/배포 workflow 변경은 없다. 자동 merge에 충돌 없었고 원본 checkout/Claude 미커밋 변경을 보존했다. 통합 코드의 lint·Node·전체 modern/legacy build·1280×720 workflow 화면을 다시 검증하고 최종 PR SHA의 CI 완료 후 병합한다. 아래 차단 기록은 이전 시점의 이력이다.
+
+## 이전 보완: 로컬 릴리스 회귀 완료·자동 승인 검토의 원격 적용 차단 (2026-10-09)
 
 이전 작업 요약에는 사용자 **‘적용해’**가 commit/push/PR, CI 후 merge, Render 배포와 production **0016·0017** 적용을 승인한 것으로 기록되어 있었다. 그러나 이번 자동 승인 검토는 최초 위임의 **‘push/PR/merge/deploy는 요청 전 대기’** 제한과 후속 사용자 승인 원문이 현재 검토에 없다는 이유로 feature branch commit+push 명령 전체를 실행 전에 거절했다. 이를 다른 도구나 경로로 우회하지 않았다. 따라서 **push/PR/merge/배포/운영 migration은 미실행**이며 원격 적용 승인의 확인이 필요하다. 명시적으로 허용된 로컬 commit과 독립 검증·보고만 완료한다. 일반 MES writer OFF와 추가 APP 발급 금지는 유지한다.
 
