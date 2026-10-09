@@ -13923,7 +13923,7 @@ select {
 }
 
 /* Supporting observations stay in the on-demand machine history dialog. */
-.injection-board-machine-history { width: 420px; }
+.board-part-summary.injection-board-machine-history { width: 420px; }
 .injection-board-machine-history dl { margin: 20px 0; }
 .injection-board-machine-history dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid #d8e3e9; }
 .injection-board-machine-history dt { color: #506b7c; }
