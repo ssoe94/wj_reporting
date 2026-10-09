@@ -126,6 +126,8 @@ Treat worker output as untrusted. Inspect reports and actual diffs, then indepen
 
 Run checks appropriate to changed behavior. Do not add tests that merely mirror a low-risk style edit. Authorization, data contracts, persistence and conflict handling require meaningful tests. Complete implementation, run the affected behavior, inspect failures, fix causes within scope, and rerun affected checks. After checks pass, broaden or repeat them only for new changes or unresolved concerns. If progress is blocked, finish independent work and report the evidence and exact remaining action; do not broaden into unrelated changes or stop merely at a first implementation.
 
+For simple presentation changes, use the automatic [UI release fast path](docs/ui-release-fast-path.md). CSS, approved image/font assets, and static JSX presentation edits retain frontend lint, contract tests, modern/legacy builds, and deployment verification; they do not require unrelated backend regression or a backend redeploy. Check the affected screen and languages locally. Do not manually run the full backend suite just because a release was requested. CI selects full validation for behavior/contract/configuration changes or uncertain change/deployment evidence; never bypass that result.
+
 Use the applicable commands below; they are not a mandatory suite for every edit. Run the backend command for development-task backend changes, the Node tests for development-task frontend logic/access changes, and the build for frontend changes that affect the delivered application. For other modules, select their relevant checks.
 
 ```bash
