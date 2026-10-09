@@ -513,6 +513,54 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         factory.assert_not_called()
         self.assert_no_transport()
 
+    def test_four_request_batch_is_rejected_before_factory_or_persisted_attempts(self):
+        from uuid import uuid4
+        from .plan_service_transport import dispatch_service_batch, CREATE_REQUEST_LIMIT
+        from .plan_workflow import WorkflowConflict
+        self.assertEqual(CREATE_REQUEST_LIMIT, 3)
+        selected = [str(self.req.uid), *[str(uuid4()) for _ in range(3)]]
+        factory = Mock(side_effect=AssertionError('Oversized batch must not obtain a transport'))
+        events = self.req.events.count()
+        with self.assertRaises(WorkflowConflict):
+            dispatch_service_batch(selected, factory)
+        factory.assert_not_called()
+        self.req.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt), ('disabled', 0))
+        self.assertEqual(self.req.events.count(), events)
+        self.assert_no_transport()
+
+    def test_http_send_four_requests_rejects_entire_batch_before_transport(self):
+        from uuid import uuid4
+        selected = [str(self.req.uid), *[str(uuid4()) for _ in range(3)]]
+        events = self.req.events.count()
+        with patch('production.plan_workflow_views.PlanMesServiceTransport',
+                side_effect=AssertionError('Oversized HTTP batch must not obtain service APP')) as factory:
+            response = self.action('send', request_uids=selected)
+        self.assertEqual(response.status_code, 409, response.data)
+        factory.assert_not_called()
+        self.req.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt), ('disabled', 0))
+        self.assertEqual(self.req.events.count(), events)
+        self.assert_no_transport()
+
+    def test_http_send_accepts_three_approved_requests_at_the_boundary(self):
+        selected = [self.req]
+        for index in (2, 3):
+            plan = new_plan(quantity=1000.0, machine=f'imm0{index}', actor=self.user)
+            self.approve(plan, resource_code=f'SYNTHETIC-IMM0{index}')
+            selected.append(self.prepare(plan))
+        with patch('production.plan_workflow_views.PlanMesServiceTransport',
+                side_effect=lambda *, actor_id: self.service()) as factory:
+            response = self.action('send', request_uids=[str(req.uid) for req in selected])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(factory.call_count, 3)
+        self.assertEqual([row['state'] for row in response.data['results']], ['created'] * 3)
+        for req in selected:
+            req.refresh_from_db()
+            self.assertEqual((req.state, req.attempt), ('created', 1))
+        from .plan_workflow_contract import CREATE_PATH
+        self.assertEqual(self.paths().count(CREATE_PATH), 3)
+
     def test_incomplete_or_wrong_exact_code_lookup_cannot_be_interpreted_as_absence(self):
         from .plan_service_transport import LIST_PATH
         from .plan_workflow_contract import CREATE_PATH

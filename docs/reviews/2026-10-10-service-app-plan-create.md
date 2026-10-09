@@ -11,7 +11,7 @@
 
 1. 담당자가 MES 원료 목록과 유효한 단위를 선택하고 계획 버전별 원료·BOM/배합·설비/공정 snapshot을 확정한다.
 2. 승인된 미리보기를 기존 `PlanWorkOrder`/`PlanMesRequest`에 저장한다. 서비스 APP 생성 계약은 품번별 서버 허용 목록 없이 만들어진다.
-3. 쓰기가 켜진 경우 준비된 생성 요청을 선택하고 **선택 工单 MES 생성**을 누른다. 최대 50개를 개별 호출하며 각 결과를 보존한다.
+3. 쓰기가 켜진 경우 준비된 생성 요청을 선택하고 **선택 工单 MES 생성**을 누른다. 화면에서는 최대 50개를 선택하되 HTTP 요청당 최대 3개로 나누어 순차 전송하고, 완료된 묶음부터 행별 결과를 표시한다. 서버는 4개 이상인 요청 전체를 MES 인증/호출 전에 거절한다.
 4. `exactWorkOrderCode`로 base 목록을 먼저 조회한다. 기존 工单이 있으면 import하지 않고 base detail을 확인한다.
 5. 없으면 생성 시도 상태를 DB에 먼저 확정한 뒤 `_doimport`를 호출한다. 이후 code와 base detail로 생성 결과를 기록한다.
 6. timeout이나 응답 유실은 자동 재전송하지 않는다. 같은 code의 읽기 재조회로 확인한다.
@@ -51,6 +51,8 @@ import 전 조회 실패(`failed`, attempt 0)는 최신 서버 조회 확인 후
 import 시도 이후 attempt 1은 읽기 재조회만 허용한다.
 
 화면도 POST 중복 클릭·인증 자동 재전송·cached 실패 상태를 통한 재전송을 차단한다.
+여러 묶음을 보내는 동안 최초 WJ 로그인 세션을 유지하며, HTTP 오류·응답 불확실·세션 변경이면 다음 묶음 전송을 중단한다.
+앞서 완료된 행의 결과는 보존하고 실제 요청한 묶음만 불확실 상태/전송 제한에 남긴다. 미전송 행은 준비 상태로 남아 다시 선택할 수 있다.
 원료 초안은 생성/재조회 중 유지하고, 미저장 초안이 있으면 생성 버튼을 잠근다.
 기존 `mes_create_diagnostic*` 및 0017/0018 migration/table은 수정하지 않았다.
 기존 진단 메뉴 연결만 사용 중단했으며 해당 코드와 이력의 정리는 별도 범위다.
@@ -58,10 +60,10 @@ import 시도 이후 attempt 1은 읽기 재조회만 허용한다.
 
 ## 실제 수행한 검증
 
-- 격리 SQLite workflow 회귀 258건: 성공, PostgreSQL 전용 6건은 skip. 기존 업로드/재업로드·승인·이력/연속생산·전송 회귀 포함.
+- 격리 SQLite workflow 회귀 261건: 성공, PostgreSQL 전용 6건은 skip. 기존 업로드/재업로드·승인·이력/연속생산·전송 및 HTTP 상한 3건 허용/4건 거절 회귀 포함.
 - 임시 PostgreSQL 17.10: 서비스 전송 41건 모두 성공. 기존 fixture 연결 오류 1건을 legacy 계약으로 수정한 후 동시성/이력 및 새 재준비 회귀 6건 모두 성공. 임시 서버 두 개 모두 정상 종료 확인.
 - mock 사례: 정상 생성, 기존 code skip, timeout 후 복구/불확실 유지, needCheck 누락, 401 1회 갱신, 부분 실패, 17자리 ID, 버전/승인 변경, 조회·전송·재조회 동시 충돌.
-- 프런트 Node 822/822 성공, lint 오류 0(기존 경고 39), TypeScript와 modern/legacy build 성공.
+- 프런트 Node 833/833 성공, lint 오류 0(기존 경고 39), TypeScript와 modern/legacy build 성공. 3/3/1 순차 전송, 50건의 17회 요청, 상한 초과/중복 선택 거절, 두 번째 timeout/응답 불확실/세션 교체 후 중단을 포함한다.
 - `makemigrations production --check --dry-run`: 변경 없음. `git diff --check`: 성공.
 - 실제 컴포넌트/스타일을 사용하는 localhost 합성 화면: KO/ZH, CSS 1280×720에서 6행·버튼·상태·MES ID 확인. 선택 2건 mock 생성의 성공/불확실 부분 결과와 OFF 상태를 확인했다.
 
@@ -70,6 +72,10 @@ import 시도 이후 attempt 1은 읽기 재조회만 허용한다.
 `ui-results-ko-1280x720.jpg`, `ui-results-zh-1280x720.jpg`,
 `ui-batch-mock-ko-1280x720.jpg`, `ui-off-ko-1280x720.jpg`.
 프런트 로그와 source hash: `output/service-plan-ui-20261010/frontend-verification.json`.
+3건 분할 수정의 별도 증거: `output/service-plan-chunks-20261010/frontend-verification.json`,
+`output/service-plan-create-20261010/workflow-chunk-limit.log`,
+`output/service-plan-chunks-20261010/ui-chunks-ko-1280x720.jpg`,
+`ui-timeout-ko-1280x720.jpg`, `ui-timeout-zh-1280x720.jpg`.
 캡처의 이름은 CSS viewport 기준이며 JPEG 실제 픽셀 크기는 화면 DPI에 따른다.
 Chrome/운영 WJ 인증 화면은 이 검증에 포함하지 않았다.
 
@@ -78,7 +84,8 @@ Chrome/운영 WJ 인증 화면은 이 검증에 포함하지 않았다.
 사용자의 별도 명시 승인을 받은 테스트 1건(测试物料 code `0`, 1个, 초안 status 0)으로
 WJ APP `_doimport` 권한, inline 원료 적용과 읽기 검증, 실제 ACK 구조를 확인해야 한다.
 현재 작업에서는 그 시험·토큰 발급·권한 변경·운영 env 변경·migration 적용·push/PR/merge/deploy를 실행하지 않았다.
-큰 배치는 동기 요청의 실행 시간과 Render/Gunicorn 제한도 운영 시험에서 확인해야 한다.
+큰 선택은 3건씩 순차 HTTP 요청으로 나누지만 느린 단일 묶음의 timeout 가능성은 남는다. 이 경우 현재 3건까지만 불확실 상태로 남고 이후 묶음은 보내지 않는다. 실제 MES 지연과 Render/Gunicorn 제한은 운영 시험에서 확인해야 한다.
+기존 제약: WJ 인증 만료나 writer OFF 거절이 예약 전 발생하면 해당 묶음은 UI에서 보수적으로 미확인으로 남지만 서버는 `disabled/attempt0`일 수 있다. 이 상태는 항목별 MES 재조회 대상이 아니므로 정상 로그인 후 전체 화면을 새로 읽어 서버 상태를 확인해야 한다. 새 3건 분할이 자동 복구를 보장하지 않는다.
 
 이후 순서: 한 건 계약 검증 → 배포/수동 일괄 생성 활성화 → 연속 사출 工单의 허용 수량·종료 수정과 생산/입고 충돌 처리 → 가공 08시 下达/라인 첫 순서 开工 및 익일 마감 대기.
 생산 중 2시간 검사 정책은 유지하며 검사 승계·정지/재개·자동 생성은 후속 MES 계약 검증 범위다.

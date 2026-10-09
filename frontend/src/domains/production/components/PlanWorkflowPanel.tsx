@@ -7,7 +7,7 @@ import "./plan-workflow.css";
 import { materialRequirement } from "../plan-workflow-form";
 import { canRecheckPlanRequest, canReleasePlanSendAttempt, canSendPlanRequest, PLAN_CREATE_BATCH_LIMIT, planRequestState, safeMesId,
   type PlanServiceResult } from "../plan-workflow-service";
-import { recheckPlanRequest, sendPlanRequests } from "../plan-workflow-service-api";
+import { recheckPlanRequest, sendPlanSelection } from "../plan-workflow-service-api";
 
 type Props = { date: string; language: AppLanguage };
 type EditorProps = Props & { onDirtyChange: (dirty: boolean) => void; onPendingChange: (pending: boolean) => void;
@@ -74,6 +74,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   const attemptReadVersions = useRef(new Map<string, number>());
   const [serviceResults, setServiceResults] = useState<Record<string, PlanServiceResult>>({});
   const [serviceNotice, setServiceNotice] = useState("");
+  const [serviceProgress, setServiceProgress] = useState<{ completed: number; total: number } | null>(null);
   const [, updateSendFence] = useState(0);
   const client = useQueryClient();
   const scope = { start, end, plan_type: type };
@@ -119,18 +120,28 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       || selectedEligible.length !== selectedRequests.length || selectedEligible.length > PLAN_CREATE_BATCH_LIMIT) return;
     serviceInFlight.current = true;
     const uids = [...selectedEligible];
-    uids.forEach(uid => { attemptReadVersions.current.set(uid, query.dataUpdatedAt); sendAttempts.add(uid); });
-    setSelectedRequests([]); setServicePending(true); setServiceNotice("");
+    setServicePending(true); setServiceNotice(""); setServiceProgress({ completed: 0, total: uids.length });
     try {
-      const results = await sendPlanRequests(scope, uids);
-      setServiceResults(prior => ({ ...prior, ...Object.fromEntries(results.map(row => [row.uid, row])) }));
-      setServiceNotice(zh ? "已记录各项创建结果。仅核验工单基本信息；原料、报工及入库仍需另查。"
-        : "항목별 생성 결과를 기록했습니다. 工单 기본정보만 확인하며 원료·생산보고·입고는 별도 확인이 필요합니다.");
+      const outcome = await sendPlanSelection(scope, uids, {
+        beforeChunk: chunk => {
+          chunk.forEach(uid => { attemptReadVersions.current.set(uid, query.dataUpdatedAt); sendAttempts.add(uid); });
+          setSelectedRequests(prior => prior.filter(uid => !chunk.includes(uid)));
+        },
+        onChunk: (results, completed, total) => {
+          setServiceResults(prior => ({ ...prior, ...Object.fromEntries(results.map(row => [row.uid, row])) }));
+          setServiceProgress({ completed, total });
+        },
+      });
+      if (outcome.uncertainUids.length) setServiceResults(prior => ({ ...prior,
+        ...Object.fromEntries(outcome.uncertainUids.map(uid => [uid,
+          { uid, code: "", state: "uncertain", mes_id: null, blockers: ["readback_required"] }])) }));
+      setServiceNotice(outcome.stopped
+        ? (zh ? `发送已停止。已处理${outcome.completed}项、待核对${outcome.uncertainUids.length}项、未发送${outcome.remainingUids.length}项。待核对项禁止重发，请复查MES；未发送项可重新选择。`
+          : `전송을 중단했습니다. 처리 ${outcome.completed}건 · 미확인 ${outcome.uncertainUids.length}건 · 미전송 ${outcome.remainingUids.length}건. 미확인 항목은 재전송하지 말고 MES 재조회로 확인하세요. 미전송 항목은 다시 선택할 수 있습니다.`)
+        : (zh ? "已记录各项创建结果。仅核验工单基本信息；原料、报工及入库仍需另查。"
+          : "항목별 생성 결과를 기록했습니다. 工单 기본정보만 확인하며 원료·생산보고·입고는 별도 확인이 필요합니다."));
     } catch {
-      setServiceResults(prior => ({ ...prior, ...Object.fromEntries(uids.map(uid => [uid,
-        { uid, code: "", state: "uncertain", mes_id: null, blockers: ["readback_required"] }])) }));
-      setServiceNotice(zh ? "发送结果未确认。禁止重发，请逐项复查MES；若WJ登录失效，请先正常登录。"
-        : "전송 결과를 확인하지 못했습니다. 재전송하지 말고 항목별 MES 재조회로 확인하세요. WJ 로그인이 만료되면 먼저 정상 로그인하세요.");
+      setServiceNotice(zh ? "未能开始发送，请核对选择及WJ登录状态。" : "전송을 시작하지 못했습니다. 선택과 WJ 로그인 상태를 확인하세요.");
     } finally {
       try { await client.invalidateQueries({ queryKey: ["production", "plan-workflow"] }); }
       finally { serviceInFlight.current = false; setServicePending(false); }
@@ -293,6 +304,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     {needsReview && <button type="button" disabled={query.isFetching || mutate.isPending} onClick={reviewLatest}>{zh ? "核对最新计划" : "최신 계획 확인"}</button>}
     {data && <><div className="plan-workflow__send-actions">
       <span>{zh ? `已选 ${selectedRequests.length}／${PLAN_CREATE_BATCH_LIMIT}` : `선택 ${selectedRequests.length} / ${PLAN_CREATE_BATCH_LIMIT}`}</span>
+      {serviceProgress && <span role="status" aria-live="polite">{zh ? `已处理 ${serviceProgress.completed}／${serviceProgress.total}` : `처리 ${serviceProgress.completed} / ${serviceProgress.total}`}</span>}
       <button type="button" className="btn btn-primary" disabled={serviceLocked || !selectedEligible.length || selectedEligible.length !== selectedRequests.length}
         onClick={createSelected}>{servicePending ? (zh ? "正在核对结果…" : "결과 확인 중…") : (zh ? "选择工单 MES 创建" : "선택 工单 MES 생성")}</button>
       <button type="button" disabled={busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>{zh ? "清除选择" : "선택 해제"}</button>

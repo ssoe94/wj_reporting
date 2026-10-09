@@ -23,6 +23,7 @@ from .permissions import user_can_edit_plan
 
 LIST_PATH = '/med/open/v2/work_order/base/_list'
 BASE_PATH = '/med/open/v2/work_order/base/_detail'
+CREATE_REQUEST_LIMIT = 3
 READBACK_STATES = frozenset({'checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed'})
 
 
@@ -306,9 +307,9 @@ def dispatch_service_create(request_uid, transport):
 
 
 def dispatch_service_batch(request_uids, transport_factory):
-    if (not isinstance(request_uids, list) or not 1 <= len(request_uids) <= 50
+    if (not isinstance(request_uids, list) or not 1 <= len(request_uids) <= CREATE_REQUEST_LIMIT
             or not callable(transport_factory)):
-        raise WorkflowConflict('Select 1–50 distinct prepared requests.')
+        raise WorkflowConflict(f'Send 1–{CREATE_REQUEST_LIMIT} distinct prepared requests per HTTP request.')
     try:
         values = [str(uuid.UUID(value)) for value in request_uids if type(value) is str]
     except ValueError:

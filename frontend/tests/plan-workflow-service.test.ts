@@ -100,15 +100,41 @@ test('readback requires its own server permission and a valid request identifier
   assert.equal(service.canRecheckPlanRequest({ ...request, state: 'uncertain', attempt: 1, can_recheck: true }), true);
 });
 
-test('selected batch preserves scope and UIDs, admits exactly fifty and rejects empty, duplicate or malformed selection', () => {
-  const selected = Array.from({ length: 50 }, (_, index) => uid(index + 1));
+test('an individual send preserves scope and exact UIDs but admits at most three requests', () => {
+  const selected = [UID, OTHER_UID, uid(3)];
   assert.equal(service.PLAN_CREATE_BATCH_LIMIT, 50);
+  assert.equal(service.PLAN_CREATE_REQUEST_LIMIT, 3);
   const body = service.planSendBody(SCOPE, selected);
   assert.deepEqual(body, { ...SCOPE, action: 'send', request_uids: selected });
   selected[0] = OTHER_UID;
   assert.equal(body.request_uids[0], UID, 'body owns a snapshot of the selected request identifiers');
-  for (const ids of [[], [UID, UID], ['invalid'], Array.from({ length: 51 }, (_, index) => uid(index + 1))]) {
+  for (const ids of [[], [UID, UID], ['invalid'], Array.from({ length: 4 }, (_, index) => uid(index + 1)),
+    Array.from({ length: 50 }, (_, index) => uid(index + 1))]) {
     assert.throws(() => service.planSendBody(SCOPE, ids));
+  }
+});
+
+test('a valid selection retains its fifty-request limit and is split into ordered independent chunks of at most three', () => {
+  const selected = Array.from({ length: 50 }, (_, index) => uid(index + 1));
+  const chunks = service.splitPlanSelection(selected);
+  assert.equal(chunks.length, 17);
+  assert.deepEqual(chunks.map(chunk => chunk.length), [...Array(16).fill(3), 2]);
+  assert.deepEqual(chunks.flat(), selected);
+  assert.deepEqual(service.splitPlanSelection(selected.slice(0, 7)), [selected.slice(0, 3), selected.slice(3, 6), selected.slice(6, 7)]);
+  assert.deepEqual(service.splitPlanSelection([UID]), [[UID]]);
+  chunks.forEach(chunk => assert.doesNotThrow(() => service.planSendBody(SCOPE, chunk)));
+  selected[0] = OTHER_UID;
+  assert.equal(chunks[0][0], UID, 'chunks retain the original selection after caller mutation');
+  chunks[1][0] = uid(99);
+  assert.equal(chunks[0][0], UID, 'chunk arrays are independent');
+});
+
+test('selection validation rejects duplicate identifiers across chunks before any partial selection is returned', () => {
+  const alphaUid = 'abcdef00-0000-4000-8000-000000000001';
+  for (const ids of [[], [UID, UID], ['invalid'], [UID, OTHER_UID, uid(3), UID],
+    [alphaUid, alphaUid.toUpperCase()],
+    Array.from({ length: 51 }, (_, index) => uid(index + 1))]) {
+    assert.throws(() => service.splitPlanSelection(ids));
   }
 });
 

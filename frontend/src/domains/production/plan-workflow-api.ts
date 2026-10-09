@@ -62,6 +62,7 @@ export const workflowLabels: Record<string, [string, string]> = {
   success: ["생성 성공", "创建成功"], already_exists: ["기존 工单 확인됨", "已确认现有工单"],
   created: ["생성 성공", "创建成功"],
   failed: ["생성 실패 · 결과 확인 필요", "创建失败 · 需核对结果"],
+  blocked: ["생성 차단 · 확인 필요", "创建受阻 · 需核对"],
   writer_disabled: ["MES 생성 OFF · 준비·원료 확인은 사용 가능", "MES创建关闭 · 仍可准备及确认原料"],
   campaign_bom_readback_adapter_required: ["원료와 전체 생산기간을 MES 담당자가 확인해야 합니다", "请MES负责人确认原料及完整生产期间"],
 };

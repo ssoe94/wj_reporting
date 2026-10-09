@@ -1,6 +1,7 @@
 import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowScope } from "./plan-workflow-api";
 
 export const PLAN_CREATE_BATCH_LIMIT = 50;
+export const PLAN_CREATE_REQUEST_LIMIT = 3;
 export function requestUid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -59,7 +60,15 @@ export function parsePlanRecheckResult(value: unknown, uid: string): PlanService
   return parsePlanSendResult({ results: [{ ...row, work_order_code: row.work_order_code ?? row.code ?? "" }] }, [uid])[0];
 }
 export function planSendBody(scope: WorkflowScope, uids: readonly string[]) {
-  if (!uids.length || uids.length > PLAN_CREATE_BATCH_LIMIT || new Set(uids).size !== uids.length || !uids.every(requestUid))
+  if (!uids.length || uids.length > PLAN_CREATE_REQUEST_LIMIT || !uids.every(requestUid)
+    || new Set(uids.map(uid => uid.toLowerCase())).size !== uids.length)
     throw Error("Invalid selected plan requests");
   return { ...scope, action: "send", request_uids: [...uids] };
+}
+export function splitPlanSelection(uids: readonly string[]): string[][] {
+  if (!uids.length || uids.length > PLAN_CREATE_BATCH_LIMIT || !uids.every(requestUid)
+    || new Set(uids.map(uid => uid.toLowerCase())).size !== uids.length) throw Error("Invalid selected plan requests");
+  const chunks: string[][] = [];
+  for (let offset = 0; offset < uids.length; offset += PLAN_CREATE_REQUEST_LIMIT) chunks.push(uids.slice(offset, offset + PLAN_CREATE_REQUEST_LIMIT));
+  return chunks;
 }
