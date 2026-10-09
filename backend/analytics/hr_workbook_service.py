@@ -134,7 +134,10 @@ def save_batch(data, user):
     imported_at = timezone.now().isoformat()
     for item in preview['months']:
         workspace = workspaces[item['month']]
-        if workspace and workspace.source and workspace.source.get('fingerprint') == item['fingerprint']:
+        # A layout edit retains the original source fingerprint. Explicitly
+        # reapplying that source must still restore the reviewed allocations.
+        if (workspace and workspace.source and workspace.source.get('fingerprint') == item['fingerprint']
+                and workspace.employees == item['rows']):
             saved.append(workspace)
             continue
         used_files = {row.get('source_file') for row in item['rows']}

@@ -119,6 +119,22 @@ class HrWorkbookTests(TestCase):
         data['classification']['rows'][0]['department_id'] = 'not-a-real-cell'
         self.assertEqual(self.preview(data).status_code, 400)
 
+    def test_explicit_reapply_restores_reference_after_layout_only_edit(self):
+        data = batch()
+        data['months'] = data['months'][:1]
+        original = self.save(self.commit(data)).data['workspaces'][0]
+        edited = self.client.patch(BASE + 'workspaces/2026-01/', {
+            'version': original['version'], 'departments': original['departments'],
+            'assignments': [{'code': row['code'], 'department_id': 'development-staff'} for row in original['employees']],
+        }, format='json')
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(edited.data['source']['fingerprint'], original['source']['fingerprint'])
+        data['assignment_policy'] = 'reference'
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['workspaces'][0]['version'], 3)
+        self.assertEqual([row['department_id'] for row in response.data['workspaces'][0]['employees']], ['injection', 'quality-oqc'])
+
     def test_aliases_keep_management_separate_from_work(self):
         from .hr_workbook_service import resolve_reference
         cases = [('营业', '仓库/物理', 'sales-warehouse'), ('资材', '副材料', 'materials-secondary'), ('模具', '模具/公务管理', 'mold-maintenance'), ('公务', '公务员工', 'maintenance-worker'), ('管理部', '人事总务', 'admin-hr'), ('开发', '开发管理', 'development'), ('开发', '开发', 'development-staff'), ('注塑', '操作工', 'injection-operator'), ('总经办', '总经理', None)]
