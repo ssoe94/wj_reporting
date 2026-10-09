@@ -13394,8 +13394,12 @@ select {
   place-items: center;
   width: 22px;
   height: 22px;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   color: var(--board-muted);
+  cursor: pointer;
 }
 
 .injection-board-card__metric-link:hover {
@@ -13917,3 +13921,10 @@ select {
 .injection-board-card .injection-board-card__part button {
   line-height: inherit;
 }
+
+/* Supporting observations stay in the on-demand machine history dialog. */
+.board-part-summary.injection-board-machine-history { width: 420px; }
+.injection-board-machine-history dl { margin: 20px 0; }
+.injection-board-machine-history dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid #d8e3e9; }
+.injection-board-machine-history dt { color: #506b7c; }
+.injection-board-machine-history dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }

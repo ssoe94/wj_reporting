@@ -8,7 +8,6 @@ import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
 import { getBoardCycleTime, getBoardTone, isMesDataReadyForBusinessDate, type BoardTone } from "@/domains/production/board-machine-status";
-import { needsFieldPartNoReview } from "@/domains/production/injection-transition-analysis";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { MarqueeLine } from "@/shared/components/MarqueeLine";
@@ -28,6 +27,7 @@ import {
 } from "@/domains/production/realtime-progress";
 import { setStoredLanguage, type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
 import { addIsoDateDays } from "@/shared/utils/date";
 
@@ -153,8 +153,6 @@ const boardCopy = {
     unplanned: "계획없음",
     currentCt: "현재 C/T",
     recentCt: "최근 60분 기준",
-    recentShots: "60분 형합",
-    checkEquipment: "설비 상태 확인",
     visitorCt: "C/T 범위",
     enableVisitorMode: "방문객 모드 켜기",
     disableVisitorMode: "방문객 모드 끄기",
@@ -163,12 +161,6 @@ const boardCopy = {
     model: "모델",
     noPart: "Part 확인 대기",
     noPlan: "계획없음",
-    lastShot: "최근 형합",
-    latestShort: "최근",
-    morningShotGaps: "오전 MES 계수 정체",
-    priorMorningShotGaps: "전일 오전 MES 계수 정체",
-    partNoReview: "품번 현장/사무실 확인",
-    noShot: "형합 없음",
     timeline: "24시간 생산 기록",
     timelineHint: "그래프 위치에 마우스를 올리면 해당 시각을 확인할 수 있습니다.",
     timelineRecord: "생산 기록 구간",
@@ -254,8 +246,6 @@ const boardCopy = {
     unplanned: "无计划",
     currentCt: "当前周期",
     recentCt: "最近60分钟基准",
-    recentShots: "60分钟合模",
-    checkEquipment: "核查设备状态",
     visitorCt: "周期范围",
     enableVisitorMode: "开启访客模式",
     disableVisitorMode: "关闭访客模式",
@@ -264,12 +254,6 @@ const boardCopy = {
     model: "型号",
     noPart: "等待确认Part",
     noPlan: "无计划",
-    lastShot: "最近合模",
-    latestShort: "最近",
-    morningShotGaps: "上午MES计数停滞",
-    priorMorningShotGaps: "前日上午MES计数停滞",
-    partNoReview: "现场/办公室核对品号",
-    noShot: "无合模",
     timeline: "24小时生产记录",
     timelineHint: "将鼠标移到图表位置即可查看对应时间。",
     timelineRecord: "生产记录区间",
@@ -931,12 +915,40 @@ function ProductionTimeline({
   );
 }
 
+function MachineHistoryDialog({ machine, businessDate, language, onClose }: {
+  machine: BoardMachine;
+  businessDate: string;
+  language: AppLanguage;
+  onClose: () => void;
+}) {
+  const copy = boardCopy[language];
+  const titleId = useId();
+  const ref = useModalFocusTrap<HTMLDivElement>({ onEscape: onClose });
+  const machineLabel = `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`;
+  return createPortal(
+    <div className="board-part-summary-backdrop" onClick={onClose}>
+      <div ref={ref} className="board-part-summary injection-board-machine-history" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div><span>{businessDate} · {getStatusLabel(machine.tone, copy)}</span><h2 id={titleId}>{machineLabel} · {language === "ko" ? "형합 이력" : "合模记录"}</h2></div>
+          <button type="button" onClick={onClose}>{language === "ko" ? "닫기" : "关闭"}</button>
+        </header>
+        <dl>
+          <div><dt>{language === "ko" ? "최근 60분 형합수" : "最近60分钟合模次数"}</dt><dd>{machine.row && machine.tone !== "stale" ? `${formatNumber(machine.row.recentShots)}${copy.shots}` : "—"}</dd></div>
+          <div><dt>{language === "ko" ? "마지막 형합 관측" : "最后合模观测"}</dt><dd>{machine.row?.lastShotAt ? formatLastShotTime(machine.row.lastShotAt, businessDate) : "—"}</dd></div>
+        </dl>
+        <Link className="button button--ghost" to={`/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`}>
+          {language === "ko" ? "C/T 이력 열기" : "打开 C/T 历史"}
+        </Link>
+      </div>
+    </div>, document.fullscreenElement ?? document.body,
+  );
+}
+
 function MachineBoardCard({
   onPartSummary,
   businessDate,
   isVisitorMode,
   machine,
-  priorMorningShotGapCount,
   language,
   inspection,
   inspectionTransportError,
@@ -946,7 +958,6 @@ function MachineBoardCard({
   businessDate: string;
   isVisitorMode: boolean;
   machine: BoardMachine;
-  priorMorningShotGapCount: number;
   language: AppLanguage;
   inspection: ReturnType<typeof selectBoardInspection>;
   inspectionTransportError: boolean;
@@ -967,28 +978,11 @@ function MachineBoardCard({
     setQualityState(previous => reduceInjectionQuality(previous, qualityPayload, qualityScope));
   }, [qualityPayload, qualityScope]);
   const row = machine.row;
-  const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
-  const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
-  const morningShotGapCount = row?.morningShotGapCount ?? 0;
-  const visibleMorningShotGapCount = morningShotGapCount || priorMorningShotGapCount;
-  const showMorningHistory = machine.tone === "production_stopped" && visibleMorningShotGapCount > 0;
-  const partNoReview = row?.segments.some((current, index, segments) => {
-    if (index === 0) return false;
-    const previous = segments[index - 1];
-    return needsFieldPartNoReview(
-      { part_no: previous.partNo, model_name: previous.modelName, cavity: previous.cavity, status: previous.status },
-      { part_no: current.partNo, model_name: current.modelName, cavity: current.cavity, actual_piece_qty: current.estimatedQty },
-    );
-  }) ?? false;
-  const isShotCheckTone = machine.tone === "shot_issue" || machine.tone === "production_stopped";
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyLabel = language === "ko" ? "형합·C/T 이력" : "合模与 C/T 历史";
   // Progress against the elapsed business day, the same measure as the summary's progress gap.
   const paceGap = row?.hasPlan && elapsedRate > 0 ? row.progressRate - elapsedRate : null;
   const paceText = paceGap === null ? "" : `${paceGap >= 0 ? "+" : "−"}${Math.abs(Math.round(paceGap))}%p`;
-  // The last-shot time lives in the C/T box; morning counter gaps and part-number review keep their own label.
-  const lastShotLabel = showMorningHistory
-    ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
-    : partNoReview ? copy.partNoReview : copy.lastShot;
-  const lastShotValue = `${showMorningHistory ? `${copy.latestShort} ` : ""}${row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}`;
 
   return (
     <article className={`injection-board-card injection-board-card--${machine.tone}`} data-machine={machine.machineNumber}>
@@ -1020,28 +1014,22 @@ function MachineBoardCard({
       <div className="injection-board-card__metrics">
         <div className="injection-board-card__metric">
           <div className="injection-board-card__metric-head">
-            <span className="injection-board-card__metric-label" title={isShotCheckTone ? copy.checkEquipment : copy.recentCt}>
-              {isShotCheckTone ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}
+            <span className="injection-board-card__metric-label" title={copy.recentCt}>
+              {isVisitorMode ? copy.visitorCt : copy.currentCt}
             </span>
             {!isVisitorMode ? (
-              <Link className="injection-board-card__metric-link" to={machineHistoryUrl} title={historyLabel} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>
+              <button type="button" className="injection-board-card__metric-link" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" title={historyLabel} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>
                 <History aria-hidden="true" size={13} strokeWidth={2.4} />
-              </Link>
+              </button>
             ) : null}
           </div>
-          <strong className={isVisitorMode && !isShotCheckTone ? "injection-board-card__ct-range" : undefined}>
-            {isShotCheckTone
-              ? `${formatNumber(row?.recentShots ?? 0)}${copy.shots}`
-              : machine.currentCycleTimeSec === null
-                ? "-"
-                : isVisitorMode
-                  ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
-                  : `${machine.currentCycleTimeSec.toFixed(1)}s`}
+          <strong className={isVisitorMode ? "injection-board-card__ct-range" : undefined}>
+            {machine.currentCycleTimeSec === null
+              ? "—"
+              : isVisitorMode
+                ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
+                : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          <small title={`${lastShotLabel} · ${lastShotValue}`}>
-            {row?.lastShotAt || showMorningHistory || partNoReview ? <span>{lastShotLabel}</span> : null}
-            <b>{lastShotValue}</b>
-          </small>
         </div>
         <div className="injection-board-card__metric">
           <div className="injection-board-card__metric-head">
@@ -1069,6 +1057,7 @@ function MachineBoardCard({
         segments={machine.timelineSegments}
         showGaps={Boolean(row?.hasPlan || (row?.shotCount ?? 0) >= TIMELINE_GAP_MIN_SHOTS)}
       />
+      {historyOpen && !isVisitorMode ? <MachineHistoryDialog machine={machine} businessDate={businessDate} language={language} onClose={() => setHistoryOpen(false)} /> : null}
       <footer className="injection-board-card__footer-with-quality">
         <InjectionQualityStatus state={qualityState} expectedScope={qualityScope}
           language={language} transportError={inspectionTransportError || sourceAvailability === 'error'} />
@@ -1629,7 +1618,6 @@ export function InjectionBoardPage() {
                 .filter(record => getMachineNumber(record.machine_name) === machine.machineNumber).map(record => record.id),
               statusMachines: statusData?.injection ?? [] })}
             inspectionTransportError={statusQuery.isError || planQuery.isError}
-            priorMorningShotGapCount={visiblePreviousSnapshot.summary.rows.find((row) => Number(getMachineNumber(row.label) || row.key) === machine.machineNumber)?.morningShotGapCount ?? 0}
           />
         ))}
       </section>
