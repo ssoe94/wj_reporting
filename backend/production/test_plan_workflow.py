@@ -81,6 +81,88 @@ class PlanWorkflowTests(TestCase):
         data = {key: getattr(plan, key) for key in snapshot(plan)}
         return ProductionPlan(**{**data, **changes})
 
+    def test_past_legacy_precision_does_not_block_valid_today_read(self):
+        old = new_plan(day=8, quantity=123.4567890123456, actor=self.user)
+        today = new_plan(day=9, actor=self.user)
+        self.approve(today)
+        before = PlanWorkRevision.objects.get(work_id=old.work_uid).fingerprint
+        response = self.client.get('/api/production/plan-workflow/?start=2026-10-09&end=2026-10-09&plan_type=injection')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['uid'] for row in response.data['rows']], [str(today.work_uid)])
+        self.assertEqual([group['quantity'] for group in response.data['preview']], ['1000.0'])
+        self.assertNotIn('plan_quantity_review', response.data['preview'][0]['blockers'])
+        self.assertEqual(PlanWorkRevision.objects.get(work_id=old.work_uid).fingerprint, before)
+        self.assertFalse(PlanMesRequest.objects.exists())
+
+    def test_legacy_quantity_is_visible_verbatim_and_cannot_be_approved_or_prepared(self):
+        for quantity in (123.4567890123456, -1.0, 1e16, float('inf')):
+            with self.subTest(quantity=quantity):
+                plan = new_plan(quantity=quantity, machine=f'imm-{quantity}', actor=self.user)
+                expected = format(Decimal(str(quantity)), 'f')
+                response = self.client.get('/api/production/plan-workflow/?start=2026-10-08&end=2026-10-08&plan_type=injection')
+                self.assertEqual(response.status_code, 200)
+                row = next(row for row in response.data['rows'] if row['uid'] == str(plan.work_uid))
+                group = next(group for group in response.data['preview'] if str(plan.work_uid) in group['members'])
+                self.assertEqual((row['planned_quantity'], row['quantity_valid']), (expected, False))
+                self.assertEqual(group['quantity'], expected)
+                self.assertIn('plan_quantity_review', group['blockers'])
+                scope = {'start': '2026-10-08', 'end': '2026-10-08', 'plan_type': 'injection'}
+                rejected = self.client.post('/api/production/plan-workflow/', {
+                    **scope, **approval_data(plan), 'plan_id': plan.pk, 'action': 'approve'}, format='json')
+                self.assertEqual(rejected.status_code, 400)
+                blocked = self.client.post('/api/production/plan-workflow/', {
+                    **scope, 'action': 'prepare', 'keys': [group['key']]}, format='json')
+                self.assertEqual(blocked.status_code, 200)
+                self.assertEqual(blocked.data['results'][0]['state'], 'blocked')
+                self.assertFalse(PlanMaterialApproval.objects.exists())
+                self.assertFalse(PlanWorkOrder.objects.exists())
+                self.assertFalse(PlanMesRequest.objects.exists())
+
+    def test_legacy_quantity_reupload_preserves_baseline_uid_version_and_fingerprint(self):
+        old = new_plan(quantity=123.4567890123456, actor=self.user)
+        revision = PlanWorkRevision.objects.get(work_id=old.work_uid)
+        baseline_quantity = revision.snapshot['planned_quantity']
+        self.upload([self.clone(old)])
+        new = ProductionPlan.objects.get()
+        self.assertEqual((new.work_uid, new.work_version), (old.work_uid, 1))
+        self.assertEqual(PlanWorkRevision.objects.count(), 1)
+        self.assertEqual(snapshot(new)['planned_quantity'], baseline_quantity)
+        self.assertEqual(digest(snapshot(new)), revision.fingerprint)
+
+    def test_campaign_total_limit_blocks_whole_campaign_without_splitting(self):
+        plans = [new_plan(day=day, quantity=800000000000000, actor=self.user) for day in (8, 9, 10)]
+        for plan in plans: self.approve(plan)
+        groups = self.groups()
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]['members'], [str(plan.work_uid) for plan in plans])
+        self.assertEqual(groups[0]['quantity'], '2400000000000000.0')
+        self.assertIn('plan_quantity_review', groups[0]['blockers'])
+        results = prepare(date(2026, 10, 8), date(2026, 10, 10), 'injection', [groups[0]['key']], self.user)
+        self.assertEqual(results[0]['state'], 'blocked')
+        self.assertFalse(PlanMesRequest.objects.exists())
+
+    def test_invalid_day_is_a_visible_boundary_between_approved_days(self):
+        first = new_plan(day=8, actor=self.user)
+        middle = new_plan(day=9, quantity=123.4567890123456, actor=self.user)
+        last = new_plan(day=10, actor=self.user)
+        self.approve(first)
+        self.approve(last)
+        groups = self.groups()
+        self.assertEqual([group['members'] for group in groups],
+                         [[str(plan.work_uid)] for plan in (first, middle, last)])
+        self.assertIn('plan_quantity_review', groups[1]['blockers'])
+        self.assertNotIn('plan_quantity_review', groups[0]['blockers'])
+        self.assertNotIn('plan_quantity_review', groups[2]['blockers'])
+        self.assertEqual(groups[1]['quantity'], '123.4567890123456')
+
+    def test_nonfinite_snapshot_read_does_not_allow_mes_quantity(self):
+        from .plan_workflow import valid_plan_quantity
+        # SQLite cannot persist NaN in its NOT NULL float column, PostgreSQL can.
+        plan = ProductionPlan(plan_date=date(2026, 10, 8), plan_type='injection',
+                              machine_name='synthetic', planned_quantity=float('nan'))
+        self.assertEqual(snapshot(plan)['planned_quantity'], 'NaN')
+        self.assertFalse(valid_plan_quantity(snapshot(plan)['planned_quantity']))
+
     def test_identical_reupload_preserves_uid_version_approval_and_history(self):
         old = new_plan(actor=self.user)
         approval = self.approve(old)
