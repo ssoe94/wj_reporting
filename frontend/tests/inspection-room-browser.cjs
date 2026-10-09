@@ -145,7 +145,7 @@ const pair = fixtures.authPair();
     verify(await page.locator('.inspection-station-part').count() === 17 && await page.locator('.inspection-station-production').count() === 17, 'each_machine_has_part_and_production_evidence');
     const fonts = await page.locator('.inspection-station-tile strong, .inspection-station-tile span').evaluateAll(nodes => nodes.map(node => parseFloat(getComputedStyle(node).fontSize)));
     verify(fonts.every(size => size >= 14), 'machine_card_text_at_least_14px');
-    for (const [number, tone, wording] of [[1, 'requested', '초검 요청'], [2, 'needed', '순검 검사 필요'], [3, 'overdue', '순검 기한 초과'], [4, 'completed', '초검 완료'], [5, 'failed', '초검 불합격']]) {
+    for (const [number, tone, wording] of [[1, 'requested', '초검 요청'], [2, 'needed', '타임체크 검사 필요'], [3, 'overdue', '타임체크 기한 초과'], [4, 'completed', '초검 완료'], [5, 'failed', '초검 불합격']]) {
       verify(await page.locator(`[data-machine="${number}"] .inspection-station-signal[data-tone="${tone}"]`).filter({ hasText: wording }).count() === 1, `machine_${number}_semantic_color_and_text`);
     }
     for (const number of [5,6,8,9,10,11,14,15,16]) verify(await page.locator(`[data-machine="${number}"] [data-tone="completed"]`).count() === 0, `machine_${number}_uncertain_or_failed_never_green`);

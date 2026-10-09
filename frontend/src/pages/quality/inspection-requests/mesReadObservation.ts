@@ -63,7 +63,7 @@ export function mesReadRecordValue(value: string | null, lang: 'ko' | 'zh') {
 
 export function mesReadLabels(item: MesReadObservation, lang: 'ko' | 'zh') {
   const ko = lang === 'ko';
-  const kinds = ko ? { first: '초검', periodic: '순검', production: '생산검사', unknown: '유형 미확인' }
+  const kinds = ko ? { first: '초검', periodic: '타임체크', production: '생산검사', unknown: '유형 미확인' }
     : { first: '首检', periodic: '巡检', production: '生产检验', unknown: '类型未确认' };
   return {
     kind: kinds[item.kind] || kinds.unknown,

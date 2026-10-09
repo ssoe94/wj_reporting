@@ -1,4 +1,3 @@
-import { injectionQualityAttention } from '../injection-quality-attention';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -20,9 +19,19 @@ export interface InjectionQualityStatusProps {
   nowMs?: number;
 }
 
+type QualityTone = 'ok' | 'wait' | 'bad' | 'none';
+
+/** Traffic-light tone: passed green, waiting/in progress amber, failed red, unknown gray. */
+function qualityTone(status: QualityCheckStatus): QualityTone {
+  if (status === 'passed') return 'ok';
+  if (status === 'failed') return 'bad';
+  if (status === 'waiting' || status === 'in_progress') return 'wait';
+  return 'none';
+}
+
 const COPY = {
   ko: {
-    title: '품질 검사 현황', first: '초품', periodic: '순검', other: '분류 미확인·기타',
+    title: '품질 검사 현황', first: '초품검사', periodic: '타임체크', other: '분류 미확인·기타',
     status: { unknown: '미확인', waiting: '대기', in_progress: '진행', passed: '합격', failed: '불합격' },
     freshness: { unavailable: '미확인', fresh: '동기화됨', stale: '갱신 지연', fixture: '시험 자료' },
     error: '연결 오류', details: '검사 현황 자세히', close: '닫기', sync: '마지막 동기화',
@@ -35,7 +44,7 @@ const COPY = {
     warnings: {
       snapshot_type_unverified: '검사 유형 확인 필요', duplicate_qc_evidence: '중복 검사 자료',
       plan_name_type_mismatch: '검사 이름과 실제 유형 불일치', current_task_binding_unresolved: '현재 작업 연결 미확인',
-      read_scope_mismatch: '이전 생산계획의 응답', periodic_series_unresolved: '검사방안별 순검 관계 미확인',
+      read_scope_mismatch: '이전 생산계획의 응답', periodic_series_unresolved: '검사방안별 타임체크 관계 미확인',
       quality_projection_unavailable: '품질 상태를 불러오지 못했습니다.',
     },
   },
@@ -106,7 +115,18 @@ export function InjectionQualityStatus({ state, expectedScope, language, transpo
     }).format(new Date(value)) : '—';
   const freshnessText = view.availability === 'error' ? copy.error : copy.freshness[view.freshness];
   const statusText = `${copy.first} ${copy.status[view.firstStatus]} · ${copy.periodic} ${copy.status[view.periodicStatus]}`;
-  const attention = injectionQualityAttention(view);
+  const periodicOverdue = view.scheduleStatus === 'overdue';
+  const firstTone = qualityTone(view.firstStatus);
+  const periodicTone = periodicOverdue ? 'bad' : qualityTone(view.periodicStatus);
+  const bandStatus = (status: QualityCheckStatus) => status === 'failed' ? (language === 'ko' ? '불량' : '不合格') : copy.status[status];
+  const firstText = `${copy.first} ${bandStatus(view.firstStatus)}`;
+  const periodicText = `${copy.periodic} ${periodicOverdue ? copy.schedule.overdue : bandStatus(view.periodicStatus)}`;
+  // Show the next due time only while the schedule is verified and not yet overdue.
+  const nextDueLabel = view.scheduleStatus === 'scheduled' && data?.periodic.next_due_at
+    ? new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'ko-KR', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai',
+    }).format(new Date(data.periodic.next_due_at))
+    : null;
   const failureText = view.counts.failed > 0
     ? `${view.historical ? `${copy.history} ` : ''}${copy.status.failed} ${view.counts.failed}${copy.count}` : '';
   const fullLabel = `${copy.details}: ${statusText}${failureText ? ` · ${failureText}` : ''} · ${freshnessText} · ${copy.sync} ${formatTime(data?.last_success_at)}`;
@@ -131,13 +151,17 @@ export function InjectionQualityStatus({ state, expectedScope, language, transpo
 
   return <div className="injection-quality" data-quality-freshness={view.freshness}>
     <button ref={trigger} type="button" className="injection-quality__summary" aria-haspopup="dialog"
+      data-first-tone={firstTone} data-periodic-tone={periodicTone}
       aria-expanded={open} aria-label={fullLabel} title={fullLabel}
       onClick={event => { event.stopPropagation(); setOpen(true); }}>
-      {failureText && <span className="injection-quality__failure">{failureText}</span>}
-      {attention.disposition === 'needs_verification' && <span className="injection-quality__failure">{language === 'ko' ? '불량조치 확인 필요' : '需核对不合格处置'}</span>}
-      <span className="injection-quality__summary-text">{statusText}</span>
-      <span className={`injection-quality__freshness${view.availability === 'error' ? ' injection-quality__freshness--error' : ''}`}>{freshnessText}</span>
-      <span aria-hidden="true">›</span>
+      {/* Only the two current results; history, disposition and sync details stay in the dialog. */}
+      <span className="injection-quality__summary-text">
+        <span className={`injection-quality__tone injection-quality__tone--${firstTone}`}>{firstText}</span>
+        <span className={`injection-quality__tone injection-quality__tone--${periodicTone}`}>
+          {periodicText}
+          {nextDueLabel ? <span className="injection-quality__next">{language === 'ko' ? '다음' : '下次'} {nextDueLabel}</span> : null}
+        </span>
+      </span>
     </button>
     {open && typeof document !== 'undefined' && createPortal(
       <dialog ref={dialog} className="injection-quality-dialog" aria-labelledby={headingId} aria-describedby={descriptionId}
