@@ -13489,7 +13489,7 @@ select {
 
 .injection-board-card .injection-board-card__timeline {
   height: var(--board-bar-h);
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .injection-board-card .injection-board-card__timeline > span {
