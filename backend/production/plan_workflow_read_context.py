@@ -138,9 +138,9 @@ def order_read_context(plan_type):
     if orders:
         scope = PlanWorkOrder.objects.filter(plan_type=plan_type).values('uid')
         for request in PlanMesRequest.objects.filter(work_order_id__in=scope,
-                state__in=['sending', 'uncertain', 'readback_pending', 'review', 'disabled']).order_by('-created_at'):
+                state__in=['checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed', 'disabled']).order_by('-created_at'):
             if request.state == 'disabled':
                 disabled.setdefault(request.work_order_id, request)
-            else:
+            elif request.state != 'failed' or request.attempt > 0:
                 unresolved.add(request.work_order_id)
     return by_member, unresolved, disabled

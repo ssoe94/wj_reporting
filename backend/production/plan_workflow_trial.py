@@ -20,7 +20,7 @@ from .models import PlanMesRequest, PlanMesRequestEvent
 from .permissions import user_can_edit_plan
 from .plan_workflow import (WorkflowConflict, digest, lock_type,
     claim_for_isolated_adapter, record_adapter_result, reconcile_readback)
-from .plan_workflow_contract import build_contract
+from .plan_workflow_contract import build_legacy_contract as build_contract
 from .plan_workflow_credentials import existing_provider_factory, provider_for_lease
 
 EFFECTS = ('no_dispatch', 'no_start', 'no_stock_movement', 'no_backflush', 'no_inspections')

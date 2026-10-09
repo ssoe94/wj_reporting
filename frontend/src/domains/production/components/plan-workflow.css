@@ -18,9 +18,9 @@
 .plan-workflow__table-wrap { overflow-x: auto; margin-top: 8px; }
 .plan-workflow__caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .plan-workflow table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.plan-workflow .pw-product { width: 19%; } .plan-workflow .pw-machine { width: 8%; }
+.plan-workflow .pw-select { width: 4%; } .plan-workflow .pw-product { width: 17%; } .plan-workflow .pw-machine { width: 8%; }
 .plan-workflow .pw-period { width: 14%; } .plan-workflow .pw-quantity { width: 8%; }
-.plan-workflow .pw-material { width: 18%; } .plan-workflow .pw-status { width: 16%; }
+.plan-workflow .pw-material { width: 17%; } .plan-workflow .pw-status { width: 15%; }
 .plan-workflow .pw-actions { width: 17%; }
 .plan-workflow th, .plan-workflow td { text-align: left; vertical-align: middle; padding: 4px 6px; border-bottom: 1px solid #dce3ee; overflow-wrap: anywhere; font-weight: 400; }
 .plan-workflow thead th { background: #edf2f8; font-weight: 650; padding: 7px 6px; }
@@ -30,6 +30,9 @@
 .plan-workflow__quantity { font-variant-numeric: tabular-nums; font-weight: 650 !important; }
 .plan-workflow__machine { white-space: nowrap; }
 .plan-workflow__row-actions, .plan-workflow__actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.plan-workflow__send-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.plan-workflow input[type=checkbox] { width: 18px; height: 18px; accent-color: #007ea8; cursor: pointer; }
+.plan-workflow input[type=checkbox]:disabled { cursor: default; }
 .plan-workflow__order.is-open { background: #edf2f8; }
 .plan-workflow__detail-row > td { padding: 0 6px; background: #f4f7fb; }
 .plan-workflow__detail { padding: 4px 0; }

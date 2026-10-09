@@ -449,7 +449,7 @@ def _intent(group):
 
 
 @transaction.atomic
-def prepare(start, end, plan_type, keys, actor):
+def prepare(start, end, plan_type, keys, actor, *, contract_builder=None):
     lock_type(plan_type)
     groups = {group['key']: group for group in preview(start, end, plan_type)}
     if (not isinstance(keys, list) or not 1 <= len(keys) <= 50
@@ -479,7 +479,7 @@ def prepare(start, end, plan_type, keys, actor):
                 plan_type=plan_type, members=group['members'], setup_fingerprint=group['setup_fingerprint'],
                 approved_snapshot=intent)
         from .plan_workflow_contract import build_contract
-        contract, blockers = build_contract(order, intent)
+        contract, blockers = (contract_builder or build_contract)(order, intent)
         request, created = PlanMesRequest.objects.get_or_create(dedupe_key=digest({'code': order.code, 'intent': intent, 'contract': contract, 'blockers': blockers}),
             defaults={'work_order': order, 'operation': 'update' if order.mes_id else 'create', 'intent': intent,
                       'contract': contract, 'blockers': blockers, 'actor': actor, 'state': 'disabled'})

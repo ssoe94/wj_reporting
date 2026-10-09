@@ -1,7 +1,8 @@
-"""Documented v2 import + whole-campaign readback; live writes remain OFF.
+"""Preserved isolated diagnostic transport and whole-campaign readback.
 
-The existing authenticated route gateway and USER lease format are reused.
-No batch-import endpoint, credential refresh, retry, dispatch, start or QC call.
+This legacy USER/trial path is not the factory PlanWorkflowView writer. Factory
+creation uses plan_service_transport and the single default-OFF environment flag.
+No batch-import endpoint, dispatch, start or QC call lives here.
 """
 import hmac
 import time
@@ -14,13 +15,12 @@ from quality.inspection_transport import InspectionUserAccessToken, MesAuthentic
 from .mes_execution_contract import encode_exact_json, parse_json_exact
 from .plan_workflow import (WorkflowConflict, lock_type, claim_for_isolated_adapter,
                             record_adapter_result, reconcile_readback, digest)
-from .plan_workflow_contract import CREATE_PATH, build_contract
+from .plan_workflow_contract import CREATE_PATH, build_legacy_contract as build_contract
 from .plan_workflow_read_contract import READ_ROUTES, read_request, verify_creation, identifier, data
 from .models import PlanMesRequest, PlanMesRequestEvent
 
 ORIGINS = frozenset({'https://v3-ali.blacklake.cn', 'https://v3-hw.blacklake.cn'})
 ROUTE_BASE = '/api/openapi/domain/web/v1/route'
-LIVE_WRITES_ENABLED = False
 
 
 class PlanTransportError(Exception):
@@ -50,7 +50,7 @@ class PlanMesTransport:
     def _post(self, path, payload, *, write=False, fixture=False):
         if path not in (*READ_ROUTES.values(), CREATE_PATH):
             raise PlanTransportError('route_not_supported')
-        if path == CREATE_PATH and not self._trial_allows(payload) and (LIVE_WRITES_ENABLED is not False or fixture is not True
+        if path == CREATE_PATH and not self._trial_allows(payload) and (fixture is not True
                 or self.sender is None or not self.credential.value.startswith('SYNTHETIC-')):
             raise WorkflowConflict('MES plan writer is disabled.')
         credential = self.credential
@@ -82,7 +82,7 @@ class PlanMesTransport:
                 raise MesAuthenticationRejected()
             if isinstance(body, dict) and (body.get('subCode') == 'URL_NO_PERMISSION' or body.get('code') in (403, 3500060)):
                 raise PlanTransportError('permission_required')
-            if write and (type(body.get('needCheck')) is not int or body['needCheck'] != 0):
+            if write and 'needCheck' in body and (type(body['needCheck']) is not int or body['needCheck'] != 0):
                 raise PlanTransportError('write_confirmation_unverified')
             data(body)  # includes weak-control/field-permission rejection
             return body
@@ -94,7 +94,7 @@ class PlanMesTransport:
     def send_create(self, contract, *, fixture=False):
         # Ordinary flags/credentials do not activate writes. Only synthetic IO
         # or a current, exact server-reviewed trial permit reaches this route.
-        if not self._trial_allows(contract.get('payload')) and (LIVE_WRITES_ENABLED is not False or fixture is not True or self.sender is None
+        if not self._trial_allows(contract.get('payload')) and (fixture is not True or self.sender is None
                 or not self.credential.value.startswith('SYNTHETIC-')):
             raise WorkflowConflict('MES plan writer is disabled.')
         if (self.attempted or contract.get('path') != CREATE_PATH

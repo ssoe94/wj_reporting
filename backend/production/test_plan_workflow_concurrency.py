@@ -41,8 +41,7 @@ class PlanWorkflowConcurrencyTests(TransactionTestCase):
         def send():
             user=get_user_model().objects.get(pk=self.user.pk)
             return prepare(date(2026,10,8),date(2026,10,8),'injection',[key],user)
-        with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(preview(date(2026,10,8),date(2026,10,8),'injection'))):
-            results=self.run_pair([send,send])
+        results=self.run_pair([send,send])
         self.assertEqual(PlanMesRequest.objects.count(),1)
         self.assertEqual(PlanWorkOrder.objects.count(),1)
         self.assertEqual({r[0]['state'] for r in results},{'disabled','unchanged'})
@@ -74,11 +73,13 @@ class PlanWorkflowConcurrencyTests(TransactionTestCase):
         import time
         from quality.inspection_transport import InspectionUserAccessToken
         from .test_plan_workflow_transport import bodies, response, WORK_ID
+        from .plan_workflow_contract import build_legacy_contract
         from .plan_workflow_transport import PlanMesTransport, dispatch_prepared_create, READ_ROUTES, CREATE_PATH, ROUTE_BASE
         groups=preview(date(2026,10,8),date(2026,10,8),'injection')
         calls=[]
         with override_settings(MES_PLAN_REVIEWED_CONTRACT=reviewed(groups)):
-            prepared=prepare(date(2026,10,8),date(2026,10,8),'injection',[groups[0]['key']],self.user)[0]
+            prepared=prepare(date(2026,10,8),date(2026,10,8),'injection',[groups[0]['key']],self.user,
+                             contract_builder=build_legacy_contract)[0]
             req=PlanMesRequest.objects.get(uid=prepared['uid']);values=bodies(req)
             def sender(url,**kwargs):
                 path=url.split(ROUTE_BASE)[1];calls.append(path)
