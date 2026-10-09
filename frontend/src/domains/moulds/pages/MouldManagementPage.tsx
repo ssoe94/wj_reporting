@@ -66,10 +66,11 @@ import {
   chooseMachineEvidence,
   commonPrefixLength,
   machineCardModel,
+  machineStatusTone,
+  type MachineStatusTone,
   mergedActivityBasis,
   normalizedModelCode,
 } from "@/domains/moulds/machine-plan-comparison";
-import injectionMachineGraphic from "@/assets/injection-machine-card.png";
 import styles from "./MouldManagementPage.module.css";
 
 const USE_REMOTE_MOULD_API_IN_DEVELOPMENT = import.meta.env.VITE_USE_REMOTE_MOULD_API === "true";
@@ -110,6 +111,8 @@ const COPY = {
     productionOrPlanModel: "생산/계획 모델",
     plannedProductionModel: "생산계획 모델",
     recentProductionModel: "최근 생산 모델",
+    recentProductionShort: "최근 생산",
+    plannedProductionShort: "생산계획",
     modelUnavailable: "생산 모델 확인 필요",
     drawingModelMatch: "도면번호·생산 모델 일치",
     modelEvidenceMatch: "금형·생산 모델 일치",
@@ -280,26 +283,14 @@ const COPY = {
     usageLegend: "10만 Shot 점검 알림",
     inactivityLegend: "미사용 기간",
     inactivityBasis: "최근 생산월 기준",
-    shortMatch: "일치",
-    shortReview: "판정필요",
-    shortMismatch: "불일치",
-    shortUnknown: "판정필요",
-    shortConfirmedMatch: "판정일치",
-    shortConfirmedMismatch: "판정불일치",
-    shortPlanned: "계획 대기",
-    shortPlannedMatch: "계획일치",
-    shortPlannedReview: "계획확인",
-    shortPlannedMismatch: "계획불일치",
-    shortPlannedMouldMissing: "금형미지정",
-    shortMachineIdentityMismatch: "설비불일치",
-    shortMachineIdentityUnknown: "설비확인",
-    shortRecent: "최근 실적",
-    shortStale: "데이터 지연",
-    shortAmbiguous: "복수생산",
-    shortNoProduction: "정지중",
-    shortMouldMissing: "MES확인",
+    toneMatch: "일치",
+    toneCheck: "확인 필요",
+    toneMismatch: "불일치",
+    toneIdle: "정지",
     shortConflict: "중복등록",
     shortLoading: "조회 중",
+    machineRunningState: "가동 중",
+    machineStoppedState: "비가동",
   },
   zh: {
     eyebrow: "注塑模具管理",
@@ -336,6 +327,8 @@ const COPY = {
     productionOrPlanModel: "生产/计划型号",
     plannedProductionModel: "生产计划型号",
     recentProductionModel: "最近生产型号",
+    recentProductionShort: "最近生产",
+    plannedProductionShort: "生产计划",
     modelUnavailable: "需确认生产型号",
     drawingModelMatch: "图号与生产型号一致",
     modelEvidenceMatch: "模具与生产型号一致",
@@ -506,26 +499,14 @@ const COPY = {
     usageLegend: "每10万 Shot 点检提醒",
     inactivityLegend: "闲置时长",
     inactivityBasis: "按最后生产月判断",
-    shortMatch: "一致",
-    shortReview: "待确认",
-    shortMismatch: "不一致",
-    shortUnknown: "待判定",
-    shortConfirmedMatch: "判定一致",
-    shortConfirmedMismatch: "判定不一致",
-    shortPlanned: "计划待机",
-    shortPlannedMatch: "计划一致",
-    shortPlannedReview: "计划待核",
-    shortPlannedMismatch: "计划不符",
-    shortPlannedMouldMissing: "模具未指定",
-    shortMachineIdentityMismatch: "设备不符",
-    shortMachineIdentityUnknown: "设备待核",
-    shortRecent: "最近实绩",
-    shortStale: "数据延迟",
-    shortAmbiguous: "多项生产",
-    shortNoProduction: "停机中",
-    shortMouldMissing: "MES确认",
+    toneMatch: "一致",
+    toneCheck: "待确认",
+    toneMismatch: "不一致",
+    toneIdle: "停机",
     shortConflict: "重复登记",
     shortLoading: "查询中",
+    machineRunningState: "运行中",
+    machineStoppedState: "未运行",
   },
 } as const;
 
@@ -864,30 +845,51 @@ function validationLabel(validation: ModelValidation, copy: Copy) {
   }[validation];
 }
 
-function validationShortLabel(validation: ModelValidation, copy: Copy) {
+const MACHINE_STATUS_TONE_ORDER: MachineStatusTone[] = ["match", "check", "mismatch", "idle"];
+
+function statusToneLabel(tone: MachineStatusTone, copy: Copy) {
   return {
-    match: copy.shortMatch,
-    confirmed_match: copy.shortConfirmedMatch,
-    review: copy.shortReview,
-    mismatch: copy.shortMismatch,
-    confirmed_mismatch: copy.shortConfirmedMismatch,
-    unknown: copy.shortUnknown,
-    no_production: copy.shortNoProduction,
-    mould_missing: copy.shortMouldMissing,
-    planned: copy.shortPlanned,
-    planned_match: copy.shortPlannedMatch,
-    planned_review: copy.shortPlannedReview,
-    planned_mismatch: copy.shortPlannedMismatch,
-    planned_mould_missing: copy.shortPlannedMouldMissing,
-    machine_identity_conflict: copy.shortMachineIdentityMismatch,
-    machine_identity_unknown: copy.shortMachineIdentityUnknown,
-    recent_output: copy.shortRecent,
-    stale: copy.shortStale,
-    activity_unknown: copy.activityUnknown,
-    ambiguous: copy.shortAmbiguous,
-    conflict: copy.shortConflict,
+    match: copy.toneMatch,
+    check: copy.toneCheck,
+    mismatch: copy.toneMismatch,
+    idle: copy.toneIdle,
     loading: copy.shortLoading,
-  }[validation];
+  }[tone];
+}
+
+function statusToneClass(tone: MachineStatusTone) {
+  return {
+    match: styles.toneMatch,
+    check: styles.toneCheck,
+    mismatch: styles.toneMismatch,
+    idle: styles.toneIdle,
+    loading: styles.toneLoading,
+  }[tone];
+}
+
+// Long MES models carry a colour/spec suffix after the first dot; show it on its own line.
+function splitModelCode(model: string): [string, string] {
+  const dot = model.indexOf(".");
+  return dot >= 3 && dot < model.length - 1 ? [model.slice(0, dot), model.slice(dot)] : [model, ""];
+}
+
+function MachineGlyph() {
+  return (
+    <svg aria-hidden="true" className={styles.machineGlyph} viewBox="0 0 64 44">
+      <rect className={styles.machineGlyphShade} height="5" rx="1.5" width="60" x="2" y="35" />
+      <rect height="4" rx="1" width="6" x="6" y="39" />
+      <rect height="4" rx="1" width="6" x="52" y="39" />
+      <rect height="22" rx="2" width="6" x="4" y="12" />
+      <rect height="22" rx="2" width="5" x="21" y="12" />
+      <rect className={styles.machineGlyphShade} height="2" width="13" x="9" y="15" />
+      <rect className={styles.machineGlyphShade} height="2" width="13" x="9" y="29" />
+      <rect className={styles.machineGlyphMould} height="14" rx="1" width="9" x="11" y="16" />
+      <path d="M26 21 L30 19 L30 27 L26 25 Z" />
+      <rect height="10" rx="2.5" width="30" x="30" y="18" />
+      <path d="M41 6 H53 L50 18 H44 Z" />
+      <rect className={styles.machineGlyphShade} height="7" rx="1" width="10" x="46" y="28" />
+    </svg>
+  );
 }
 
 function validationClass(validation: ModelValidation) {
@@ -1843,14 +1845,6 @@ export function MouldManagementPage() {
   const unmappedStorageMoulds = useMemo(() => (board?.moulds ?? []).filter((mould) => (
     mould.location.kind === "storage" && !knownStorageCodes.has(locationGroupKey(mould.location))
   )), [board?.moulds, knownStorageCodes]);
-  const mountedMachineCount = useMemo(() => {
-    const mountedNumbers = new Set(
-      (board?.moulds ?? [])
-        .filter((mould) => mould.location.kind === "machine" && mould.location.machineNumber)
-        .map((mould) => mould.location.machineNumber),
-    );
-    return board?.machines.filter((machine) => mountedNumbers.has(machine.number)).length ?? 0;
-  }, [board?.machines, board?.moulds]);
   const displayedConflictGroups = conflictFocusCode
     ? conflictGroups.filter(([locationCode]) => locationCode === conflictFocusCode)
     : conflictGroups;
@@ -2039,6 +2033,10 @@ export function MouldManagementPage() {
     const recommendations = ["mould_missing", "planned_mould_missing"].includes(automaticValidation)
       ? modelRecommendations(board, productionLink)
       : [];
+    const statusTone = machineStatusTone(validation);
+    const runState = productionStatusState === "ready" && (!productionLink?.sourceStatus || productionLink.sourceStatus === "ok")
+      ? (productionLink?.isRunning ? "running" : "stopped")
+      : "unknown";
     const machineSearchText = [
       machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language),
       ...mountedMoulds.flatMap((item) => [item.mouldCode, item.assetCode, item.name, item.model, item.drawingNo]),
@@ -2046,7 +2044,8 @@ export function MouldManagementPage() {
       productionModelLabel,
       ...(productionLink?.partNos ?? []),
       ...recommendations.flatMap((item) => [item.mould.mouldCode, item.candidateModel, item.mould.location.code]),
-      validationShortLabel(validation, copy),
+      statusToneLabel(statusTone, copy),
+      validationLabel(validation, copy),
     ].join(" ").toLocaleLowerCase();
     const visible = (mountedMoulds.length
       ? mountedMoulds.some((item) => matchesFilter(item, filter))
@@ -2062,11 +2061,20 @@ export function MouldManagementPage() {
       rule,
       activeProductionModel,
       productionModelLabel,
+      productionModelCaption: cardModel?.recent
+        ? `${copy.recentProductionShort} ${cardModel.date?.slice(5) ?? ""}`.trim()
+        : cardModel?.planned ? copy.plannedProductionShort : "",
+      statusTone,
+      runState,
       recommendations,
       visible,
       selected: mountedMoulds.some((item) => item.instanceId === selectedInstanceId),
     };
   });
+  const machineToneCounts = machineOverviewItems.reduce<Record<MachineStatusTone, number>>(
+    (counts, item) => ({ ...counts, [item.statusTone]: counts[item.statusTone] + 1 }),
+    { match: 0, check: 0, mismatch: 0, idle: 0, loading: 0 },
+  );
 
   const saveMachineDecision = (decision: MouldMachineValidationDecision) => {
     if (!verificationMould || !verificationProduction || !verificationCanDecide || !canConfirmUsage) return;
@@ -2255,9 +2263,13 @@ export function MouldManagementPage() {
                   <AlertTriangle aria-hidden="true" size={16} />{copy.machineConflict}<strong>{machineConflictGroups.length}</strong>
                 </button>
               ) : null}
-              <strong>{mountedMachineCount}<small>/17{language === "ko" ? "대" : "台"}</small></strong>
             </div>
             <div className={styles.machineViewToolbar}>
+              <ul className={styles.machineToneTally} aria-label={copy.status}>
+                {MACHINE_STATUS_TONE_ORDER.map((tone) => (
+                  <li className={`${statusToneClass(tone)} ${machineToneCounts[tone] ? "" : styles.machineToneEmpty}`} key={tone}><span>{statusToneLabel(tone, copy)}</span><strong>{machineToneCounts[tone]}</strong></li>
+                ))}
+              </ul>
               <div className={styles.machineViewToggle} role="group" aria-label={copy.machineViewMode}>
                 <button aria-pressed={machineViewMode === "graphic"} onClick={() => changeMachineViewMode("graphic")} type="button">
                   <LayoutGrid aria-hidden="true" size={17} />{copy.graphicMode}
@@ -2269,40 +2281,46 @@ export function MouldManagementPage() {
             </div>
             {machineViewMode === "graphic" ? (
               <div className={styles.machineGraphicGrid}>
-                {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, productionModelLabel, recommendations, visible, selected }) => (
-                  <button
-                    aria-expanded={verificationMachineNumber === machine.number}
-                    aria-haspopup="dialog"
-                    aria-label={`${machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                    className={`${styles.machineGraphicCard} ${productionStatusState === "ready" && (!productionLink?.sourceStatus || productionLink.sourceStatus === "ok") ? (productionLink?.isRunning ? styles.machineRunning : styles.machineStopped) : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
-                    key={machine.number}
-                    onClick={() => setVerificationMachineNumber(machine.number)}
-                    type="button"
-                  >
-                    <span className={styles.machineGraphicTopline}>
-                      <strong>{machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}</strong>
-                      <i className={`${styles.statusPill} ${validationClass(validation)}`}>{validationShortLabel(validation, copy)}</i>
-                    </span>
-                    <span className={styles.machineGraphicBody}>
-                      <span className={styles.machineGraphicArt}><img alt="" aria-hidden="true" src={injectionMachineGraphic} /></span>
-                      <span className={styles.machineGraphicInfo}>
-                        <small>{productionModelLabel}</small>
-                        <strong title={activeProductionModel === "-" ? undefined : activeProductionModel}>{activeProductionModel}</strong>
-                        {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? (
-                          <em>{productionLink.partNos.length} {copy.partCount} · {copy.cavityProduction}</em>
-                        ) : null}
-                        <span><small>{copy.currentMould}</small><b>{mountedMoulds.length > 1 ? `${copy.shortConflict} ${mountedMoulds.length}${copy.listCount}` : mounted?.mouldCode || "-"}</b></span>
+                {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, statusTone, runState, activeProductionModel, productionModelLabel, productionModelCaption, recommendations, visible, selected }) => {
+                  const [modelHead, modelTail] = splitModelCode(activeProductionModel);
+                  const runLabel = runState === "running" ? copy.machineRunningState : runState === "stopped" ? copy.machineStoppedState : "";
+                  return (
+                    <button
+                      aria-expanded={verificationMachineNumber === machine.number}
+                      aria-haspopup="dialog"
+                      aria-label={`${machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}${runLabel ? `, ${runLabel}` : ""}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
+                      className={`${styles.machineGraphicCard} ${runState === "running" ? styles.machineRunning : runState === "stopped" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                      key={machine.number}
+                      onClick={() => setVerificationMachineNumber(machine.number)}
+                      type="button"
+                    >
+                      <strong className={styles.machineGraphicTitle}>{machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}</strong>
+                      <span className={styles.machineGraphicBody}>
+                        <span className={styles.machineGraphicArt} title={runLabel || undefined}>
+                          <MachineGlyph />
+                          <i className={`${styles.machineToneBadge} ${statusToneClass(statusTone)}`} title={validationLabel(validation, copy)}>{statusToneLabel(statusTone, copy)}</i>
+                        </span>
+                        <span className={styles.machineGraphicInfo}>
+                          {productionModelCaption ? <small>{productionModelCaption}</small> : null}
+                          <strong title={activeProductionModel === "-" ? undefined : activeProductionModel}>
+                            {modelHead}{modelTail ? <span>{modelTail}</span> : null}
+                          </strong>
+                          {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? (
+                            <em>{productionLink.partNos.length} {copy.partCount} · {copy.cavityProduction}</em>
+                          ) : null}
+                          <b>{mountedMoulds.length > 1 ? `${copy.shortConflict} ${mountedMoulds.length}${copy.listCount}` : mounted?.mouldCode || "-"}</b>
+                        </span>
                       </span>
-                    </span>
-                    {recommendations.length ? (
-                      <span className={styles.machineRecommendationLine}>
-                        <small>{copy.recommendedLocation}</small>
-                        <strong>{recommendations.length === 1 ? recommendations[0].mould.mouldCode : `${recommendations.length}${copy.listCount}`}</strong>
-                        <em title={recommendations.map((item) => displayLocation(item.mould)).join(" · ")}>{recommendationLocationText(recommendations)}</em>
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
+                      {recommendations.length ? (
+                        <span className={styles.machineRecommendationLine}>
+                          <small>{copy.recommendedLocation}</small>
+                          <strong>{recommendations.length === 1 ? recommendations[0].mould.mouldCode : `${recommendations.length}${copy.listCount}`}</strong>
+                          <em title={recommendations.map((item) => displayLocation(item.mould)).join(" · ")}>{recommendationLocationText(recommendations)}</em>
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className={styles.machineTable}>
@@ -2310,12 +2328,12 @@ export function MouldManagementPage() {
                   <span>{copy.machine}</span><span>{copy.currentMould}</span><span>{copy.productionOrPlanModel}</span><span>{copy.status}</span>
                 </div>
                 <div className={styles.machineRows}>
-                  {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, productionModelLabel, recommendations, visible, selected }) => (
+                  {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, statusTone, runState, activeProductionModel, productionModelLabel, recommendations, visible, selected }) => (
                     <button
                       aria-expanded={verificationMachineNumber === machine.number}
                       aria-haspopup="dialog"
                       aria-label={`${machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                      className={`${styles.machineRow} ${productionStatusState === "ready" && (!productionLink?.sourceStatus || productionLink.sourceStatus === "ok") ? (productionLink?.isRunning ? styles.machineRunning : styles.machineStopped) : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                      className={`${styles.machineRow} ${runState === "running" ? styles.machineRunning : runState === "stopped" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       key={machine.number}
                       onClick={() => setVerificationMachineNumber(machine.number)}
                       title={copy.verifyHint}
@@ -2340,7 +2358,7 @@ export function MouldManagementPage() {
                         {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? <em>{productionLink.partNos.length} {copy.partCount}</em> : null}
                       </span>
                       <span className={styles.machineStatusStack}>
-                        <i className={`${styles.statusPill} ${validationClass(validation)}`}>{validationShortLabel(validation, copy)}</i>
+                        <i className={`${styles.statusPill} ${statusToneClass(statusTone)}`} title={validationLabel(validation, copy)}>{statusToneLabel(statusTone, copy)}</i>
                       </span>
                     </button>
                   ))}
