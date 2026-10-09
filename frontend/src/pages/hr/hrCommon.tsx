@@ -28,6 +28,14 @@ export function money(value: string | number | null, currency: HrCurrency, lang:
   return currency === 'CNY' ? formatted.replace('CN¥', '¥') : formatted;
 }
 
+export function compactMoney(value: string | number | null, currency: HrCurrency, lang: HrLang) {
+  if (value === null) return '—';
+  const cents = typeof value === 'number' ? value : amountToCents(value);
+  return new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'zh-CN', {
+    style: 'currency', currency, minimumFractionDigits: cents % 100 === 0 ? 0 : 2, maximumFractionDigits: 2,
+  }).format(cents / 100).replace('CN¥', '¥');
+}
+
 export function safeHrError(error: unknown, fallback: string) {
   const failure = error as { response?: { status?: number; data?: { detail?: unknown; error?: unknown; message?: unknown } }; message?: string };
   const data = failure?.response?.data;
@@ -100,9 +108,9 @@ export function useHrWorkspace(month: string) {
   return { workspace: selectedWorkspace, setWorkspace, loading: loading || (allowed && !selectedWorkspace && !error), error, allowed, refresh: () => setReload((value) => value + 1) };
 }
 
-export function HrShell({ page, month, onMonthChange, monthDisabled, children }: {
+export function HrShell({ page, month, onMonthChange, monthDisabled, children, actions }: {
   page: 'personnel' | 'labor-cost'; month: string; onMonthChange: (month: string) => void;
-  monthDisabled?: boolean; children: ReactNode;
+  monthDisabled?: boolean; children: ReactNode; actions?: ReactNode;
 }) {
   const { lang } = useLang();
   const ko = lang === 'ko';
@@ -115,12 +123,13 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children }:
   }, [month, location.pathname, location.search, navigate]);
   return <main className="hr-page">
     <header className="hr-work-header">
-      <div className="hr-work-title"><span>{ko ? '인사·총무' : '人事·总务'}</span><h1>{page === 'personnel' ? (ko ? '인원 배치' : '人员配置') : (ko ? '인건비 집계' : '人工成本汇总')}</h1></div>
+      <div className="hr-work-title"><h1>{ko ? '인원 · 인건비' : '人员 · 人工成本'}</h1></div>
       <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
         <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
         <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
       </nav>
       <label className="hr-month">{ko ? '대상 월' : '月份'}<input type="month" value={month} disabled={monthDisabled} onInput={(event) => { if (/^\d{4}-\d{2}$/.test(event.currentTarget.value)) onMonthChange(event.currentTarget.value); }} /></label>
+      {actions && <div className="hr-header-actions">{actions}</div>}
     </header>
     {children}
   </main>;

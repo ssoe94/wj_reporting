@@ -43,16 +43,16 @@ export default function CompanyOrganizationChart({ organization = COMPANY_ORGANI
   const { lang } = useLang(); const ko = lang === 'ko';
   const nodes = organization.nodes;
   function list(parentId: string | null) {
-    return <ul>{nodes.filter((node) => node.parent_id === parentId).map((node) => <li key={node.id}><strong>{node.label.replaceAll('\n', ' ')}</strong>{node.name ? ` · ${node.name}` : ''}{nodes.some((child) => child.parent_id === node.id) && list(node.id)}</li>)}</ul>;
+    return <ul>{nodes.filter((node) => node.parent_id === parentId).map((node) => <li key={node.id}><strong>{node.label.replaceAll('\n', ' ')}</strong>{nodes.some((child) => child.parent_id === node.id) && list(node.id)}</li>)}</ul>;
   }
   return <section className="hr-panel company-organization">
     <CompanyChartViewport title={ko ? '회사 전체 조직도 · 보고체계' : '公司整体组织图 · 汇报体系'}
-      description={ko ? '제공한 회사 조직도의 담당자와 보고 관계입니다. 인건비는 기능별 배치도에서 확인합니다.' : '按公司提供的组织图展示负责人及汇报关系，人工成本请在职能配置图中查看。'}
+      description={ko ? '회사 조직도의 직책과 보고 관계입니다.' : '按公司组织图展示职务与汇报关系。'}
       width={WIDTH} height={HEIGHT} canvasClass="company-organization-canvas" label={ko ? '회사 전체 보고체계 조직도' : '公司整体汇报体系组织图'}>
       <svg className="company-organization-lines" width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true">{organization.edges.map((edge) => <path key={`${edge.from}-${edge.to}`} d={connector(edge.from, edge.to)} />)}</svg>
       {nodes.map((node) => {
         const position = POSITIONS[node.id]; if (!position) return null;
-        return <div key={node.id} data-organization-node={node.id} className={`company-organization-node ${position.style}`} style={{ left: position.x - position.size / 2, top: position.y - position.size / 2, width: position.size, height: position.size }}><strong>{node.label}</strong>{node.name && <span>{node.name}</span>}</div>;
+        return <div key={node.id} data-organization-node={node.id} className={`company-organization-node ${position.style}`} style={{ left: position.x - position.size / 2, top: position.y - position.size / 2, width: position.size, height: position.size }}><strong>{node.label}</strong></div>;
       })}
     </CompanyChartViewport>
     <details className="company-organization-accessible"><summary>{ko ? '보고체계를 목록으로 보기' : '以列表查看汇报体系'}</summary>{list(null)}</details>

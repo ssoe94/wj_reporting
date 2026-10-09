@@ -1129,3 +1129,45 @@ Primary interaction checks: scope selection, same-month tab navigation, upload m
 No actionable P0/P1/P2 compact-layout issues remain in the inspected states. Remaining acceptance: actual pointer drops, actual company file with supplied wages and corrected missing May employee code, production/PostgreSQL deployment.
 
 final result: passed
+
+---
+
+# HR option 3 allocation board and private code display — 2026-10-09
+
+This section supersedes the earlier HR layout and native-drop acceptance notes above.
+
+Source visual truth: `docs/reviews/assets/hr-labor-cost-20261009/option3/selected-concept.png`, the third displayed image selected by the user (1586×992 pixels). User amendments take precedence: employees appear as codes, numeric codes are padded to at least five digits, and names are not shown by default.
+
+Implementation: `http://127.0.0.1:5186/hr/personnel?month=2026-10`, isolated local API and disposable SQLite. All 67 employees and the 536,000 CNY total are synthetic. No source payroll names or amounts were copied into fixtures or Git.
+
+Evidence (under `docs/reviews/assets/hr-labor-cost-20261009/option3/`):
+- `personnel-desktop.png`: Korean default allocation view, 1921×1200 pixels / measured 1920×1200 CSS viewport.
+- `cost-desktop-zh.png`: Chinese read-only cost view, same dimensions.
+- `personnel-mobile.png`: Korean responsive view, 390×844 pixels / measured 390×843 CSS viewport.
+- `comparison-full.png`: source and implementation placed together, implementation proportionally normalized to source width 1586. Both have nearly identical aspect ratio. Existing app navigation is retained; it has more entries and takes more space than the mock.
+- `comparison-detail.png`: combined close comparison of the summary, typography, functional cells and codes. The reference's names/avatars are intentionally replaced by the user's five-digit codes. The reference illustrates an active drag; the retained full-view capture is the idle saved state. Active movement and its amounts were checked through native pointer input and the detail movement preview rather than claiming an identical interaction-state capture.
+
+Findings and comparison history:
+1. P1 fixed: the first one-code-per-row implementation pushed the dock below the 1200px viewport. At desktop widths of 1700px and above, compact code pills now use two columns. All seven lanes and the six-person dock fit: dock bottom measured 1148px. Additional unoccupied management cells stay out of the main view.
+2. P1 fixed: default employee names leaked through cards, detail lists, import preview and reporting diagram. The default UI now uses codes; one selected person's name requires the explicit name button, and closes/reset on selection dismissal, month/data changes. Original identifiers remain unchanged for mutations.
+3. P2 fixed: padding could create display aliases (11 and 00011). Colliding displays include a small original-code annotation; move keys remain distinct. Unit tests cover collisions, nonnumeric codes and codes longer than five digits.
+4. P2 fixed: null cost shares previously rendered zero-width tracks. Unknown shares now render no lane meter; incomplete total displays remain unknown with a separately labelled known subtotal.
+5. P2 fixed: dragging to off-screen destinations had no auto-scroll. Active pointer dragging now scrolls the viewport and horizontal lane container at their edges, updating the drop target even with a stationary pointer. Native mobile edge drag produced 37px vertical movement and narrow-desktop edge drag produced 10px horizontal movement.
+6. P2 fixed: small mobile percentage segments clipped digits. Narrow-screen bars omit labels for shares below 15%; values remain in the corresponding department headers and the chart's accessible description. Post-fix mobile image was inspected.
+
+Required fidelity surfaces:
+- Typography: retained existing Korean/Chinese system font stack and readable codes/money; 14px working code pills, 14–17px values, 19px lane titles. Compact integer money omits .00 while fractional amounts retain both decimals. No names or initials substitute for the requested codes.
+- Layout rhythm: one heading/tab/month/action row, one total-and-share ribbon, seven equal lanes with function zones, and a six-person search dock. Small desktop uses internal horizontal scrolling; mobile stacks lanes and preserves approximately 44px drag handles. No page-level horizontal overflow was observed at 1920, 1200 or 390 CSS px.
+- Colors/tokens: existing navy, gray-blue surface and white cards; restrained navy-to-gray blue distribution segments, sufficient text contrast, semantic amber only for missing values. Existing site shell retained intentionally.
+- Asset fidelity: existing supplied WJ logo retained as an image; no decorative bitmap assets were required. Icons reuse the site's installed Lucide set. Charts and controls are functional code, not a rasterized mock.
+- Copy/content: original seven functional groups and scoped repeated labels retained; 应发工资 basis, explicit source department, missing costs and original identity keys preserved. Extra explanatory mock copy and fictional HR badge were omitted from the working screen.
+
+Primary behavior observed: native drag 00001 from injection operator to materials raw; injection 28/216000 → 27/208800 and materials 6/48000 → 7/55200, while total 67/536000 remains unchanged. Save and reload preserve the move; reverse drag/save restores the fixture. Dropping outside a target cancels without enabling save. A detail button move of original code 245 saves/reloads as display 00245 while its DOM identity remains 245. Name reveal and close/reopen hiding were observed. September's missing salary leaves overall total unknown; October and empty August remain distinct. Cost view has no drag handles. Chinese and mobile views were inspected.
+
+Checks: 36 HR frontend tests, TypeScript/Vite/legacy build, selected changed-file ESLint (no errors or warnings), and git diff whitespace check passed. Build retains the existing large-chunk warning. Fresh final-preview console error log was empty. No backend/schema/auth changes were made in this iteration.
+
+Remaining test limits: the pre-existing browser-native discard confirmation caused the automation tab to stop responding; its confirmation acceptance was not verified. A fresh saved-state preview was opened without saving that temporary test move. This is not counted as a completed discard test. Physical touchscreen acceptance, production/PostgreSQL behavior, real payroll reconciliation, and re-running the full import UI after this visual-only preview change are not claimed. Import preview code display was reviewed in code and the source-code formatting/import tests passed.
+
+Implementation checklist: completed visual comparison, privacy/display changes, exact move previews, native move/save/reload, responsive fixes, affected tests and build. No actionable P0/P1/P2 visual findings remain in the inspected states. The feature remains local and un-deployed.
+
+final result: passed

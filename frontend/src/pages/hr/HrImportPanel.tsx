@@ -1,3 +1,4 @@
+import { formatEmployeeCode, getEmployeeCodeCollisions } from '../../domains/hr/visualization';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Download, Upload, X } from 'lucide-react';
 import { useLang } from '../../i18n';
@@ -33,6 +34,7 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   const [pasteText, setPasteText] = useState('');
   const [preview, setPreview] = useState<HrImportPreview | null>(null);
   const [excludedRows, setExcludedRows] = useState(0);
+  const codeCollisions = useMemo(() => getEmployeeCodeCollisions(preview?.rows.map((row) => row.code) ?? []), [preview]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -220,8 +222,8 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
         <div className="hr-import-values"><span>{ko ? '월 총계' : '月总计'} <strong>{preview.total === null ? (ko ? '미확정' : '未确认') : money(preview.total, currency, lang)}</strong></span>
           {missingCount > 0 && <span>{ko ? '확인 소계' : '已确认小计'} <strong>{money(preview.known_total, currency, lang)}</strong> · {knownCount.toLocaleString()} {ko ? '명' : '人'}</span>}</div>
         <details className="hr-disclosure"><summary>{ko ? `직원 미리보기 · 첫 ${Math.min(5, preview.row_count)}명` : `人员预览 · 前 ${Math.min(5, preview.row_count)} 人`}</summary>
-          <div className="hr-table-scroll"><table><thead><tr><th>{ko ? '사번' : '编号'}</th><th>{ko ? '이름' : '姓名'}</th><th>{ko ? '직책' : '职务'}</th><th>{ko ? '원본 부서' : '原始部门'}</th><th>{ko ? '새 분류·배치' : '新分类·配置'}</th><th className="hr-number">{ko ? '월 인건비' : '月人工成本'}</th></tr></thead>
-            <tbody>{preview.rows.slice(0, 5).map((row) => <tr key={row.code}><td>{row.code}</td><td>{row.name}</td><td>{row.title || '—'}</td><td>{row.source_department || '—'}</td><td>{classificationMode === 'file' ? classificationLabel(row.department_id) : classificationLabel(workspace.employees.find((employee) => employee.code === row.code)?.department_id)}</td><td className="hr-number">{row.amount === null ? (ko ? '미입력' : '未填写') : money(row.amount, currency, lang)}</td></tr>)}</tbody>
+          <div className="hr-table-scroll"><table><thead><tr><th>{ko ? '사번' : '编号'}</th><th>{ko ? '직책' : '职务'}</th><th>{ko ? '원본 부서' : '原始部门'}</th><th>{ko ? '새 분류·배치' : '新分类·配置'}</th><th className="hr-number">{ko ? '월 인건비' : '月人工成本'}</th></tr></thead>
+            <tbody>{preview.rows.slice(0, 5).map((row) => <tr key={row.code}><td>{formatEmployeeCode(row.code)}{codeCollisions.has(row.code) && <small className="hr-code-original">{ko ? '원본' : '原编号'} {row.code}</small>}</td><td>{row.title || '—'}</td><td>{row.source_department || '—'}</td><td>{classificationMode === 'file' ? classificationLabel(row.department_id) : classificationLabel(workspace.employees.find((employee) => employee.code === row.code)?.department_id)}</td><td className="hr-number">{row.amount === null ? (ko ? '미입력' : '未填写') : money(row.amount, currency, lang)}</td></tr>)}</tbody>
           </table></div>
         </details>
         <div className="hr-compact-toolbar"><span>{ko ? `기존 ${workspace.employees.length}명 → ${preview.row_count}명 교체` : `现有 ${workspace.employees.length} 人 → ${preview.row_count} 人替换`} · {classificationMode === 'file' ? (ko ? '새 분류 적용 · 빈 분류 미배치' : '应用新分类 · 空分类待配置') : (ko ? '기존 배치 유지' : '保留现有配置')}</span>

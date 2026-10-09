@@ -1,0 +1,25 @@
+.hr-cost-ribbon { display:flex; align-items:center; gap:22px; padding:17px 18px; margin:12px 0; border:1px solid var(--hr-border); border-radius:8px; background:var(--hr-surface); }
+.hr-ribbon-count { min-width:105px; }
+.hr-ribbon-total { min-width:220px; padding-left:22px; border-left:1px solid var(--hr-border); }
+.hr-ribbon-count > span,.hr-ribbon-total > span { display:block; color:var(--hr-muted); font-size:14px; }
+.hr-ribbon-count strong,.hr-ribbon-total strong { display:block; color:var(--hr-navy); font-size:29px; line-height:1.4; font-weight:750; }
+.hr-ribbon-count strong small { font-size:15px; margin-left:5px; }
+.hr-ribbon-total span small { font-size:12px; margin-left:5px; }
+.hr-ribbon-total > small,.hr-ribbon-count > small { font-size:12px; color:var(--hr-muted); }
+.hr-ribbon-chart { flex:1; min-width:0; padding-left:22px; border-left:1px solid var(--hr-border); }
+.hr-cost-distribution { height:34px; display:flex; overflow:hidden; border-radius:5px; }
+.hr-cost-distribution > span { flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; min-width:0; white-space:nowrap; overflow:hidden; }
+.hr-cost-distribution > span + span { border-left:1px solid #ffffff60; }
+.hr-cost-legend { display:flex; flex-wrap:wrap; gap:5px 13px; margin-top:9px; }
+.hr-cost-legend > span { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--hr-muted); }
+.hr-cost-legend i { width:8px; height:8px; border-radius:50%; flex:none; }
+.hr-ribbon-empty { font-size:14px; margin:0; color:var(--hr-muted); }
+.hr-header-actions { display:flex; align-items:center; gap:6px; flex:none; }
+.hr-header-actions .hr-button { min-height:38px; padding:7px 11px; font-size:14px; }
+.hr-draft-indicator { margin:5px 0; color:var(--hr-accent); font-size:13px; }
+.hr-page .hr-source { margin-top:12px; }
+@media(max-width:1200px) { .hr-cost-ribbon { flex-wrap:wrap; gap:12px; } .hr-ribbon-chart { flex-basis:100%; padding:0; border:0; } .hr-cost-distribution > span[data-compact-label="hide"] { font-size:0; } }
+@media(max-width:700px) { .hr-cost-ribbon { padding:12px; gap:12px; } .hr-ribbon-count { min-width:64px; } .hr-ribbon-total { min-width:0; flex:1; padding-left:12px; } .hr-ribbon-count strong,.hr-ribbon-total strong { font-size:24px; } .hr-ribbon-total span small { display:block; margin-left:0; } .hr-header-actions { width:100%; justify-content:flex-end; order:4; } .hr-header-actions .hr-button { min-height:44px; } .hr-cost-legend { gap:6px 12px; } .hr-cost-distribution > span { font-size:11px; } }
+@media(prefers-contrast:more) { .hr-cost-ribbon { border-color:currentColor; } .hr-cost-legend > span { color:var(--hr-text); } }
+
+.hr-code-original { display:block; font-size:12px; color:var(--hr-muted); }
