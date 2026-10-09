@@ -122,7 +122,7 @@ export function stationMesInspectionView(machine: InspectionMachine | undefined,
 
 export function stationMesBadgeLabel(value: MesInspectionBadge, lang: 'ko' | 'zh'): string {
   const ko = lang === 'ko';
-  const kind = value.kind ? (ko ? { first: '초검', periodic: '순검', production: '생산검사' } : { first: '首检', periodic: '巡检', production: '生产检验' })[value.kind] : 'MES';
+  const kind = value.kind ? (ko ? { first: '초검', periodic: '타임체크', production: '생산검사' } : { first: '首检', periodic: '巡检', production: '生产检验' })[value.kind] : 'MES';
   const state = (ko ? { requested: '요청', needed: '검사 필요', in_progress: '검사 중', overdue: '기한 초과', completed: '완료', failed: '불합격', unknown: '미확인' }
     : { requested: '申请', needed: '需检验', in_progress: '检验中', overdue: '已超时', completed: '已完成', failed: '不合格', unknown: '未确认' })[value.state];
   return `${kind} ${state}`;

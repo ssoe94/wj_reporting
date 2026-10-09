@@ -19,13 +19,13 @@ import './InspectionBoardPage.css';
 const COPY = {
   ko: {
     title: '사출 검사 현황판', machine: '호기', range: '사출', date: '기준일', refreshed: '화면 갱신',
-    first: '초품', periodic: '순검', due: '다음 순검', observed: '검사 관측', inspecting: '검사 중', currentInspection: '현재 검사',
+    first: '초품', periodic: '타임체크', due: '다음 타임체크', observed: '검사 관측', inspecting: '검사 중', currentInspection: '현재 검사',
     schedule: { scheduled: '예정', overdue: '지연', unknown: '미확인', unconnected: '미연결' }, production: '당일 생산 추정량', productionShort: '생산(추정)', productionHint: '배분 형합수 × Cavity', plan: '당일 계획',
     currentPlan: '현재 계획', noPart: 'Part 확인 대기', noPlan: '현재 계획 미확인', inspectionQty: '검사수량',
     quantityUnknown: '미확인', quantityHint: '생산수량과 별도', record: '검사요청·기록', history: '누적 이력',
     historyHint: '로그인 후 검사요청에 기록된 내역을 확인합니다.',
     observations: '현재 계획 · 검사 관측', count: '건', empty: '확인된 검사 자료 없음',
-    incomplete: '전체 검사 목록 미확인', inspection: '순검 판정', saved: 'MES 저장', saveUnknown: '요청 상세에서 확인',
+    incomplete: '전체 검사 목록 미확인', inspection: '타임체크 판정', saved: 'MES 저장', saveUnknown: '요청 상세에서 확인',
     disposition: '불량 후속처리', dispositionUnknown: '조치 상태 미연동', dispositionHint: '검사 완료와 조치 종료는 별도입니다.',
     failedObservation: '불합격 관측', historical: '이전 관측', connectionError: '연결 오류', stale: '데이터 지연',
     unknown: '미확인', synced: '동기화됨', sample: '시험 자료', lastSync: '마지막 동기화',
