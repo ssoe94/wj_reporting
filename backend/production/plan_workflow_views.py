@@ -10,6 +10,7 @@ from .models import ProductionPlan, PlanMesRequest, PlanMesRequestEvent, PlanMat
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .plan_workflow import (lock_type, serialize_row, material_catalog, approve_materials,
                             resolve_identity, preview, prepare, text, WorkflowConflict)
+from .plan_workflow_read_context import PlanWorkflowReadContext
 
 
 def scope(data):
@@ -38,9 +39,9 @@ class PlanWorkflowView(APIView):
     def get(self, request):
         start, end, plan_type = scope(request.query_params)
         if not user_can_view_plan(request.user, plan_type): raise PermissionDenied()
-        rows = ProductionPlan.objects.filter(plan_date__range=(start, end), plan_type=plan_type)
-        return Response({'write_enabled': False, 'rows': [serialize_row(row) for row in rows],
-            'catalog': material_catalog(), 'preview': preview(start, end, plan_type),
+        context = PlanWorkflowReadContext(start, end, plan_type)
+        return Response({'write_enabled': False, 'rows': [serialize_row(row, context) for row in context.rows],
+            'catalog': material_catalog(), 'preview': preview(start, end, plan_type, context),
             'can_edit': request.user.is_active and user_can_edit_plan(request.user, plan_type),
             'can_manage_defaults': request.user.is_active and request.user.is_superuser,
             'requests': [{'uid': str(row.uid), 'work_order_code': row.work_order.code,
