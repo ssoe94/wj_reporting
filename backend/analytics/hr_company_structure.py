@@ -5,20 +5,21 @@ No employee is assigned by name, source department, or job title.
 import json
 from copy import deepcopy
 
-CATALOG_VERSION = 'wj-company-structure.v1'
+CATALOG_VERSION = 'wj-company-structure.v2'
 LEADERS = [
     {'id': 'board-chairman', 'label': '董事长'},
     {'id': 'business-gm', 'label': '李宰荣 总经理'},
     {'id': 'technical-gm', 'label': '刘明亮 总经理'},
 ]
 GROUP_DEFINITIONS = [
-    ('quality', '品质管理', 1, 1, [('quality-patrol', '巡检'), ('quality-oqc', 'OQC'), ('quality-cs', 'CS')]),
+    ('quality', '品质管理', 1, 1, [('quality-patrol', '巡检'), ('quality-oqc', '进出货检验'), ('quality-cs', 'CS')]),
     ('injection', '注塑管理', 1, 2, [('injection-operator', '操作工'), ('injection-mold-change', '换模工'), ('injection-5s', '5S'), ('injection-feeding', '加料/入库')]),
     ('machining', '加工管理', 1, 3, [('machining-operator', '操作工')]),
     ('sales', '营业管理', 1, 4, [('sales-warehouse', '仓库/物流'), ('sales-cs', 'CS'), ('sales-support', '辅助')]),
     ('materials', '资材管理', 1, 5, [('materials-raw', '原材料'), ('materials-secondary', '副资材'), ('materials-crushing', '粉碎')]),
     ('mold-maintenance', '模具/公务', 2, 2, [('mold-worker', '模具工'), ('maintenance-worker', '公务员工')]),
     ('administration', '管理部门', 2, 3, [('admin-finance', '财务'), ('admin-hr', '人事/总务')]),
+    ('development', '开发管理', 2, 4, [('development-staff', '开发人员')]),
 ]
 COMPANY_DEPARTMENTS = [{'id': item['id'], 'name': item['label'], 'parent_id': None, 'function': item['label']} for item in LEADERS]
 for group_id, label, _, _, children in GROUP_DEFINITIONS:

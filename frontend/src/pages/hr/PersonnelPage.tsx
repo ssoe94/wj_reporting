@@ -94,6 +94,7 @@ export default function PersonnelPage() {
   const summary = useMemo(() => layoutSummary(departments, employees), [departments, employees]);
   const companyNodes = workspace?.company_structure?.classification.nodes ?? EMPTY_DEPARTMENTS;
   const hasCompanyCells = companyNodes.some((node) => departments.some((department) => department.id === node.id));
+  const missingCompanyCells = companyNodes.some((node) => !departments.some((department) => department.id === node.id));
   const chartSummary = useMemo(() => ({departments: departments.map((department) => {
     const stats = summary.totals.get(department.id)!;
     return {id:department.id, direct_total:stats.direct === null ? null : centsToAmount(stats.direct), total:stats.total === null ? null : centsToAmount(stats.total),
@@ -196,6 +197,7 @@ export default function PersonnelPage() {
   }
 
   return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy} actions={<>
+    {hasCompanyCells && missingCompanyCells && <button className="hr-button" disabled={busy || Boolean(departmentForm)} onClick={applyCompanyCells}><Plus size={15} />{ko ? '추가 부문 적용' : '应用新增部门'}</button>}
     <button className="hr-button" disabled={!dirty || busy} onClick={discard}><Undo2 size={15} />{ko ? '되돌리기' : '撤销更改'}</button>
     <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button>
   </>}>

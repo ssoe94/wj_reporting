@@ -3,7 +3,7 @@ import type { HrDepartment } from './types.ts';
 
 const catalog = {
   "classification": {
-    "version": "wj-company-structure.v1",
+    "version": "wj-company-structure.v2",
     "nodes": [
       {
         "id": "board-chairman",
@@ -37,9 +37,9 @@ const catalog = {
       },
       {
         "id": "quality-oqc",
-        "name": "OQC",
+        "name": "进出货检验",
         "parent_id": "quality",
-        "function": "OQC"
+        "function": "进出货检验"
       },
       {
         "id": "quality-cs",
@@ -172,6 +172,18 @@ const catalog = {
         "name": "人事/总务",
         "parent_id": "administration",
         "function": "人事/总务"
+      },
+      {
+        "id": "development",
+        "name": "开发管理",
+        "parent_id": null,
+        "function": "开发管理"
+      },
+      {
+        "id": "development-staff",
+        "name": "开发人员",
+        "parent_id": "development",
+        "function": "开发人员"
       }
     ],
     "leaders": [
@@ -261,6 +273,15 @@ const catalog = {
         "children": [
           "admin-finance",
           "admin-hr"
+        ]
+      },
+      {
+        "id": "development",
+        "label": "开发管理",
+        "row": 2,
+        "column": 4,
+        "children": [
+          "development-staff"
         ]
       }
     ]

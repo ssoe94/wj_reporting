@@ -4,6 +4,7 @@ import type { HrDepartment } from './types.ts';
 const GROUP_LABELS: Record<string, [string, string]> = {
   injection: ['사출', '注塑'], quality: ['품질', '品质'], machining: ['가공', '加工'], sales: ['영업', '营业'],
   materials: ['자재', '资材'], 'mold-maintenance': ['금형·공무', '模具/公务'], administration: ['관리부문', '管理部门'],
+  development: ['개발', '开发'],
 };
 
 /** Department totals are distinct from the manager assignment stored at the group ID. */
@@ -35,7 +36,7 @@ export const HR_CLASSIFICATION_KO: Record<string, string> = {
   'technical-gm': '생산기술 총괄',
   quality: '품질관리',
   'quality-patrol': '순회검사',
-  'quality-oqc': '출하검사',
+  'quality-oqc': '입출고 검사',
   'quality-cs': '고객대응',
   injection: '사출관리',
   'injection-operator': '작업자',
@@ -58,6 +59,12 @@ export const HR_CLASSIFICATION_KO: Record<string, string> = {
   administration: '관리부문',
   'admin-finance': '재무',
   'admin-hr': '인사·총무',
+  development: '개발관리',
+  'development-staff': '개발 실무',
+};
+
+const LEGACY_CLASSIFICATION_LABELS: Record<string, string[]> = {
+  'quality-oqc': ['OQC', '出货检验', '出库检验', '출하검사', '출하 검사', '출고검사', '출고 검사', '입출고 검사'],
 };
 
 const ORGANIZATION_KO: Record<string, string> = {
@@ -73,7 +80,8 @@ export function hrDepartmentLabel(id: string, sourceName: string | undefined, la
   // Management labels remain generic so imported private identities cannot leak.
   const name = leader?.label ?? sourceName ?? canonical?.name ?? id;
   // A user's later rename takes precedence over the initial translation.
-  return lang === 'ko' && name === canonical?.name ? HR_CLASSIFICATION_KO[id] ?? name : name;
+  const isDefault = name === canonical?.name || LEGACY_CLASSIFICATION_LABELS[id]?.includes(name);
+  return isDefault ? (lang === 'ko' ? HR_CLASSIFICATION_KO[id] ?? name : canonical?.name ?? name) : name;
 }
 
 export function hrOrganizationLabel(id: string, sourceLabel: string, lang: string): string {
