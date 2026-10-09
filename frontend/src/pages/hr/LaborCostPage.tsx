@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useBlocker } from 'react-router-dom';
 import { Save, Undo2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../i18n';
@@ -17,6 +17,7 @@ import { HrLoadState, HrShell, HrSource, currentHrMonth, isHrConflict, layoutSum
 const EMPTY_DEPARTMENTS: HrDepartment[] = [];
 const EMPTY_EMPLOYEES: HrEmployee[] = [];
 type LayoutDraft = { departments: HrDepartment[]; employees: HrEmployee[] };
+type DiscardAction = { type: 'month'; month: string } | { type: 'discard' } | { type: 'reload' };
 const assignmentKey = (employees: HrEmployee[]) => JSON.stringify(buildAssignments(employees));
 
 function shareOfTotal(part: number | null, total: number | null) {
@@ -37,35 +38,39 @@ export default function LaborCostPage() {
   const [saveError, setSaveError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState('');
+  const [discardAction, setDiscardAction] = useState<DiscardAction | null>(null);
+  const confirmation = useRef<HTMLDivElement>(null);
   const savingRef = useRef(false);
   const mounted = useRef(true);
   const userId = useRef(user?.id);
   userId.current = user?.id;
   const dirty = Boolean(draft && assignmentKey(draft.employees) !== baseline);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => allowed && (dirty || saving)
+    && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search || currentLocation.hash !== nextLocation.hash));
+  const confirming = discardAction !== null || blocker.state === 'blocked';
 
   function receiveWorkspace(data: HrWorkspace) {
     const next = { departments: data.departments.map((department) => ({ ...department })), employees: data.employees.map((employee) => ({ ...employee })) };
     setDraft(next); setBaseline(assignmentKey(next.employees)); setSaveError(''); setConflict(false);
   }
   useEffect(() => { if (workspace) receiveWorkspace(workspace); }, [workspace]);
-  useEffect(() => { setDraft(null); setBaseline(''); setSaveError(''); setConflict(false); setNotice(''); }, [user?.id]);
+  useEffect(() => { setDraft(null); setBaseline(''); setSaveError(''); setConflict(false); setNotice(''); setDiscardAction(null); }, [user?.id]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     if (!dirty && !saving) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    const onLink = (event: MouseEvent) => {
-      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
-      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.hasAttribute('download') || event.defaultPrevented
-        || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const next = new URL(anchor.href, window.location.href);
-      if (next.origin === window.location.origin && next.pathname === window.location.pathname && next.search === window.location.search) return;
-      if (savingRef.current || !window.confirm(ko ? '저장하지 않은 배치 변경을 버리고 이동할까요?' : '放弃未保存的配置更改并离开吗？')) {
-        event.preventDefault(); event.stopImmediatePropagation();
-      }
-    };
-    window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', onLink, true);
-    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', onLink, true); };
-  }, [dirty, saving, ko]);
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [dirty, saving]);
+  useEffect(() => {
+    if (blocker.state === 'blocked' && !dirty && !saving) blocker.proceed();
+  }, [blocker, dirty, saving]);
+  useEffect(() => {
+    if (!confirming) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    confirmation.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, [confirming]);
 
   const departments = draft?.departments ?? EMPTY_DEPARTMENTS;
   const employees = draft?.employees ?? EMPTY_EMPLOYEES;
@@ -81,7 +86,10 @@ export default function LaborCostPage() {
   const roleTotals = useMemo(() => getDepartmentCostBreakdowns(departments, employees, workspace?.company_structure.classification.groups.map((group) => group.id) ?? []), [departments, employees, workspace]);
   function changeMonth(next: string) {
     if (savingRef.current || next === month) return;
-    if (dirty && !window.confirm(ko ? '저장하지 않은 배치 변경을 버리고 대상 월을 바꿀까요?' : '放弃未保存的配置更改并切换月份吗？')) return;
+    if (dirty) { setDiscardAction({ type: 'month', month: next }); return; }
+    selectMonth(next);
+  }
+  function selectMonth(next: string) {
     setDraft(null); setBaseline(''); setSaveError(''); setConflict(false); setNotice(''); setMonth(next);
   }
   function move(code: string, target: string | null) {
@@ -95,11 +103,24 @@ export default function LaborCostPage() {
   }
   function discard() {
     if (!workspace || savingRef.current) return;
-    if (window.confirm(ko ? '저장하지 않은 배치 변경을 버릴까요?' : '放弃未保存的配置更改吗？')) { receiveWorkspace(workspace); setNotice(ko ? '저장하지 않은 변경을 되돌렸습니다.' : '已撤销未保存的更改。'); }
+    setDiscardAction({ type: 'discard' });
   }
   function loadLatest() {
-    if (savingRef.current || !window.confirm(ko ? '작성 중인 배치 초안을 버리고 서버의 최신 자료를 불러올까요?' : '放弃当前配置草稿并加载服务器最新资料吗？')) return;
-    setNotice(''); refresh();
+    if (!savingRef.current) setDiscardAction({ type: 'reload' });
+  }
+  function cancelDiscard() {
+    setDiscardAction(null);
+    if (blocker.state === 'blocked') blocker.reset();
+  }
+  function confirmDiscard() {
+    if (savingRef.current) return;
+    setDiscardAction(null);
+    if (blocker.state === 'blocked') { blocker.proceed(); return; }
+    if (discardAction?.type === 'month') selectMonth(discardAction.month);
+    else if (discardAction?.type === 'reload') { setNotice(''); refresh(); }
+    else if (discardAction?.type === 'discard' && workspace) {
+      receiveWorkspace(workspace); setNotice(ko ? '저장하지 않은 변경을 되돌렸습니다.' : '已撤销未保存的更改。');
+    }
   }
   async function save() {
     if (!draft || !workspace || !dirty || savingRef.current || conflict || !allowed) return;
@@ -143,5 +164,24 @@ export default function LaborCostPage() {
         })}</tbody></table></div></details>
       </div>
     </>}
+    {confirming && <div className="hr-person-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancelDiscard(); }}>
+      <div ref={confirmation} className="hr-person-dialog" role="dialog" aria-modal="true" aria-labelledby="hr-discard-title" aria-describedby="hr-discard-description" onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.preventDefault(); cancelDiscard(); }
+        if (event.key === 'Tab') {
+          const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+          const first = buttons[0]; const last = buttons[buttons.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+      }}>
+        <header><h2 id="hr-discard-title">{ko ? '저장 전 배치 변경' : '尚未保存的配置更改'}</h2></header>
+        <p id="hr-discard-description">{saving ? (ko ? '배치를 저장하고 있습니다. 완료 후 이동해 주세요.' : '正在保存配置，请完成后再离开。')
+          : blocker.state === 'blocked' ? (ko ? '저장하지 않은 배치 변경을 버리고 이동할까요?' : '放弃未保存的配置更改并离开吗？')
+          : discardAction?.type === 'month' ? (ko ? '저장하지 않은 배치 변경을 버리고 대상 월을 바꿀까요?' : '放弃未保存的配置更改并切换月份吗？')
+          : discardAction?.type === 'reload' ? (ko ? '작성 중인 배치 초안을 버리고 서버의 최신 자료를 불러올까요?' : '放弃当前配置草稿并加载服务器最新资料吗？')
+          : (ko ? '저장하지 않은 배치 변경을 버릴까요?' : '放弃未保存的配置更改吗？')}</p>
+        <div className="hr-actions"><button className="hr-button" onClick={cancelDiscard}>{ko ? '취소' : '取消'}</button><button className="hr-button is-primary" disabled={saving} onClick={confirmDiscard}>{ko ? '변경 버리고 계속' : '放弃更改并继续'}</button></div>
+      </div>
+    </div>}
   </HrShell>;
 }
