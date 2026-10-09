@@ -121,6 +121,7 @@ const boardCopy = {
     totalMachines: "전체 설비",
     managementRequired: "관리 필요",
     timeProgress: "시간 기준",
+    paceTitle: "시간 기준 대비 진도",
     progressGap: "진도 차이",
     noIssue: "이상 없음",
     running: "최근 형합 관측",
@@ -221,6 +222,7 @@ const boardCopy = {
     totalMachines: "全部设备",
     managementRequired: "需要管理",
     timeProgress: "时间进度",
+    paceTitle: "相对时间进度",
     progressGap: "进度差异",
     noIssue: "无异常",
     running: "近期合模已观测",
@@ -852,18 +854,28 @@ function MarqueeLine({ className, title, watch, children }: {
   );
 }
 
+const TIMELINE_TICK_HOURS = [4, 8, 12, 16, 20];
+/** Sporadic setup or test shots do not make an unplanned machine "producing", so no stop hatching. */
+const TIMELINE_GAP_MIN_SHOTS = 50;
+
 function ProductionTimeline({
   businessDate,
   className,
   language,
   machineNumber,
   segments,
+  nowPct = 0,
+  showGaps = false,
 }: {
   businessDate: string;
   className: string;
   language: AppLanguage;
   machineNumber: number;
   segments: BoardTimelineSegment[];
+  /** Position of the latest MES observation within the business day, 0-100. */
+  nowPct?: number;
+  /** Hatch the part of the day already elapsed; production segments cover it where shots exist. */
+  showGaps?: boolean;
 }) {
   const copy = boardCopy[language];
   const tooltipId = useId();
@@ -911,6 +923,15 @@ function ProductionTimeline({
         role="group"
         tabIndex={0}
       >
+        {showGaps && nowPct > 0 ? (
+          <i aria-hidden="true" className="injection-board-timeline__gap" style={{ width: `${Math.min(100, nowPct)}%` }} />
+        ) : null}
+        {TIMELINE_TICK_HOURS.map((hour) => (
+          <i aria-hidden="true" className="injection-board-timeline__tick" key={hour} style={{ left: `${(hour / 24) * 100}%` }} />
+        ))}
+        {nowPct > 0 && nowPct < 100 ? (
+          <i aria-hidden="true" className="injection-board-timeline__now" style={{ left: `${nowPct}%` }} />
+        ) : null}
         {segments.map((segment, index) => {
           const rangeLabel = `${formatTime(new Date(segment.startMs))}–${formatTime(new Date(segment.endMs))}`;
           return (
@@ -967,6 +988,7 @@ function MachineBoardCard({
   language,
   inspection,
   inspectionTransportError,
+  elapsedRate,
 }: {
   onPartSummary: (partNo: string) => void;
   businessDate: string;
@@ -976,6 +998,8 @@ function MachineBoardCard({
   language: AppLanguage;
   inspection: ReturnType<typeof selectBoardInspection>;
   inspectionTransportError: boolean;
+  /** Elapsed share of the business day at the latest MES time, 0-100. */
+  elapsedRate: number;
 }) {
   const copy = boardCopy[language];
   const { businessDate: qualityDate, machineNumber: qualityMachine,
@@ -1005,6 +1029,9 @@ function MachineBoardCard({
     );
   }) ?? false;
   const isShotCheckTone = machine.tone === "shot_issue" || machine.tone === "production_stopped";
+  // Progress against the elapsed business day, the same measure as the summary's progress gap.
+  const paceGap = row?.hasPlan && elapsedRate > 0 ? row.progressRate - elapsedRate : null;
+  const paceText = paceGap === null ? "" : `${paceGap >= 0 ? "+" : "−"}${Math.abs(Math.round(paceGap))}%p`;
   // The last-shot time lives in the C/T box; morning counter gaps and part-number review keep their own label.
   const lastShotLabel = showMorningHistory
     ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
@@ -1040,14 +1067,16 @@ function MachineBoardCard({
 
       <div className="injection-board-card__metrics">
         <div className="injection-board-card__metric">
-          <span className="injection-board-card__metric-label" title={isShotCheckTone ? copy.checkEquipment : copy.recentCt}>
-            {isShotCheckTone ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}
-          </span>
-          {!isVisitorMode ? (
-            <Link className="injection-board-card__metric-link" to={machineHistoryUrl} title={historyLabel} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>
-              <History aria-hidden="true" size={13} strokeWidth={2.4} />
-            </Link>
-          ) : null}
+          <div className="injection-board-card__metric-head">
+            <span className="injection-board-card__metric-label" title={isShotCheckTone ? copy.checkEquipment : copy.recentCt}>
+              {isShotCheckTone ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}
+            </span>
+            {!isVisitorMode ? (
+              <Link className="injection-board-card__metric-link" to={machineHistoryUrl} title={historyLabel} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>
+                <History aria-hidden="true" size={13} strokeWidth={2.4} />
+              </Link>
+            ) : null}
+          </div>
           <strong className={isVisitorMode && !isShotCheckTone ? "injection-board-card__ct-range" : undefined}>
             {isShotCheckTone
               ? `${formatNumber(row?.recentShots ?? 0)}${copy.shots}`
@@ -1063,12 +1092,18 @@ function MachineBoardCard({
           </small>
         </div>
         <div className="injection-board-card__metric">
-          <span className="injection-board-card__metric-label">{copy.progress}</span>
+          <div className="injection-board-card__metric-head">
+            <span className="injection-board-card__metric-label">{copy.progress}</span>
+            {paceGap !== null ? (
+              <i className="injection-board-card__pace" title={copy.paceTitle} aria-label={`${copy.paceTitle} ${paceText}`}>{paceText}</i>
+            ) : null}
+          </div>
           <strong>{row?.hasPlan ? `${row.progressRate.toFixed(1)}%` : row?.shotCount ? `${formatNumber(row.shotCount)}${copy.shots}` : "-"}</strong>
           <small>
             {row?.hasPlan
               ? <b>{formatNumber(row.estimatedQty)} / {formatNumber(row.plannedQty)}</b>
               : <span>{copy.unplanned}</span>}
+
           </small>
         </div>
       </div>
@@ -1078,7 +1113,9 @@ function MachineBoardCard({
         className="injection-board-card__track injection-board-card__timeline"
         language={language}
         machineNumber={machine.machineNumber}
+        nowPct={elapsedRate}
         segments={machine.timelineSegments}
+        showGaps={Boolean(row?.hasPlan || (row?.shotCount ?? 0) >= TIMELINE_GAP_MIN_SHOTS)}
       />
       <footer className="injection-board-card__footer-with-quality">
         <InjectionQualityStatus state={qualityState} expectedScope={qualityScope}
@@ -1621,6 +1658,7 @@ export function InjectionBoardPage() {
 
         {machines.map((machine) => (
           <MachineBoardCard
+            elapsedRate={elapsedRate}
             onPartSummary={setSummaryPartNo}
             businessDate={businessDate}
             isVisitorMode={isVisitorMode}

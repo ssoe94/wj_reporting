@@ -121,6 +121,12 @@ export function InjectionQualityStatus({ state, expectedScope, language, transpo
   const bandStatus = (status: QualityCheckStatus) => status === 'failed' ? (language === 'ko' ? '불량' : '不合格') : copy.status[status];
   const firstText = `${copy.first} ${bandStatus(view.firstStatus)}`;
   const periodicText = `${copy.periodic} ${periodicOverdue ? copy.schedule.overdue : bandStatus(view.periodicStatus)}`;
+  // Show the next due time only while the schedule is verified and not yet overdue.
+  const nextDueLabel = view.scheduleStatus === 'scheduled' && data?.periodic.next_due_at
+    ? new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'ko-KR', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai',
+    }).format(new Date(data.periodic.next_due_at))
+    : null;
   const failureText = view.counts.failed > 0
     ? `${view.historical ? `${copy.history} ` : ''}${copy.status.failed} ${view.counts.failed}${copy.count}` : '';
   const fullLabel = `${copy.details}: ${statusText}${failureText ? ` · ${failureText}` : ''} · ${freshnessText} · ${copy.sync} ${formatTime(data?.last_success_at)}`;
@@ -151,7 +157,10 @@ export function InjectionQualityStatus({ state, expectedScope, language, transpo
       {/* Only the two current results; history, disposition and sync details stay in the dialog. */}
       <span className="injection-quality__summary-text">
         <span className={`injection-quality__tone injection-quality__tone--${firstTone}`}>{firstText}</span>
-        <span className={`injection-quality__tone injection-quality__tone--${periodicTone}`}>{periodicText}</span>
+        <span className={`injection-quality__tone injection-quality__tone--${periodicTone}`}>
+          {periodicText}
+          {nextDueLabel ? <span className="injection-quality__next">{language === 'ko' ? '다음' : '下次'} {nextDueLabel}</span> : null}
+        </span>
       </span>
     </button>
     {open && typeof document !== 'undefined' && createPortal(

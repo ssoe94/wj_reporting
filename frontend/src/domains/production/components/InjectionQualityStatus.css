@@ -257,3 +257,10 @@
 @media (prefers-contrast: more) {
   .injection-quality__summary { border: 1px solid currentColor; }
 }
+
+.injection-quality__summary .injection-quality__next {
+  margin-left: 0.5em;
+  color: var(--q-none-fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

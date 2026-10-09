@@ -13505,3 +13505,78 @@ select {
 .injection-board-card__metrics > .injection-board-card__metric {
   padding: 3px 8px;
 }
+
+/* Timeline guides: 4-hour ticks, the latest-MES "now" line, and hatching for elapsed time without production. */
+.injection-board-timeline__gap,
+.injection-board-timeline__tick,
+.injection-board-timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.injection-board-timeline__gap {
+  left: 0;
+  z-index: 0;
+  background: repeating-linear-gradient(135deg, rgba(96, 112, 118, 0.2) 0 3px, transparent 3px 7px);
+}
+
+.injection-board-timeline__tick {
+  z-index: 2;
+  width: 1px;
+  background: rgba(31, 59, 71, 0.16);
+}
+
+.injection-board-timeline__now {
+  z-index: 3;
+  width: 2px;
+  margin-left: -1px;
+  background: #1f3b47;
+}
+
+.injection-board-card__pace {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  color: var(--board-muted);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-contrast: more) {
+  .injection-board-timeline__gap {
+    background: repeating-linear-gradient(135deg, rgba(40, 50, 55, 0.45) 0 3px, transparent 3px 7px);
+  }
+}
+
+/* Metric box head: label on the left, its helper (history icon or pace gap) on the right. */
+.injection-board-card__metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  min-height: 20px;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-label {
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-link,
+.injection-board-card__metric-head .injection-board-card__pace {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-link {
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+}
