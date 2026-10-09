@@ -15,6 +15,12 @@
 
 현재 범위는 **계획 업로드 → UID/버전·변경/연속생산 식별 → 원료 선택·담당자 확인 → 工单 생성/수정 미리보기 → 고정 승인·영속 요청 이력**이다. 후속은 실제 생성·수정 계약의 제한적 검증/활성화, 생산보고·순입고 대조와 충돌 정책, 가공08시下达·순차开工·마감 대기, 사출 정지·재개와2시간 검사 연계다. 실제 MES 단건 시험은 기존 APP 공급과 정상 검증 세션이 없으면 전송하지 않는다.
 
+검토용 코드 보완 commit은 **ef9031e7**이며 이전 진단 구현은69f0da85다. branch `codex/plan-material-mes-20261008`, 최신 원격 main b857c50e. 원격 branch 조회 결과 없음(push미실행), PR 없음. Render/MES/운영 DB mutation0회, 추가 APP0회, 승인 단건 생성HTTP0회다. 현재 운영 schema0015와 APP existing-only 공급 부족/정상 세션 bridge 실행 준비는 앞 회차와 동일한 남은 조건이며, 새 런타임을 적용하지 않았으므로 새 실제 수용시험은 하지 않았다.
+
+현재 최종 검증 로그는 `output/plan-workflow/release-{backend-integration,node-tests,lint,build,browser,postgres-tests,ci-postgres-direct,migration-order}.log`, 화면은 `compact-automated-{ko,zh}-1280x720.png`, 지표는 `compact-automated-browser-checks.json`이다. 전체 검토 patch는 `implementation-review.patch`다. 모두 로컬 workspace에 보존했다. 두 PostgreSQL fixture와 loopback API/frontend는 정상 종료했고 기존 WJ/MES 인증 검토 탭만 handoff로 보존했다.
+
+이번 Library 동기화는 실패했다. 첫 helper 시도는 저장 전 앱 조회 DNS 오류였고, 네트워크를 허용한 같은 배치는 앱 조회에서 prepared upload 지원이 없다는 결과로 **파일 저장을 시작하지 못했다**. 불확실한 쓰기를 재시도하거나 다른 업로드 경로로 바꾸지 않았다. 기존 보고서 Library `libfile_fc1a3752c2348191bdb32bbcf2c4f68d` v10은 이번 로컬 보완을 포함하지 않는다. 위 로컬 문서/캡처/patch가 최신 결과다.
+
 ## 최신 보완: 단건 진단 구현·사용자 생성 승인·런타임 준비 부족으로 미실행 (2026-10-09)
 
 부모가 전달한 사용자 **‘진행해’**는 앞서 명시한 `测试物料 / code0 / 1个 / 草稿` 한 건의 생성과 직후 작업·재고·QC 조회에 대한 승인이다. 회사 공통 자동화가 아직 검증되지 않았다는 공개된 위험을 수용한 승인이다. 앞 회차의 ‘영향 없음 확정 후 승인 대기’는 **현재의 남은 업무 승인 조건이 아니다**. 제품 적합성이나 동일 생성 시험을 다시 승인받을 필요가 없다. 下达·开工·입출고·종료·닫기·삭제, 추가 APP 발급, 운영 배포/설정/마이그레이션을 승인한 것으로 확대하지 않았다.
