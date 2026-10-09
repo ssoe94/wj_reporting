@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { COMPANY_CLASSIFICATION, HR_DEPARTMENT_ORDER } from '../../domains/hr/company-structure';
 import { hrAssignmentPath, hrDepartmentLabel, hrGroupLabel } from '../../domains/hr/labels';
@@ -27,6 +27,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   const suppressPointerClick = useRef(false);
   const disclosureId = useId();
   const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
+  const [recentMove, setRecentMove] = useState<{ code: string; target: string | null; focusDestination: boolean } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [revealName, setRevealName] = useState(false);
@@ -156,6 +157,26 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
     dialog.current?.querySelector<HTMLElement>('button')?.focus();
     return () => { previousFocus.current?.focus(); };
   }, [selection]);
+  useEffect(() => {
+    if (!recentMove) return;
+    const person = root.current?.querySelector<HTMLElement>('.is-recent-move');
+    const additional = person?.closest<HTMLDetailsElement>('.hr-board-additional');
+    if (additional) additional.open = true;
+    person?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    if (recentMove.focusDestination) (person instanceof HTMLButtonElement ? person : person?.querySelector<HTMLButtonElement>('.hr-person-open'))?.focus({ preventScroll: true });
+    const timeout = window.setTimeout(() => setRecentMove(null), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [recentMove]);
+  function applyMove(code: string, target: string | null, focusDestination = false) {
+    if (!canEdit) return;
+    onMove?.(code, target);
+    if (target !== null) setExpandedCells((current) => new Set(current).add(target));
+    else {
+      const unassigned = employees.filter((person) => person.code === code || person.department_id === null);
+      setSearch(''); setScope('unassigned'); setPage(Math.floor(unassigned.findIndex((person) => person.code === code) / 6));
+    }
+    setRecentMove({ code, target, focusDestination });
+  }
   function openPerson(person: HrEmployee) { previousFocus.current = document.activeElement as HTMLElement; setRevealName(false); setDestination(person.department_id ?? ''); setSelection({ type: 'person', code: person.code }); }
   function openFunction(id: string, children = false, excludeSelf = false) { if (!byId.has(id)) return; previousFocus.current = document.activeElement as HTMLElement; setRevealName(false); setLimit(20); setSelection({ type: 'function', id, children, excludeSelf }); }
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>, person: HrEmployee) {
@@ -183,17 +204,18 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
     const preview = current.active && target !== undefined && canEdit ? getMovePreview(departments, employees, current.code, target) : null;
     endDrag(!preview?.changes);
     if (preview?.changes && target !== undefined) {
-      onMove?.(current.code, target);
+      applyMove(current.code, target);
     }
   }
   function staffPill(person: HrEmployee, dock = false) {
-    if (!dock) return <button key={person.code} type="button" className={`hr-person-badge${canEdit ? ' is-movable' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}`} data-person-code={person.code}
+    const justMoved = recentMove?.code === person.code && recentMove.target === person.department_id && (dock ? recentMove.target === null : recentMove.target !== null);
+    if (!dock) return <button key={person.code} type="button" className={`hr-person-badge${canEdit ? ' is-movable' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}${justMoved ? ' is-recent-move' : ''}`} data-person-code={person.code}
       aria-label={`${codeLabel(person.code)} ${person.name} ${ko ? '상세' : '详情'}`} title={canEdit ? (ko ? '드래그하여 이동 · 클릭하여 상세 보기' : '拖动配置 · 点击查看详情') : undefined}
       onPointerDown={(event) => startDrag(event, person)} onPointerMove={trackDrag} onPointerUp={finishDrag} onPointerCancel={() => endDrag(true)} onLostPointerCapture={() => { if (dragRef.current) endDrag(true); }}
-      onClick={(event) => { if (event.detail > 0 && suppressPointerClick.current) { suppressPointerClick.current = false; return; } openPerson(person); }}>
-      {canEdit && <GripVertical size={12} aria-hidden="true" />}<strong>{formatEmployeeCode(person.code)}</strong><span className="hr-badge-name" title={person.name}>· {person.name}</span>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
+      onClick={() => openPerson(person)}>
+      {justMoved ? <Check size={12} aria-hidden="true" /> : canEdit && <GripVertical size={12} aria-hidden="true" />}<strong>{formatEmployeeCode(person.code)}</strong><span className="hr-badge-name" title={person.name}>· {person.name}</span>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
     </button>;
-    return <div key={person.code} className={`hr-person-pill${dock ? ' is-dock' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}`} data-person-code={person.code}>
+    return <div key={person.code} className={`hr-person-pill${dock ? ' is-dock' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}${justMoved ? ' is-recent-move' : ''}`} data-person-code={person.code}>
       <button type="button" className="hr-person-open" onClick={() => openPerson(person)} aria-label={`${codeLabel(person.code)} ${ko ? '상세' : '详情'}`}>
         <strong>{formatEmployeeCode(person.code)}</strong>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
         {dock && <><b>{amount(person.amount)}</b><small title={path(person.department_id)}>{path(person.department_id)}</small></>}
@@ -205,7 +227,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
     const stats = totals.get(id); const people = peopleByCell.get(id) ?? []; const available = byId.has(id);
     const hovered = drag?.active && drag.target === id;
     const expanded = expandedCells.has(id); const peopleId = `${disclosureId}-${id}`;
-    return <section key={id} className={`hr-function-cell${expanded ? ' is-expanded' : ''}${management ? ' is-management' : ''}${hovered ? ' is-drop-target' : ''}${!available ? ' is-unavailable' : ''}`} data-hr-drop={canEdit && available ? id : undefined} aria-label={path(id)}>
+    return <section key={id} className={`hr-function-cell${expanded ? ' is-expanded' : ''}${management ? ' is-management' : ''}${hovered ? ' is-drop-target' : ''}${recentMove?.target === id ? ' is-recent-destination' : ''}${!available ? ' is-unavailable' : ''}`} data-hr-drop={canEdit && available ? id : undefined} aria-label={path(id)}>
       <button type="button" className="hr-function-title" disabled={!available} aria-expanded={expanded} aria-controls={peopleId} aria-label={`${path(id)} ${expanded ? (ko ? '인원 접기' : '收起人员') : (ko ? '인원 펼치기' : '展开人员')}`}
         onClick={() => setExpandedCells((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })}>
         <strong>{management ? (ko ? '관리자 인건비' : '管理人员成本') : label(id)}</strong><span>{stats?.direct_count ?? 0}{ko ? '명' : '人'}</span><b>{stats ? cost(stats.direct_total) : '—'}</b><ChevronDown size={16} className="hr-function-chevron" aria-hidden="true" />
@@ -230,7 +252,9 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
     })}<small>{ko ? '전체 인원·인건비 합계 유지' : '总人数与人工成本保持不变'}</small></>;
   }
 
-  return <div ref={root} className={`hr-allocation-board${drag?.active ? ' is-dragging' : ''}`}>
+  return <div ref={root} className={`hr-allocation-board${drag?.active ? ' is-dragging' : ''}`}
+    onPointerDownCapture={() => { suppressPointerClick.current = false; }}
+    onClickCapture={(event) => { if (event.detail > 0 && suppressPointerClick.current) { suppressPointerClick.current = false; event.preventDefault(); event.stopPropagation(); } }}>
     <p className="hr-hierarchy-key">{ko ? '부서 합계' : '部门合计'} = <span className="is-management">{ko ? '관리자 인건비' : '管理人员成本'}</span> + <span className="is-operations">{ko ? '작업·실무 인건비' : '作业·实务成本'}</span></p>
     <p className="hr-board-interaction-hint">{onMove ? (ko ? '화살표로 인원을 펼치고, 사번 배지를 끌어서 이동하세요. 접힌 블록에도 놓을 수 있습니다.' : '点击箭头展开人员，拖动工号标签即可配置，也可放入收起的分类。') : (ko ? '화살표를 누르면 배치된 인원을 확인할 수 있습니다.' : '点击箭头查看已配置人员。')}</p>
     <p className="hr-board-scroll-hint">{ko ? '좌우로 이동하여 모든 부문을 확인하세요.' : '左右滑动查看所有部门。'}</p>
@@ -273,7 +297,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
         <div className="hr-name-reveal"><button className="hr-button" aria-pressed={revealName} onClick={() => setRevealName((value) => !value)}>{revealName ? <EyeOff size={16} /> : <Eye size={16} />}{revealName ? (ko ? '이름 숨기기' : '隐藏姓名') : (ko ? '이름 확인' : '查看姓名')}</button>{revealName && <strong>{selectedPerson.name}</strong>}</div>
         {onMove && <div className="hr-person-move-form"><label>{ko ? '이동할 분류' : '目标分类'}<select aria-label={ko ? '이동할 분류' : '目标分类'} value={destination} disabled={disabled} onChange={(event) => setDestination(event.target.value)}><option value="">{label(null)}</option>{departments.map((department) => <option key={department.id} value={department.id}>{path(department.id)}</option>)}</select></label>
           {buttonPreview?.changes && <div className="hr-person-move-preview">{previewContent(buttonPreview)}</div>}
-          <button className="hr-button is-primary" disabled={!canEdit || !buttonPreview?.changes} onClick={() => { onMove?.(selectedPerson.code, destination || null); setSelection(null); setRevealName(false); }}>{ko ? '이동 적용' : '应用移动'}</button>
+          <button className="hr-button is-primary" disabled={!canEdit || !buttonPreview?.changes} onClick={() => { applyMove(selectedPerson.code, destination || null, true); setSelection(null); setRevealName(false); }}>{ko ? '이동 적용' : '应用移动'}</button>
         </div>}
       </> : <><p className="hr-muted">{selectedPeople.length}{ko ? '명' : '人'}</p><div className="hr-function-person-list">{selectedPeople.slice(0, limit).map((person) => <button key={person.code} onClick={() => openPerson(person)}><strong>{codeLabel(person.code)}</strong><span>{amount(person.amount)}</span><ChevronRight size={15} /></button>)}</div>{selectedPeople.length > limit && <button className="hr-button" onClick={() => setLimit((value) => value + 20)}>{ko ? '더 보기' : '查看更多'} ({Math.min(limit, selectedPeople.length)} / {selectedPeople.length})</button>}{!selectedPeople.length && <p>{ko ? '배치된 인원이 없습니다.' : '暂无配置人员。'}</p>}</>}
     </div></div>}
