@@ -13822,3 +13822,78 @@ select {
   .injection-board__meta .injection-board__action,
   .injection-board__meta .injection-board__language button { transition: background 140ms ease, box-shadow 140ms ease; }
 }
+
+/* Kiosk fit: the metric boxes size their text to their own height, so smaller
+   kiosk viewports (e.g. 1280x720 CSS px) never clip the support line. Browsers
+   without container units keep the rem sizes declared above. Phones stack cards
+   with content height, so size containment is desktop-only. */
+@media (min-width: 761px) {
+  /* Size-contained boxes have no content height, so the row they sit in must fill the card. */
+  .injection-board-card__metrics {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    min-height: 0;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric {
+    container-type: size;
+    min-height: 0;
+    gap: clamp(0px, 2cqh, 3px);
+    padding: clamp(2px, 4cqh, 4px) 8px;
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-head {
+    min-height: clamp(9px, 20cqh, 20px);
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-label,
+  .injection-board-card__metric .injection-board-card__pace {
+    font-size: clamp(0.58rem, 16cqh, 0.78rem);
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-link {
+    width: clamp(14px, 20cqh, 20px);
+    height: clamp(14px, 20cqh, 20px);
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-link svg {
+    width: clamp(11px, 16cqh, 13px);
+    height: clamp(11px, 16cqh, 13px);
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric strong {
+    margin-top: 0;
+    font-size: clamp(0.9rem, 34cqh, 1.7rem);
+    line-height: 1;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric strong.injection-board-card__ct-range {
+    font-size: clamp(0.8rem, 24cqh, 1.18rem);
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric small {
+    margin-top: 0;
+    font-size: clamp(0.56rem, 19cqh, 0.92rem);
+    line-height: 1.05;
+  }
+
+  .injection-board-card__metric small span {
+    font-size: 0.85em;
+  }
+}
+
+/* Give the metric boxes the height: tighter machine header and part line. */
+.injection-board-card .injection-board-card__header strong,
+.injection-board-card .injection-board-card__header span,
+.injection-board-card .injection-board-card__header em {
+  line-height: 1.1;
+}
+
+.injection-board-card .injection-board-card__part {
+  padding-bottom: 4px;
+  line-height: 1.2;
+}
+
+.injection-board-card .injection-board-card__part button {
+  line-height: inherit;
+}
