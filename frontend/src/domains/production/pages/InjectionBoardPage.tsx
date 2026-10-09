@@ -1089,7 +1089,7 @@ function MachineBoardCard({
                   ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                   : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          <small>
+          <small title={`${lastShotLabel} · ${lastShotValue}`}>
             {row?.lastShotAt || showMorningHistory || partNoReview ? <span>{lastShotLabel}</span> : null}
             <b>{lastShotValue}</b>
           </small>
