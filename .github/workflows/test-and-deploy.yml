@@ -122,7 +122,8 @@ jobs:
             production.test_mes_delivery_postgres production.test_mes_delivery_read_contract \
             production.test_mes_read_status \
             production.test_plan_workflow production.test_plan_workflow_transport \
-            production.test_plan_workflow_concurrency production.test_mes_create_diagnostic
+            production.test_plan_workflow_concurrency production.test_mes_create_diagnostic \
+            production.test_plan_workflow_credentials
 
       - name: Validate isolated plan workflow and additive schema
         run: |

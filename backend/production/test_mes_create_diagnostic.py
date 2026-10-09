@@ -42,6 +42,7 @@ class DiagnosticTests(TransactionTestCase):
         self.approval = {'reference': 'SYNTHETIC-APPROVAL-ONLY', 'request_uid': str(self.req.uid),
             'payload_digest': d.PAYLOAD_DIGEST, 'code': d.CODE, 'actor_id': d.ACTOR_ID,
             'mes_user_id': d.MES_USER_ID, 'origin': d.ORIGIN, 'tenant': d.TENANT,
+            'tenant_reference': 'SYNTHETIC-TENANT',
             'approved_at': (now-timedelta(seconds=1)).isoformat(), 'expires_at': (now+timedelta(minutes=20)).isoformat(),
             'max_attempts': 1, 'accept_unknown_common_automation': True, 'preserve_draft': True,
             'read_scope': 'exact_order_and_code0_effect_window'}
@@ -59,7 +60,7 @@ class DiagnosticTests(TransactionTestCase):
             'processRouteCode': None, 'outputProcessSimpleVO': None}
         self.inputs = []
         self.processes = {'processes': [], 'relations': [], 'originalProcessRoute': None}
-        config = SimpleNamespace(tenant=d.TENANT)
+        config = SimpleNamespace(tenant='SYNTHETIC-TENANT')
         for context in (override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL=self.approval,
                 MES_INSPECTION_ENABLED=True, MES_USER_OAUTH_ENABLED=True),
                 patch('mes_oauth.vault.policy', return_value=config),
@@ -71,7 +72,7 @@ class DiagnosticTests(TransactionTestCase):
     def broker(self, session, **kwargs):
         self.assertIs(session, self.session)
         self.assertEqual(kwargs['mes_user_id'], int(d.MES_USER_ID))
-        self.assertEqual(kwargs['tenant'], d.TENANT)
+        self.assertEqual(kwargs['tenant'], 'SYNTHETIC-TENANT')
         self.assertIsNotNone(kwargs['provider'])
         self.assertTrue(kwargs['policy_check']())
         self.operations.append(kwargs['operation'])
@@ -109,7 +110,7 @@ class DiagnosticTests(TransactionTestCase):
 
     def execute_fixture(self, *, read_only=False, sender=None, **kwargs):
         return d.run_for_session(self.req.uid, self.session, read_only=read_only,
-            provider=object(), sender=sender or self.sender, **kwargs)
+            provider_factory=lambda: object(), sender=sender or self.sender, **kwargs)
 
     def test_exact_bytes_and_persistent_separate_preparation(self):
         self.assertEqual(d.digest(self.req.payload), d.PAYLOAD_DIGEST)
@@ -249,7 +250,7 @@ class DiagnosticTests(TransactionTestCase):
     def test_read_only_prepared_request_and_wrong_session_rejected_before_provider(self):
         with self.assertRaises(WorkflowConflict):self.execute_fixture(read_only=True)
         foreign=InspectionSession(19,'SYNTHETIC-session',timezone.now()+timedelta(minutes=5),{})
-        with self.assertRaises(WorkflowConflict):d.run_for_session(self.req.uid,foreign,provider=object(),sender=self.sender)
+        with self.assertRaises(WorkflowConflict):d.run_for_session(self.req.uid,foreign,provider_factory=lambda: object(),sender=self.sender)
         self.assertEqual(self.operations,[])
 
     def test_inherited_setup_actual_start_or_missing_fields_never_claim_clean_draft(self):

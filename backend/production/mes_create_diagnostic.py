@@ -11,6 +11,7 @@ from datetime import timedelta
 import hashlib
 import hmac
 import json
+import re
 import time
 
 from django.conf import settings
@@ -25,6 +26,7 @@ from .models import MesCreateDiagnostic, MesCreateDiagnosticEvent
 from .plan_workflow import WorkflowConflict
 from .plan_workflow_read_contract import READ_ROUTES as DETAIL_ROUTES, data, identifier, read_request, amount, epoch
 from .plan_workflow_transport import ROUTE_BASE, PlanTransportError
+from .plan_workflow_credentials import existing_provider_factory, provider_for_lease
 
 ORIGIN = 'https://v3-ali.blacklake.cn'
 TENANT = '南京万佳'
@@ -83,6 +85,7 @@ class DiagnosticPermit:
     setting_digest: str
     reference: str
     expires_at: object
+    tenant_reference: str
 
     def current(self):
         return timezone.now() < self.expires_at and hmac.compare_digest(self.setting_digest,
@@ -100,10 +103,14 @@ def reviewed_permit(req):
     exact_request(req)
     review = getattr(settings, SETTING, None)
     keys = {'reference', 'request_uid', 'payload_digest', 'code', 'actor_id', 'mes_user_id',
-        'origin', 'tenant', 'approved_at', 'expires_at', 'max_attempts',
+        'origin', 'tenant', 'tenant_reference', 'approved_at', 'expires_at', 'max_attempts',
         'accept_unknown_common_automation', 'preserve_draft', 'read_scope'}
     require(type(review) is dict and set(review) == keys, 'exact_diagnostic_approval_required')
     require(type(review['reference']) is str and 1 <= len(review['reference'].strip()) <= 200)
+    # The MES company display name is not the vault's reviewed tenant reference.
+    require(type(review['tenant_reference']) is str and re.fullmatch(
+        r'[A-Za-z0-9][A-Za-z0-9._/-]{0,127}', review['tenant_reference']),
+        'diagnostic_tenant_reference_required')
     try:
         start, end = parse_datetime(review['approved_at']), parse_datetime(review['expires_at'])
         valid = (start is not None and end is not None and timezone.is_aware(start)
@@ -119,7 +126,8 @@ def reviewed_permit(req):
         and review['max_attempts'] == 1 and review['accept_unknown_common_automation'] is True
         and review['preserve_draft'] is True
         and review['read_scope'] == 'exact_order_and_code0_effect_window', 'diagnostic_approval_scope_rejected')
-    return DiagnosticPermit(str(req.uid), digest(review), review['reference'], end)
+    return DiagnosticPermit(str(req.uid), digest(review), review['reference'], end,
+        review['tenant_reference'])
 
 
 def complete_page(body):
@@ -334,7 +342,8 @@ def reserve(req, permit, baseline):
             payload_digest=PAYLOAD_DIGEST, actor_id=ACTOR_ID).update(state='sending', attempt=1, updated_at=timezone.now())
         require(changed == 1, 'diagnostic_replay_rejected')
         MesCreateDiagnosticEvent.objects.create(request=req, state='sending', evidence={
-            'reference': permit.reference, 'payload_digest': PAYLOAD_DIGEST, 'baseline': baseline})
+            'reference': permit.reference, 'payload_digest': PAYLOAD_DIGEST,
+            'tenant_reference': permit.tenant_reference, 'baseline': baseline})
     req.refresh_from_db()
 
 
@@ -370,12 +379,10 @@ def readback(req, transport):
 
 
 @sensitive_variables()
-def run_for_session(request_uid, session, *, read_only=False, provider=None, sender=None):
+def run_for_session(request_uid, session, *, read_only=False, provider_factory=None, sender=None):
     """Trusted bridge only. No app issuance, session import or live activation here."""
     from django.contrib.auth import get_user_model
     from mes_oauth import vault
-    from mes_oauth.app_tokens import get_existing_app_access_token
-    from mes_oauth.client import BlacklakeUserOAuthClient
     from mes_oauth.inspection_credentials import call_with_user_credential
     from mes_oauth.pilot_scope import pilot_route_scope_required
     from mes_oauth.session_guard import InspectionSession
@@ -390,7 +397,12 @@ def run_for_session(request_uid, session, *, read_only=False, provider=None, sen
         require(req.attempt == 1 and req.state in ('sending', 'uncertain', 'readback_pending', 'review', 'draft_observed'),
             'unresolved_own_diagnostic_required')
     config = vault.policy()
-    require(config.tenant == TENANT and vault.expected_user(ACTOR_ID) == int(MES_USER_ID))
+    tenant_reference = (permit.tenant_reference if permit is not None else
+        req.events.filter(state='sending').get().evidence.get('tenant_reference'))
+    require(type(tenant_reference) is str and re.fullmatch(
+        r'[A-Za-z0-9][A-Za-z0-9._/-]{0,127}', tenant_reference),
+        'diagnostic_tenant_reference_required')
+    require(config.tenant == tenant_reference and vault.expected_user(ACTOR_ID) == int(MES_USER_ID))
 
     def policy_check():
         user = get_user_model().objects.filter(pk=ACTOR_ID).first()
@@ -403,14 +415,13 @@ def run_for_session(request_uid, session, *, read_only=False, provider=None, sen
 
     # Passing an explicit provider prevents the broker's ordinary issuance
     # fallback. Existing-only supply failure occurs before any reservation.
-    if provider is None:
-        provider = BlacklakeUserOAuthClient(origin=ORIGIN, app_access_token=get_existing_app_access_token(),
-            app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
+    if provider_factory is None:
+        provider_factory = existing_provider_factory(ORIGIN)
 
     def call(operation, callback):
-        return call_with_user_credential(session, mes_user_id=int(MES_USER_ID), tenant=TENANT,
+        return call_with_user_credential(session, mes_user_id=int(MES_USER_ID), tenant=tenant_reference,
             contract_reference='WJ-EXACT-CODE0-CREATE-DIAGNOSTIC-20261009', policy_check=policy_check,
-            operation=operation, callback=callback, provider=provider)
+            operation=operation, callback=callback, provider=provider_for_lease(provider_factory))
 
     if read_only:
         return call('read', lambda credential: readback(req, DiagnosticTransport(credential, sender=sender)))

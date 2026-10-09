@@ -165,9 +165,9 @@ class PlanTransportTests(TransactionTestCase):
                     dispatch_trial_create(self.req.uid,session,sender=sender)
                 result = None
             else:
-                result = dispatch_trial_create(self.req.uid,session,provider=object(),sender=sender)
+                result = dispatch_trial_create(self.req.uid,session,provider_factory=lambda: object(),sender=sender)
                 with self.assertRaises(WorkflowConflict):
-                    dispatch_trial_create(self.req.uid,session,provider=object(),sender=sender)
+                    dispatch_trial_create(self.req.uid,session,provider_factory=lambda: object(),sender=sender)
             issue.assert_not_called()
         return result, operations
 

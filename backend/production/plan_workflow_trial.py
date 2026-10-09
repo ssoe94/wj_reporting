@@ -21,6 +21,7 @@ from .permissions import user_can_edit_plan
 from .plan_workflow import (WorkflowConflict, digest, lock_type,
     claim_for_isolated_adapter, record_adapter_result, reconcile_readback)
 from .plan_workflow_contract import build_contract
+from .plan_workflow_credentials import existing_provider_factory, provider_for_lease
 
 EFFECTS = ('no_dispatch', 'no_start', 'no_stock_movement', 'no_backflush', 'no_inspections')
 
@@ -93,7 +94,7 @@ def reviewed_trial(req):
 
 
 @sensitive_variables()
-def dispatch_trial_create(request_uid, session, *, provider=None, sender=None):
+def dispatch_trial_create(request_uid, session, *, provider_factory=None, sender=None):
     """Trusted server bridge. Reserve before a second credential-held write call.
 
     Initial credential admission performs no MES write. Its transaction commits
@@ -102,8 +103,6 @@ def dispatch_trial_create(request_uid, session, *, provider=None, sender=None):
     """
     from django.contrib.auth import get_user_model
     from mes_oauth import vault
-    from mes_oauth.app_tokens import get_existing_app_access_token
-    from mes_oauth.client import BlacklakeUserOAuthClient
     from mes_oauth.inspection_credentials import call_with_user_credential
     from mes_oauth.pilot_scope import pilot_route_scope_required
     from mes_oauth.session_guard import InspectionSession
@@ -125,16 +124,14 @@ def dispatch_trial_create(request_uid, session, *, provider=None, sender=None):
             and vault.policy() == configuration and vault.expected_user(user.pk) == permit.mes_user_id
             and getattr(settings, 'MES_INSPECTION_ENABLED', False) is True
             and getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is True)
-    if provider is None:
+    if provider_factory is None:
         # Deliberately fail before reservation if the existing supply is absent.
         # Passing a provider prevents the broker's usual APP issuance fallback.
-        provider = BlacklakeUserOAuthClient(origin=permit.origin,
-            app_access_token=get_existing_app_access_token(),
-            app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
+        provider_factory = existing_provider_factory(permit.origin)
     def with_credential(operation, callback):
         return call_with_user_credential(session, mes_user_id=permit.mes_user_id, tenant=permit.tenant,
             contract_reference='WJ-PLAN-EXACT-TRIAL-20261008', policy_check=policy_check,
-            operation=operation, callback=callback, provider=provider)
+            operation=operation, callback=callback, provider=provider_for_lease(provider_factory))
     with_credential('read', lambda credential: {'ready': True})
     with transaction.atomic():
         lock_type(req.work_order.plan_type)

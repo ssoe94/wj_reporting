@@ -3,6 +3,8 @@
   "executable": false,
   "state": "approved_runtime_blocked",
   "tenant": "南京万佳",
+  "tenant_reference_observed": "ALI-WJ-20261006",
+  "tenant_reference_scope": "read-only stored actor18 credential metadata; active vault policy must match at dispatch; no runtime approval installed",
   "actor_id": 18,
   "mes_account": "Lee",
   "product_confirmation": "user confirmed code0 as isolated test material",
@@ -50,6 +52,7 @@
   ],
   "runtime_requirements": [
     "no APP issuance/refresh; valid existing authorized supply only",
+    "exact short-lived permit must pin tenant_reference=ALI-WJ-20261006, with a fresh single-use identity client for each broker lease",
     "code absence preflight; one attempt; durable reservation before write",
     "dedicated reviewed diagnostic path; do not bypass production material approval guards"
   ],
@@ -72,8 +75,9 @@
     "creation causes no inventory movement/backflush/reservation or automatic QC from category/global/external rules"
   ],
   "runtime_blockers": [
-    "deployed b857c50 has only production migrations through0015; dedicated journal tables absent",
-    "existing-only APP supply unavailable in checked server shell process; Gunicorn cache not inspected or extracted"
+    "live main546a8710 has only production migrations through0015; dedicated journal tables absent; this feature branch remains local",
+    "existing-only APP supply was unavailable in the previously checked server shell; latest same-process supply is unverified after independent main deployment; no Gunicorn cache extraction or new issuance",
+    "no deployed trusted-session execution entrypoint or exact short-lived diagnostic permit; do not assemble a session or enable ordinary writers to substitute"
   ],
   "live_result": {
     "create_http_attempts": 0,

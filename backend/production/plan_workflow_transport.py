@@ -233,13 +233,11 @@ def recheck_creation_for_session(request_uid, session, *, provider=None, sender=
                     and getattr(settings, 'MES_INSPECTION_ENABLED', False) is True
                     and getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is True)
         if provider is None:
-            try:
-                app = get_existing_app_access_token()
-            except AppCredentialUnavailable:
-                pass
-            else:
-                provider = BlacklakeUserOAuthClient(origin=origin, app_access_token=app,
-                    app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
+            # Existing-only failure must stop before broker admission. Passing
+            # None would enable the broker's normal APP issuance fallback.
+            app = get_existing_app_access_token()
+            provider = BlacklakeUserOAuthClient(origin=origin, app_access_token=app,
+                app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
         def callback(credential):
             transport = PlanMesTransport(origin=origin, tenant=configuration.tenant,
                 actor_id=session.actor_id, mes_user_id=mes_user_id, credential=credential, sender=sender)

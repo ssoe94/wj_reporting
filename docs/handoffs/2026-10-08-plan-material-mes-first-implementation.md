@@ -2,6 +2,29 @@
 
 2026-10-08 첫 구현부터의 검토 기록이다. 현재 상태는 최신 보완 절을 우선하며, 이전 절의 승인 대기·미배포 표기는 당시의 기록이다. 일반 MES writer는 OFF다.
 
+## 최신 보완: 실제 인증 브로커 회귀와 릴리스 재개 차단 (2026-10-09)
+
+Render My Workspace의 Pro→Hobby 전환은 실제 UI에서 완료됐다. 기존 backend/frontend는 HTTP200, PostgreSQL은 available이며 계획5579행·변경 로그870행을 보존했다. workspace 요금만 무료이며 기존 Starter web·Basic PostgreSQL·저장소/초과 사용료는 별도다. 기존 main CI37866600799가 별도로 PR98/546a8710을 두 서비스에 배포한 사실을 확인했다. 이번 기능 브랜치를 배포한 것은 아니다. 전환 증거는 `output/plan-workflow/render-hobby-confirmed-20261009.{jpg,json}`다.
+
+부모는 비용 보류 해소 후 정확한 `ssoe94/wj_reporting` push·검증·merge·Render 배포·production0016/0017 적용 승인의 transcript를 다시 전달했다. 승인된 feature branch push를 한 번 재시도했지만 자동 승인 검토는 **처음의 push 전 대기 지시를 우선하며 이후 assistant/delegation에서 전달한 승인을 직접 사용자 승인으로 인정하지 않는다**는 이유로 실행 전에 거절했다. GitHub connector 등 다른 경로로 우회하지 않았다. 현재 원격 기능 브랜치·PR·merge·이번 기능 배포·운영 migration은 없다. 이 실행 채팅에 정확한 대상의 직접 승인 입력을 요청했으며 아직 답변이 없다.
+
+독립 검토에서 합성 broker mock이 놓친 실제 연결 문제를 발견해 수정했다:
+
+1. 회사 표시명 `南京万佳`와 vault의 ASCII tenant reference를 분리했다. 정확한 진단 승인·permit·sending event에 `tenant_reference`를 핀하고 현재 policy/credential tenant와 맞지 않으면 IO 전에 차단한다. actor18의 비밀을 제외한 저장 메타데이터 읽기에서는 `ALI-WJ-20261006`, MES user1733276056994641, version3·미철회를 확인했다. dispatch 시 현재 정책·세션·권한 재검증은 별도로 필요하다.
+2. 진단의 read→save→read와 원료 trial의 read→save가 같은 single-use OAuth client를 재사용하지 않도록 각 broker lease에 새 client를 전달한다. 기존 APP는 한 번 조회해 재사용하며 client counter를 초기화하거나 새 APP를 발급하지 않는다. factory가 None을 반환하면 broker fallback 전에 차단한다.
+3. 생성 결과 재조회에서 existing APP 공급 실패를 삼켜 일반 broker의 APP 발급 fallback으로 들어가던 경로를 제거했다. 공급이 없으면 상태와 blocker를 반환하고 조회·전송·발급을 하지 않는다.
+
+새 `production.test_plan_workflow_credentials`9건은 실제 vault·signed InspectionSession·credential broker·single-use OAuth client를 사용하며 HTTP만 합성이다. 정확한 생성1회/identity3회, trial identity2회, 중복0추가, tenant 불일치, APP 공급 부족/None factory, 신원 불일치 폐기·committed fence, timeout 후 읽기 복구와 새 APP 발급0을 검증한다. 일반 writer OFF, 새 HTTP/worker 진입점 없음, 승인 payload/code/1个/초안/시간 digest는 유지한다. 단건 실행은 현재 정상 Session을 전달하는 trusted bridge와 기존 APP가 있어야 하며, 이를 세션 임의 조립·token 추출·추가 발급으로 대신하지 않는다.
+
+수정 후 root 검증:
+
+- 전체 backend **2137 실행·2086 통과·51 PostgreSQL skip**, 오류0. OAuth isolated 설정에 이 workspace의 BASE_DIR를 제공하고 외부 Python HTTP/DNS/socket을 차단했다. 처음 전체 fixture는 BASE_DIR가 빠져 기존 inventory worker mock 시험1건만 실패했으며 fixture를 수정하고 전체를 다시 통과했다. 제품 inventory 코드는 변경하지 않았다.
+- workflow SQLite **172 실행·168 통과·4 PostgreSQL skip**; 실제 전체 auth/URL 설정 PostgreSQL workflow·diagnostic·credential·동시성 **88/88 통과**. 별도 Unix-only PostgreSQL17 fixture pg-bg를 종료했고 운영 DB/자료/토큰을 사용하지 않았다.
+- production migration drift 없음, git diff check 통과. 모델·0016/0017 schema 변경은 없다. 새 credential 회귀를 isolated runner와 CI PostgreSQL labels에 추가했다.
+- frontend 파일 변경이 없으므로 PR98 통합 당시 Node715·lint·modern/legacy build·합성1280×720 browser15와 실제 한국어/중국어 캡처를 재사용한다. lint 오류0이며 기존 경고31은 남는다. 운영 smoke 및 최종 PR SHA CI는 원격 적용 이후 별도 확인 대상이다.
+
+새 로그는 `broker-fix-{backend-integration,workflow-sqlite,workflow-postgres,migration-check}-20261009.log`다. 실패한 fixture의 로그도 `broker-fix-backend-fixture-missing-base-dir-20261009.log`로 보존했다. 새 구현은 로컬에서만 검토 가능하며 실제 MES create0회·추가 APP0회·이번 기능 운영 migration0회다. production 수정 transport/task 전파·생산보고/순입고 freshness·08시 下达/开工·마감·검사 승계는 여전히 후속 범위다.
+
 ## 최신 보완: 저장소를 명시한 적용 승인과 최신 main 통합 (2026-10-09)
 
 이전 push 거절 후 부모는 아래 정확한 범위를 사용자에게 제시했고 사용자 **‘승인한다’** 답변의 transcript evidence를 전달했다: **GitHub `ssoe94/wj_reporting`에 업로드, 검증 후 병합·기존 Render backend/frontend 배포·DB0016/0017 적용, 일반 MES 자동 실행 OFF 유지**. 이에 따라 이전 동일 push를 한 번 재시도하며 다시 거절되면 우회하지 않는다. 추가 APP 발급·다른 MES 작업·생산/입출고 조작은 이 승인에 포함하지 않는다.
