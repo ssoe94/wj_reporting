@@ -116,7 +116,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange }: Edit
   const currentRow = data?.rows.find(row => row.uid === editing?.uid);
   const canSave = data?.can_edit && confirmed && reason.trim() && !busy && !dateReviewRequired && !needsReview
     && currentRow?.id === editing?.id && currentRow?.version === editing?.version
-    && (editing?.identity_state !== "identified" || completeMaterial);
+    && (editing?.identity_state !== "identified" || (editing.quantity_valid !== false && completeMaterial));
   async function reviewLatest() {
     if (busy || dateReviewRequired) return;
     setReviewing(true);

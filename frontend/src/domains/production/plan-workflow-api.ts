@@ -6,6 +6,7 @@ export type MaterialInput = MaterialOption & { numerator: string; denominator: s
 export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[] };
 export type WorkflowRow = { id: number; uid: string; version: number; plan_date: string; machine_name: string;
   part_no: string; planned_quantity: string; default_version: number; identity_state: string; candidates: string[];
+  quantity_valid?: boolean;
   candidate_details: { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number; planned_quantity: string } }[];
   approval: { id: number; snapshot: MaterialSnapshot; approved_at: string; actor_name?: string } | null;
   previous_approval: { snapshot: MaterialSnapshot } | null;
@@ -27,6 +28,7 @@ export async function changePlanWorkflow(scope: WorkflowScope, data: Record<stri
 }
 export const workflowLabels: Record<string, [string, string]> = {
   identity_confirmation: ["작업 동일성 확인 필요", "需确认任务标识"],
+  plan_quantity_review: ["계획수량 범위·소수 정밀도 확인 필요", "需确认计划量范围及小数精度"],
   material_confirmation: ["원료 확인 필요", "待确认原料"],
   multiple_rows_setup_review: ["복수행·셋업 확인 필요", "多行／设置需确认"],
   campaign_members_changed: ["연속생산 구성 변경 확인", "需确认连续生产组成变更"],

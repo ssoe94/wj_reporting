@@ -69,8 +69,18 @@ def lock_type(plan_type):
 def snapshot(plan):
     result = {field: getattr(plan, field) for field in FIELDS}
     result['plan_date'] = str(result['plan_date'])
-    result['planned_quantity'] = decimal_text(str(result['planned_quantity']))
+    # Match the migration's lossless representation of the legacy FloatField.
+    # Reading/history must not apply the narrower MES write precision contract.
+    result['planned_quantity'] = format(Decimal(str(result['planned_quantity'])), 'f')
     return result
+
+
+def valid_plan_quantity(value):
+    try:
+        decimal_text(value)
+    except ValidationError:
+        return False
+    return True
 
 
 def _record(plan, actor, change, *, resolution='identified', candidates=None, reason=''):
@@ -230,6 +240,8 @@ def approve_materials(plan, data, actor):
     work = PlanWorkIdentity.objects.get(uid=plan.work_uid)
     if work.resolution != 'identified' or not plan.part_no:
         raise WorkflowConflict('작업 동일성을 먼저 확인하세요. / 请先确认任务标识。')
+    # Displaying a legacy value is not authorization to round or send it.
+    decimal_text(snapshot(plan)['planned_quantity'])
     catalog = material_catalog()
     choices = {row['key']: row for row in catalog['materials'] if row['selectable']}
     rows = data.get('inputs')
@@ -297,8 +309,10 @@ def serialize_row(plan):
     default = PlanMaterialDefault.objects.filter(plan_type=plan.plan_type, part_no=plan.part_no,
         effective_from__lte=plan.plan_date).order_by('-effective_from', '-version').first()
     latest_default = PlanMaterialDefault.objects.filter(plan_type=plan.plan_type, part_no=plan.part_no).order_by('-version').first()
+    row_snapshot = snapshot(plan)
     return {'id': plan.pk, 'uid': str(plan.work_uid) if plan.work_uid else None, 'version': plan.work_version,
-        **snapshot(plan), 'identity_state': work.resolution if work else 'confirmation',
+        **row_snapshot, 'quantity_valid': valid_plan_quantity(row_snapshot['planned_quantity']),
+        'identity_state': work.resolution if work else 'confirmation',
         'candidates': work.candidates if work else [],
         'candidate_details': [{'uid': str(candidate.uid), 'snapshot': candidate.revisions.get(version=candidate.current_version).snapshot}
                               for candidate in PlanWorkIdentity.objects.filter(uid__in=work.candidates)] if work else [],
@@ -341,6 +355,7 @@ def preview(start, end, plan_type):
         approval = row['approval']
         setup = setup_snapshot(PlanMaterialApproval.objects.get(pk=approval['id'])) if approval else None
         blockers = ['plan_scope_truncated'] if truncated else []
+        if not row['quantity_valid']: blockers.append('plan_quantity_review')
         if row['identity_state'] != 'identified': blockers.append('identity_confirmation')
         if not approval: blockers.append('material_confirmation')
         if plan_type == 'injection' and counts[(plan.machine_name, str(plan.plan_date))] > 1:
@@ -361,10 +376,20 @@ def preview(start, end, plan_type):
         current['versions'][row['uid']] = plan.work_version
         if approval: current['approval_ids'].append(approval['id'])
         current['last_date'] = str(plan.plan_date)
-        current['quantity'] = decimal_text(Decimal(current['quantity']) + Decimal(str(plan.planned_quantity)))
+        if row['quantity_valid']:
+            with localcontext() as context:
+                context.prec = 100
+                current['quantity'] = format(Decimal(current['quantity']) + Decimal(row['planned_quantity']), 'f')
+        else:
+            # An invalid row is its own hard boundary, still visible verbatim.
+            current['quantity'] = row['planned_quantity']
     results = []
     for group in groups:
         if group['last_date'] < str(start) or group['first_date'] > str(end): continue
+        # Validate totals after grouping; never split a continuous campaign just
+        # to make each outgoing quantity fit the write limit.
+        if not valid_plan_quantity(group['quantity']) and 'plan_quantity_review' not in group['blockers']:
+            group['blockers'].append('plan_quantity_review')
         group['planned_start'] = datetime.combine(date.fromisoformat(group['first_date']), time(8), SHANGHAI).isoformat()
         group['planned_end'] = datetime.combine(date.fromisoformat(group['last_date']) + timedelta(days=1), time(8), SHANGHAI).isoformat()
         overlaps = [order for order in PlanWorkOrder.objects.filter(plan_type=plan_type)
@@ -392,11 +417,13 @@ def preview(start, end, plan_type):
                     group['blockers'].append('planned_start_changed')
                 if order.mes_id and not order.observation_complete:
                     group['blockers'].append('mes_observation_incomplete')
-                if Decimal(group['quantity']) < max(order.reported_quantity, order.inbound_quantity):
+                if ('plan_quantity_review' not in group['blockers']
+                        and Decimal(group['quantity']) < max(order.reported_quantity, order.inbound_quantity)):
                     group['blockers'].append('below_produced_or_inbound')
                 if order.requests.filter(state__in=['sending', 'uncertain', 'readback_pending', 'review']).exists():
                     group['blockers'].append('readback_required')
-                if digest(order.approved_snapshot) == digest(_intent(group)):
+                if ('plan_quantity_review' not in group['blockers']
+                        and digest(order.approved_snapshot) == digest(_intent(group))):
                     group['operation'] = 'unchanged'
                     if not order.mes_id:
                         from .plan_workflow_contract import build_contract
@@ -404,7 +431,9 @@ def preview(start, end, plan_type):
                         pending = order.requests.filter(state='disabled').order_by('-created_at').first()
                         if pending and (digest(pending.contract) != digest(contract) or pending.blockers != blockers):
                             group['operation'] = 'prepare'
-        if Decimal(group['quantity']) < sum(group.pop('_executions').values(), Decimal('0')):
+        executions = group.pop('_executions')
+        if ('plan_quantity_review' not in group['blockers']
+                and Decimal(group['quantity']) < sum(executions.values(), Decimal('0'))):
             group['blockers'].append('below_existing_execution_review')
         group['key'] = digest(_intent(group))
         results.append(group)
