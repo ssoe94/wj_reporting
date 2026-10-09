@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatEmployeeCode, getDepartmentCostBreakdowns, getEmployeeCodeCollisions, getMovePreview } from "../src/domains/hr/visualization.ts";
 import { moveEmployee } from "../src/domains/hr/layout.ts";
-import { hrAssignmentPath, hrGroupLabel } from "../src/domains/hr/labels.ts";
+import { hrAssignmentPath, hrDepartmentLabel, hrGroupLabel } from "../src/domains/hr/labels.ts";
 import type { HrDepartment, HrEmployee } from "../src/domains/hr/types.ts";
 
 const departments: HrDepartment[] = [
@@ -203,4 +203,18 @@ test("department totals and assignment paths distinguish manager placement from 
   assert.equal(hrAssignmentPath('quality-cs', departments, 'ko'), '품질 › 작업·실무 › 고객대응');
   assert.equal(hrAssignmentPath('sales-cs', departments, 'ko'), '영업 › 작업·실무 › 고객대응');
   assert.equal(hrGroupLabel('injection', '사용자 수정 부서', 'ko'), '사용자 수정 부서');
+  assert.equal(hrAssignmentPath('development', [], 'ko'), '개발 › 관리자');
+  assert.equal(hrAssignmentPath('development-staff', [], 'ko'), '개발 › 작업·실무 › 개발 실무');
+  assert.equal(hrAssignmentPath('development-staff', [], 'zh'), '开发 › 作业·实务 › 开发人员');
+});
+
+test('stored OQC names use the combined inspection label without changing assignments or custom labels', () => {
+  for (const name of ['OQC','出货检验','出库检验','출하검사','출고 검사','进出货检验']) {
+    assert.equal(hrDepartmentLabel('quality-oqc', name, 'ko'), '입출고 검사');
+    assert.equal(hrDepartmentLabel('quality-oqc', name, 'zh'), '进出货检验');
+  }
+  assert.equal(hrAssignmentPath('quality-oqc', departments, 'ko'), '품질 › 작업·실무 › 입출고 검사');
+  assert.equal(hrDepartmentLabel('quality-oqc', '사용자가 정한 검사명', 'ko'), '사용자가 정한 검사명');
+  assert.equal(hrDepartmentLabel('quality-oqc', '사용자가 정한 검사명', 'zh'), '사용자가 정한 검사명');
+  assert.equal(departments.find(node => node.id === 'quality-oqc')!.name, 'OQC');
 });

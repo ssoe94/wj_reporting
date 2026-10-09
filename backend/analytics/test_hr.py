@@ -314,6 +314,42 @@ class HrApiTests(TestCase):
         self.assertEqual(response.status_code, 200); self.assertEqual(response.data['version'], 3)
         self.assertEqual({row['department_id'] for row in response.data['employees']}, {'quality-cs'})
 
+    def test_development_and_combined_inspection_import_reconcile_without_double_counting(self):
+        data = import_data(); data['apply_classification'] = True
+        for row, target in zip(data['rows'], ['development', 'development-staff', 'quality-oqc']):
+            row['department_id'] = target
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200)
+        totals = {entry['id']: entry for entry in response.data['summary']['departments']}
+        self.assertEqual(response.data['summary']['total'], '300.60')
+        self.assertEqual(totals['development']['direct_total'], '100.10')
+        self.assertEqual(totals['development-staff']['total'], '200.20')
+        self.assertEqual(totals['development']['total'], '300.30')
+        self.assertEqual(totals['quality-oqc']['total'], '0.30')
+
+    def test_new_catalog_is_read_only_and_existing_layout_can_add_development_without_reset(self):
+        from .hr_company_structure import COMPANY_DEPARTMENTS
+        legacy = [deepcopy(node) for node in COMPANY_DEPARTMENTS if not node['id'].startswith('development')]
+        next(node for node in legacy if node['id'] == 'quality-oqc').update(name='OQC', function='OQC')
+        next(node for node in legacy if node['id'] == 'quality-patrol')['name'] = '사용자 검사명'
+        self.upload()
+        assignments = [{'code': row['code'], 'department_id': 'quality-oqc'} for row in ROWS]
+        self.assertEqual(self.layout(departments=legacy, assignments=assignments).status_code, 200)
+        response = self.client.get(self.url())
+        self.assertEqual(response.data['version'], 2)
+        self.assertEqual(response.data['departments'], legacy)
+        self.assertEqual(HrMonthWorkspace.objects.get().departments, legacy)
+        self.assertEqual(HrWorkspaceHistory.objects.count(), 2)
+        catalog = response.data['company_structure']['classification']['nodes']
+        upgraded = legacy + [node for node in catalog if node['id'].startswith('development')]
+        assignments[0]['department_id'] = 'development-staff'
+        updated = self.layout(version=2, departments=upgraded, assignments=assignments)
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data['summary']['total'], '300.60')
+        self.assertEqual(next(node for node in updated.data['departments'] if node['id'] == 'quality-patrol')['name'], '사용자 검사명')
+        self.assertEqual([row['department_id'] for row in updated.data['employees']], ['development-staff','quality-oqc','quality-oqc'])
+        self.assertEqual([row['amount'] for row in updated.data['employees']], ['100.10','200.20','0.30'])
+
 
 class HrContractTests(TestCase):
     def test_generated_frontend_catalog_matches_backend_source(self):

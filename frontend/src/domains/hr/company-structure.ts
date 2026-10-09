@@ -1,15 +1,20 @@
 import { COMPANY_CLASSIFICATION, COMPANY_ORGANIZATION } from './company-catalog.ts';
 export { COMPANY_CLASSIFICATION, COMPANY_ORGANIZATION };
 
+export const HR_DEPARTMENT_ORDER = ['injection', 'quality', 'machining', 'sales', 'materials', 'mold-maintenance', 'administration', 'development'];
+
 const clean = (value: string) => value.trim().replace(/\s+/g, '').replaceAll('／', '/').toLowerCase();
 const GROUP_ALIASES: Record<string, string[]> = {
   quality: ['品质管理', '品质', '품질관리', '품질'], injection: ['注塑管理', '注塑', '사출관리', '사출'],
   machining: ['加工管理', '加工', '가공관리', '가공'], sales: ['营业管理', '营业', '영업관리', '영업'],
   materials: ['资材管理', '资材', '자재관리', '자재'], 'mold-maintenance': ['模具/公务', '금형/공무', '금형·공무'],
   administration: ['管理部门', '管理部', '관리부문', '관리부서'],
+  development: ['开发管理', '开发', '开发部', '开发研究', '研发', '研发部', '개발', '개발부문', '개발부', '개발관리', '연구개발'],
 };
 const FUNCTION_ALIASES: Record<string, string[]> = {
-  'quality-patrol': ['巡检', '순회검사'], 'quality-oqc': ['oqc'], 'quality-cs': ['cs'],
+  'quality-patrol': ['巡检', '순회검사'],
+  'quality-oqc': ['oqc', 'iqc', 'iqc/oqc', 'iqc·oqc', '进出货检验', '进货检验', '来料检验', '出货检验', '入库检验', '出库检验', '입출고검사', '입고검사', '출고검사', '출하검사'],
+  'quality-cs': ['cs'],
   'injection-operator': ['操作工', '작업자'], 'injection-mold-change': ['换模工', '금형교체'],
   'injection-5s': ['5s'], 'injection-feeding': ['加料/入库', '재료투입/입고'],
   'machining-operator': ['操作工', '작업자'], 'sales-warehouse': ['仓库/物流', '창고/물류'],
@@ -17,6 +22,7 @@ const FUNCTION_ALIASES: Record<string, string[]> = {
   'materials-secondary': ['副资材', '부자재'], 'materials-crushing': ['粉碎', '분쇄'],
   'mold-worker': ['模具工', '금형작업자'], 'maintenance-worker': ['公务员工', '공무작업자'],
   'admin-finance': ['财务', '재무'], 'admin-hr': ['人事/总务', '人事/总務', '총무/인사', '인사/총무'],
+  'development-staff': ['开发人员', '开发研究', '开发', '研发', '研发人员', '개발실무', '개발담당', '개발인원', '개발', '연구개발'],
 };
 
 export function getClassificationLabel(id: string | null | undefined): string {

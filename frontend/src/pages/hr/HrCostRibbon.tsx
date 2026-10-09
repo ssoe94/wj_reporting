@@ -2,11 +2,11 @@ import { useMemo } from 'react';
 import { useLang } from '../../i18n';
 import type { HrCurrency, HrDepartment, HrEmployee } from '../../domains/hr/types';
 import { hrGroupLabel } from '../../domains/hr/labels';
+import { HR_DEPARTMENT_ORDER } from '../../domains/hr/company-structure';
 import { compactMoney, layoutSummary } from './hrCommon';
 import './hr-cost-ribbon.css';
 
-const ORDER = ['injection', 'quality', 'machining', 'sales', 'materials', 'mold-maintenance', 'administration'];
-const COLORS = ['#284c70', '#3c648c', '#4d78a0', '#6288aa', '#7b9ab7', '#94aec5', '#b1c4d5'];
+const COLORS = ['#284c70', '#3c648c', '#4d78a0', '#6288aa', '#7b9ab7', '#94aec5', '#b1c4d5', '#c6d4e0'];
 
 /** Root totals partition employees once; no parent/child double counting. */
 export default function HrCostRibbon({ departments, employees, currency, basis, hasSource }: {
@@ -15,7 +15,7 @@ export default function HrCostRibbon({ departments, employees, currency, basis, 
   const { lang } = useLang(); const ko = lang === 'ko';
   const summary = useMemo(() => layoutSummary(departments, employees), [departments, employees]);
   const roots = departments.filter((item) => item.parent_id === null).sort((a, b) => {
-    const ai = ORDER.indexOf(a.id); const bi = ORDER.indexOf(b.id);
+    const ai = HR_DEPARTMENT_ORDER.indexOf(a.id); const bi = HR_DEPARTMENT_ORDER.indexOf(b.id);
     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
   });
   const parts = roots.map((item, index) => ({ id: item.id, name: hrGroupLabel(item.id, item.name, lang), cents: summary.totals.get(item.id)?.total ?? null,

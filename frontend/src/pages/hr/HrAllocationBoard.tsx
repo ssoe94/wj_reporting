@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
 import { useLang } from '../../i18n';
-import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
+import { COMPANY_CLASSIFICATION, HR_DEPARTMENT_ORDER } from '../../domains/hr/company-structure';
 import { hrAssignmentPath, hrDepartmentLabel, hrGroupLabel } from '../../domains/hr/labels';
 import { amountToCents } from '../../domains/hr/import';
 import { getDescendantIds } from '../../domains/hr/layout';
@@ -13,7 +13,6 @@ import type { CompanyClassificationChartProps } from './CompanyClassificationCha
 import { compactMoney } from './hrCommon';
 import './hr-allocation-board.css';
 
-const ORDER = ['injection', 'quality', 'machining', 'sales', 'materials', 'mold-maintenance', 'administration'];
 const UNASSIGNED = '__unassigned';
 type Selection = { type: 'person'; code: string } | { type: 'function'; id: string; children: boolean; excludeSelf: boolean };
 type Drag = { code: string; pointer: number; startX: number; startY: number; x: number; y: number; offsetX: number; offsetY: number; active: boolean; target: string | null | undefined };
@@ -44,7 +43,10 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   const collisions = useMemo(() => getEmployeeCodeCollisions(employees.map((person) => person.code)), [employees]);
   const canEdit = Boolean(onMove && !disabled);
   const fullCost = useMemo(() => employees.some((person) => person.amount === null) ? null : employees.reduce((sum, person) => sum + amountToCents(person.amount!), 0), [employees]);
-  const groups = [...catalog.groups].sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+  const groups = [...catalog.groups].sort((a, b) => {
+    const ai = HR_DEPARTMENT_ORDER.indexOf(a.id); const bi = HR_DEPARTMENT_ORDER.indexOf(b.id);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
   const groupIds = useMemo(() => catalog.groups.map((group) => group.id), [catalog]);
   const costBreakdowns = useMemo(() => getDepartmentCostBreakdowns(departments, employees, groupIds), [departments, employees, groupIds]);
   const childrenById = useMemo(() => {

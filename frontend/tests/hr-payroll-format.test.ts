@@ -28,6 +28,22 @@ test('classification is explicit and duplicate functional names remain departmen
   assert.throws(()=>resolveClassification({code:'nonexistent'}),/코드/);
 });
 
+test('development managers and staff import separately while IQC and OQC share the existing inspection cell', () => {
+  const result = parse([
+    ['1月','11','샘플 A','','','100.10','','개발','관리자'],
+    ['1月','12','샘플 B','','','200.20','','开发部','开发人员'],
+    ['1月','13','샘플 C','','','10.10','','품질','입출고 검사'],
+    ['1月','14','샘플 D','','','20.20','','品质','IQC'],
+    ['1月','15','샘플 E','','','30.30','','品质管理','OQC'],
+  ]);
+  assert.deepEqual(result.rows.map(row => row.department_id), ['development','development-staff','quality-oqc','quality-oqc','quality-oqc']);
+  assert.equal(resolveClassification({group:'개발 부문',function:'개발 실무'}),'development-staff');
+  for (const label of ['출고 검사','출하검사','입고검사','进出货检验','IQC/OQC']) {
+    assert.equal(resolveClassification({group:'품질',function:label}),'quality-oqc');
+  }
+  assert.throws(()=>resolveClassification({group:'개발',function:'IQC'}),/조합/);
+});
+
 test('blank cost is unknown only with explicit roster intake; zero remains a real zero', () => {
   const rows=[['1月','E','A','','注塑','','','注塑管理','操作工']];
   assert.throws(()=>parse(rows),/인건비가 비어/);
@@ -68,7 +84,7 @@ test('company template and multi-line tab paste are readable without private fix
 });
 
 test('cost-cell geometry and reporting hierarchy stay separate and contain every supplied function', () => {
-  assert.equal(COMPANY_CLASSIFICATION.groups.length,7); assert.equal(COMPANY_CLASSIFICATION.leaders.length,3);
+  assert.equal(COMPANY_CLASSIFICATION.groups.length,8); assert.equal(COMPANY_CLASSIFICATION.leaders.length,3);
   assert.equal(COMPANY_CLASSIFICATION.groups.filter(g=>g.row===1).length,5);
   const qa=COMPANY_ORGANIZATION.nodes.find(n=>n.id==='qa'); assert.equal(qa?.parent_id,'chairman');
   assert.equal(COMPANY_ORGANIZATION.nodes.find(n=>n.id==='finance')?.parent_id,'office');
