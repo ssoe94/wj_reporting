@@ -10,6 +10,7 @@ encrypted vault; it grants no inspection/production/inventory authority. The
 separate JWT bridge creates only a restricted MES-connection backend session.
 """
 from datetime import timedelta
+from contextlib import nullcontext
 import hashlib
 import json
 import logging
@@ -32,7 +33,7 @@ from django.views.decorators.http import require_http_methods
 
 from .client import BlacklakeUserOAuthClient, ORIGINS
 from .app_tokens import app_credentials_configured, app_credential_binding
-from .callback_app_tokens import get_app_access_token
+from .callback_app_tokens import get_app_access_token, AppTokenSupplier, use_callback_app_supplier
 from .models import OAuthAttempt
 from .identity import verify_user_context
 from .diagnostics import (CALLBACK_FAILURE_CODES, expiry_metadata, failure_expiry_metadata,
@@ -285,6 +286,15 @@ def _attempt(request, fingerprint):
 def start(request):
     try:
         origin, launch, expected, fingerprint = _policy(request)
+        from .connection_views import DIAGNOSTIC_SESSION_KEY
+        diagnostic_uid = request.session.get(DIAGNOSTIC_SESSION_KEY)
+        if diagnostic_uid is not None:
+            from production.mes_create_diagnostic import require_diagnostic_reconnect
+            from production.plan_workflow import WorkflowConflict
+            try:
+                require_diagnostic_reconnect(diagnostic_uid, request.user.pk)
+            except WorkflowConflict:
+                raise OAuthBlocked('diagnostic_reconnect_unavailable') from None
     except (OAuthBlocked, ValueError):
         return _blocked('oauth_start_unavailable')
     if request.method == 'GET':
@@ -301,6 +311,7 @@ def start(request):
     OAuthAttempt.objects.create(
         nonce_digest=_digest(nonce), actor_id=request.user.pk,
         session_digest=_session_digest(request), policy_digest=fingerprint,
+        diagnostic_request_uid=diagnostic_uid,
         expected_user_id=str(expected), expires_at=now + timedelta(seconds=ATTEMPT_SECONDS))
     response = _page(format_html(
         '<p>MES 연결 화면으로 이동합니다. 이미 로그인했다면 기존 계정을 사용합니다.</p>'
@@ -360,9 +371,18 @@ def callback(request):
         return _blocked('oauth_attempt_already_used', 409)
     provider = None
     storage_expiry = None
+    app_permit = None
+    callback_supplier = None
     try:
         stored_until = None
         from . import vault
+        from production.mes_create_diagnostic import claim_callback_app_budget, finish_callback_app_budget
+        # This durable max-one reservation commits before the user transaction
+        # and any APP exchange. A normal unpinned attempt keeps its old path.
+        attempt.refresh_from_db()
+        app_permit = claim_callback_app_budget(request.user.pk, attempt)
+        if app_permit is not None:
+            callback_supplier = AppTokenSupplier(issuance_fence=app_permit.assert_current)
         with transaction.atomic():
             # Serialize dispatch and acceptance with logout/disconnect. The
             # one-use reservation was already committed before provider I/O.
@@ -370,7 +390,8 @@ def callback(request):
             _, _, dispatch_expected, dispatch_fingerprint = _policy(request)
             if dispatch_expected != expected or dispatch_fingerprint != fingerprint:
                 raise OAuthBlocked('connection_changed')
-            provider = get_provider()
+            with (use_callback_app_supplier(callback_supplier) if callback_supplier is not None else nullcontext()):
+                provider = get_provider()
             control_qc = getattr(settings, 'MES_USER_OAUTH_CONTROL_QC_ID', '')
             if control_qc:
                 provider.check_app_read_access(int(control_qc))
@@ -394,10 +415,28 @@ def callback(request):
         reason = safe_callback_failure_code(error)
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
             status='rejected', error_code=reason)
+        if app_permit is not None:
+            try:
+                finish_callback_app_budget(app_permit, succeeded=False)
+            except Exception:
+                pass  # Never refund a committed issuance or expose a failure.
         _record_failure_diagnostic(reason, provider, expiry=failure_expiry_metadata(error, storage_expiry))
         response = _blocked('identity_verification_failed', 502)
     else:
+        business_supply_ready = False
+        if app_permit is not None:
+            # USER storage and verified state have committed. Publish only this
+            # approved callback's original supply to this same process memory.
+            try:
+                finish_callback_app_budget(app_permit, succeeded=stored_until is not None)
+                business_supply_ready = callback_supplier.offer_to_business_cache(
+                    identity_verified=True, credential_stored=stored_until is not None,
+                    publication_fence=app_permit.assert_completed)
+            except Exception:
+                pass  # Metadata readiness will block create; no reissuance.
         payload = {'identity_verified': True, 'expiry_verified': False, 'live_ready': False}
+        if app_permit is not None:
+            payload['business_supply_ready'] = business_supply_ready
         if stored_until is not None:
             payload.update(expiry_verified=True, credential_stored=True, expires_at=stored_until.isoformat())
         if request.session.get('mes_bridge_only') is True and 'text/html' in request.headers.get('Accept', ''):

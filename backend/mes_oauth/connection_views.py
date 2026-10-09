@@ -37,6 +37,7 @@ from .pilot_scope import pilot_route_scope_required
 
 SESSION_KEY = 'mes_login_digest'
 BRIDGE_ONLY = 'mes_bridge_only'
+DIAGNOSTIC_SESSION_KEY = 'mes_diagnostic_request_uid'
 BRIDGE_PATH = '/integrations/blacklake/session/'
 
 
@@ -240,8 +241,20 @@ class ConnectionLaunch(ConnectionAPI):
             self.require_action(request)
             pilot_scoped = pilot_route_scope_required(request.user, request.auth or {})
             request.user._inspection_pilot_scope = pilot_scoped
-            if not bridge_ready() or request.data or not vault.eligible(request.user):
+            if (not bridge_ready() or type(request.data) is not dict
+                    or set(request.data) - {'diagnostic_request_uid'} or not vault.eligible(request.user)):
                 raise vault.VaultBlocked('connection_unavailable')
+            diagnostic_uid = request.data.get('diagnostic_request_uid')
+            if 'diagnostic_request_uid' in request.data:
+                from uuid import UUID
+                from production.mes_create_diagnostic import require_diagnostic_reconnect
+                from production.plan_workflow import WorkflowConflict
+                try:
+                    if type(diagnostic_uid) is not str or str(UUID(diagnostic_uid)) != diagnostic_uid:
+                        raise ValueError()
+                    require_diagnostic_reconnect(diagnostic_uid, request.user.pk)
+                except (ValueError, WorkflowConflict):
+                    return Response({'detail': 'diagnostic_reconnect_unavailable'}, status=409)
             require_reviewed_configuration()
             if getattr(settings, 'MES_USER_TOKEN_STORAGE_ENABLED', False):
                 vault.policy()  # Unknown expiry/key policy must fail before code/ticket issuance.
@@ -253,6 +266,11 @@ class ConnectionLaunch(ConnectionAPI):
                 user._inspection_pilot_scope = pilot_scoped
                 if not vault.eligible(user):
                     raise vault.VaultBlocked('account_unavailable')
+                if diagnostic_uid is not None:
+                    try:
+                        require_diagnostic_reconnect(diagnostic_uid, user.pk)
+                    except WorkflowConflict:
+                        raise vault.VaultBlocked('connection_unavailable') from None
                 authorization = vault.authorization_digest(user)
                 from .session_guard import check_known_login, session_version
                 check_known_login(user, request.auth)
@@ -266,6 +284,7 @@ class ConnectionLaunch(ConnectionAPI):
                 MESLoginTicket.objects.create(digest=vault.digest('ticket', ticket), actor_id=user.pk,
                     login_digest=login_digest, authorization_digest=authorization,
                     login_revision=session.revision,
+                    diagnostic_request_uid=diagnostic_uid,
                     expires_at=timezone.now() + timedelta(seconds=60))
             return Response(dict(ticket=ticket, expires_in=60,
                 submit_url=settings.MES_USER_OAUTH_CALLBACK_ORIGIN + BRIDGE_PATH))
@@ -416,6 +435,9 @@ def establish_session(request):
             vault._login(user, row.login_digest, lock=True, revision=row.login_revision)
             if row.authorization_digest != vault.authorization_digest(user):
                 raise vault.VaultBlocked('ticket_unavailable')
+            if row.diagnostic_request_uid is not None:
+                from production.mes_create_diagnostic import require_diagnostic_reconnect
+                require_diagnostic_reconnect(row.diagnostic_request_uid, user.pk)
             row.consumed_at = timezone.now()
             row.save(update_fields=['consumed_at'])
             request.session.flush()
@@ -423,6 +445,8 @@ def establish_session(request):
             request.session[SESSION_KEY] = row.login_digest
             request.session['mes_login_revision'] = row.login_revision
             request.session[BRIDGE_ONLY] = True
+            if row.diagnostic_request_uid is not None:
+                request.session[DIAGNOSTIC_SESSION_KEY] = str(row.diagnostic_request_uid)
             request.session.set_expiry(10 * 60)  # Bridge ceremony only, never MES token lifetime.
         return HttpResponseRedirect('/integrations/blacklake/start/')
     except Exception:

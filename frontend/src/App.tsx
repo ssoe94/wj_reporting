@@ -33,6 +33,8 @@ import {
 import PrivateRoute from './components/PrivateRoute';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import MesConnectionDialog from './components/MesConnectionDialog';
+import MesExactDraftDiagnosticDialog from './components/MesExactDraftDiagnosticDialog';
+import { canUseExactDraftDiagnostic } from './domains/production/exact-draft-diagnostic';
 import LogoutFeedback from './components/LogoutFeedback';
 import PageTransition from './components/common/PageTransition';
 import { NavigationTree } from './components/layout/NavigationTree';
@@ -330,11 +332,31 @@ function AppContent() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [mesConnectionOpen, setMesConnectionOpen] = useState(false);
+  const [exactDraftOpen, setExactDraftOpen] = useState(false);
+  const [diagnosticRequestUid, setDiagnosticRequestUid] = useState<string | null>(null);
+  const [diagnosticSessionId, setDiagnosticSessionId] = useState<string | null>(null);
+  const exactDraftSendAttempts = useRef(new Set<string>());
   const [isLiteMode, setIsLiteMode] = useState(() =>
     typeof window !== 'undefined' && localStorage.getItem('lite') === '1'
   );
   const { lang, setLang, t } = useLang();
-  const { user, logout, isLoggingOut, isAuthenticated, isLoading } = useAuth();
+  const { user, authSessionId, logout, isLoggingOut, isAuthenticated, isLoading } = useAuth();
+  const openMesConnection = (requestUid: string | null = null) => {
+    if (requestUid && (!canUseExactDraftDiagnostic(user) || !authSessionId)) return;
+    setDiagnosticRequestUid(requestUid);
+    setDiagnosticSessionId(requestUid ? authSessionId : null);
+    if (requestUid) setExactDraftOpen(false);
+    setMesConnectionOpen(true);
+  };
+  const closeMesConnection = () => {
+    setMesConnectionOpen(false);
+    if (diagnosticRequestUid && diagnosticSessionId === authSessionId && canUseExactDraftDiagnostic(user)) setExactDraftOpen(true);
+    setDiagnosticRequestUid(null); setDiagnosticSessionId(null);
+  };
+  useEffect(() => {
+    setExactDraftOpen(false); setMesConnectionOpen(false);
+    setDiagnosticRequestUid(null); setDiagnosticSessionId(null);
+  }, [authSessionId]);
   const routerLocation = useLocation();
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const inspectionMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -631,9 +653,12 @@ function AppContent() {
               {userDropdownOpen && (
                 <div ref={userMenuRef} id="main-user-menu" className="main-user-menu__popover" role="menu">
                   <button role="menuitem" disabled={isLoggingOut} onClick={() => {
-                    setMesConnectionOpen(true);
+                    openMesConnection();
                     setUserDropdownOpen(false);
                   }}>{lang === 'ko' ? 'MES 연결' : 'MES 连接'}</button>
+                  {canUseExactDraftDiagnostic(user) && <button role="menuitem" disabled={isLoggingOut} onClick={() => {
+                    setExactDraftOpen(true); setUserDropdownOpen(false);
+                  }}>{lang === 'ko' ? '단건 工单 진단' : '单工单诊断'}</button>}
                   <button
                     onClick={() => {
                       setPasswordModalOpen(true);
@@ -796,7 +821,7 @@ function AppContent() {
                 {user ? (
                   <Button variant="ghost" size="sm" disabled={isLoggingOut} onClick={() => {
                     setSidebarOpen(false);
-                    setMesConnectionOpen(true);
+                    openMesConnection();
                   }}>{lang === 'ko' ? 'MES 연결' : 'MES 连接'}</Button>
                 ) : null}
                 {user ? (
@@ -905,7 +930,10 @@ function AppContent() {
         isLoggingOut={isLoggingOut}
       />
 
-      {mesConnectionOpen && user && <MesConnectionDialog onClose={() => setMesConnectionOpen(false)} />}
+      {mesConnectionOpen && user && <MesConnectionDialog key={`${authSessionId}:${diagnosticRequestUid || 'normal'}`}
+        diagnosticRequestUid={diagnosticRequestUid || undefined} onClose={closeMesConnection} />}
+      {exactDraftOpen && canUseExactDraftDiagnostic(user) && <MesExactDraftDiagnosticDialog
+        onClose={() => setExactDraftOpen(false)} onReconnect={openMesConnection} sendAttempts={exactDraftSendAttempts.current} />}
 
       <ToastContainer position="bottom-right" />
     </div>

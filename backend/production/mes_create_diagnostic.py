@@ -1,4 +1,4 @@
-"""Exact, single draft diagnostic; no URL, worker, environment flag or cleanup.
+"""Exact, single draft diagnostic; no worker, environment flag or cleanup.
 
 Separate from PlanMesTransport and its complete material/version approval.
 Default approval is absent. The trusted session bridge uses existing APP supply
@@ -15,6 +15,7 @@ import re
 import time
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import connection, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -22,7 +23,7 @@ from django.views.decorators.debug import sensitive_variables
 
 from quality.inspection_transport import InspectionUserAccessToken, MesAuthenticationExpired, MesAuthenticationRejected
 from .mes_execution_contract import encode_exact_json, parse_json_exact, mes_id
-from .models import MesCreateDiagnostic, MesCreateDiagnosticEvent
+from .models import MesCreateDiagnostic, MesCreateDiagnosticEvent, MesCreateDiagnosticPermit
 from .plan_workflow import WorkflowConflict
 from .plan_workflow_read_contract import READ_ROUTES as DETAIL_ROUTES, data, identifier, read_request, amount, epoch
 from .plan_workflow_transport import ROUTE_BASE, PlanTransportError
@@ -48,7 +49,10 @@ PAYLOAD = {'code': CODE, 'externalOrderCode': CODE, 'identifier': CODE, 'status'
     'outputMaterialOpenCOs': [{'lineSeq': '0', 'mainFlag': 1, 'materialCode': '0',
         'plannedAmount': '1', 'unitName': '个'}]}
 PAYLOAD_DIGEST = 'f2e0c07365a74b4a52979fe541640fa32085a7ffcfad255b86e157fdf21ffa29'
-SETTING = 'MES_CREATE_DIAGNOSTIC_APPROVAL'
+APPROVAL_REFERENCE = '2026-10-09T12:41:25Z owner approved exact trial'
+APPROVAL_KEYS = {'reference', 'request_uid', 'payload_digest', 'code', 'actor_id', 'mes_user_id',
+    'origin', 'tenant', 'tenant_reference', 'approved_at', 'expires_at', 'max_attempts',
+    'accept_unknown_common_automation', 'preserve_draft', 'read_scope'}
 
 
 def digest(value):
@@ -82,14 +86,18 @@ def prepare_diagnostic(actor):
 @dataclass(frozen=True)
 class DiagnosticPermit:
     request_uid: str
-    setting_digest: str
+    approval_digest: str
     reference: str
     expires_at: object
     tenant_reference: str
 
     def current(self):
-        return timezone.now() < self.expires_at and hmac.compare_digest(self.setting_digest,
-            digest(getattr(settings, SETTING, None)))
+        try:
+            req = MesCreateDiagnostic.objects.get(pk=self.request_uid)
+            current = reviewed_permit(req)
+            return hmac.compare_digest(self.approval_digest, current.approval_digest)
+        except Exception:
+            return False
 
     def allows(self, req, credential):
         exact_request(req)
@@ -101,12 +109,12 @@ class DiagnosticPermit:
 
 def reviewed_permit(req):
     exact_request(req)
-    review = getattr(settings, SETTING, None)
-    keys = {'reference', 'request_uid', 'payload_digest', 'code', 'actor_id', 'mes_user_id',
-        'origin', 'tenant', 'tenant_reference', 'approved_at', 'expires_at', 'max_attempts',
-        'accept_unknown_common_automation', 'preserve_draft', 'read_scope'}
-    require(type(review) is dict and set(review) == keys, 'exact_diagnostic_approval_required')
-    require(type(review['reference']) is str and 1 <= len(review['reference'].strip()) <= 200)
+    record = MesCreateDiagnosticPermit.objects.filter(request_id=req.pk).first()
+    require(record is not None, 'exact_diagnostic_approval_required')
+    review = record.snapshot
+    require(type(review) is dict and set(review) == APPROVAL_KEYS
+        and review['reference'] == APPROVAL_REFERENCE
+        and hmac.compare_digest(record.snapshot_digest, digest(review)), 'exact_diagnostic_approval_required')
     # The MES company display name is not the vault's reviewed tenant reference.
     require(type(review['tenant_reference']) is str and re.fullmatch(
         r'[A-Za-z0-9][A-Za-z0-9._/-]{0,127}', review['tenant_reference']),
@@ -114,8 +122,9 @@ def reviewed_permit(req):
     try:
         start, end = parse_datetime(review['approved_at']), parse_datetime(review['expires_at'])
         valid = (start is not None and end is not None and timezone.is_aware(start)
-            and timezone.is_aware(end) and start <= timezone.now() < end
-            and timedelta(0) < end - start <= timedelta(minutes=30))
+            and timezone.is_aware(end)
+            and timedelta(0) < end - start <= timedelta(minutes=30)
+            and start == record.approved_at and end == record.expires_at)
     except (TypeError, ValueError):
         valid = False
     require(valid and review['request_uid'] == str(req.uid)
@@ -126,8 +135,151 @@ def reviewed_permit(req):
         and review['max_attempts'] == 1 and review['accept_unknown_common_automation'] is True
         and review['preserve_draft'] is True
         and review['read_scope'] == 'exact_order_and_code0_effect_window', 'diagnostic_approval_scope_rejected')
-    return DiagnosticPermit(str(req.uid), digest(review), review['reference'], end,
+    require(start <= timezone.now() < end, 'diagnostic_approval_expired')
+    return DiagnosticPermit(str(req.uid), record.snapshot_digest, review['reference'], end,
         review['tenant_reference'])
+
+
+def activate_diagnostic(actor, tenant_reference):
+    """Prepare and activate once; retries never refresh an expired grant."""
+    require(type(tenant_reference) is str and re.fullmatch(
+        r'[A-Za-z0-9][A-Za-z0-9._/-]{0,127}', tenant_reference), 'diagnostic_tenant_reference_required')
+    with transaction.atomic():
+        req = prepare_diagnostic(actor)
+        req = MesCreateDiagnostic.objects.select_for_update().get(pk=req.pk)
+        require(req.state == 'prepared' and req.attempt == 0, 'diagnostic_replay_rejected')
+        existing = MesCreateDiagnosticPermit.objects.filter(request_id=req.pk).first()
+        if existing is not None:
+            permit = reviewed_permit(req)
+            require(permit.tenant_reference == tenant_reference, 'diagnostic_approval_changed')
+            return req
+        now = timezone.now()
+        snapshot = {'reference': APPROVAL_REFERENCE, 'request_uid': str(req.uid),
+            'payload_digest': PAYLOAD_DIGEST, 'code': CODE, 'actor_id': ACTOR_ID,
+            'mes_user_id': MES_USER_ID, 'origin': ORIGIN, 'tenant': TENANT,
+            'tenant_reference': tenant_reference, 'approved_at': now.isoformat(),
+            'expires_at': (now + timedelta(minutes=30)).isoformat(), 'max_attempts': 1,
+            'accept_unknown_common_automation': True, 'preserve_draft': True,
+            'read_scope': 'exact_order_and_code0_effect_window'}
+        MesCreateDiagnosticPermit.objects.create(request=req, snapshot=snapshot,
+            snapshot_digest=digest(snapshot), approved_at=now, expires_at=now + timedelta(minutes=30))
+        MesCreateDiagnosticEvent.objects.create(request=req, state='approved', evidence={
+            'reference': APPROVAL_REFERENCE, 'payload_digest': PAYLOAD_DIGEST,
+            'tenant_reference': tenant_reference, 'expires_at': snapshot['expires_at'],
+            'max_attempts': 1, 'app_max_attempts': 1})
+    return req
+
+
+@dataclass(frozen=True)
+class CallbackAppPermit:
+    request_uid: str
+    oauth_attempt_id: str
+    approval_digest: str
+
+    def _assert(self, *, completed):
+        from django.contrib.auth import get_user_model
+        from mes_oauth import vault
+        from mes_oauth.models import OAuthAttempt
+        req = MesCreateDiagnostic.objects.get(pk=self.request_uid)
+        permit = reviewed_permit(req)
+        approval = MesCreateDiagnosticPermit.objects.get(request_id=req.pk)
+        attempt = OAuthAttempt.objects.filter(pk=self.oauth_attempt_id).first()
+        user = get_user_model().objects.filter(pk=ACTOR_ID).first()
+        require(req.state == 'prepared' and req.attempt == 0
+            and permit.approval_digest == self.approval_digest
+            and approval.auth_app_attempt == 1 and approval.auth_oauth_attempt == self.oauth_attempt_id
+            and attempt is not None and attempt.actor_id == ACTOR_ID
+            and str(attempt.diagnostic_request_uid) == self.request_uid
+            and attempt.status == ('verified' if completed else 'processing')
+            and attempt.consumed_at is not None and attempt.expires_at > timezone.now()
+            and attempt.expected_user_id == MES_USER_ID
+            and user is not None and user.is_active and user.is_superuser and vault.eligible(user)
+            and vault.expected_user(ACTOR_ID) == int(MES_USER_ID)
+            and vault.policy().tenant == permit.tenant_reference, 'diagnostic_auth_budget_rejected')
+        if completed:
+            require(approval.auth_completed_at is not None and attempt.verified_at is not None
+                and req.events.filter(state='auth_verified', evidence__oauth_attempt_id=self.oauth_attempt_id).exists(),
+                'diagnostic_auth_budget_rejected')
+
+    def assert_current(self):
+        """Pre-issuer fence, while the pinned OAuth attempt is processing."""
+        self._assert(completed=False)
+
+    def assert_completed(self):
+        """Pure post-store handoff fence; never exports a credential."""
+        self._assert(completed=True)
+
+
+def require_diagnostic_reconnect(request_uid, actor_id):
+    """Admission for an explicitly pinned normal connection launch, no writes."""
+    from django.contrib.auth import get_user_model
+    from mes_oauth import vault
+    from mes_oauth.pilot_scope import pilot_route_scope_required
+    require(actor_id == ACTOR_ID, 'diagnostic_scope_rejected')
+    try:
+        req = MesCreateDiagnostic.objects.get(pk=request_uid)
+    except (ValueError, TypeError, ModelValidationError, MesCreateDiagnostic.DoesNotExist):
+        raise WorkflowConflict('diagnostic_scope_rejected') from None
+    permit = reviewed_permit(req)
+    user = get_user_model().objects.filter(pk=actor_id).first()
+    require(user is not None and user.is_active and user.is_superuser and vault.eligible(user)
+        and not pilot_route_scope_required(user, {})
+        and vault.expected_user(actor_id) == int(MES_USER_ID)
+        and vault.policy().tenant == permit.tenant_reference, 'diagnostic_scope_rejected')
+    require(req.state == 'prepared' and req.attempt == 0, 'diagnostic_replay_rejected')
+    require(req.approval.auth_app_attempt == 0, 'diagnostic_auth_budget_exhausted')
+    return req
+
+
+def claim_callback_app_budget(actor_id, oauth_attempt):
+    """Commit max-one authorization before the callback's user transaction/IO."""
+    from mes_oauth.models import OAuthAttempt
+    # A stale caller instance cannot determine the durable callback state or
+    # erase the diagnostic pin. Ordinary connections carry no pin at all.
+    attempt = OAuthAttempt.objects.filter(pk=oauth_attempt.pk).first()
+    require(attempt is not None, 'diagnostic_auth_budget_rejected')
+    if attempt.diagnostic_request_uid is None:
+        return None
+    require(not connection.in_atomic_block, 'committed_auth_reservation_required')
+    require(actor_id == ACTOR_ID and attempt.actor_id == actor_id, 'diagnostic_auth_budget_rejected')
+    with transaction.atomic():
+        req = MesCreateDiagnostic.objects.select_for_update().filter(pk=attempt.diagnostic_request_uid).first()
+        require(req is not None, 'diagnostic_auth_budget_rejected')
+        permit = reviewed_permit(req)
+        require(req.state == 'prepared' and req.attempt == 0
+            and attempt.status == 'processing' and attempt.expected_user_id == MES_USER_ID
+            and attempt.consumed_at is not None and attempt.expires_at > timezone.now(),
+            'diagnostic_auth_budget_rejected')
+        changed = MesCreateDiagnosticPermit.objects.filter(request_id=req.pk, auth_app_attempt=0,
+            snapshot_digest=permit.approval_digest).update(auth_app_attempt=1,
+                auth_oauth_attempt=str(attempt.pk), auth_claimed_at=timezone.now())
+        require(changed == 1, 'diagnostic_auth_budget_exhausted')
+        MesCreateDiagnosticEvent.objects.create(request=req, state='auth_reserved', evidence={
+            'reference': APPROVAL_REFERENCE, 'app_attempt': 1, 'oauth_attempt_id': str(attempt.pk)})
+    return CallbackAppPermit(str(req.uid), str(attempt.pk), permit.approval_digest)
+
+
+def finish_callback_app_budget(permit, *, succeeded):
+    """Record the outcome without refunding, extending or exporting credentials."""
+    if permit is None:
+        return
+    from mes_oauth.models import OAuthAttempt
+    require(type(permit) is CallbackAppPermit and type(succeeded) is bool)
+    with transaction.atomic():
+        record = MesCreateDiagnosticPermit.objects.select_for_update().get(request_id=permit.request_uid)
+        require(record.auth_app_attempt == 1 and record.auth_oauth_attempt == permit.oauth_attempt_id
+            and record.snapshot_digest == permit.approval_digest, 'diagnostic_auth_budget_rejected')
+        if succeeded:
+            require(OAuthAttempt.objects.filter(pk=permit.oauth_attempt_id, actor_id=ACTOR_ID,
+                diagnostic_request_uid=permit.request_uid, status='verified', verified_at__isnull=False).exists(),
+                'diagnostic_auth_budget_rejected')
+        if record.auth_completed_at is not None:
+            return
+        record.auth_completed_at = timezone.now()
+        record.save(update_fields=['auth_completed_at'])
+        MesCreateDiagnosticEvent.objects.create(request_id=permit.request_uid,
+            state='auth_verified' if succeeded else 'auth_failed', evidence={
+                'reference': APPROVAL_REFERENCE, 'app_attempt': 1, 'oauth_attempt_id': permit.oauth_attempt_id})
 
 
 def complete_page(body):

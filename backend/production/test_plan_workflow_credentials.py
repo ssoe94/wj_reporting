@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
+from django.utils.dateparse import parse_datetime
 from rest_framework_simplejwt.tokens import AccessToken
 
 from mes_oauth import vault
@@ -21,6 +22,7 @@ from mes_oauth.test_oauth import synthetic_session
 from mes_oauth.test_vault import VaultFixture, LOGIN_SID, TOKEN
 from . import mes_create_diagnostic as diagnostic
 from .mes_execution_contract import encode_exact_json
+from .models import MesCreateDiagnosticPermit
 from .plan_workflow import WorkflowConflict
 from . import test_mes_create_diagnostic as diagnostic_fixture
 from . import test_plan_workflow_transport as transport_fixture
@@ -41,6 +43,8 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         def create_fixture_user(**kwargs):
             if kwargs.get('username') == 'SYNTHETIC-VAULT-ACTOR':
                 kwargs['pk'] = diagnostic.ACTOR_ID
+            elif kwargs.get('username') == 'SYNTHETIC-VAULT-OTHER':
+                kwargs['pk'] = diagnostic.ACTOR_ID + 1
             return create_user(**kwargs)
 
         with patch.object(manager, 'create_user', side_effect=create_fixture_user), \
@@ -53,7 +57,7 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         self.session = InspectionSession.from_token(self.user, token)
         self.req = diagnostic.prepare_diagnostic(self.user)
         self.approval = {
-            'reference': 'SYNTHETIC-REAL-BROKER-REVIEW',
+            'reference': diagnostic.APPROVAL_REFERENCE,
             'request_uid': str(self.req.uid), 'payload_digest': diagnostic.PAYLOAD_DIGEST,
             'code': diagnostic.CODE, 'actor_id': diagnostic.ACTOR_ID,
             'mes_user_id': diagnostic.MES_USER_ID, 'origin': diagnostic.ORIGIN,
@@ -63,6 +67,9 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
             'max_attempts': 1, 'accept_unknown_common_automation': True,
             'preserve_draft': True, 'read_scope': 'exact_order_and_code0_effect_window',
         }
+        MesCreateDiagnosticPermit.objects.create(request=self.req, snapshot=self.approval,
+            snapshot_digest=diagnostic.digest(self.approval), approved_at=parse_datetime(self.approval['approved_at']),
+            expires_at=parse_datetime(self.approval['expires_at']))
         self.identity_ids = []
         self.identity_sessions = []
         self.calls = []
@@ -88,7 +95,6 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         self.inputs = []
         self.processes = {'processes': [], 'relations': [], 'originalProcessRoute': None}
         gates = override_settings(
-            MES_CREATE_DIAGNOSTIC_APPROVAL=self.approval,
             MES_INSPECTION_ENABLED=True, INSPECTION_PILOT_ENABLED=False,
             INSPECTION_PILOT_USER_IDS=[], MES_USER_OAUTH_APP_TOKEN_SOURCE='static',
         )
@@ -160,10 +166,11 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         self.assertEqual(len(self.calls), 15)
 
     def test_reviewed_tenant_reference_mismatch_never_acquires_or_reserves(self):
-        with override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL={
-                **self.approval, 'tenant_reference': 'SYNTHETIC-OTHER-TENANT'}):
-            with self.assertRaises(WorkflowConflict):
-                self.execute()
+        snapshot = {**self.approval, 'tenant_reference': 'SYNTHETIC-OTHER-TENANT'}
+        MesCreateDiagnosticPermit.objects.filter(request=self.req).update(
+            snapshot=snapshot, snapshot_digest=diagnostic.digest(snapshot))
+        with self.assertRaises(WorkflowConflict):
+            self.execute()
         self.assert_prepared()
         self.assertEqual(self.identity_sessions, [])
         self.assertEqual(self.calls, [])
@@ -222,8 +229,8 @@ class PlanWorkflowCredentialTests(VaultFixture, TransactionTestCase):
         self.assertEqual(len(self.calls), 5)
         with self.assertRaises(WorkflowConflict):
             self.execute()
-        with override_settings(MES_CREATE_DIAGNOSTIC_APPROVAL=None):
-            self.assertEqual(self.execute(read_only=True)['state'], 'draft_observed')
+        MesCreateDiagnosticPermit.objects.filter(request=self.req).delete()
+        self.assertEqual(self.execute(read_only=True)['state'], 'draft_observed')
         self.assertEqual(len(self.identity_sessions), 3)
         self.assertEqual(len(self.calls), 15)
         self.assertEqual(sum(path == diagnostic.CREATE_PATH for path, _ in self.calls), 1)
