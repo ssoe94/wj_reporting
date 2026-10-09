@@ -9300,6 +9300,12 @@ select {
   background: #bd432b;
 }
 
+/* Nothing to act on: keep the panel calm so red always means a real issue. */
+.injection-board-summary--alerts.injection-board-summary--clear {
+  border-color: #4c6470;
+  background: #5b7480;
+}
+
 .injection-board-summary__hero {
   display: flex;
   align-items: baseline;
@@ -9412,7 +9418,7 @@ select {
 .injection-board-summary__track,
 .injection-board-card__track {
   position: relative;
-  height: 6px;
+  height: 8px;
   overflow: hidden;
   border-radius: 3px;
   background: #e4ebef;
@@ -9435,7 +9441,12 @@ select {
   z-index: 1;
   top: 0;
   border-radius: inherit;
-  background: #109858;
+  /* Production without a verified product (changeover, trial shots). */
+  background: #9fc7b9;
+}
+
+.injection-board-card__timeline > span.is-product-start {
+  box-shadow: inset 2px 0 0 #ffffff;
 }
 
 .injection-board-timeline {
@@ -9566,54 +9577,56 @@ select {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) 14px auto;
   gap: 8px;
+  /* Content never widens the grid column, so badges stay inside the frame. */
+  min-width: 0;
   padding: 11px 13px;
   border-width: 2px;
   border-left-width: 10px;
 }
 
 .injection-board-card--running {
-  border-color: #008e50;
-  border-left-color: #006f3d;
-  background: #ecfff5;
+  border-color: rgba(0, 142, 80, 0.32);
+  border-left-color: #00804a;
+  background: #f6fcf8;
 }
 
 .injection-board-card--warning,
 .injection-board-card--transition_review {
-  border-color: #d68c00;
-  border-left-color: #a96e00;
-  background: #fff7dc;
+  border-color: rgba(214, 140, 0, 0.4);
+  border-left-color: #b97900;
+  background: #fffaeb;
 }
 
 .injection-board-card--stopped,
 .injection-board-card--production_stopped,
 .injection-board-card--shot_issue {
-  border-color: #d43c2c;
-  border-left-color: #a72c20;
-  background: #fff0ed;
+  border-color: rgba(212, 60, 44, 0.42);
+  border-left-color: #b8352a;
+  background: #fff6f4;
 }
 
 .injection-board-card--overproducing {
-  border-color: #7254c7;
-  border-left-color: #5538aa;
-  background: #f4f0ff;
+  border-color: rgba(114, 84, 199, 0.32);
+  border-left-color: #6244b8;
+  background: #f9f7ff;
 }
 
 .injection-board-card--completed {
-  border-color: #087f94;
-  border-left-color: #056273;
-  background: #eafcff;
+  border-color: rgba(8, 127, 148, 0.32);
+  border-left-color: #07798d;
+  background: #f4fcfd;
 }
 
 .injection-board-card--unplanned {
-  border-color: #0877c5;
-  border-left-color: #045c99;
-  background: #eaf6ff;
+  border-color: rgba(8, 119, 197, 0.32);
+  border-left-color: #086fb5;
+  background: #f4f9ff;
 }
 
 .injection-board-card--idle {
-  border-color: #aab5bb;
-  border-left-color: #7b898f;
-  background: #f1f4f5;
+  border-color: #d3dadd;
+  border-left-color: #8d9a9f;
+  background: #f6f8f8;
 }
 
 .injection-board-card--stale {
@@ -9722,6 +9735,50 @@ select {
   color: #9b6a16;
 }
 
+/* Part line: fixed frame; long content flows right-to-left (see MarqueeLine). */
+.injection-board-card__part.injection-board-marquee {
+  display: block;
+}
+
+.injection-board-marquee__track {
+  display: flex;
+  gap: 40px;
+  width: max-content;
+}
+
+.injection-board-marquee__content {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.injection-board-card__part .injection-board-marquee__content > * {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.injection-board-marquee.is-flowing .injection-board-marquee__track {
+  animation: injection-board-marquee var(--marquee-duration, 10s) linear infinite;
+}
+
+.injection-board-marquee.is-flowing:hover .injection-board-marquee__track,
+.injection-board-marquee.is-flowing:focus-within .injection-board-marquee__track {
+  animation-play-state: paused;
+}
+
+@keyframes injection-board-marquee {
+  0%, 12% { transform: translateX(0); }
+  100% { transform: translateX(calc(-1 * var(--marquee-shift, 0px))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .injection-board-marquee__track { width: 100%; }
+  .injection-board-marquee__content { max-width: 100%; min-width: 0; }
+  .injection-board-card__part .injection-board-marquee__content > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}
+
 .injection-board-card__metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9784,18 +9841,9 @@ select {
   font-size: 0.82rem;
 }
 
-.injection-board-card--running .injection-board-card__track { background: #ccebdc; }
-.injection-board-card--running .injection-board-card__track > span { background: #008f4f; }
-.injection-board-card--warning .injection-board-card__track > span,
-.injection-board-card--transition_review .injection-board-card__track > span { background: #dca21d; }
-.injection-board-card--stopped .injection-board-card__track > span,
-.injection-board-card--production_stopped .injection-board-card__track > span,
-.injection-board-card--shot_issue .injection-board-card__track > span { background: #d6533b; }
-.injection-board-card--overproducing .injection-board-card__track > span { background: #7254c7; }
-.injection-board-card--completed .injection-board-card__track > span { background: #178d9e; }
-.injection-board-card--unplanned .injection-board-card__track > span { background: #1686c0; }
+/* The card header and badge carry the machine state; the timeline stays one calm hue. */
 .injection-board-card--idle .injection-board-card__track > span,
-.injection-board-card--stale .injection-board-card__track > span { background: #98a4aa; }
+.injection-board-card--stale .injection-board-card__track > span { background: #b4c4c9; }
 
 .injection-board-card footer {
   padding-top: 5px;
@@ -13349,4 +13397,69 @@ select {
   .raw-priority-material strong { white-space: normal; }
   .raw-priority-order strong { font-size: 0.68rem; }
   .raw-cover-label { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+
+/* Metric boxes: label, value and one supporting line at matching scale. */
+.injection-board-card__metrics > .injection-board-card__metric {
+  position: relative;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.injection-board-card__metric .injection-board-card__metric-label {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 20px;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.injection-board-card__metric-link {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--board-muted);
+}
+
+.injection-board-card__metric-link:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #1f3b47;
+}
+
+.injection-board-card__metric-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.injection-board-card__metrics > .injection-board-card__metric small {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 4px;
+  font-size: 0.92rem;
+  line-height: 1.15;
+}
+
+.injection-board-card__metric small span {
+  color: var(--board-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.injection-board-card__metric small b {
+  color: #1f3b47;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.injection-board-card footer.injection-board-card__footer-with-quality {
+  padding-top: 6px;
 }

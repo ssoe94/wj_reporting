@@ -197,3 +197,63 @@
 }
 .inspection-overview details > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
 .inspection-overview dd { margin: 4px 0 0; font-weight: 650; }
+
+/* Traffic-light band: first-article color flows into the time-check color. */
+.injection-quality__summary {
+  --q-ok-bg: #d6f0dd;
+  --q-ok-fg: #1f6b36;
+  --q-wait-bg: #fff1cc;
+  --q-wait-fg: #7a4a06;
+  --q-bad-bg: #fbd9d9;
+  --q-bad-fg: #9b2323;
+  --q-none-bg: #eef0ef;
+  --q-none-fg: #66706f;
+  --q-first-bg: var(--q-none-bg);
+  --q-periodic-bg: var(--q-none-bg);
+  min-height: 1.6em;
+  padding: 0.1em 0.7em;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--q-first-bg) 0%, var(--q-first-bg) 18%, var(--q-periodic-bg) 82%, var(--q-periodic-bg) 100%);
+  color: var(--q-none-fg);
+  transition: filter 120ms ease;
+}
+
+.injection-quality__summary:hover {
+  filter: brightness(0.97);
+}
+
+.injection-quality__summary[data-first-tone="ok"] { --q-first-bg: var(--q-ok-bg); }
+.injection-quality__summary[data-first-tone="wait"] { --q-first-bg: var(--q-wait-bg); }
+.injection-quality__summary[data-first-tone="bad"] { --q-first-bg: var(--q-bad-bg); }
+.injection-quality__summary[data-periodic-tone="ok"] { --q-periodic-bg: var(--q-ok-bg); }
+.injection-quality__summary[data-periodic-tone="wait"] { --q-periodic-bg: var(--q-wait-bg); }
+.injection-quality__summary[data-periodic-tone="bad"] { --q-periodic-bg: var(--q-bad-bg); }
+
+.injection-quality__summary .injection-quality__summary-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6em;
+}
+
+.injection-quality__tone { font-weight: 600; }
+.injection-quality__tone--ok { color: var(--q-ok-fg); }
+.injection-quality__tone--wait { color: var(--q-wait-fg); }
+.injection-quality__tone--bad { color: var(--q-bad-fg); }
+.injection-quality__tone--none { color: var(--q-none-fg); font-weight: 500; }
+
+.injection-quality__summary .injection-quality__freshness {
+  color: var(--q-none-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .injection-quality__summary { transition: none; }
+}
+
+@media (max-width: 760px) {
+  .injection-quality__summary { min-height: 32px; }
+}
+
+@media (prefers-contrast: more) {
+  .injection-quality__summary { border: 1px solid currentColor; }
+}
