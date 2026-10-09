@@ -162,6 +162,24 @@ export type ModelValidation =
   | "machine_identity_conflict" | "machine_identity_unknown" | "recent_output"
   | "stale" | "activity_unknown" | "ambiguous" | "conflict" | "loading";
 
+export type MachineStatusTone = "match" | "check" | "mismatch" | "idle" | "loading";
+
+// Field displays show four outcomes; the detailed validation stays in the verification dialog.
+const MACHINE_STATUS_TONES: Record<ModelValidation, MachineStatusTone> = {
+  match: "match", confirmed_match: "match", planned_match: "match",
+  mismatch: "mismatch", confirmed_mismatch: "mismatch", planned_mismatch: "mismatch",
+  no_production: "idle",
+  loading: "loading",
+  review: "check", unknown: "check", mould_missing: "check", planned: "check",
+  planned_review: "check", planned_mould_missing: "check", machine_identity_conflict: "check",
+  machine_identity_unknown: "check", recent_output: "check", stale: "check",
+  activity_unknown: "check", ambiguous: "check", conflict: "check",
+};
+
+export function machineStatusTone(validation: ModelValidation): MachineStatusTone {
+  return MACHINE_STATUS_TONES[validation];
+}
+
 export function assessMachineMould(
   moulds: Array<{ model: string; drawingNo: string }>,
   production: { date: string; basis: string; isRunning: boolean; model: string; sourceMachineName: string; secondarySourceMachineName?: string; sourceStatus?: string } | undefined,

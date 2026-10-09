@@ -46,6 +46,8 @@ type InjectionTransitionPanelProps = {
   canConfirm?: boolean;
   machineKey?: string | number | null;
   compact?: boolean;
+  /** Render inside another card: no panel chrome or heading. */
+  embedded?: boolean;
   onSaveConfirmation?: (payload: SaveInjectionDowntimeConfirmationPayload) => Promise<unknown>;
   onResetConfirmation?: (eventKey: string) => Promise<unknown>;
 };
@@ -329,6 +331,7 @@ export function InjectionTransitionPanel({
   canConfirm = false,
   machineKey,
   compact = false,
+  embedded = false,
   onSaveConfirmation,
   onResetConfirmation,
 }: InjectionTransitionPanelProps) {
@@ -483,8 +486,8 @@ export function InjectionTransitionPanel({
   }
 
   return (
-    <section className={`panel injection-transition-panel injection-transition-panel--${mode}${compact ? " injection-transition-panel--compact" : ""}`}>
-      <div className="injection-transition-panel__header">
+    <section className={`${embedded ? "" : "panel "}injection-transition-panel injection-transition-panel--${mode}${compact ? " injection-transition-panel--compact" : ""}${embedded ? " injection-transition-panel--embedded" : ""}`}>
+      {embedded ? null : <div className="injection-transition-panel__header">
         <div>
           <p className="panel-card__eyebrow">{copy.transitionEyebrow}</p>
           <h3 className="panel__title">{copy.transitionTitle}</h3>
@@ -495,7 +498,7 @@ export function InjectionTransitionPanel({
             {workflow.latestConfirmation} {formatConfirmationTime(latestConfirmation, language)}
           </span>
         ) : null}
-      </div>
+      </div>}
 
       {confirmationState !== "ready" ? (
         <div className={`injection-transition-data-state injection-transition-data-state--${confirmationState}`}>

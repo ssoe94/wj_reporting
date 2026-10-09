@@ -1,0 +1,16 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ title }}</title>
+<link rel="stylesheet" href="{% url 'activation-activation.css' %}">
+<script src="{% url 'activation-issue.js' %}" defer></script></head><body><main>
+<h1>{{ title }}</h1><p>승인된 비활성 계정만 표시됩니다. 계정 권한은 이 화면에서 변경되지 않습니다.</p>
+<form method="post" autocomplete="off">{% csrf_token %}
+<label for="target">승인된 계정</label><select name="target" id="target" required>
+<option value="">계정 선택</option>{% for id, entry in targets.items %}<option value="{{ id }}">{{ entry.username }}</option>{% endfor %}</select>
+<label><input type="checkbox" name="confirmed" value="yes" required>대상 본인 및 별도 승인된 권한 범위를 확인했습니다.</label>
+<button name="action" value="issue">15분 링크 발급</button>
+<button name="action" value="revoke">기존 미사용 링크 취소</button></form>
+<p role="status">{{ result }}</p>{% if activation_link %}<p>만료 시각: {{ expires_at|date:"c" }}</p>
+<label for="activation-link">본인 전달용 링크 — 화면을 닫으면 다시 조회할 수 없습니다</label>
+<textarea id="activation-link" readonly rows="5" autocomplete="off" spellcheck="false">{{ activation_link }}</textarea>
+<p>암호를 대신 입력하거나 링크를 공용 채팅·스크린샷·기록에 남기지 마세요.</p>{% endif %}
+<a href="{% url 'admin:account_activation_activationgrant_changelist' %}">발급 상태 기록</a></main></body></html>

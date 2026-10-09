@@ -1,0 +1,638 @@
+.machine-board {
+  min-width: 0;
+  padding: 14px 16px 12px;
+  font-size: 14px;
+}
+
+.machine-board .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.machine-board__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.machine-board__title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.machine-board__title .panel__title {
+  margin: 0;
+}
+
+.machine-board__tabs {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(104, 128, 147, 0.10);
+}
+
+.machine-board__tabs button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.machine-board__tabs button.is-active {
+  background: var(--surface-strong);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(21, 70, 104, 0.12);
+}
+
+.machine-board__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.machine-board__icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--surface-border);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.machine-board__icon-button:active {
+  transform: scale(0.96);
+}
+
+.machine-board__icon-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.machine-board .is-spinning {
+  animation: machine-board-spin 0.9s linear infinite;
+}
+
+@keyframes machine-board-spin {
+  to { transform: rotate(360deg); }
+}
+
+.machine-board__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.machine-board__link:hover {
+  text-decoration: underline;
+}
+
+.machine-board__summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 10px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 142, 195, 0.05);
+}
+
+.machine-board__total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.machine-board__total strong {
+  font-size: 20px;
+  color: var(--accent-strong);
+}
+
+.machine-board__total span {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.machine-board__chips {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.machine-board__chips .production-progress-chip {
+  font-size: 12px;
+}
+
+.machine-board__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.machine-board__notice {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: rgba(211, 132, 24, 0.10);
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.machine-board__table-wrap {
+  overflow-x: auto;
+}
+
+.machine-board__table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.machine-board__table thead th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--surface-border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.machine-board__table thead th:nth-child(1) { width: 128px; }
+.machine-board__table thead th:nth-child(3) { width: 170px; }
+.machine-board__table thead th:nth-child(4) { width: 230px; }
+.machine-board__table thead th:nth-child(5) { width: 40px; }
+
+.machine-board__row > th,
+.machine-board__row > td {
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(0, 142, 195, 0.08);
+  vertical-align: middle;
+  text-align: left;
+  font-weight: 400;
+}
+
+.machine-board__row:hover > th,
+.machine-board__row:hover > td,
+.machine-board__row.is-open > th,
+.machine-board__row.is-open > td {
+  background: rgba(0, 142, 195, 0.035);
+}
+
+.machine-board__row--attention > th {
+  box-shadow: inset 3px 0 0 rgba(211, 132, 24, 0.55);
+}
+
+.machine-board__machine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.machine-board__machine strong {
+  font-size: 15px;
+  min-width: 42px;
+}
+
+.machine-board__row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.machine-board__muted {
+  color: var(--muted);
+}
+
+.machine-board__production {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.machine-board__production-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.machine-board__production-head strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.machine-board__production-head span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.machine-board__production-head b {
+  margin-left: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.machine-board__production .production-part-track {
+  height: 16px;
+  padding: 2px;
+}
+
+.machine-board__review {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #984321;
+  font-size: 13px;
+}
+
+.machine-board__stack {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.machine-board__warn {
+  color: #985d0d;
+}
+
+.machine-board__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.machine-board__badges:empty {
+  display: none;
+}
+
+.machine-board__badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: rgba(104, 128, 147, 0.10);
+  color: #5f7384;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.machine-board__badge--warning {
+  background: rgba(211, 132, 24, 0.14);
+  color: #985d0d;
+}
+
+.machine-board__toggle-cell {
+  text-align: right;
+}
+
+.machine-board__detail-row > td {
+  padding: 0 8px 10px;
+  border-bottom: 1px solid var(--surface-border);
+  background: rgba(0, 142, 195, 0.035);
+}
+
+.machine-board__detail {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
+  gap: 10px;
+}
+
+.machine-board__detail > section {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.machine-board__detail > section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.machine-board__detail-wide {
+  grid-column: 1 / -1;
+}
+
+.machine-board__plans {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.machine-board__plans li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(0, 142, 195, 0.12);
+}
+
+.machine-board__plans li:last-child {
+  border-bottom: 0;
+}
+
+.machine-board__plans span:first-child {
+  color: var(--muted);
+}
+
+.machine-board__plans small {
+  flex-basis: 100%;
+  color: var(--muted);
+}
+
+.machine-board__tasks {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.machine-board__tasks th {
+  padding: 4px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.machine-board__tasks td {
+  padding: 5px 6px;
+  border-top: 1px solid rgba(0, 142, 195, 0.08);
+  vertical-align: top;
+}
+
+.machine-board__tasks td small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.machine-board__num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.machine-board__reasons {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.machine-board__more {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.machine-board__more > summary {
+  min-height: 32px;
+  padding: 6px 0;
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.machine-board__machining {
+  margin-top: 10px;
+}
+
+.injection-transition-panel--embedded {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.machine-board :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .machine-board .is-spinning {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .machine-board__detail {
+    grid-template-columns: 1fr;
+  }
+}
+
+.machine-board__tasks td.machine-board__assessment {
+  width: 40%;
+  min-width: 240px;
+}
+
+.machine-board__tasks td:last-child:not(.machine-board__assessment) {
+  white-space: nowrap;
+}
+
+.machine-board__table thead th:nth-child(5) { width: 190px; }
+.machine-board__table thead th:nth-child(6) { width: 40px; }
+.machine-board__table { min-width: 1040px; }
+
+.machine-board__groups-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.machine-board__group-count b {
+  margin-left: 2px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.machine-board__group-count--running b {
+  color: #047241;
+}
+
+.machine-board__group-count--stopped_after_run b {
+  color: #985d0d;
+}
+
+.machine-board__group-row > th {
+  padding: 0;
+  border-bottom: 1px solid var(--surface-border);
+  background: rgba(104, 128, 147, 0.06);
+  text-align: left;
+}
+
+.machine-board__group-row button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  padding: 4px 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.machine-board__group-row button span {
+  color: var(--muted);
+}
+
+.machine-board__group-row button small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.machine-board__group--running .machine-board__group-row > th {
+  box-shadow: inset 3px 0 0 rgba(0, 156, 73, 0.55);
+}
+
+.machine-board__group--stopped_after_run .machine-board__group-row > th {
+  box-shadow: inset 3px 0 0 rgba(211, 132, 24, 0.55);
+}
+
+.machine-board__group--inactive .machine-board__row {
+  opacity: 0.78;
+}
+
+.machine-board__badge--ok {
+  background: rgba(0, 166, 90, 0.10);
+  color: #047241;
+}
+
+.machine-board__stack .machine-board__badge {
+  margin-left: 4px;
+}
+
+.machine-board__action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.machine-board__action.button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.machine-board__action--danger:not(:disabled) {
+  color: #a03b16;
+  border-color: rgba(190, 91, 42, 0.4);
+}
+
+.machine-board__check {
+  width: 28px;
+}
+
+.machine-board__check input {
+  width: 18px;
+  height: 18px;
+}
+
+.machine-action-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  font-size: 14px;
+}
+
+.machine-action-dialog__header p {
+  margin: 4px 0 10px;
+  color: var(--muted);
+}
+
+.machine-action-dialog__form fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.machine-action-dialog__form legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.machine-action-dialog__form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+
+.machine-action-dialog__other {
+  flex-basis: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+}
+
+.machine-action-dialog__ack {
+  font-weight: 600;
+}
+
+.machine-action-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

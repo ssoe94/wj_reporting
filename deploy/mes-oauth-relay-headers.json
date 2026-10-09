@@ -1,0 +1,12 @@
+{
+  "path": "/integrations/blacklake/relay.html",
+  "headers": {
+    "Cache-Control": "no-store, max-age=0",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; script-src 'sha256-5sIGRe2bbIAxmKv8Fh8tCCQ4uaVhVeSLcVWCI5Bu7Eo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-Robots-Tag": "noindex, nofollow, noarchive",
+    "Cross-Origin-Opener-Policy": "same-origin"
+  }
+}

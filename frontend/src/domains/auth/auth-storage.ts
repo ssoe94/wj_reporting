@@ -111,10 +111,12 @@ function mirrorLegacyPair(access: string, refresh: string) {
 }
 
 function notifyAuthStorageChanged() {
-  window.localStorage.setItem(
-    AUTH_SESSION_REVISION_KEY,
-    `${Date.now()}-${window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`,
-  );
+  try {
+    window.localStorage.setItem(
+      AUTH_SESSION_REVISION_KEY,
+      `${Date.now()}-${window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`,
+    );
+  } catch { /* The authoritative control/tag write already emits a storage event in other tabs. */ }
   window.dispatchEvent(new Event(AUTH_STORAGE_CHANGED_EVENT));
 }
 
@@ -130,6 +132,13 @@ export function getAuthSessionId() {
   return getAuthSessionSnapshot().id;
 }
 
+// A revoked control still identifies its login generation. This prevents an
+// earlier pending login from treating B's later login+logout as the same null
+// session it originally observed.
+export function getAuthSessionGeneration() {
+  return readSessionControl().id;
+}
+
 export function getAuthSessionSnapshot(): AuthSessionSnapshot {
   const session = readEffectiveSession();
   return {
@@ -141,10 +150,14 @@ export function getAuthSessionSnapshot(): AuthSessionSnapshot {
 
 export function startAuthSession(access: string, refresh: string) {
   const session = { id: createSessionId(), access, refresh } satisfies SessionControl;
+  // This single write is the commit point. Compatibility bookkeeping must not
+  // report a failed login after the authoritative session has been installed.
   window.localStorage.setItem(AUTH_SESSION_CONTROL_KEY, JSON.stringify(session));
-  window.localStorage.removeItem(rotatedPairKey(session.id));
-  window.localStorage.removeItem(invalidatedSessionKey(session.id));
-  mirrorLegacyPair(access, refresh);
+  try {
+    window.localStorage.removeItem(rotatedPairKey(session.id));
+    window.localStorage.removeItem(invalidatedSessionKey(session.id));
+    mirrorLegacyPair(access, refresh);
+  } catch { /* Older-tab mirrors are best effort; current clients read control. */ }
   notifyAuthStorageChanged();
   return session.id;
 }
@@ -195,9 +208,13 @@ export function clearTokens() {
   notifyAuthStorageChanged();
 }
 
-export function subscribeToAuthStorage(listener: () => void) {
+export function subscribeToAuthStorage(listener: () => void, immediate = false) {
   let pendingTimer: number | null = null;
   const scheduleListener = () => {
+    if (immediate) {
+      listener();
+      return;
+    }
     if (pendingTimer !== null) window.clearTimeout(pendingTimer);
     pendingTimer = window.setTimeout(() => {
       pendingTimer = null;

@@ -2122,7 +2122,7 @@ function FieldClock({ language }: { language: FieldLanguage }) {
 }
 
 export default function InjectionKanban({ station, onBack }: { station: FieldStation; onBack: () => void }) {
-  const { logout, user, canAccessRoute } = useAuth();
+  const { logout, isLoggingOut, user, canAccessRoute } = useAuth();
   const queryClient = useQueryClient();
   const businessDate = useShanghaiBusinessDate();
   const machineNumber = Number(station.machineFilterValue);
@@ -2627,7 +2627,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
         <FieldClock language={language} />
         <div className="field-kanban-header-actions">
           {user ? <button aria-label={c.stationSelect} onClick={onBack} type="button"><ArrowLeft /></button> : null}
-          {user ? <button aria-label={c.logout} onClick={logout} type="button"><LogOut /></button> : null}
+          {user ? <button aria-label={c.logout} disabled={isLoggingOut} onClick={async () => { await logout(); }} type="button"><LogOut /></button> : null}
           <div className="field-language-toggle" role="group" aria-label={language === "zh" ? "语言" : "언어"}>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => setLanguage("zh")} type="button">中文</button>
             <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => setLanguage("ko")} type="button">KOR</button>

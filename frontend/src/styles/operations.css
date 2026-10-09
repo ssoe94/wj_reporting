@@ -8994,7 +8994,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 28px;
-  min-height: 82px;
+  min-height: 72px;
   margin: 8px 8px 0;
   padding: 8px 10px;
   border: 1px solid rgba(180, 204, 220, 0.9);
@@ -9069,7 +9069,7 @@ select {
 
 .injection-board__title h1 {
   margin: 0;
-  font-size: clamp(1.22rem, 1.55vw, 1.72rem);
+  font-size: clamp(1.1rem, 1.3vw, 1.45rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
 }
@@ -9232,8 +9232,8 @@ select {
 .injection-board-summary {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 9px;
-  padding: 13px 15px;
+  gap: 6px;
+  padding: 10px 12px;
   color: #ffffff;
 }
 
@@ -9267,7 +9267,7 @@ select {
 
 .injection-board-summary header > div > strong {
   overflow: hidden;
-  font-size: 1.45rem;
+  font-size: 1.15rem;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -9300,6 +9300,12 @@ select {
   background: #bd432b;
 }
 
+/* Nothing to act on: keep the panel calm so red always means a real issue. */
+.injection-board-summary--alerts.injection-board-summary--clear {
+  border-color: #4c6470;
+  background: #5b7480;
+}
+
 .injection-board-summary__hero {
   display: flex;
   align-items: baseline;
@@ -9310,14 +9316,14 @@ select {
 }
 
 .injection-board-summary__hero > strong {
-  font-size: 3.25rem;
+  font-size: 2.65rem;
   line-height: 1;
   white-space: nowrap;
 }
 
 .injection-board-summary__hero > span {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
@@ -9333,11 +9339,11 @@ select {
   justify-items: center;
   gap: 3px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 5px 6px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.13);
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 800;
   text-align: center;
 }
@@ -9345,7 +9351,7 @@ select {
 .injection-board-summary__metrics strong {
   overflow: hidden;
   color: #ffffff;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   line-height: 1.1;
   text-align: center;
   text-overflow: ellipsis;
@@ -9412,7 +9418,7 @@ select {
 .injection-board-summary__track,
 .injection-board-card__track {
   position: relative;
-  height: 6px;
+  height: 8px;
   overflow: hidden;
   border-radius: 3px;
   background: #e4ebef;
@@ -9435,7 +9441,12 @@ select {
   z-index: 1;
   top: 0;
   border-radius: inherit;
-  background: #109858;
+  /* Production without a verified product (changeover, trial shots). */
+  background: #9fc7b9;
+}
+
+.injection-board-card__timeline > span.is-product-start {
+  box-shadow: inset 2px 0 0 #ffffff;
 }
 
 .injection-board-timeline {
@@ -9565,55 +9576,57 @@ select {
 .injection-board-card {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) 14px auto;
-  gap: 8px;
-  padding: 11px 13px;
+  gap: 5px;
+  /* Content never widens the grid column, so badges stay inside the frame. */
+  min-width: 0;
+  padding: 8px 10px;
   border-width: 2px;
   border-left-width: 10px;
 }
 
 .injection-board-card--running {
-  border-color: #008e50;
-  border-left-color: #006f3d;
-  background: #ecfff5;
+  border-color: rgba(0, 142, 80, 0.32);
+  border-left-color: #00804a;
+  background: #f6fcf8;
 }
 
 .injection-board-card--warning,
 .injection-board-card--transition_review {
-  border-color: #d68c00;
-  border-left-color: #a96e00;
-  background: #fff7dc;
+  border-color: rgba(214, 140, 0, 0.4);
+  border-left-color: #b97900;
+  background: #fffaeb;
 }
 
 .injection-board-card--stopped,
 .injection-board-card--production_stopped,
 .injection-board-card--shot_issue {
-  border-color: #d43c2c;
-  border-left-color: #a72c20;
-  background: #fff0ed;
+  border-color: rgba(212, 60, 44, 0.42);
+  border-left-color: #b8352a;
+  background: #fff6f4;
 }
 
 .injection-board-card--overproducing {
-  border-color: #7254c7;
-  border-left-color: #5538aa;
-  background: #f4f0ff;
+  border-color: rgba(114, 84, 199, 0.32);
+  border-left-color: #6244b8;
+  background: #f9f7ff;
 }
 
 .injection-board-card--completed {
-  border-color: #087f94;
-  border-left-color: #056273;
-  background: #eafcff;
+  border-color: rgba(8, 127, 148, 0.32);
+  border-left-color: #07798d;
+  background: #f4fcfd;
 }
 
 .injection-board-card--unplanned {
-  border-color: #0877c5;
-  border-left-color: #045c99;
-  background: #eaf6ff;
+  border-color: rgba(8, 119, 197, 0.32);
+  border-left-color: #086fb5;
+  background: #f4f9ff;
 }
 
 .injection-board-card--idle {
-  border-color: #aab5bb;
-  border-left-color: #7b898f;
-  background: #f1f4f5;
+  border-color: #d3dadd;
+  border-left-color: #8d9a9f;
+  background: #f6f8f8;
 }
 
 .injection-board-card--stale {
@@ -9635,21 +9648,21 @@ select {
 }
 
 .injection-board-card__header strong {
-  font-size: 1.55rem;
+  font-size: 1.3rem;
 }
 
 .injection-board-card__header span {
   color: var(--board-muted);
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 800;
 }
 
 .injection-board-card__header em {
-  padding: 4px 7px;
+  padding: 3px 6px;
   border-radius: 999px;
   background: #65757d;
   color: #ffffff;
-  font-size: 0.86rem;
+  font-size: 0.74rem;
   font-style: normal;
   font-weight: 900;
 }
@@ -9706,7 +9719,7 @@ select {
 .injection-board-card__part em {
   min-width: 0;
   overflow: hidden;
-  font-size: 1.03rem;
+  font-size: 0.88rem;
   font-style: normal;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -9720,6 +9733,21 @@ select {
 .injection-board-card__part em {
   flex: 0 0 auto;
   color: #9b6a16;
+}
+
+/* Part line: fixed frame; long content flows right-to-left (see MarqueeLine). */
+.injection-board-card__part.marquee-line {
+  display: block;
+}
+
+.injection-board-card__part .marquee-line__content > * {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .injection-board-card__part .marquee-line__content > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
 
 .injection-board-card__metrics {
@@ -9743,7 +9771,7 @@ select {
 .injection-board-card__metrics strong {
   width: 100%;
   margin-top: 2px;
-  font-size: 1.7rem;
+  font-size: 1.4rem;
   line-height: 1;
   text-align: center;
 }
@@ -9784,18 +9812,9 @@ select {
   font-size: 0.82rem;
 }
 
-.injection-board-card--running .injection-board-card__track { background: #ccebdc; }
-.injection-board-card--running .injection-board-card__track > span { background: #008f4f; }
-.injection-board-card--warning .injection-board-card__track > span,
-.injection-board-card--transition_review .injection-board-card__track > span { background: #dca21d; }
-.injection-board-card--stopped .injection-board-card__track > span,
-.injection-board-card--production_stopped .injection-board-card__track > span,
-.injection-board-card--shot_issue .injection-board-card__track > span { background: #d6533b; }
-.injection-board-card--overproducing .injection-board-card__track > span { background: #7254c7; }
-.injection-board-card--completed .injection-board-card__track > span { background: #178d9e; }
-.injection-board-card--unplanned .injection-board-card__track > span { background: #1686c0; }
+/* The card header and badge carry the machine state; the timeline stays one calm hue. */
 .injection-board-card--idle .injection-board-card__track > span,
-.injection-board-card--stale .injection-board-card__track > span { background: #98a4aa; }
+.injection-board-card--stale .injection-board-card__track > span { background: #b4c4c9; }
 
 .injection-board-card footer {
   padding-top: 5px;
@@ -10202,7 +10221,7 @@ select {
   }
 
   .injection-board__title h1 {
-    font-size: 1.55rem;
+    font-size: 1.3rem;
     white-space: nowrap;
   }
 
@@ -10384,7 +10403,7 @@ select {
   }
 
   .injection-board-summary header > div > strong {
-    font-size: 1.08rem;
+    font-size: 0.95rem;
   }
 
   .injection-board-summary header > em {
@@ -10401,7 +10420,7 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 2.25rem;
+    font-size: 1.95rem;
     white-space: nowrap;
   }
 
@@ -10442,8 +10461,8 @@ select {
 
   .injection-board-card {
     grid-template-rows: auto auto minmax(0, 1fr) 12px auto;
-    gap: 4px;
-    padding: 7px 8px;
+    gap: 3px;
+    padding: 6px 7px;
     border-left-width: 6px;
   }
 
@@ -10461,14 +10480,14 @@ select {
 
   .injection-board-card__header strong {
     flex: 0 0 auto;
-    font-size: 1.15rem;
+    font-size: 1rem;
     line-height: 1;
     white-space: nowrap;
   }
 
   .injection-board-card__header span {
     overflow: hidden;
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -10493,7 +10512,7 @@ select {
   .injection-board-card__part strong,
   .injection-board-card__part span,
   .injection-board-card__part em {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     line-height: 1.15;
   }
 
@@ -10566,7 +10585,7 @@ select {
   }
 
   .injection-board__title h1 {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
   }
 
   .injection-board__meta > div:not(.injection-board__language) {
@@ -10583,7 +10602,7 @@ select {
   }
 
   .injection-board-card__header strong {
-    font-size: 1.08rem;
+    font-size: 1rem;
   }
 }
 
@@ -10614,7 +10633,7 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 2rem;
+    font-size: 1.8rem;
   }
 
   .injection-board-summary__metrics > span {
@@ -13349,4 +13368,552 @@ select {
   .raw-priority-material strong { white-space: normal; }
   .raw-priority-order strong { font-size: 0.68rem; }
   .raw-cover-label { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+
+/* Metric boxes: label, value and one supporting line at matching scale. */
+.injection-board-card__metrics > .injection-board-card__metric {
+  position: relative;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.injection-board-card__metric .injection-board-card__metric-label {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 20px;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.injection-board-card__metric-link {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--board-muted);
+}
+
+.injection-board-card__metric-link:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #1f3b47;
+}
+
+.injection-board-card__metric-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.injection-board-card__metrics > .injection-board-card__metric small {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  line-height: 1.15;
+}
+
+.injection-board-card__metric small span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--board-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.injection-board-card__metric small b {
+  flex: 0 0 auto;
+  color: #1f3b47;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.injection-board-card footer.injection-board-card__footer-with-quality {
+  padding-top: 3px;
+}
+
+/* Reserve room for all three metric lines inside the fixed four-row board. */
+.injection-board-card {
+  --board-bar-h: 16px;
+  --board-band-h: 23px;
+  --board-band-fs: 0.72rem;
+  --board-metric-value-size: 1.5rem;
+  --board-metric-support-size: 0.75rem;
+}
+
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board-card { --board-bar-h: 12px; --board-band-h: 21px; --board-band-fs: 0.66rem; --board-metric-value-size: 1.3rem; --board-metric-support-size: 0.7rem; }
+}
+
+@media (max-height: 760px) {
+  .injection-board-card { --board-bar-h: 10px; --board-band-h: 20px; --board-band-fs: 0.64rem; }
+}
+
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .injection-board-card { --board-bar-h: 24px; --board-band-h: 30px; --board-band-fs: 0.9rem; --board-metric-value-size: 1.7rem; --board-metric-support-size: 0.85rem; }
+}
+
+@media (min-width: 761px) {
+  .injection-board-card { grid-template-rows: auto auto minmax(0, 1fr) var(--board-bar-h) auto; }
+}
+
+.injection-board-card .injection-board-card__timeline {
+  height: var(--board-bar-h);
+  border-radius: 0;
+}
+
+.injection-board-card .injection-board-card__timeline > span {
+  border-radius: 0;
+}
+
+.injection-board-card__footer-with-quality .injection-quality__summary {
+  min-height: var(--board-band-h);
+  border-radius: 6px;
+  font-size: var(--board-band-fs);
+}
+
+.injection-board-card__metrics > .injection-board-card__metric {
+  padding: 3px 8px;
+}
+
+/* Timeline guides: 4-hour ticks, the latest-MES "now" line, and hatching for elapsed time without production. */
+.injection-board-timeline__gap,
+.injection-board-timeline__tick,
+.injection-board-timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.injection-board-timeline__gap {
+  left: 0;
+  z-index: 0;
+  background: repeating-linear-gradient(135deg, rgba(96, 112, 118, 0.2) 0 3px, transparent 3px 7px);
+}
+
+.injection-board-timeline__tick {
+  z-index: 2;
+  width: 1px;
+  background: rgba(31, 59, 71, 0.16);
+}
+
+/* "Now": the time still ahead is one tone lighter; a hairline marks the boundary. */
+.injection-board-timeline__future {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
+.injection-board-timeline__now {
+  z-index: 3;
+  width: 1px;
+  background: rgba(16, 40, 52, 0.4);
+}
+
+.injection-board-card__pace {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  color: var(--board-muted);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-contrast: more) {
+  .injection-board-timeline__gap {
+    background: repeating-linear-gradient(135deg, rgba(40, 50, 55, 0.45) 0 3px, transparent 3px 7px);
+  }
+}
+
+/* Metric box head: label on the left, its helper (history icon or pace gap) on the right. */
+.injection-board-card__metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  min-height: 20px;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-label {
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-link,
+.injection-board-card__metric-head .injection-board-card__pace {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.injection-board-card__metric-head .injection-board-card__metric-link {
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+}
+
+/* Card frame: hairline border, soft depth, rounded corners. The state shows in the
+   border hue and a faint wash at the top; the header badge carries the label. */
+.injection-board-card {
+  --card-edge: #dde5e8;
+  --card-wash: rgba(120, 140, 148, 0.06);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--card-wash) 0, rgba(255, 255, 255, 0) 76px), #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.05), 0 8px 18px -12px rgba(16, 40, 52, 0.22);
+}
+
+.injection-board-card--running { --card-edge: rgba(0, 128, 74, 0.3); --card-wash: rgba(0, 142, 80, 0.08); }
+.injection-board-card--warning,
+.injection-board-card--transition_review { --card-edge: rgba(196, 126, 0, 0.42); --card-wash: rgba(214, 140, 0, 0.1); }
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue { --card-edge: rgba(196, 51, 36, 0.5); --card-wash: rgba(212, 60, 44, 0.1); }
+.injection-board-card--overproducing { --card-edge: rgba(98, 68, 184, 0.32); --card-wash: rgba(114, 84, 199, 0.08); }
+.injection-board-card--completed { --card-edge: rgba(7, 121, 141, 0.32); --card-wash: rgba(8, 127, 148, 0.08); }
+.injection-board-card--unplanned { --card-edge: rgba(8, 111, 181, 0.32); --card-wash: rgba(8, 119, 197, 0.08); }
+.injection-board-card--idle { --card-edge: #e1e7ea; --card-wash: rgba(120, 140, 148, 0.05); }
+.injection-board-card--stale { --card-edge: #d9dfe2; --card-wash: rgba(98, 109, 115, 0.07); }
+
+.injection-board-card--running,
+.injection-board-card--warning,
+.injection-board-card--transition_review,
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue,
+.injection-board-card--overproducing,
+.injection-board-card--completed,
+.injection-board-card--unplanned,
+.injection-board-card--idle,
+.injection-board-card--stale {
+  border-color: var(--card-edge);
+  background: linear-gradient(180deg, var(--card-wash) 0, rgba(255, 255, 255, 0) 76px), #ffffff;
+}
+
+/* Problems keep a little more presence without a stripe. */
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue {
+  box-shadow: 0 0 0 1px rgba(196, 51, 36, 0.14), 0 8px 18px -12px rgba(140, 30, 20, 0.35);
+}
+
+@media (prefers-contrast: more) {
+  .injection-board-card { border-width: 2px; }
+}
+
+/* Board heading: company logo as the visitor-mode toggle, and a firmer title. */
+.injection-board__mode-toggle,
+.injection-board--visitor .injection-board__mode-toggle {
+  width: 52px;
+  height: 48px;
+  padding: 5px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.06);
+}
+
+.injection-board--visitor .injection-board__mode-toggle {
+  border-color: rgba(196, 51, 36, 0.45);
+  box-shadow: 0 0 0 2px rgba(196, 51, 36, 0.12);
+}
+
+.injection-board__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.injection-board__title h1 {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.injection-board__heading > span {
+  letter-spacing: 0.14em;
+}
+
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board__mode-toggle,
+  .injection-board--visitor .injection-board__mode-toggle { width: 46px; height: 42px; padding: 4px; }
+}
+
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .injection-board__mode-toggle,
+  .injection-board--visitor .injection-board__mode-toggle { width: 78px; height: 68px; padding: 8px; }
+}
+
+/* Header controls: one height, one corner radius, one hairline border. */
+.injection-board__meta {
+  --board-ctl-h: 44px;
+  gap: 8px;
+}
+
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board__meta { --board-ctl-h: 38px; gap: 6px; }
+}
+
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .injection-board__meta { --board-ctl-h: 60px; gap: 12px; }
+}
+
+.injection-board__meta > div:not(.injection-board__language) {
+  box-sizing: border-box;
+  height: var(--board-ctl-h);
+  min-height: 0;
+  min-width: 0;
+  align-content: center;
+  gap: 1px;
+  padding: 0 12px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.injection-board__meta > div:not(.injection-board__language) > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--board-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.injection-board__meta > div:not(.injection-board__language) > strong {
+  color: #12384a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.injection-board__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #17a35d;
+  box-shadow: 0 0 0 3px rgba(23, 163, 93, 0.16);
+}
+
+.injection-board__meta .injection-board__history-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--board-ctl-h);
+  padding: 0 14px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #12384a;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.injection-board__meta .injection-board__history-button svg {
+  width: 16px;
+  height: 16px;
+  color: #1d7fa6;
+}
+
+.injection-board__meta .injection-board__history-button:hover,
+.injection-board__meta .injection-board__action:hover {
+  background: #f4f8f9;
+}
+
+.injection-board__meta .injection-board__language {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: stretch;
+  height: var(--board-ctl-h);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #eef3f5;
+}
+
+.injection-board__meta .injection-board__language button {
+  min-width: 52px;
+  height: auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6a7f88;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.injection-board__meta .injection-board__language button.is-active {
+  background: #ffffff;
+  color: #12384a;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.14);
+}
+
+.injection-board__meta .injection-board__action {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  width: var(--board-ctl-h);
+  height: var(--board-ctl-h);
+  padding: 0;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #12384a;
+}
+
+.injection-board__meta .injection-board__action svg {
+  width: 18px;
+  height: 18px;
+}
+
+.injection-board__meta button:focus-visible {
+  outline: 2px solid #1d7fa6;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .injection-board__meta .injection-board__history-button,
+  .injection-board__meta .injection-board__action,
+  .injection-board__meta .injection-board__language button { transition: background 140ms ease, box-shadow 140ms ease; }
+}
+
+/* Kiosk baseline: labels stay secondary to the production values, including
+   browsers without container units. Phones keep their content-height cards. */
+@media (min-width: 761px) {
+  .injection-board-card__metrics {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    min-height: 0;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric {
+    min-height: 0;
+    gap: 1px;
+    padding: 2px 5px;
+    font-size: var(--board-metric-support-size);
+    line-height: 1.1;
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-head {
+    min-height: 14px;
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-label,
+  .injection-board-card__metric .injection-board-card__pace {
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-link {
+    width: 16px;
+    height: 16px;
+  }
+
+  .injection-board-card__metric .injection-board-card__metric-link svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric strong {
+    margin-top: 0;
+    font-size: var(--board-metric-value-size);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric strong.injection-board-card__ct-range {
+    font-size: 1rem;
+  }
+
+  .injection-board-card__metrics > .injection-board-card__metric small {
+    margin-top: 0;
+    font-size: var(--board-metric-support-size);
+    line-height: 1.05;
+  }
+
+  .injection-board-card__metric small span {
+    font-size: 0.85em;
+  }
+}
+
+/* A var()-containing clamp with an unsupported unit fails at computed-value
+   time: it inherits the small supporting font instead of using the preceding
+   fallback. Guard the entire enhancement with a literal feature test. */
+@supports (container-type: size) and (font-size: 1cqh) {
+  @media (min-width: 761px) {
+    .injection-board-card__metrics > .injection-board-card__metric {
+      container-type: size;
+    }
+
+    .injection-board-card__metric .injection-board-card__metric-head {
+      min-height: clamp(9px, 20cqh, 16px);
+    }
+
+    .injection-board-card__metric .injection-board-card__metric-label,
+    .injection-board-card__metric .injection-board-card__pace {
+      font-size: clamp(0.6rem, 14cqh, 0.65rem);
+    }
+
+    .injection-board-card__metric .injection-board-card__metric-link {
+      width: clamp(12px, 20cqh, 16px);
+      height: clamp(12px, 20cqh, 16px);
+    }
+
+    .injection-board-card__metric .injection-board-card__metric-link svg {
+      width: clamp(10px, 16cqh, 12px);
+      height: clamp(10px, 16cqh, 12px);
+    }
+
+    .injection-board-card__metrics > .injection-board-card__metric strong {
+      font-size: clamp(1.05rem, 38cqh, var(--board-metric-value-size));
+    }
+
+    .injection-board-card__metrics > .injection-board-card__metric strong.injection-board-card__ct-range {
+      font-size: clamp(0.85rem, 28cqh, 1rem);
+    }
+
+    .injection-board-card__metrics > .injection-board-card__metric small {
+      font-size: clamp(0.6rem, 20cqh, var(--board-metric-support-size));
+    }
+  }
+}
+
+/* Give the metric boxes the height: tighter machine header and part line. */
+.injection-board-card .injection-board-card__header strong,
+.injection-board-card .injection-board-card__header span,
+.injection-board-card .injection-board-card__header em {
+  line-height: 1.1;
+}
+
+.injection-board-card .injection-board-card__part {
+  padding-bottom: 4px;
+  line-height: 1.2;
+}
+
+.injection-board-card .injection-board-card__part button {
+  line-height: inherit;
 }

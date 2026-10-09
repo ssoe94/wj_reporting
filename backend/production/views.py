@@ -284,6 +284,13 @@ class ProductionPlanSummaryView(APIView):
 
 
 class ProductionPlanListView(generics.ListCreateAPIView):
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        from .plan_workflow import lock_type
+        if request.data.get('plan_type') in ('injection', 'machining'):
+            lock_type(request.data['plan_type'])
+        return super().create(request, *args, **kwargs)
+
     serializer_class = ProductionPlanSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
@@ -329,6 +336,8 @@ class ProductionPlanListView(generics.ListCreateAPIView):
             sequence = (last_seq or 0) + 1
         try:
             obj = serializer.save(plan_date=target_date, plan_type=plan_type, sequence=sequence)
+            from .plan_workflow import _record
+            _record(obj, self.request.user, 'added', resolution='identified' if obj.part_no else 'confirmation')
             ProductionPlanChangeLog.objects.create(
                 plan_date=obj.plan_date,
                 plan_type=obj.plan_type,
@@ -864,6 +873,27 @@ class ProductionAiBriefingView(APIView):
 
 
 class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        from .plan_workflow import lock_type, WorkflowConflict
+        obj = self.get_object()
+        lock_type(obj.plan_type)
+        # Re-read after lock acquisition. Legacy edits remain supported; supplied
+        # UID/version enables optimistic concurrency for new clients.
+        obj.refresh_from_db()
+        if 'work_version' in request.data and request.data['work_version'] != obj.work_version:
+            raise WorkflowConflict()
+        return super().update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        from .plan_workflow import lock_type, retire
+        obj = self.get_object()
+        lock_type(obj.plan_type)
+        obj.refresh_from_db()
+        retire(obj, request.user)
+        return super().destroy(request, *args, **kwargs)
+
     serializer_class = ProductionPlanSerializer
     permission_classes = [IsAuthenticated]
     queryset = ProductionPlan.objects.all()
@@ -882,6 +912,8 @@ class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_update(self, serializer):
         before = serialize_plan_for_log(self.get_object())
         obj = serializer.save()
+        from .plan_workflow import _record
+        _record(obj, self.request.user, 'changed')
         after = serialize_plan_for_log(obj)
         action = 'reorder' if set(key for key in after if before.get(key) != after.get(key)) == {'sequence'} else 'update'
         ProductionPlanChangeLog.objects.create(
@@ -1337,10 +1369,16 @@ class ProductionStatusView(APIView):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         context = get_daily_production_context(target_date)
+        from .inspection_status_projection import build_inspection_board_fields
+        inspection_generated_at = timezone.now()
 
         injection_results = [
             {
                 'machine_name': row.get('machine_name') or row.get('machine') or '',
+                'machine_number': row.get('machine_number'),
+                **build_inspection_board_fields(target_date, row,
+                    plan_updated_at=context['injection'].get('last_plan_updated_at'),
+                    now=inspection_generated_at),
                 'total_planned': int(row.get('planned_qty') or 0),
                 'total_actual': int(row.get('actual_qty') or 0),
                 'progress': float(row.get('progress_rate') or 0),

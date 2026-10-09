@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,9 +32,14 @@ jobs:
   test:
     name: Validate application
     runs-on: ubuntu-latest
+    outputs:
+      backend_required: ${{ steps.scope.outputs.backend_required }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -45,6 +51,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Determine validation scope
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-change-scope.mjs
+
+      - name: Validate CI scope and deployment catch-up rules
+        run: node --test scripts/ci-change-scope.test.mjs
+
       - name: Lint legacy frontend
         run: npm --prefix frontend run lint
 
@@ -55,6 +70,7 @@ jobs:
         run: npm --prefix frontend run build
 
       - name: Setup Python
+        if: steps.scope.outputs.backend_required != 'false'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -62,13 +78,91 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install backend dependencies
+        if: steps.scope.outputs.backend_required != 'false'
         run: pip install -r backend/requirements.txt
 
       - name: Run backend tests
+        if: steps.scope.outputs.backend_required != 'false'
         working-directory: backend
-        run: python manage.py test --no-input
+        env:
+          INTERNAL_DATABASE_URL: ""
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: synthetic-ci-validation-only-not-a-deployment-secret
+          DEBUG: "False"
+          ENVIRONMENT: test
+          MES_USER_OAUTH_ENABLED: "False"
+          ACCOUNT_ACTIVATION_ENABLED: "True"
+        run: |
+          test ! -e .env && test ! -e ../.env
+          python manage.py test --no-input
+
+      - name: Validate isolated OAuth and existing authentication contracts
+        if: steps.scope.outputs.backend_required != 'false'
+        run: |
+          python scripts/test_mes_oauth_postgres_local.py
+          python scripts/check-mes-oauth.py
+          python scripts/check-mes-oauth.py \
+            quality.test_archive_service \
+            injection.test_admin_user_create.MissingUserProfileAuthenticationTests \
+            injection.test_admin_user_create.FirstLoginPasswordChangeTests \
+            injection.test_admin_user_create.AdminUserStatusTests
+          python scripts/check-mes-oauth.py \
+            quality.test_inspection_migration \
+            quality.test_inspection_flow_scenarios \
+            quality.test_inspection_beta_access \
+            quality.test_inspection_roles \
+            quality.test_inspection_role_api \
+            quality.test_inspection_role_migration \
+            quality.test_inspection_role_security \
+            quality.test_inspection_live_adapter \
+            quality.test_inspection_live_readback \
+            quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial \
+            quality.test_inspection_integration_trial_board \
+            quality.test_inspection_trial_detail
+
+      - name: Validate PostgreSQL OAuth replay and migration contracts
+        if: steps.scope.outputs.backend_required != 'false'
+        run: |
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for OAuth validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-mes-oauth-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ci \
+            mes_oauth account_activation quality.test_inspection_live_adapter \
+            quality.test_inspection_live_readback quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial quality.test_inspection_integration_trial_board \
+            quality.test_inspection_trial_detail production.test_mes_execution_contract \
+            production.test_mes_delivery_transport production.test_mes_delivery \
+            production.test_mes_delivery_credentials production.test_mes_delivery_views \
+            production.test_mes_delivery_postgres production.test_mes_delivery_read_contract \
+            production.test_mes_read_status \
+            production.test_plan_workflow production.test_plan_workflow_transport \
+            production.test_plan_workflow_concurrency production.test_mes_create_diagnostic \
+            production.test_plan_workflow_credentials
+
+      - name: Validate isolated plan workflow and additive schema
+        if: steps.scope.outputs.backend_required != 'false'
+        run: |
+          python scripts/check-plan-workflow.py --migration-check
+          python scripts/check-plan-workflow.py
+
+      - name: Validate isolated PostgreSQL inspection contracts
+        if: steps.scope.outputs.backend_required != 'false'
+        run: |
+          python scripts/test_inspection_postgres_local.py
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for inspection validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-inspection-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ins
 
       - name: Run local AI worker tests
+        if: steps.scope.outputs.backend_required != 'false'
         run: >-
           python -m unittest
           local_worker.test_worker
@@ -93,10 +187,11 @@ jobs:
 
       - name: Validate production deploy hooks
         env:
+          BACKEND_REQUIRED: ${{ needs.test.outputs.backend_required }}
           RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
           RENDER_DEPLOY_HOOK_FRONTEND: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_BACKEND" ]; then
+          if [ "$BACKEND_REQUIRED" != "false" ] && [ -z "$RENDER_DEPLOY_HOOK_BACKEND" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_BACKEND is not configured."
             exit 1
           fi
@@ -106,14 +201,17 @@ jobs:
           fi
 
       - name: Deploy production backend
+        if: needs.test.outputs.backend_required != 'false'
         env:
           RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
         run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_BACKEND"
 
       - name: Wait for backend health
+        if: needs.test.outputs.backend_required != 'false'
         run: bash scripts/wait-health.sh https://wj-reporting-backend.onrender.com/api/health/ 300
 
       - name: Wait for production AI worker API
+        if: needs.test.outputs.backend_required != 'false'
         run: |
           end=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$end" ]; do

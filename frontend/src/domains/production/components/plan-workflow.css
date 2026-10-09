@@ -1,0 +1,65 @@
+.plan-workflow { font-size: 14px; padding: 10px 12px; }
+.plan-workflow h4 { font-size: 15px; margin: 0; }
+.plan-workflow p { margin: 4px 0; line-height: 1.5; }
+.plan-workflow__heading, .plan-workflow__filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plan-workflow__heading { justify-content: space-between; }
+.plan-workflow__body { margin-top: 6px; border-top: 1px solid #d5deea; padding-top: 6px; }
+.plan-workflow label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.plan-workflow input:not([type=checkbox]), .plan-workflow select { min-height: 38px; width: 100%; border: 1px solid #b9c7d9; border-radius: 5px; padding: 5px 7px; font: inherit; background: white; color: #13253d; }
+.plan-workflow__filters > label { flex-direction: row; align-items: center; width: auto; white-space: nowrap; }
+.plan-workflow__filters > label input { width: 138px; }
+.plan-workflow__filters > label select { width: 156px; }
+.plan-workflow__off { margin-left: auto; background: #e8edf4; color: #193859; font-weight: 650; padding: 6px 8px; border-radius: 5px; white-space: nowrap; }
+.plan-workflow__policy { position: relative; color: #475d78; }
+.plan-workflow__policy p { position: absolute; z-index: 2; right: 0; top: 22px; width: min(440px, 70vw); border: 1px solid #b9c7d9; background: #f4f7fb; padding: 10px; border-radius: 5px; box-shadow: 0 4px 14px #13253d18; }
+.plan-workflow summary { cursor: pointer; min-height: 38px; display: flex; align-items: center; gap: 6px; }
+.plan-workflow summary::before { content: '▸'; }
+.plan-workflow details[open] > summary::before { content: '▾'; }
+.plan-workflow__table-wrap { overflow-x: auto; margin-top: 8px; }
+.plan-workflow__caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.plan-workflow table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.plan-workflow .pw-product { width: 19%; } .plan-workflow .pw-machine { width: 8%; }
+.plan-workflow .pw-period { width: 14%; } .plan-workflow .pw-quantity { width: 8%; }
+.plan-workflow .pw-material { width: 18%; } .plan-workflow .pw-status { width: 16%; }
+.plan-workflow .pw-actions { width: 17%; }
+.plan-workflow th, .plan-workflow td { text-align: left; vertical-align: middle; padding: 4px 6px; border-bottom: 1px solid #dce3ee; overflow-wrap: anywhere; font-weight: 400; }
+.plan-workflow thead th { background: #edf2f8; font-weight: 650; padding: 7px 6px; }
+.plan-workflow th strong { font-weight: 650; }
+.plan-workflow small { display: block; font-size: 14px; line-height: 1.35; color: #475d78; margin-top: 2px; }
+.plan-workflow__preparing { color: #475d78; }
+.plan-workflow__quantity { font-variant-numeric: tabular-nums; font-weight: 650 !important; }
+.plan-workflow__machine { white-space: nowrap; }
+.plan-workflow__row-actions, .plan-workflow__actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.plan-workflow__order.is-open { background: #edf2f8; }
+.plan-workflow__detail-row > td { padding: 0 6px; background: #f4f7fb; }
+.plan-workflow__detail { padding: 4px 0; }
+.plan-workflow__editor { display: grid; gap: 4px; margin: 0; padding: 0; }
+.plan-workflow__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+.plan-workflow__input-row { display: grid; grid-template-columns: minmax(170px, 1.2fr) minmax(200px, 1fr) minmax(110px, .7fr) auto; align-items: center; gap: 6px; }
+.plan-workflow__ratio { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.plan-workflow__ratio input { min-width: 0; max-width: 82px; }
+.plan-workflow__requirement { font-variant-numeric: tabular-nums; }
+.plan-workflow__confirmation { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto auto; align-items: center; gap: 6px; }
+.plan-workflow .plan-workflow__check { flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; }
+.plan-workflow__read-line { display: flex; align-items: center; gap: 6px; }
+.plan-workflow__read-line > select { width: 220px; flex-shrink: 0; }
+.plan-workflow__material-summary { display: grid; gap: 2px; flex: 1; }
+.plan-workflow__actor { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-workflow__identity-line { display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 6px; }
+.plan-workflow__identity-line label { flex-direction: row; align-items: center; }
+.plan-workflow__diagnostics { color: #475d78; margin-top: 4px; }
+.plan-workflow button.plan-workflow__material-cell { max-width: 100%; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-color: transparent; background: transparent; padding: 5px 0; }
+.plan-workflow button.plan-workflow__material-cell:hover { border-color: #b9c7d9; }
+.plan-workflow__blocked { color: #994718 !important; }
+.plan-workflow__approved { color: #235e43; }
+.plan-workflow__requests { margin-top: 6px; }
+.plan-workflow__requests > div { border-top: 1px solid #d5deea; padding: 6px 0; display: flex; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.plan-workflow__message, .plan-workflow__discard { padding: 7px 10px; background: #edf2f8; border-radius: 5px; }
+.plan-workflow__discard { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #b9c7d9; margin-top: 8px; }
+.plan-workflow button { min-height: 38px; padding: 5px 9px; border: 1px solid #b9c7d9; border-radius: 5px; background: white; color: #193859; font: inherit; cursor: pointer; }
+.plan-workflow button.btn-primary { background: #007ea8; border-color: #007ea8; color: white; font-weight: 650; justify-self: start; }
+.plan-workflow button:disabled { opacity: .55; cursor: default; }
+.plan-workflow button:active:not(:disabled) { background: #e6eef7; }
+.plan-workflow button:focus-visible, .plan-workflow input:focus-visible, .plan-workflow select:focus-visible, .plan-workflow summary:focus-visible { outline: 2px solid #007ea8; outline-offset: 2px; }
+@media(max-width: 1000px) { .plan-workflow__off { margin-left: 0; } }
+@media(max-width: 760px) { .plan-workflow__orders { min-width: 800px; } .plan-workflow__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__input-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__confirmation { grid-template-columns: minmax(160px, 1fr) auto auto auto; } }

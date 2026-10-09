@@ -1,1092 +1,261 @@
-# Design QA — Main Frontend Glass Refactor
+# Integrated inspection UI review — 2026-10-07
 
-## Comparison target
+Local implementation and synthetic verification completed; final deployment is recorded separately in the release handoff.
 
-- Source visual truth: `/tmp/codex-remote-attachments/019fcb10-224f-7680-a214-936340e10d87/5EC2B0D7-1E81-4AFE-8262-38FA4EFE4F03/1-붙여넣은-이미지-1.jpg`
-- Implementation: `http://127.0.0.1:5184/analysis`
-- Desktop screenshot: `/Users/macstudio_ted/Developer/wj_reporting/design-qa-artifacts/main-after-shell-refactor-final.png`
-- Mobile screenshot: `/Users/macstudio_ted/Developer/wj_reporting/design-qa-artifacts/main-after-mobile-final.png`
-- Side-by-side comparison: `/Users/macstudio_ted/Developer/wj_reporting/design-qa-artifacts/main-glass-comparison.png`
-- Baseline screenshot: `/Users/macstudio_ted/Developer/wj_reporting/design-qa-artifacts/main-before-refactor.png`
+The primary week settings show exactly four DAY/NIGHT dimension/appearance cards, only a display name and applicable week. Desktop equipment cards show seventeen machines in nine/eight rows with readable PartNo and source-labelled MES/WJ status. No invented overdue threshold is used. Existing item tables, scoped area saves, the separate final decision and durable MES reconciliation are retained.
 
-## Normalization and state
+Verified current captures: `weekly-four-card-visible-20261007-03-assignment-synthetic.png` and `inspection-machine-cards-final-20261007-02-list-synthetic.png`. These use intercepted synthetic data only. The combined browser harness passed 64 checks including keyboard, Chinese desktop, narrow layout, week navigation and synthetic name-save persistence; the final machine-only refresh passed 22 checks. Frontend inspection tests passed 326 checks and the modern/legacy production build passed. A long mobile element export has a fixed-header overlay and is not published as a clean visual.
 
-- Source pixels: `1179 × 1178`.
-- Source comparison region: dashboard crop at `y=260`, `1178 × 880`, proportionally scaled to `964 × 720`.
-- Desktop implementation: `1280 × 720` CSS px and screenshot px, `devicePixelRatio: 1`.
-- Mobile implementation: `390 × 844` CSS px and screenshot px, `devicePixelRatio: 1`.
-- Combined comparison: `2244 × 720` px, source on the left and implementation on the right.
-- State: authenticated main-site analysis dashboard using the local production build and mock API.
-- The reference is a style-guide board rather than the same product screen. Comparison is therefore limited to its visual direction—palette, translucency, edge treatment, elevation, typography hierarchy, and density—while WJ routes, copy, permissions, and data structure remain authoritative.
+Production machine-bound MES observations remain unavailable. Synthetic green/request/overdue examples are explicitly labelled and do not establish actual MES state or field acceptance. No account/grant/token creation, production QC resend or flag toggling was performed in this integration.
 
-## Full-view comparison evidence
+---
 
-- The main frontend now follows the reference's pale blue/lavender ambient background, translucent white frame, highlight borders, soft blue elevation, and restrained blue accent.
-- The fixed WJ sidebar and top bar preserve the application's information architecture while matching the reference's floating glass-frame proportions.
-- Desktop hierarchy is balanced at `1280 × 720`: 236 px navigation, 996 px content, 28 px-equivalent page title, compact controls, and readable card headings.
-- Mobile stacks the brand header, breadcrumb, page header, tabs, date controls, and cards without horizontal clipping at `390 × 844`.
-- The production-plan screen was also checked at desktop and mobile widths; its calendar and plan cards retain their original content while adopting the new shell and surface rhythm.
+# Alignment, language and single-choice appearance revision — 2026-10-07
 
-## Focused-region evidence
+final result: passed (local code and synthetic preview; no production deployment)
 
-- Typography and controls were checked separately in the native desktop screenshot and the `390 × 844` mobile screenshot because they are too small to judge precisely in the combined image.
-- The mobile page title, tab labels, input labels, dates, card title, and body copy remain legible without truncation.
-- The mobile navigation drawer was opened and checked as an interactive focused state: all routes scroll, KOR/中文 and lite-mode controls remain available, Escape closes the dialog, and focus returns to the menu button.
+Aligned both card headers, five shared column widths, 40px desktop body rows,
+36px table headers, centered value/verdict/save-state columns and 34px footer
+buttons. Dimension and appearance cards stretch to equal height with independent
+scrolling and matching save bars; narrow screens stack with 44px inputs/buttons.
+Two-digit row numbers stay on one line. The legacy final bar uses ordinary
+flow so it cannot cover the card save controls; worksheet height reserves its
+space in a 768px viewport. Returning a temporary edit to its stored
+value removes only that request's clean recovery draft, preserving pending
+operations, reconciliation and review reasons.
 
-## Required fidelity surfaces
+Appearance pass/fail is selected once in the measurement column. The verdict
+column is a read-only badge; value edits save the original configured option
+string and matching pass/fail judgement together. Korean/Chinese choice labels
+are localized without altering the MES option values. Explicit bilingual item
+and shift labels display only the active language. Opaque record/account names
+are preserved; synthetic QC-ROOM identities avoid a hardcoded Korean preview name.
 
-- Fonts and typography: existing system/Noto Korean/Chinese fallbacks are preserved. Page, section, card, body, and helper text now use a consistent hierarchy; no 9–10 px text was introduced.
-- Spacing and layout rhythm: 16 px desktop frame, 18 px page gap, 14–20 px surface padding, 17–25 px radii, and compact navigation rows reproduce the reference's airy but information-dense balance.
-- Colors and tokens: WJ blue/green semantics remain intact. Glass surfaces use dedicated background, border, shadow, blur, text, muted, accent, green, and violet tokens.
-- Image quality and assets: the existing WJ raster logo is reused at its native aspect ratio. Navigation and page icons use the installed Lucide set; no placeholder or handcrafted SVG assets were added.
-- Copy and content: routes, labels, permissions, languages, and business content remain unchanged. The refactor changes structure and presentation only.
-- Accessibility and interaction: active routes use `aria-current`; language controls use `aria-pressed`; mobile navigation is a modal dialog with focus containment, Escape close, scroll lock, and focus return; analysis tabs have tab/panel relationships and arrow-key navigation; reduced-motion preferences remain supported.
+Both cards remain visible for every ordinary inspection. New manual creation
+starts with one required dimension and one required appearance choice item. A
+missing or optional-only area blocks the UI's final decision instead of counting
+0/0 as complete. Legacy production snapshots are not silently changed. The local
+1-machine fixture now contains its preserved eight saved dimension measurements
+and ten blank, required appearance items; no new appearance is premarked pass.
+The previous fixture snapshot is retained in output/inspection-before-required-appearance.json.
+Role configuration already enforces two areas server-side; this UI revision does
+not change the legacy endpoint validation or backfill production standards.
 
-## Findings
+Equipment/plan details expand inside the upper station card for the selected
+machine. Removed the three unneeded footer disclosures (full request search/list,
+data source, stop/resume guide). Existing authorized manual-create action is in
+the header. The 1–9/10–17 station order and guarded selection are retained.
 
-- No actionable P0, P1, or P2 visual differences remain for the requested glassmorphism adaptation of the main shell and verified native pages.
-- P3: data-heavy legacy routes require a staging API for populated-state visual regression because the lightweight local mock returns generic response shapes.
-- P3: the main JavaScript bundle remains about 1.89 MB; route-level code splitting should accompany the future Next-to-main migration.
+Actual browser checks: at1366×768 each card is653px, equal height363px, and every
+row is40px including pass/fail appearance and numeric delta states. Headers and
+save controls share their baselines. At390×844 both cards are332px, header64px,
+inputs/save buttons44px, with document width390px. Chinese selected1/7 worksheets
+and selected equipment expansion have no visible Hangul; earlier checks covered
+all six Chinese auxiliary panels. Legacy1 displays appearance0/10 and disables
+final judgement. Selecting appearance fail updates its badge immediately;
+clearing restores input-waiting. Shared7 has ten selectors for ten appearance
+items with no verdict dropdown. Temporary edits restored; no inspection save,
+submission or MES writer call occurred in these browser checks.
+
+Evidence: output/inspection-layout-required-appearance-ko.png,
+output/inspection-layout-final-ko.png, output/inspection-layout-final-zh.png,
+output/inspection-layout-recovery-ko.png. Validation:58 focused frontend tests,
+targeted ESLint, TypeScript and modern/legacy fixture build passed; preexisting
+bundle-size warning remains. git diff --check passed. No backend changes or new
+migration in this revision; previous backend evidence remains below.
+
+---
+
+# Parallel cards and automatic dimension judgement — 2026-10-07
+
+final result: passed (local implementation and synthetic preview)
+
+Replaced the area switch with parallel dimension/appearance cards in both editors. Each card retains its inspector, entered/saved progress and scoped save control; deformation remains dimension. Removed duplicated area/inspector columns and bounded the five compact columns. Measurement, judgement and saved-state headings/cells, input text and badges are centered. Appearance uses explicit pass/fail options. Saving one area preserves the other draft, and Enter stays within the active card. The existing saved-required-items final-decision dialog remains.
+
+Dimension values derive inclusive range pass/fail and show exact decimal distance below minimum/above maximum. Configured pass/fail deformation choices derive badges. Appearance and items without an applicable range retain manual judgement. Empty/invalid values or invalid bounds never receive a fabricated pass. Read-only historical mismatches show the recorded verdict; no records are silently rewritten when read. Value edits persist the derived verdict through the existing scoped payload.
+
+Browser verification: Korean/Chinese at1366×768 show two653px cards and142px measurement fields. Both save buttons fit in the viewport; appearance card bottom756.37px (initial implementation803.37px). The final button follows the taller card. No horizontal document overflow. At390px both cards stack at332px width, with44px controls and centered text; document width390px. Both editors' three requested headings/cells/input values compute as centered. Upper/lower boundary inputs pass;714.3 against714.2 shows upper excess0.1mm, and419.0 against419.2 shows lower shortfall0.2mm. Unsaved edits block the final decision; restored saved values allow the three-choice dialog. All temporary measurement edits were restored to the original strings; no save, submit or MES call was made in these browser checks. Final preview is Korean, saved and editable; viewport override was reset.
+
+Evidence: output/inspection-cards-centered.png (temporary unsaved range examples), output/inspection-cards-zh.png. Validation:49 focused frontend checks passed, including both editors' automatic verdict/save payloads, inclusive/one-sided/negative/tiny decimal bounds, invalid input, appearance manual controls, parallel area draft preservation, scoped CAS/auth/session guards and final modal. Targeted ESLint, TypeScript and full modern/legacy fixture build passed; existing bundle-size warning remains. git diff --check passed. Previous backend/migration evidence is retained below; no additional backend changes, production migration or deployment in this revision.
+
+---
+
+# Area switch and final judgement revision — 2026-10-07
+
+final result: passed (local implementation and synthetic preview)
+
+Added a compact dimension/appearance segmented control above the worksheet, with inspector names and entered/saved counts. Only the selected area's rows render; deformation remains dimension. Switching preserves unsaved measurements and evidence. Scoped saves guide the user to unfinished input; once required values/evidence are saved with no pending draft, the owner receives a final pass/fail/concession dialog. Removed the overall judgement selects below both legacy and role tables. Per-item judgements remain. Separate inspector accounts retain explicit scoped completion; the shared operator's modal confirmation completes remaining areas sequentially and submits the chosen decision with current revisions.
+
+Concession (한도승인 / 让步合格) records required grounds in the submit audit, preserves original failed measurements/nonconformance and requires independent approval with a recorded reason. Migration0016 widens only the final judgement column; disposable test migration/check succeeded. Standalone MES trials keep pass/fail-only semantics. Uncertain mutation recovery preserves original keys and can be reached by closing the dialog; no automatic final choice or submission occurs.
+
+Browser verification: selected dimension shows6 rows and appearance10; a dimension save moved to appearance, and the second area save automatically opened the modal. Closing/reopening, arrow-key area selection, Tab wrapping, mandatory concession grounds and Korean/Chinese desktop labels were checked. A synthetic pass confirmation issued exactly area-complete(dimension), area-complete(appearance), submit, with completion attributed to202/201 and recorder101. Request became submitted/pass while MES remained not_completed. Evidence: output/inspection-entry-browser-confirmed.json. Existing fixture values were preserved before testing; the final preview was restored to the saved, editable Korean draft with no MES writes/proxy.
+
+Screenshots: output/inspection-entry-desktop.png, output/inspection-entry-final-desktop.png, output/inspection-entry-final-zh.png, output/inspection-entry-final-mobile.png. At1366×768 the dimension table and save controls are visible together without horizontal document overflow. At390px the modal is350px wide, contained with20px margins; choice targets are72px tall. This checks the modal, not a full-app mobile overflow fix.
+
+Validation:43 focused frontend tests passed, including both delivered editors, draft preservation, completion ordering/CAS, failure, session/conflict guards and final choice handling. Backend188 tests ran:179 passed,9 PostgreSQL concurrency tests skipped because no disposable PostgreSQL was supplied. New final-decision tests cover incomplete areas, forbidden pass promotion, concession grounds, independent review and exact replay. Targeted ESLint, TypeScript, full modern+legacy fixture build, script syntax and whitespace checks passed. Existing large-bundle warning remains. No production migration or deployment was performed.
+
+---
+
+# Always-visible MES status revision — 2026-10-07
+
+final result: passed (requested desktop glanceability)
+
+Moved MES synchronization and QC completion into button-shaped status chips next to the selected product heading, visible independently of auxiliary-panel selection. Existing MES save/finish/reconcile controls share this line without duplicate buttons. The former completion disclosure is now “MES 상세·안내” / “MES 详情·说明” and contains supplementary quality observations, checked time and existing guidance. The role worksheet shows the same statuses while retaining its unavailable shared-writer actions.
+
+The chips reuse server observation copy and reconciliation guards. WJ approval does not imply MES completion; pending/unknown/stale observations cannot receive confirmed-success color. Added a meaningful delivered-role regression for WJ approval and stale prior completion, and retained mutation capability/dirty gates. The harness now resolves exact button names before abbreviated area-save labels because unavailable MES controls precede the worksheet.
+
+Browser evidence: `output/inspection-room-mes-status-desktop.jpg`, `output/inspection-room-mes-status-role.jpg`, `output/inspection-room-mes-status-zh.jpg`, `output/inspection-room-mes-status-focus.jpg`. At 1366×768, heading height remains 34px; legacy status chips are at y256.07 with save controls ending at y683.57. Opening memo or MES guidance preserves visible states, and each MES action occurs once. Role save controls remain visible at the viewport bottom. Korean/Chinese desktop have no horizontal document overflow. At 390px, the role strip is contained at 332px and actionable buttons retain 44px height. No synthetic changes or MES actions were submitted.
+
+Validation: 38 focused frontend checks, targeted ESLint, TypeScript, full modern/legacy fixture build and whitespace check passed (existing chunk-size warning). Existing backend work and production environment were preserved; no deployment in this revision.
+
+---
+
+# Evidence and expanded-panel density revision — 2026-10-07
+
+final result: passed (requested desktop density)
+
+Renamed the ambiguous “증빙 · 선택” menu to “사진·문서 링크 · 필요 시” (Chinese: “照片·文档链接 · 按需”). It records existing HTTPS references to inspection photos/documents; required evidence badges and item asterisks are preserved. This is not a file uploader. Existing URL validation, permissions, area ownership, draft recovery and save/submit gates remain in use.
+
+The eight legacy item-link inputs now occupy four columns and two rows at 1672×941 and 1366×768. At the same 1672px viewport the expanded panel shrank from 760.88px to 246.77px (about 68%). Inputs changed from 1596px full-width to 391px each. Long repeated labels moved into accessible input names; visible labels retain item names and required markers. Common evidence rows share two columns. The role request retains separate inspector areas, each with two item-link columns (six dimension items, including deformation, and ten appearance items).
+
+Broader density review: legacy memo and judgement guidance sit side by side (641px memo width and 99.70px expanded panel at 1366px). Role quantity fields use bounded widths alongside a memo capped at 720px; save/reload actions share a row. Expanded metadata uses four columns on desktop and two/one at narrower widths. The unselected-equipment placeholder is reduced to 88px. The selected worksheet, two equipment rows and inspector save bars are preserved.
+
+Evidence: `output/inspection-room-evidence-before.jpg`, `output/inspection-room-evidence-desktop.jpg`, `output/inspection-room-evidence-1366.jpg`, `output/inspection-room-evidence-common.jpg`, `output/inspection-room-evidence-role.jpg`, `output/inspection-room-evidence-zh.jpg`, `output/inspection-room-evidence-mobile.jpg`. The user-reported before-state is `/var/folders/_8/7y6tkz950zgb76ljsnpbw0640000gn/T/codex-clipboard-a4ef1891-cd76-43b4-be46-706300c3b4ae.png`.
+
+Browser checks: synthetic HTTPS input survived a panel switch, dirty state blocked submission, and a URL containing a query string blocked save with the existing validation message. Two temporary common-evidence rows appeared side by side. All synthetic draft edits were restored; the existing reload cleared recovery and no save was sent. Chinese desktop displayed four columns without document overflow. Mobile evidence used one 314px column and 44px inputs, contained within the 374px inspection page. Global mobile document scrollWidth reported 577px with bodyWidth390px; this revision does not claim a full-app mobile overflow fix. Empty/error fixture states retained accurate no-request/unconfirmed controls. The normal Korean evidence panel is left open for review.
+
+Validation: targeted ESLint, TypeScript and full modern/legacy fixture build passed (existing large-chunk warning); 34 focused frontend tests passed; whitespace check passed. No backend or production data changes, deployment or MES writes in this revision.
+
+---
+
+# Auxiliary-menu revision — 2026-10-07
+
+final result: passed (requested desktop footer density)
+
+The user requested horizontal buttons/cards for the auxiliary footer. Replaced the six vertically stacked request disclosures and four full-width page disclosures with two horizontal button groups. Each group is 34px high at 1366×768; its selected content spans the available width directly below. Buttons toggle closed, and only one panel per group is displayed. Hidden panels remain mounted to preserve draft inputs.
+
+Evidence:
+- Reported before-state: `/var/folders/_8/7y6tkz950zgb76ljsnpbw0640000gn/T/codex-clipboard-3e228bd7-aca5-406c-94ac-7d0e735195f3.png` (3226×772 physical pixels; CSS viewport unavailable).
+- Closed implementation: `output/inspection-room-auxiliary-closed.jpg` (1672×941, same CSS viewport), `output/inspection-room-auxiliary-1366.jpg` (1366×768).
+- Focused implementation: `output/inspection-room-auxiliary-footer.jpg` (1366×158 native clip).
+- Open panel: `output/inspection-room-auxiliary-open.jpg`.
+- Reviewed before/after composite: `output/inspection-room-auxiliary-comparison.jpg`. Before-state normalized to 1366px wide; original screenshot remains untouched. This is a density/layout comparison, not a claim of equal viewport/font scale.
+
+[P1 fixed] Full-width collapsed cards and stacked auxiliary links consumed vertical space without useful content. Final request buttons occupy y679.16–713.16, page buttons y728.16–762.16 at 1366×768. Both rows fit with the save controls visible.
+
+Browser validation: memo text survived closing and switching to evidence and reopening; dirty inputs continued blocking submission. The synthetic test memo was restored to its original empty value and existing reload cleared the test recovery. Enter toggled a focused button. Data-source and request-list panels switched exclusively, full-width content showed two fixture requests, and the role request history showed its two actual fixture events. The 16-row role worksheet was retained. Chinese button titles and no desktop document overflow were verified; mobile buttons wrapped and retained 44px targets. Normal console showed no errors.
+
+Fidelity: existing system fonts, navy/semantic palette and standard icon library retained; no new raster assets. The closed controls use 13px secondary text with 34px desktop targets, compact 6px gaps and existing border/background tokens. Stored labels and backend behavior remain unchanged.
+
+Validation: targeted ESLint, TypeScript, whitespace check and full modern/legacy fixture build passed; 34 focused frontend checks passed. The existing role test harness was updated to recognize the new presentational wrapper. No production changes or deployment were performed.
+
+---
+
+## Previous revisions (preserved)
+
+# Compact worksheet revision — 2026-10-07
+
+final result: passed (desktop inspection layout)
+
+The user requested another density adjustment after the legacy single-inspector request still showed a narrow, tall table. Existing role assignments, draft recovery, save gates, authentication and backend work are preserved.
+
+## Source and captured implementation
+
+- Selected visual: `output/inspection-room-selected.png` (1672×941).
+- User-reported drift: `/var/folders/_8/7y6tkz950zgb76ljsnpbw0640000gn/T/codex-clipboard-d1bb6aae-2714-4d63-81cf-ec8fc65916b0.png`.
+- Final role worksheet: `output/inspection-room-density-desktop.jpg` (1672×941 screenshot, CSS viewport 1672×941; no density adjustment).
+- Final legacy worksheet: `output/inspection-room-density-legacy.jpg` (1672×941).
+- Full comparison: `output/inspection-room-density-comparison.jpg` (source above implementation, native equal dimensions).
+- Focused comparison: `output/inspection-room-density-focus.jpg` (native matching first-six-row crops).
+- Additional captures: `output/inspection-room-density-1366.jpg`, `output/inspection-room-density-mobile.jpg`, `output/inspection-room-density-zh.jpg`.
+
+The selected mock and implementation use the same equipment selection and 16-item schema. Sample progress differs: the mock contains inconsistent illustrative counts; actual preview counts use saved and entered data. Only loopback synthetic saves were performed.
+
+## Fixed findings and post-fix evidence
+
+- [P1 fixed] Legacy table capped at 1000px inside a much wider region; stacked item criteria produced approximately 76px rows. Removed the width cap, separated item/specification columns and reduced rows to 34px. The eight-item legacy worksheet, final verdict and save controls now fit at 1366×768. The table uses the available width.
+- [P1 fixed] Repeated detail title, equipment, task type and owner occupied several lines above the table. Combined the request context into one flex row; folded notes, evidence and MES details after the core save controls. Role progress and unfilled filter now share the heading row.
+- [P2 fixed] Permanent desktop navigation consumed worksheet width. The inspection route now opens the same navigation in a drawer from its menu button; other routes keep their existing layout. Open, Escape, focus restoration and menu access were verified. Account and home remain available.
+- [P2 fixed] A provisional 1366×768 table-height cap placed the sticky footer over the last visible rows. Reduced the table cap: final table bottom and savebar top both equal 710.22px; savebar bottom is 761.22px. No footer/table overlap remains.
+
+At 1672×941: all 17 tiles are visible (1–9 at y106.07; 10–17 at y155.82), the 16-row worksheet starts at y285.22, all rows measure 34px, and its savebar ends at y913.72. At 1366×768 the table scrolls locally and the savebar stays visible without horizontal document overflow.
+
+## Fidelity and interactions
+
+- Typography: existing Korean/Chinese system fonts retained. Working text remains 14px, secondary specifications 12–13px; controls remain readable at the reviewed desktop sizes. Mobile inputs retain 44px targets.
+- Spacing: dense header, smaller equipment tiles, single-line request context and 34px worksheet rows restore the selected concept's proportions. The shared home/account strip adds approximately 42px; smaller equipment tiles compensate, keeping the table aligned with the source at y285.
+- Colors: existing navy header, semantic area/status colors and system background preserved. No new palette or decoration.
+- Assets: existing app logo/icons only; no generated bitmap UI, custom icon art or substitute asset.
+- Copy: existing stored labels and state meanings preserved. Legacy controls shortened to 저장 / 결과 제출 / 새로고침. No automatic relabeling of existing records or fabricated area assignments.
+- Keyboard: Enter moves to the next measurement; dirty row changes to 미저장 and enables save; restoring the original value returns it to 저장됨.
+- Loopback role save: dimension saved while appearance value/judgement remained an unsaved draft; subsequent appearance save cleared the dirty rows. Real production/MES transport was not exercised.
+- Chinese: deformation remains 尺寸 with inspector QC001; savebar stays within the viewport.
+- Empty/error: 17 equipment tiles remain visible; empty count is zero, errors are explicit, unknown states are not represented as actual machine status.
+- Normal browser console: no errors.
+
+## Validation and limitations
+
+- Focused frontend checks: 34 passed (`output/inspection-room-density-tests.log`).
+- TypeScript, targeted ESLint and whitespace checks passed. Final modern/legacy fixture build passed (`output/inspection-room-density-build.log`). Existing large-chunk build warning remains.
+- Mobile checked for page width, local worksheet scrolling, menu availability and 44px inputs. This desktop-first acceptance does not claim broad mobile shell QA.
+- Prior PostgreSQL concurrency and real MES write limitations below remain unchanged. No deployment, production migrations or production inspection changes were made.
+
+---
+
+## Previous implementation QA (preserved)
+
+# Inspection room worksheet QA — 2026-10-07
+
+final result: passed
+
+Acceptance scope: the selected desktop inspection workflow, implemented in the existing application. This is a local implementation and synthetic preview, not a deployment or MES acceptance test.
+
+## Visual truth and evidence
+
+- Selected revised reference: `output/inspection-room-selected.png` (1672 × 941 pixels, a 16:9 mock).
+- Browser implementation: `output/inspection-room-desktop-final.jpg` (1920 × 1080 pixels), in-app Browser, CSS viewport 1920 × 1080. Existing application navigation is retained.
+- Full comparison: `output/inspection-room-comparison.png`. Both originals are uniformly fitted to equal-width comparison slots, without modifying the originals.
+- Focused table comparison: `output/inspection-room-comparison-focus.png`; classification, input sizing, row alignment and assigned authors are visible together.
+- Comparison state: selected equipment 7, 16 items, dimension 6 including deformation and appearance 10, partial saved example values, second numerical input focused. No production values were entered. The generated reference's inconsistent example completion count was not reproduced.
+- Other captures: `output/inspection-room-1366.jpg`, `output/inspection-room-zh.jpg`, `output/inspection-room-mobile-final.jpg`, `output/inspection-room-empty.jpg`, `output/inspection-room-error.jpg`.
 
 ## Comparison history
 
-### Pass 1
-
-- [P2] At `390 × 844`, the desktop sidebar was still displayed and covered the mobile page.
-  - Fix: made the desktop sidebar opt-in from the 768 px breakpoint and retained a separate mobile dialog drawer.
-  - Post-fix evidence: `main-after-mobile-final.png` shows the mobile header and full-width content without the desktop rail.
-- [P2] The old period-selector flex row expanded the page beyond the viewport.
-  - Fix: refactored it into semantic fields with one-, two-, and four-column responsive layouts.
-  - Post-fix evidence: measured document width equals viewport width at 390, 768, and 1280 px.
-
-### Pass 2
-
-- [P1] Theme selectors could override validation colors, custom card padding/overflow, and field-terminal high-contrast sizing.
-  - Fix: moved UI primitive defaults into the CSS components layer so caller utilities win, removed forced card overflow, and scoped legacy typography/table overrides away from standalone field-terminal pages.
-- [P1] The 768 px layout combined a desktop sidebar with a period-selector grid wider than the remaining workspace.
-  - Fix: added a two-column 768–1100 px breakpoint.
-  - Post-fix evidence: at 768 px the workspace is 516 px, the selector is 484 px with two 221 px columns, and document width remains 768 px.
-- [P1] Mobile language switching was hidden.
-  - Fix: restored KOR/中文, lite mode, and logout controls in the mobile navigation footer.
-- [P2] Mobile navigation and analysis tabs lacked complete keyboard relationships.
-  - Fix: added dialog/focus behavior and connected tabs to tabpanels with arrow-key navigation.
-  - Post-fix evidence: browser interaction checks confirmed the language controls, Escape close, `aria-expanded=false`, selected assembly tab, and matching assembly tabpanel.
-
-### Pass 3
-
-- [P1] The lite-mode build disabled the Vite stylesheet but its standalone `legacy.css` did not include the new main theme.
-  - Fix: added a legacy CSS entry that imports both the existing base stylesheet and `main-theme.css`, and routed PostCSS CLI through the dedicated legacy configuration.
-  - Post-fix evidence: after a full reload in lite mode, the asset stylesheet was disabled while `legacy.css` retained the fixed 236 px sidebar, card borders/backgrounds, controls, and page layout. Custom-property usages were resolved in the generated legacy bundle.
-- [P1] Logging out from an open mobile drawer could leave body scrolling locked.
-  - Fix: the drawer now closes before logout, ensuring the scroll-lock effect cleans up.
-- [P2] The account menu declared ARIA menu semantics without corresponding keyboard behavior.
-  - Fix: opening focuses the first item; Up/Down and internal Tab move between items; Escape closes and returns focus; boundary Tab closes and moves to the next page control.
-  - Post-fix evidence: browser interaction moved focus from password change to logout, then boundary Tab closed the menu and focused the next navigation link.
-- [P2] Mobile navigation links and the account trigger were shorter than 44 px.
-  - Fix: navigation links, home, account trigger, menu/close icon buttons, and account menu items are now at least 44 px at the mobile breakpoint.
-  - Post-fix evidence: computed dimensions were 44 px for the home, account, open/close, and sampled drawer link controls.
-
-### Pass 4
-
-- The updated source/implementation composite and focused desktop/mobile checks found no remaining P0, P1, or P2 visual issue.
-
-## Validation
-
-- `cd frontend && npm run build` — passed.
-- `cd frontend && npm run lint` — passed with 39 existing warnings and no errors.
-- `git diff --check` — passed.
-- Desktop, tablet, and mobile overflow checks — passed at 1280, 768, and 390 px.
-- Main mobile menu, language controls, Escape close, and analysis-tab keyboard interaction — passed.
-- Lite-mode standalone stylesheet and full-reload behavior — passed.
-- Account-menu focus, arrow-key, and Escape behavior — passed.
-- Account-menu internal and boundary Tab behavior — passed.
-
-## Frontend consolidation
-
-The production dashboard, injection board, MES monitoring, and raw-material management
-screens now run as native modules in `frontend`. The iframe, bundled `/next` build, and beta
-deployment configuration have been retired. Temporary `/next/*` client redirects remain only
-for existing bookmarks.
-
-## Incremental QA — sidebar brand and production-record controls
-
-### Comparison target
-
-- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-0ba73f95-0804-4ee8-b748-48b0905cedd0.png` and `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-4a8e8e41-9255-4943-bb10-eaf99fdafdd7.png`.
-- Browser-rendered implementation screenshot: `/private/tmp/wj-assembly-records-final.png`.
-- Combined comparison evidence: `/private/tmp/wj-ui-design-qa-comparison.png`.
-- Implementation route/state: authenticated `/assembly#records`, Korean locale, empty production-record state.
-
-### Normalization and evidence
-
-- Source logo pixels: `267 × 177`; source records pixels: `1230 × 619`.
-- Implementation viewport and screenshot: `1280 × 720` CSS/image pixels at device pixel ratio 1.
-- The combined comparison preserves each source aspect ratio and places the focused logo and records regions beside the implementation; exact pixel overlay is not used because the source captures are differently cropped.
-- Full-view evidence confirms the CSV controls are above the calendar, occupy the same 338 px grid column, and leave more vertical room for records.
-- Focused-region evidence confirms the logo asset has no visible block background, border, or shadow; the Chinese subtitle is larger; the records panel and calendar are both 458.4 px high.
-
-### Required fidelity surfaces
-
-- Fonts and typography: `WJ DATA CENTER` remains the primary line; the Chinese subtitle increased to a computed 11.52 px with stronger contrast and no clipping.
-- Spacing and layout rhythm: the two CSV buttons are 36 px high, share the calendar's 338 px width, bottom-align to the title row, and retain a 10 px gap above the calendar. The records and calendar cards have equal heights.
-- Colors and visual tokens: existing glass surfaces, blue primary action, muted secondary action, and card tokens are unchanged.
-- Image quality and asset fidelity: the supplied transparent WJ logo is rendered directly on the sidebar surface with no surrounding block treatment or transparency halo visible at the rendered size.
-- Copy and content: all production-record, calendar, CSV, and brand copy remains unchanged.
-
-### Comparison history
-
-- Pass 1 — [P2] CSV controls consumed a separate row below the calendar and the two cards ended at different heights.
-  - Fix: moved CSV controls into the section heading and stretched the records/calendar cards to an equal grid-row height.
-- Pass 2 — [P2] the controls were narrower than the calendar and vertically centered in the heading row.
-  - Fix: matched the 338 px calendar column, reduced control height to 36 px, reduced section gap to 10 px, and bottom-aligned the controls. Post-fix metrics show matching width, matching right/left edges, and a 10 px button-to-calendar gap.
-
-### Interaction and console checks
-
-- Calendar previous/next navigation changed the visible month from August to September and back.
-- CSV upload and save controls remain enabled; their existing handlers were not changed.
-- Browser console errors: none.
-- No actionable P0, P1, or P2 visual findings remain. Narrow mobile layout continues to stack the title and actions, with full-width touch targets.
-
-## Incremental QA — assembly defect-entry visual cleanup
-
-### Comparison target and normalization
-
-- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-9e4ed545-0398-4e93-b004-690c58bc1be5.png` (`1176 × 274` px).
-- Browser-rendered implementation: `/private/tmp/wj-assembly-defects-final.png`, captured at a `1280 × 720` CSS/image viewport with device pixel ratio 1.
-- Focused side-by-side comparison: `/private/tmp/wj-defect-card-design-qa-comparison.png`. Both regions preserve their aspect ratios; the implementation is cropped to the same processing/outsourcing card content shown in the source.
-- State: authenticated `/assembly#new`, Korean locale, blank defect-entry rows.
-
-### Full-view and focused evidence
-
-- All five assembly input group cards now share one border color (`rgba(79, 139, 184, 0.2)`) and one background (`rgba(250, 253, 255, 0.76)`).
-- The processing/outsourcing column header dividers and add-row dividers both compute to `0px`; no black horizontal rule remains.
-- Focused comparison shows the original amber/purple card outlines and dark dividers replaced by the existing glass theme's quiet blue-gray treatment while retaining card boundaries and input affordances.
-
-### Required fidelity surfaces
-
-- Fonts and typography: labels, totals, input text, and add-row actions retain their existing size, weight, and hierarchy.
-- Spacing and layout rhythm: card dimensions, two-column grid, row spacing, and control heights are unchanged; only decorative rules and colors changed.
-- Colors and tokens: quantity, time, incoming, processing, and outsourcing cards use one neutral palette. Status badges retain semantic zero/error colors.
-- Image quality and assets: no image or icon asset changed; existing Lucide add/delete controls remain sharp and aligned.
-- Copy and content: all defect labels, totals, placeholders, and actions are unchanged.
-
-### Comparison history and findings
-
-- Pass 1 — [P2] processing/outsourcing cards used unrelated amber and purple outlines, while dark top/bottom rules over-emphasized an otherwise light form.
-  - Fix: removed both horizontal divider utilities and replaced all group-card accent borders/backgrounds with one neutral theme treatment. Performance fields were also changed away from decorative green styling.
-- Post-fix inspection found no remaining P0, P1, or P2 visual issue. Browser-rendered controls remain enabled and no layout dimensions changed.
-
-final result: passed
-
----
-
-# Incremental Design QA — Field Kanban HD Layout Polish (2026-08-27)
-
-## Comparison target
-
-- Source visual truth — queue: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-132a846a-b6fc-4d3a-8a75-934580d4b3e5.png` (`612 × 330` px).
-- Source visual truth — scale control: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-c00db60f-b79a-4924-9df0-29f1f878aca7.png` (`107 × 93` px).
-- Source visual truth — quality panel: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-ae79f884-2db6-4bb1-bff5-59a00e93cb7c.png` (`1294 × 828` px).
-- Browser-rendered full implementation: local QA artifact `local-field-imm05-layout-polish-final-raw.png` (`2203 × 1237` capture px).
-- Focused queue implementation: local QA artifact `local-field-imm05-queue-triangle-final.png` (`431 × 315` px).
-- Focused quality implementation: local QA artifact `local-field-imm05-quality-compact-pass1.png` (`937 × 548` px).
-- Focused scale implementation: local QA artifact `local-field-imm05-scale-button-final-full.png` (`126 × 63` px).
-- Side-by-side comparisons: local QA artifacts `qa-compare-queue-source-left-implementation-right.png`, `qa-compare-quality-source-left-implementation-right.png`, and `qa-compare-scale-source-left-implementation-right.png`.
-
-## Normalization and state
-
-- Target viewport: `1366 × 768`; the in-app browser reported `1366 × 767` CSS px because its viewport bridge rounded one physical pixel.
-- In-app browser capture density: `devicePixelRatio 0.62`; the raw capture is `2203 × 1237` px. Focused captures were clipped through the same browser surface and compared without changing aspect ratio.
-- Queue comparison normalized both regions to `330` px height; quality comparison normalized both regions to `620` px height; scale comparison normalized both regions to `100` px height.
-- State: authenticated `/field/imm05`, Korean locale, `100%` screen-fit display scale, five-item queue with item 3 current, quality tab active, three representative photos.
-- Reference and implementation use different live Part No./model/quality content. The comparison therefore judges the requested geometry, density, hierarchy, and control sizing rather than literal data equality.
-
-## Full-view and focused comparison evidence
-
-- The five queue circles remain on one vertical axis. Every filled triangle is centered horizontally within `0.013 px` and vertically within `0.127 px` of the midpoint between adjacent number circles.
-- The HD header stays inside the viewport with no horizontal overflow. The clock track is `203.6 px` wide, down from `237.2 px`, while the scale trigger is `90.0 px` wide, up from `70.0 px`.
-- The quality header is `105.0 px` high, down from `178.9 px`. All plan, summary, section, evidence, matching-report, and latest-report text remains visible without meta-row overflow.
-- The representative-photo viewport is `380.0 px` high, up from `297.7 px`, while retaining `object-fit: contain` so inspection evidence is not cropped.
-- Focused comparisons were required because the queue arrows, scale control, and quality metadata are too small to judge reliably in a full-board screenshot.
-
-## Required fidelity surfaces
-
-- Fonts and typography: existing WJ Korean/Chinese font fallbacks, bold identifiers, tab hierarchy, and quality colors are preserved. Compacting the quality panel did not introduce smaller unreadable production labels.
-- Spacing and layout rhythm: clock width was reassigned to the touch controls; the quality title now uses a two-column/two-row grid; meta chips remain on one row; photo padding and carousel height were reduced without removing touch affordances.
-- Colors and visual tokens: navy queue, cyan current-job state, orange quality panel, white evidence chips, and existing semantic colors are unchanged.
-- Image quality and asset fidelity: production evidence images remain the original source assets with contain fitting. The queue connector uses the installed Lucide `Triangle` icon rather than a CSS-drawn shape.
-- Copy and content: no field label, quality summary, report count, date, Part No., model, or production quantity was removed.
-
-## Comparison history
-
-### Pass 1
-
-- [P2] The former down-arrow glyph read as attached to the upper circle instead of as flow between queue steps.
-  - Fix: replaced it with a filled Lucide triangle and positioned it from the midpoint between adjacent circle centers.
-- [P2] The quality header used `178.9 px`, leaving only `297.7 px` for the representative photo at the HD breakpoint.
-  - Fix: arranged the eyebrow/title and plan/summary side by side, reduced vertical gaps and chip height, and tightened body/carousel padding.
-- [P2] The `70 px` scale trigger was visually cramped while the clock track consumed `237.2 px`.
-  - Fix: widened the trigger to `90 px` and reduced the clock track to `203.6 px` while keeping the full header within `1366 px`.
-
-### Pass 2
-
-- The first filled triangle was visually too large for the compressed five-row queue and nearly touched both circles.
-  - Fix: reduced the HD expanded-queue connector from `12 px` to `9 px` and corrected its vertical offset.
-  - Post-fix evidence: all four connectors now have less than `0.13 px` midpoint error and visible separation from the circles.
-- No actionable P0, P1, or P2 mismatch remains in the source/implementation comparison.
-
-## Interaction and runtime checks
-
-- Quality tab selection passed.
-- Representative-photo rotation advanced from photo 2 to photo 3 after five seconds.
-- The display-scale dialog opened; screen fit remained `100%`; the dialog closed normally.
-- Document width/height matched the viewport (`1366 × 767`) with no page overflow.
-- Browser console error entries: none.
-- Targeted ESLint and frontend production build: passed.
-
-## Follow-up polish
-
-- P3: confirm the final one-pixel viewport rounding and fullscreen behavior once on the physical `1366 × 768` shop-floor display; it does not affect the measured layout or scrolling.
-
-final result: passed
-
-## Quality unified workspace QA — 2026-08-19
-
-### Source visual truth
-
-- `/tmp/quality-source-report.png` — 1425×1072, existing manual defect registration page.
-- `/tmp/quality-source-import.png` — 1425×1016, existing Excel import page.
-- `/tmp/quality-source-history.png` — 1425×1016, existing full history page.
-
-### Implementation captures
-
-- `/tmp/quality-integrated-desktop-final-top.png` — 1425×990, integrated desktop workspace top.
-- `/tmp/quality-integrated-desktop-final-lower.png` — 1425×990, compact Excel import and recent history.
-- `/tmp/quality-integrated-mobile-final-top.png` — 375×812, mobile registration view.
-- `/tmp/quality-integrated-mobile-final-lower.png` — 375×812, mobile Excel and recent-history view.
-- `/tmp/quality-integrated-design-comparison.png` — combined source/implementation review surface.
-- `/tmp/quality-integrated-focused-form-comparison.png` — manual-form density comparison.
-- `/tmp/quality-integrated-focused-lower-comparison.png` — Excel/recent-history comparison.
-
-### Test context and interaction evidence
-
-- Desktop viewport override: 1440×1000; mobile viewport override: 390×844; browser screenshots preserve the application viewport without rescaling.
-- State: editor permission enabled, idle registration/import state, six realistic recent-report rows supplied by a local read-only mock.
-- `전체 이력 더보기` navigates to `/quality#stats` and renders the existing full-history screen.
-- `품질 등록` returns to `/quality#report` without remounting the Excel importer.
-- Legacy `/quality#import` remains valid and scrolls the integrated workspace to the Excel section.
-- A fresh page reload after the final fixes produced no error-level browser console entries.
-
-### Fidelity surfaces
-
-- Typography and color: retained the existing type scale, blue/cyan/indigo palette, Lucide icon system, and white bordered-card language.
-- Spacing and density: manual registration keeps every existing field and action while reducing vertical gaps, textarea rows, image-drop height, and preview height.
-- Excel import: retains all upload, resume, correction, completion, and rollback behavior; only the entry card is visually condensed.
-- Recent history: desktop uses a compact five-column table; mobile uses stacked summary cards with date, department, model/Part No., defect, and judgment.
-- Copy and localization: new workspace, import, recent-history, empty/error/loading, and navigation text are provided in Korean and Chinese.
-
-### Iteration history
-
-1. The first desktop review found the recent-history date breaking across two lines. The date column was widened and set to `whitespace-nowrap`.
-2. The first mobile review found the Excel rollback control compressing the title and description into a narrow column. The rollback control now occupies its own full-width row on mobile.
-3. Semantic review found a nested `main` landmark in the integrated page. The animated workspace wrapper was changed to a `div` while retaining the page-level landmark supplied by the application shell.
-4. Final desktop and mobile comparisons found no remaining actionable P0/P1/P2 visual or interaction defects.
-
-### Findings
-
-- The integrated workspace preserves all manual registration and Excel-import behavior while reducing page switching.
-- Full history remains isolated behind `/quality#stats`, so its filters, editing, pagination, and Excel result scoping are unchanged.
-- No remaining P0/P1/P2 visual, responsive, accessibility, or navigation defects were found in the tested flow.
-
-final result: passed
----
-
-# Incremental Design QA — Mould Data Layers and Status Lists
-
-## Comparison target
-
-- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-f2d99f32-afe6-4f9a-82cf-795f8933b101.png` (`1722 × 1175` px).
-- Browser-rendered detail implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-desktop.png` (`1722 × 1175` px).
-- Browser-rendered status list: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-status-list-v3-desktop.png` and `/private/tmp/wj-dashboard-hub-deploy/qa-mould-status-list-v3-mobile.png`.
-- Browser-rendered focused zone: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-zone-v3-desktop.png`.
-- Final mobile detail: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-mobile-final.png` (`390 × 844` px).
-- 4K detail check: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-4k.png` (`3840 × 2160` px).
-- Final Chinese board check: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-v3-zh-desktop.png`.
-- Implementation route: `http://127.0.0.1:5183/boards/moulds`.
-
-## Normalization and state
-
-- The desktop source and primary implementation were inspected together at the same `1722 × 1175` viewport.
-- Live MES data was used. Loading state, completed history state, focused C-zone, external/unknown status lists, mounted-status list, Korean/Chinese language states, phone detail, and 4K detail were exercised separately.
-- The source's selected mould and production rows differ from the implementation capture because the data is live; the comparison is limited to app-owned layout, state communication, typography, spacing, and interaction behavior.
-
-## Full-view and focused evidence
-
-- The detail layer now uses the full useful viewport width, places the identity and four summary facts in one compact summary band, and gives history data a full-width table with a sticky header and vertical-only scrolling.
-- During the detail request, the tab panel contains only the loading notice. The empty-history message appears only after a successful, settled response with zero rows; the two messages are mutually exclusive.
-- At `390 × 844`, the detail layer begins at the safe-area top, the 48 px close control remains visible, and the underlying sticky board header cannot cover it. The close control was clicked successfully.
-- Focused C-zone cells show the coordinate on the first line and `图纸编号`/drawing number on the second line. Conflict cells retain the red warning treatment and add a compact overflow count.
-- Each non-All summary chip opens a modal table with code, name, drawing number, current location, update time, and status. At phone width the semantic table becomes a two-column card list without horizontal scrolling; row selection opens that mould's detail.
-- Machine labels use the production-board tonnage convention. Korean renders `1호기 - 850T`; Chinese renders `1号机 - 850T` in the machine list, selected detail, and status table.
-
-## Required fidelity surfaces
-
-- Fonts and typography: the existing Korean/Chinese system stack, WJ navy headings, compact uppercase eyebrow treatment, and table hierarchy are retained. Long drawing numbers truncate only inside focused cells, where full values remain available through the existing title/accessible label.
-- Spacing and layout rhythm: overlays use the existing 8–16 px radii and restrained blue-gray borders. Summary facts use equal cards and the history table uses aligned columns rather than the source's narrow split pane.
-- Colors and visual tokens: the existing WJ blue/teal zone system is preserved. Backdrops, table hover states, location pills, and close controls reuse the same pale blue surfaces and navy accents.
-- Image quality and asset fidelity: the existing WJ logo and installed Lucide icons are reused; no placeholder or custom drawn asset was introduced.
-- Copy and content: Korean and Chinese labels switch together. Chinese machine suffixes no longer expose Korean `호기`, and tonnage is sourced from the existing mould-board machine metadata populated from the same MES machine source used by the injection board.
-
-## Comparison history
-
-### Pass 1
-
-- [P1] Mobile detail began below the sticky header, placing the drawer title and close action outside the visible viewport.
-  - Fix: moved detail to a safe-area-aware fixed full-screen layer with a sticky topbar and higher modal stacking context.
-- [P1] Loading and empty-history messages could render simultaneously because the board-level fallback record was passed to the history component before the detail request settled.
-  - Fix: introduced one exclusive detail-content state (`loading`, `error`, or `ready`) and render history only in `ready`.
-- [P2] The source detail split reserved a fixed left column and forced both horizontal and vertical scrolling for history data.
-  - Fix: converted the summary to a horizontal data band and removed the history table's fixed minimum width; long history now uses only the expected vertical content scroll.
-- [P2] Status chips only dimmed the board, so large offsite and unknown groups could not be inspected directly.
-  - Fix: added an accessible status-list dialog with sticky columns on desktop and responsive semantic table cards on mobile.
-- [P2] Focused cells repeated only the coordinate code, leaving operators unable to identify stored moulds without opening each cell.
-  - Fix: added drawing number as the second, higher-density line only in focused-zone mode.
-
-### Pass 2
-
-- [P2] Chinese machine rows still used the Korean suffix and showed tonnage in a separate column.
-  - Fix: localized the suffix to `号机`, combined machine number and tonnage in the production-board format, and reused the same formatter in detail and status-list locations.
-- No actionable P0, P1, or P2 issue remained after the desktop, phone, Chinese, and 4K checks.
-
-## Interaction and runtime checks
-
-- Loading-state assertion passed: loading notice present; empty-history notice absent in the same DOM snapshot.
-- Settled production history rendered real rows after the live detail API completed.
-- External `295` and unknown `64` chips opened their corresponding lists; mounted `7` showed `1号机 - 850T`-style locations.
-- A status-list row opened detail, the mobile close action removed the dialog, Escape prioritizes detail/list closure, and the backdrop closes either layer.
-- Focused C-zone cell `C9-18` rendered its coordinate plus drawing number (`MBN66503201`).
-- `npm run build` — passed.
-- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-- P3: very long drawing numbers are intentionally ellipsized inside dense focused cells; selecting the cell exposes the complete value in the detail layer.
-
-final result: passed
-
----
-
-# Incremental Design QA — Mobile Language Switch and Collapsing Headers
-
-## Comparison target
-
-- Source visual truth: `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/E998AB3E-0F27-4CCF-B604-8710620BC452/1-사진-1.jpg` (`590 × 1280` px, including iPhone browser chrome).
-- Browser-rendered injection implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-language-injection-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-language-injection-mobile-compact.jpg`.
-- Browser-rendered mould implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-language-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-language-mould-mobile-compact.jpg`.
-- Combined source/default/compact comparison: `/private/tmp/wj-dashboard-hub-deploy/qa-language-switch-comparison.jpg` (`1280 × 920` px).
-- Implementation routes: `http://127.0.0.1:5180/boards/injection` and `http://127.0.0.1:5180/boards/moulds`.
-
-## Normalization and state
-
-- All implementation captures use a `390 × 844` CSS viewport at device pixel ratio 1 and are saved at `390 × 844` pixels.
-- The combined comparison scales the source image to the same 390 px column width as the implementation. Browser chrome remains visible only in the source and is excluded from app-owned fidelity findings.
-- Default state: Korean locale, top of page, populated mould data; injection data in its existing live-loading state.
-- Compact state: board content scrolled more than 56 CSS px, Korean locale, sticky mobile header collapsed.
-
-## Full-view and focused evidence
-
-- Full-view comparison shows that the original one-third control row has been replaced by a half-width language selector plus two quarter-width icon actions. Each language option now has enough horizontal space to read as an intentional segmented control.
-- Focused header comparison shows a filled WJ-blue active language segment, muted inactive segment, and matching 44 px control height across both boards.
-- After scrolling, both mobile headers reduce from approximately 235 px to 104 px while preserving home, board identity, language, refresh, and fullscreen controls. Secondary timestamp, search, and history content is removed only from the compact state.
-- Injection and mould pages both remain exactly 390 px wide with no horizontal overflow. Compact injection language/action widths measure approximately 167/80.5 px; compact mould widths measure approximately 174.5/83.75 px.
-
-## Required fidelity surfaces
-
-- Fonts and typography: KOR and 中文 use the existing UI font stack at 0.72 rem with slightly increased letter spacing; active and inactive labels remain legible without wrapping. Compact titles retain the strongest hierarchy at 1.05 rem.
-- Spacing and layout rhythm: the mobile action row uses a 2:1:1 proportion, 6–7 px gaps, and consistent 44 px touch height. Compact headers use 6 px internal gaps and 6–8 px padding, reducing vertical obstruction without crowding controls.
-- Colors and visual tokens: both boards share the existing `#0a82b2` active fill, white active text, blue-tinted shadow, pale inactive surface, and neutral outlined icon actions.
-- Image quality and asset fidelity: existing WJ logo and installed Lucide icons are reused at their intended rendered sizes; no new raster, custom SVG, CSS drawing, emoji, or placeholder asset was introduced.
-- Copy and content: KOR/中文 labels and all existing Korean/Chinese board copy remain unchanged. Compact mode hides only duplicate secondary context and does not remove a primary action.
-
-## Comparison history
-
-### Pass 1
-
-- [P2] The source showed the language control constrained to one third of the row, making two language options look cramped and visually weaker than neighboring fullscreen/close controls.
-  - Fix: changed the mobile control grid to a 2:1:1 proportion and gave the selected language a clear filled state.
-- [P2] The initial sticky mobile headers occupied roughly 235 px while scrolling, obscuring too much operational content.
-  - Fix: added a 56 px scroll threshold and a compact 104 px two-row header that retains essential controls while hiding secondary metadata/search/history.
-
-### Pass 2
-
-- Post-fix browser evidence shows no actionable P0, P1, or P2 issue. Both default and compact states have complete controls, readable labels, stable 390 px width, and no scroll-trigger oscillation.
-
-## Interaction and runtime checks
-
-- Injection KOR → 中文 → KOR switching passed; the Chinese title became `注塑实时看板` and `aria-pressed="true"` moved to 中文.
-- Mould KOR → 中文 → KOR switching passed; the Chinese title became `模具实时看板` and `aria-pressed="true"` moved to 中文.
-- Injection window scroll activated `is-compact` at 404 px scroll position; mould container scroll activated the compact hero at 520 px.
-- Returning both scroll containers to the top removed the compact state and restored the full header.
-- `npm run build` — passed.
-- `git diff --check` — passed.
-- No visible application error or horizontal overflow was present in the verified states.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual findings remain.
-- P3: compact mode intentionally removes live timestamp details; returning to the top restores the full header immediately.
-
-final result: passed
-
----
-
-# Incremental Design QA — Mould and Injection Board Headers
-
-## Comparison target
-
-- Source visual truth (mould mobile): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/51E14C97-F0C3-46CE-8B37-1B401360B33B/1-사진-1.jpg`.
-- Source visual truth (injection mobile): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/51E14C97-F0C3-46CE-8B37-1B401360B33B/2-사진-2.jpg`.
-- Browser-rendered mobile implementations: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-injection-mobile.jpg`.
-- Browser-rendered 4K implementations: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-4k.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-injection-4k.jpg`.
-- Combined source/implementation comparison: `/private/tmp/wj-dashboard-hub-deploy/qa-header-mobile-comparison.jpg`.
-- Implementation routes: `http://127.0.0.1:5177/boards/moulds` and `http://127.0.0.1:5177/boards/injection`.
-
-## Normalization and state
-
-- Both source images are `590 × 1280` px and include iPhone browser chrome.
-- Both mobile implementation screenshots are `390 × 844` px at a `390 × 844` CSS viewport with device pixel ratio 1 and no browser chrome.
-- The `1500 × 900` comparison board scales all four images to the same column width; the source and implementation aspect ratios differ by less than 0.1%, so header height and information density can be judged without geometric distortion.
-- The 4K CSS viewport is `3840 × 2160` at device pixel ratio 1. The in-app browser screenshots are `3840 × 1920` px because the capture surface excludes its 240 px browser-control region.
-- State: Korean locale, live production mould data, default board filters, injection production data after a manual refresh. The 4K injection empty/error state was also checked to ensure the header and board remain usable when upstream data is unavailable.
-
-## Full-view comparison evidence
-
-- The mould header keeps its existing WJ logo, home action, search, language, refresh, fullscreen, and freshness information, while scaling the same hierarchy for 4K instead of leaving controls visually undersized.
-- The injection header now follows the same order as the mould header: board home, product mark, eyebrow/title, operational timestamps, secondary history action, language, refresh, and fullscreen.
-- At `390 × 844`, both boards have a single-column body, `390 px` document width, no horizontal overflow, and touch controls at least `40–44 px` tall.
-- At `3840 × 2160`, both headers span the display without clipping. Mould header height is approximately `128 px`; injection header height is approximately `125 px`, giving the two boards a consistent monitor-scale silhouette.
-
-## Focused-region evidence
-
-- The combined comparison isolates all four mobile headers and the first operational cards in one view. It confirms that the injection board no longer has an unrelated header grammar or a destructive-looking close action, and that both boards use the same white surface, blue outline, compact eyebrow/title, status-card, and control treatment.
-- The 4K captures were inspected separately because the source references provide no 4K state. Search, timestamp, language, refresh, and fullscreen controls have measured bounding boxes within the header even when downsampling makes their text too small to judge in the full 4K image.
-
-## Required fidelity surfaces
-
-- Fonts and typography: existing Korean/Chinese system fallbacks are retained. Both headers use the same eyebrow weight/spacing, compact display-title rhythm, muted helper copy, and readable metadata hierarchy; labels do not wrap or truncate at mobile or 4K.
-- Spacing and layout rhythm: both headers use an 8 px outer frame, 9 px radius, 8–10 px internal gaps, aligned icon tiles, bordered metadata cells, and consistent action rows. Mobile content stacks without hiding persistent controls.
-- Colors and visual tokens: both boards use the existing navy/blue WJ palette, pale blue-gray background, white translucent header surface, blue active language state, and neutral outlined actions. Operational summary colors remain unchanged.
-- Image quality and asset fidelity: the existing WJ raster logo is reused in the mould board, and all controls use the installed Lucide icon set. No placeholder, handcrafted SVG, CSS drawing, or emoji asset was added.
-- Copy and content: all business labels and KOR/中文 switching remain intact. The injection header adds explicit board-home and refresh labels while removing the redundant close action from the anonymous direct-link board.
-
-## Comparison history
-
-### Pass 1
-
-- [P2] The source captures showed two different header grammars: mould used home/logo/search/refresh while injection used a standalone factory mark and terminal-like close action.
-  - Fix: added a home action, shared eyebrow/title hierarchy, explicit refresh action, matching outlined control surfaces, and consistent 4K scaling to the injection board; retained each board's domain-specific metadata.
-  - Post-fix evidence: `qa-header-mobile-comparison.jpg` shows both boards using the same title → status → action reading order.
-- [P2] The first injection mobile capture made the refresh action appear permanently unavailable while queries were pending.
-  - Fix: kept the action enabled during background fetches, added `aria-busy`, and limited motion to the refresh icon.
-  - Post-fix evidence: `qa-injection-mobile.jpg` shows the active outlined refresh control and a successful populated-state refresh without horizontal overflow.
-- [P2] The first 4K injection pass mixed 40 px language controls with 68 px home, refresh, and fullscreen controls.
-  - Fix: aligned the 4K language switch and primary icon actions to 68 px, and scaled the history/auto-refresh treatments proportionally.
-  - Post-fix evidence: `qa-injection-4k.jpg` measures the language switch and all three icon actions at 68 px high within a 125 px header.
-
-### Pass 2
-
-- The revised combined mobile comparison and the two 4K captures found no remaining actionable P0, P1, or P2 visual issue.
-
-## Interaction and runtime checks
-
-- Injection KOR → 中文 → KOR language switching passed and updated the title, metadata, action labels, and board copy.
-- Injection manual refresh passed; live data repopulated and `aria-busy` reflected the fetch state.
-- Both home, fullscreen, and refresh controls are present with accessible names; fullscreen itself was not forced during capture because the QA viewport override was required.
-- No uncaught browser runtime error was observed. One expected local-preview upstream request error was rendered through the board's existing error state during the 4K check; a subsequent mobile refresh succeeded with populated production data.
-- `cd frontend && npm run build` — passed.
-- Backend mould service tests — passed, 36 tests.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual findings remain.
-- P3: the injection board's three mobile metadata cells are intentionally compact; on devices narrower than 360 px, abbreviating the labels may improve scan speed, but no clipping occurs at the requested 390 px phone viewport.
-
-final result: passed
-
----
-
-# Incremental Design QA — Mobile Header Information-Preserving Collapse
-
-## Comparison target
-
-- Source visual truth (injection): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/70B48FF3-70F9-4AC7-A629-9C4A6734791F/1-사진-1.jpg` (`590 × 1280` px).
-- Source visual truth (mould): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/70B48FF3-70F9-4AC7-A629-9C4A6734791F/2-사진-2.jpg` (`590 × 1280` px).
-- Browser-rendered injection implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-injection-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-injection-compact.jpg`.
-- Browser-rendered mould implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-mould-compact.jpg`.
-- Combined comparison input: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-comparison.jpg` (`1660 × 930` px).
-- Implementation routes: `http://127.0.0.1:5180/boards/injection` and `http://127.0.0.1:5180/boards/moulds`.
-
-## Normalization and state
-
-- The two source captures include iPhone browser chrome. App-owned implementation captures use a `390 × 844` CSS viewport at device pixel ratio 1 and are saved at `390 × 844` pixels.
-- The comparison board scales every source/implementation image to 390 px width. Browser chrome and live-data timing differences are excluded from app-owned visual findings.
-- Default state: Korean locale at the top of each board. Compact state: more than 56 CSS px scrolled, after the 260 ms collapse transition completed.
-
-## Full-view and focused evidence
-
-- Both leading home buttons are absent. The injection title now begins with its factory mode control; the mould title begins with the existing WJ logo.
-- The injection language switch now uses the same two equal grid columns, active fill, inactive surface, 44 px height, radius, and shadow treatment as the mould switch. At 390 px, its two tracks measure `78.5 px` each; mould measures `82.25 px` each because of its 7 px action-row gaps.
-- Injection collapse preserves all three 48 px operational time cells: 기준일, MES 기준, and 화면 갱신. Its header transitions from 220 px through 136.4 px to 114 px.
-- Mould collapse preserves the full 44 px 최종 변경 시각 row while collapsing the title and search rows. Its header transitions from 220 px through 131 px to 112 px.
-- The compact screenshots show the retained information rows above live content with no horizontal overflow and no hidden primary language/refresh/fullscreen action.
-
-## Required fidelity surfaces
-
-- Fonts and typography: the existing Korean/Chinese font stack, label weights, timestamp hierarchy, and compact control labels are unchanged. Retained time values stay readable without wrapping.
-- Spacing and layout rhythm: both boards collapse to approximately 112–114 px with a consistent information row plus action row. The 260 ms cubic-bezier transition animates title/search/history height, opacity, and translation instead of abruptly toggling display.
-- Colors and visual tokens: both language controls share the WJ blue active fill, white active text, pale inactive background, blue shadow, and neutral outline.
-- Image quality and asset fidelity: the existing mould WJ logo and Lucide factory/refresh/fullscreen icons remain sharp. The removed home icons were not replaced by custom artwork or placeholders.
-- Copy and content: all Korean/Chinese labels remain intact. Compact injection retains 기준일/MES 기준/화면 갱신; compact mould retains 최종 변경 시각.
-
-## Comparison history
-
-### Pass 1
-
-- [P2] Both source headers still led with a home button that the user no longer wanted.
-  - Fix: removed both home controls and their unused navigation handlers/imports.
-- [P2] The injection language wrapper used flex sizing, so its KOR/中文 segments did not fill the available half-width control like the mould switch.
-  - Fix: changed the shared injection language wrapper to a two-column grid.
-- [P2] The previous compact state hid every timestamp and switched layout abruptly with `display: none`.
-  - Fix: retained the requested time rows and animated known heights, opacity, translation, padding, gaps, and borders over 260 ms.
-
-### Pass 2
-
-- Post-fix browser metrics show intermediate heights between default and compact endpoints, proving the collapse is progressive rather than discrete. No actionable P0, P1, or P2 issue remains.
-
-## Interaction and runtime checks
-
-- Injection KOR → 中文 → KOR passed; the Chinese title became `注塑实时看板` and `aria-pressed="true"` moved correctly.
-- Mould KOR → 中文 → KOR passed; the Chinese title became `模具实时看板` and `aria-pressed="true"` moved correctly.
-- Returning the mould scroll container to the top restored the header from 112 px to 220 px and removed compact state. Injection used the same verified threshold/state implementation.
-- Injection document width and mould page width both remained 390 px at the 390 px viewport.
-- At `3840 × 2160`, injection and mould remained 3840 px wide with zero home controls; their headers measured approximately 125 px and 128 px respectively.
-- `npm run build` — passed.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual findings remain.
-- P3: the compact header intentionally removes the board title; the retained timestamps and controls provide the requested high-value sticky context with minimal obstruction.
-
-final result: passed
-
----
-
-# Incremental Design QA — Machine Table Balance and Equal Zone Zoom
-
-## Comparison target
-
-- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-c6f8549d-adc2-45ca-b2db-c79aab2205d3.png` (`680 × 873` px).
-- Browser-rendered machine table: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-machine-balanced-crop.png` (`526 × 1005` px), captured from a `1722 × 1175` CSS viewport at density 1.
-- Browser-rendered A/B/C zoom states: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-a-balanced.png`, `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-b-balanced.png`, and `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-c-balanced-desktop-final.png`.
-- Mobile focused-zone evidence: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-b-balanced-mobile-visible.png` at `390 × 844` CSS px and density 1.
-- 4K focused-zone evidence: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-c-balanced-4k-final.png` at `3840 × 2160` CSS px and density 1.
-- Implementation route: `http://127.0.0.1:5183/boards/moulds`.
-
-## State and normalization
-
-- The source is a crop of the machine panel rather than a full board. It was compared with a matching implementation crop for column rhythm and with full-board captures for the machine/storage proportion.
-- Live MES data was used. Korean and Chinese machine labels, default all-zone layout, focused A/B/C layouts, phone horizontal overflow, and 4K scaling were checked.
-- The reference and implementation have different crop heights, so row density was judged by the complete 17-row sequence, not by exact outer-frame pixel matching.
-
-## Full-view and focused evidence
-
-- At `1722 × 1175`, the machine panel measures `526.4 px` and the storage panel `1171.6 px`, giving the machine region a `31%` share. This is approximately 20% narrower than the previous `39%` share.
-- The stale fifth CSS track was removed. The four live columns now allocate `110 px` to equipment, at least `172 px` to mounted mould, `58 px` to status, and `126 px` to final change at the primary desktop width.
-- Final-change timestamps stay on one line and the `레코드 수정 시각` / `记录更新时间` row annotation is absent from machine rows. The timestamp's quality basis remains available as a title attribute.
-- Focused A, B, and C cells measure exactly `118 × 68.875 px` at the desktop QA viewport. Their content count no longer changes cell size.
-- The focused C canvas has `1234 px` scroll height against an `888 px` viewport, while the phone B canvas has `687 px` scroll width against a `339 px` viewport. A visible `드래그하여 이동` / `拖动查看` hint and grab/grabbing cursor communicate the pan interaction.
-- At 4K, all focused zones use the same responsive `220 × 108 px` cell size; the layout scales for a monitor without returning to content-dependent stretching.
-
-## Required fidelity surfaces
-
-- Fonts and typography: existing WJ type hierarchy and weights remain. Equipment and mould identifiers stay legible without wrapping; timestamps use one line and no longer compete with explanatory microcopy.
-- Spacing and layout rhythm: the machine/storage split is rebalanced to 31/69, and the four machine columns align with their four data fields. Focused cells use one shared responsive size token across all zones.
-- Colors and visual tokens: machine status pills and the teal/gold/rose zone identities are unchanged. The pan hint uses each zone's existing accent color.
-- Image quality and asset fidelity: the supplied WJ logo and installed Lucide `Move` icon remain the only relevant assets; no placeholder or custom-drawn graphic was added.
-- Copy and content: Korean/Chinese labels remain synchronized. The removed row annotation does not remove the underlying timestamp, and the pan instruction is localized.
-
-## Comparison history
-
-### Pass 1
-
-- [P1] The machine table rendered four data fields into five CSS tracks, compressing the mould column and leaving an unused track.
-  - Fix: replaced the stale five-track definition with a four-track grid and reassigned width toward equipment and mounted mould.
-- [P2] Final-change dates wrapped into two lines and repeated a record-quality annotation on every mounted row.
-  - Fix: reserved a stable timestamp column, enforced single-line rendering, and removed the visible annotation while preserving its title metadata.
-- [P1] Focused cell size depended on row count, making A small and B disproportionately large.
-  - Fix: introduced shared responsive cell-width and cell-height tokens used by every focused zone.
-- [P2] Large focused canvases supported scrollbar movement but did not communicate or implement direct drag panning.
-  - Fix: added pointer-capture panning, movement-threshold click suppression, touch-action handling, grab/grabbing feedback, and a localized drag hint.
-
-### Pass 2
-
-- Desktop cell measurements matched across A/B/C, the phone canvas retained horizontal overflow for panning, and 4K cells scaled consistently. No actionable P0, P1, or P2 issue remained.
-
-## Interaction and runtime checks
-
-- A focused occupied cell still opened the correct mould detail after the pan handlers were added.
-- Focused C exposes vertical overflow; focused B on phone exposes horizontal overflow. Pointer-capture handlers cover both axes and use a 5 px movement threshold. The browser run verified the overflow ranges and post-handler cell selection; a physical touch-drag remains a device spot check.
-- Korean → Chinese switching passed: `1号机 - 850T` and `拖动查看` appeared, while `记录更新时间` did not.
-- `npm run build` — passed.
-- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-- P3: B-zone naturally leaves more empty canvas than C-zone because it contains only four rows; the consistent cell scale is intentional and preserves spatial comparison.
-
-final result: passed
-
----
-
-# Incremental Design QA — Native Zone Widths and Unified Focus Height
-
-## Comparison target
-
-- Source visual truth: the existing all-zone mould layout at `http://127.0.0.1:5183/boards/moulds`, where each zone's column count determines its natural cell width.
-- Updated focus states were compared against the corresponding unexpanded A/B/C cells at `1722 × 1000`, `390 × 844`, and `3840 × 2160` CSS px.
-- The requested target keeps each zone's original horizontal rhythm, standardizes only focused-cell height, and adds a restrained expansion transition.
-
-## Geometry checks
-
-- At `1722 × 1000`, original cells measured approximately `190 px` in A/B and `126 px` in C. Focused cells now measure approximately `189 px` in A/B and `125 px` in C.
-- All three focused zones measure `68.875 px` high at the desktop viewport, despite their different row and column counts.
-- At `3840 × 2160`, original A/B and C widths measured approximately `433.5 px` and `288.3 px`; focused A and C measured approximately `432.2 px` and `287.4 px`. Focused height is `108 px` for both.
-- At `390 × 844`, touch usability takes precedence over shrinking back to overview density: focused A/B cells are `132 × 60 px`, C cells are `108 × 60 px`, and horizontal drag canvases remain available (`831/339 px` for A and `1026/328 px` for C scroll/client width).
-
-## Motion and interaction checks
-
-- Focus entry uses a 280 ms decelerating scale/fade and cell width/height transitions; it reads as a gentle expansion rather than a layout jump.
-- `prefers-reduced-motion: reduce` disables the new focus animation and size transitions.
-- Direct drag panning, localized pan guidance, occupied-cell selection, and detail opening remain unchanged.
-- Browser console: zero errors during desktop, mobile, and 4K focus-state switching.
-- `npm run build` — passed.
-- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-- P3: focused zones deliberately retain small horizontal overflow caused by the roomier focus-state gutters; this makes drag affordance visible without changing the zone's native cell proportions.
-
-final result: passed
-
----
-
-# Incremental Design QA — Height-Only Zone Focus
-
-## Requested behavior
-
-- Focused cells must keep the exact width produced by the current browser-sized overview layout.
-- Only cell height may increase; focus motion must not scale or stretch the horizontal axis.
-
-## Geometry checks
-
-- At `1722 × 1000`, A/B remain exactly `189.9375 px` wide and C remains exactly `125.953125 px` wide before and after focus. Focused height is `68.875 px` for all three zones.
-- At `3840 × 2160`, C remains exactly `288.328125 px` wide while height increases from `58.484375 px` to `108 px`.
-- At `390 × 844`, A remains exactly `53.828125 px` wide while height increases from `40 px` to `60 px`. C overview width remains `34.875 px`, matching the phone-sized browser grid rather than a desktop or 4K token.
-
-## Motion and interaction checks
-
-- The previous zone-specific fixed width variables, minimum width clamps, max-content rows, and horizontal width transitions were removed.
-- Focused rows now reuse the overview grid's browser-relative columns, horizontal gaps, and horizontal padding.
-- The entry effect uses vertical-only `scaleY` plus opacity; no horizontal transform is applied.
-- Drawing-number truncation, vertical overflow, direct drag behavior where overflow exists, and occupied-cell selection remain operational.
-- Browser console: zero errors across desktop, 4K, and mobile checks.
-- `npm run build` — passed.
-- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould file and zero errors.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-- P3: phone C-zone cells are intentionally narrow because the user requested the live phone overview width to remain unchanged during focus.
-
-final result: passed
-
----
-
-# Incremental Design QA — Focused Cell Detail and Hourly Refresh
-
-## Requested behavior
-
-- A normal tap on an occupied cell must open the mould detail dialog even while its zone is expanded.
-- Actual drag movement must still pan the expanded zone without accidentally opening detail.
-- Automatic mould-board refresh should run once per hour and display the matching Korean/Chinese label.
-
-## Interaction checks
-
-- Pointer capture now begins only after movement exceeds the existing 5 px drag threshold. A stationary pointer remains targeted at the occupied-cell button, so its click handler opens detail.
-- Desktop focused A-zone cell `A1-1` opened the `MOLD-0514` dialog successfully.
-- At `390 × 844`, focused A-zone cell `A2-1` opened the `MOLD-0517` dialog and the mobile `关闭详情` action remained visible.
-- The drag suppression path remains limited to gestures that crossed the movement threshold; selected-cell and detail-query behavior are unchanged.
-- Korean displays `1시간 자동 갱신`; Chinese displays `1小时自动刷新`. The old 60-second labels are absent.
-- The board query interval is `3,600,000 ms` (one hour); manual refresh remains available.
-- Browser console: zero errors during Korean, Chinese, desktop, and mobile checks.
-- `npm run build` — passed.
-- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould file and zero errors.
-- `git diff --check` — passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-
-final result: passed
-
----
-
-# Quality Excel completion UX — Design QA
-
-## Scope
-
-- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-60361d23-c873-4c72-beb9-e67279d12b7c.png`
-- Implemented desktop capture: `/tmp/quality-import-completion-desktop-final-full.png`
-- Implemented mobile capture: `/tmp/quality-import-completion-mobile-final-full.png`
-- Side-by-side comparison: `/tmp/quality-import-design-comparison.png`
-- Desktop viewport: 1375 × 1000 CSS pixels; capture 1375 × 1016 pixels
-- Mobile viewport: 390 × 844 CSS pixels
-- Tested state: browser-direct Excel import completion, one editable failed row, corrected row publish, all-failed zero-report result, scoped history handoff
-
-## Full-view comparison
-
-The original screen keeps the correction form and long row-level result list visually dominant after registration. The implemented flow intentionally replaces that completion state with a centered summary dialog while preserving the existing blue/emerald/rose palette, rounded surfaces, typography, and action hierarchy. Detailed row results remain available as an explicit secondary action.
-
-## Focused regions
-
-- Header: success/warning tone changes with remaining failure count; close control and title remain visible at mobile width.
-- Period summary: file data range and newly registered/changed range are separated and labeled.
-- Metrics: total, processing success, created, changed, skipped, and failed counts use equal cards and tabular numerals.
-- Footer: the primary action is persistent; `업로드 완료` opens only scoped report history when report IDs exist. Zero-report results instead lead to failure correction or detailed results.
-- Failed-row correction: successful publish removes the editor immediately, recalculates the result rows/counts/date range, and reopens the refreshed completion summary.
+1. Initial desktop capture `output/inspection-room-before.jpg`: [P1] Duplicate metadata/toolbar rows pushed the worksheet to y=589 and its bottom to y=1244, hiding rows below the 1080 viewport. Fixed by putting current owners into the title bar, placing date/request controls on one row, removing repeated request headings and reducing row height.
+2. Saving originally inserted a large success panel and changed table placement. [P2] Replaced it with inline feedback in the existing heading.
+3. Final browser capture: table y=403–1012, all 16 rows visible; save bar y=1013–1064. Equipment 1–9 share the first row; 10–17 share the second. Saved and unsaved states remain distinct. No actionable P0/P1/P2 desktop findings remain.
+
+## Required surfaces
+
+- Typography: existing Korean/Chinese system font stack retained; worksheet body 14px, compact metadata 12–13px, clear 17–22px headings. Chinese labels are readable and columns align.
+- Spacing: compact header and exactly two equipment rows; 36px worksheet rows, numerical controls capped at 200px. At 1366 × 768, the worksheet scrolls within its region while the save controls remain visible at the viewport bottom.
+- Colors: original navy and blue tokens retained, white table surface and restrained alternate rows; text accompanies each semantic state. No decorative palette expansion.
+- Assets: existing application logo and standard UI library icons retained. No generated bitmap is used as an interactive control.
+- Content: deformation is dimension even though its value remains a choice. New unconfigured mappings receive this suggestion; existing configured/history mappings are not silently rewritten. Real result submission and area-completion gates retain their actual meaning; the mock's combined completion label does not bypass independent review or MES gates.
 
 ## Interaction evidence
 
-- Escape and close button dismiss the dialog.
-- `상세 결과 보기` closes the dialog and expands the row-level result table.
-- `업로드 완료` navigates to `/quality#stats` with two scoped report IDs in the tested success case.
-- All-failed result exposes `실패 수정 계속` and never navigates to unscoped history.
-- During a delayed correction publish, file replacement and rollback controls are disabled; after completion the editor and empty correction container are removed.
-- Browser console: no error-level entries during the verified flow.
-
-## Responsive and accessibility review
-
-- Desktop: modal is centered with six equal metric cards and a right-aligned primary action.
-- Mobile: content scrolls inside the dialog, footer actions stay visible, and cards collapse to two columns without horizontal overflow.
-- Headless UI Dialog provides focus management, Escape handling, overlay dismissal, and dialog semantics.
-- Buttons have visible focus rings; icons are decorative where labels already convey meaning.
-
-## Iteration history
-
-1. Initial mobile QA found the dialog footer clipped and the title wrapping too aggressively.
-2. Dialog layout changed to a bounded flex column with a scrollable body and non-shrinking header/footer.
-3. Final review found and fixed stale correction callbacks, zero-report history navigation, and a missing `rows` assignment after correction.
-4. Desktop, mobile, correction completion, all-failed, scoped history, and console checks passed after the fixes.
-
-## Findings
-
-- No remaining P0/P1/P2 visual or interaction defects found in the tested completion flow.
-- Existing build warnings for Browserslist freshness and large bundle chunks are unrelated to this change.
-
-final result: passed
-
----
-
-# Quality registration workspace and selected deletion — Design QA
-
-## Scope
-
-- Source desktop capture: `/tmp/quality-merge-source-desktop.png`
-- Implemented desktop capture: `/tmp/quality-merge-implementation-desktop.png`
-- Side-by-side comparison: `/tmp/quality-merge-comparison.png`
-- Desktop viewport: 1440 × 1000 CSS pixels
-- Mobile viewport: 390 × 844 CSS pixels
-- Tested states: unified direct/Excel registration, recent history, full-history current-page selection, deletion confirmation
-
-## Visual comparison
-
-- The former direct-registration and Excel-registration cards are now one continuous `품질 보고 등록` workspace.
-- Direct registration remains first and compact; Excel import follows after a clear internal divider without losing its persistent upload state.
-- The isolated `오늘 Excel 등록 취소` control is absent.
-- Recent history remains a separate summary card below registration, preserving a clear transition from entry to review.
-- Existing blue/cyan palette, control sizing, typography, rounded surfaces, and responsive form grids are retained.
-
-## Selected deletion
-
-- Full history shows a current-page selection toolbar, per-report checkboxes in desktop rows and mobile cards, and a partial-selection state.
-- The mobile toolbar was revised from a wrapping single row to a two-row layout with equal-width actions.
-- Selected cards and rows receive a visible indigo selection treatment.
-- `선택 삭제` opens a focused confirmation dialog stating the exact count, irreversibility, and the shared-image preservation policy.
-- Cancel closes the dialog without issuing a delete request.
-
-## Responsive and accessibility review
-
-- Direct registration remains one column at 390 px; Excel import stays in the same card and keeps a full-width drop target.
-- Mobile selection checkboxes have a minimum 44 px touch target.
-- Native checkboxes expose current-page selection semantics, including indeterminate state.
-- The destructive dialog uses Headless UI focus and Escape handling, descriptive title/body text, and explicit cancel/confirm actions.
-- Browser console contained no error-level entries in the tested registration, history, and dialog states.
-
-## Verification
-
-- Frontend targeted ESLint: passed.
-- Frontend production build: passed; existing Browserslist and large-chunk warnings remain unrelated.
-- Backend bulk-delete contract: 8/8 passed.
-- Backend permission and Excel rollback regressions: 16/16 passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain in the tested flow.
-- Remote Cloudinary image objects are intentionally retained because image assets can be shared by reports.
-
-final result: passed
-
----
-
-# Injection field Kanban and field-material readiness — Design QA
-
-## Scope
-
-- Selected visual reference: `/Users/macstudio_ted/.codex/generated_images/01a03187-29b1-71a3-bd11-2e7db0b818bf/exec-b50f4c04-f5d0-4ddd-8333-57e92a185df8.png`
-- Implemented field capture: `/tmp/wj-field-kanban-final-gate.png`
-- Historical-quality capture: `/tmp/wj-field-kanban-quality.jpg`
-- Reference/implementation comparison: `/tmp/wj-field-kanban-comparison-final.png`
-- Field-material readiness capture: `/tmp/wj-field-materials.jpg`
-- Verified field viewport: 2064 × 1161 CSS pixels (16:9); browser capture 3329 × 1873 pixels
-- Tested states: Chinese instruction, Korean drawing, Chinese/Korean historical-quality warning, manual defect entry and result, all-materials dialog, field-material upload dialog
-
-## Visual comparison
-
-- The selected fixed navy command panel and large white document canvas are preserved at the same 16:9 proportion.
-- Current counter, model, Part No., current-plan shots, theoretical pieces, completion rate, queue, change confirmation, and defect entry remain continuously visible.
-- The work instruction receives the largest area. Toolbar and footer controls stay outside the document canvas so they do not cover the source document.
-- A side-by-side comparison exposed the legacy application sidebar on the kiosk route and a three-column queue grid that squeezed Part No. vertically. The field route is now standalone and the queue is a readable two-column card.
-- Existing WJ logo artwork and Lucide icons are used; no placeholder icon art was introduced.
-
-## Rotation and quality-history checks
-
-- Automatic sequence is work instruction 60 seconds, then each matched historical quality issue for 30 seconds, then back to the instruction.
-- With no matched issue, the instruction remains on screen. A Part No./model identity change resets the sequence to the instruction.
-- Drawing selection and required dialogs pause rotation. While auto-rotation is active, the PDF is interaction-locked behind a bilingual `操作文档 / 문서 조작` affordance; the first touch pauses rotation and then enables PDF scrolling and zooming.
-- Quality history is matched to the exact injection machine and the current Part No. nine-character prefix.
-- The evidence count is labeled as report records, not defect pieces. The fixed Chinese/Korean disclaimer states that the content is historical and does not mean a current defect is occurring.
-
-## Interaction evidence
-
-- Chinese is the default field language; KOR switches every field label and the historical disclaimer, and switching back restores Chinese.
-- Work-instruction, drawing, and historical-quality tabs all changed the visible canvas.
-- Manual defect test: selected `划伤`, entered `3` with the touch numpad, and received the server result `3,248 × 2 = 6,496; 6,496 − 3 = 6,493` before final confirmation.
-- The all-materials dialog listed the matched work instruction and drawing with source links.
-- The development page listed three planned models and showed complete, missing, and PPT-without-PDF-preview states. The upload dialog exposed PDF/PPT/PPTX source selection plus an optional PDF preview; drawing input remained PDF-only.
-- Buttons have visible focus treatment, tab semantics use `role="tab"`, and dialogs move, trap, and restore focus while locking background scroll. At the 1366 × 768 breakpoint, document controls, defect buttons, and the numpad remain at least 56 px high.
-
-## Verification
-
-- Frontend production build: passed.
-- Frontend targeted ESLint for all changed field/development files: passed with zero warnings.
-- Full frontend ESLint: zero errors; 33 pre-existing warnings outside the changed files.
-- Focused backend field-Kanban tests: 25/25 passed.
-- Existing production backend regression tests: 62/62 passed.
-- Django system check, Python compile check, and `git diff --check`: passed.
-
-## Findings
-
-- No actionable P0, P1, or P2 visual or interaction findings remain in the tested field flow.
-- P3: the QA document uses realistic mock content. Final legibility still depends on the page composition of each uploaded production PDF and the PDF preview supplied for PPT/PPTX sources.
-
-final result: passed
-
----
-
-# 크리스털 공정·정면 날씨 그래픽 검증
-
-final result: passed
-
-## 비교 대상과 상태
-
-- 선택 시안: `/Users/macstudio_ted/.codex/generated_images/01a07933-19b3-7fc0-9dac-65bc7a1d4708/exec-8ac752da-aef7-4965-be21-86e6a7c8b653.png`.
-- 시안 크기: 1536×1024 픽셀의 사출·조립 비교 그림. 웹 화면이나 CSS viewport를 나타내는 시안은 아니다.
-- 구현: `http://127.0.0.1:5188/boards/overview?weather=clear&phase=day&ai=ready&lang=zh`.
-- 전체 구현 캡처: `/tmp/wj-overview-board-qa/10-crystal-applied.jpg` (1943×1257 픽셀).
-- 중앙 헤더 확대 캡처: `/tmp/wj-overview-board-qa/11-crystal-weather-final.jpg` (약 639×356 픽셀, 브라우저 DOM 헤더 영역).
-- 실제 CSS viewport: 1943×1257, devicePixelRatio 1. 별도의 다운샘플링이나 밀도 보정은 하지 않았다.
-- 상태: 중국어, 맑음/주간, 합성 DEMO 자료와 합성 AI ready 결과. 전체 캡처는 그림을 일시정지한 상태이며 확인 후 재개했다. 운영 데이터를 캡처하거나 AI 수신 성공으로 간주하지 않는다.
-
-같은 비교 입력에 선택 시안과 전체 구현 캡처를 함께 열어 비교했다. 시안은 두 그림의 크게 확대된 비교 보드이고 실제 화면은 3×3 데이터 보드이므로 전체 프레임을 1:1로 비교하지 않았다. 공정 그림의 정면 시점, 오른쪽의 높은 장치, 유리 재질, 파랑·초록 구분과 수평 바닥선이 비교 범위다. 그림을 약 7rem 슬롯에 재구성한 것은 의도한 차이다. 시안의 제목·배경·바닥 반사는 UI에 옮기지 않았다.
-
-## 결과
-
-현재 요청 범위에 남은 P0/P1/P2 차이는 없다. 선택 시안의 사출·조립 방향과 재질이 실제 카드에서도 구별되며, 날씨 구체는 눈높이 정면과 얇은 수평 받침을 사용한다. 숫자가 주인 기존 정보 계층을 유지한다.
-
-| 필수 검토 영역 | 확인 결과 |
-| --- | --- |
-| 글꼴·문자 | 기존 한국어/중국어 글꼴, 굵기와 숫자 크기를 유지했다. 두 언어에서 날짜·위치 및 시각·기온의 행이 일치한다. 최종 분수 확대 비율에서 top·bottom 차이는 0.02px 미만이다. 한국어 긴 날짜와 −18.8°C가 겹치지 않는다. |
-| 간격·배치 | 기존 3×3 구조와 제목 중앙 정렬을 유지했다. 시계–가운데 기상 정보–오른쪽 글로브 구도이며, 그림은 다른 행을 침범하지 않는다. 공정 두 그림의 보이는 바닥선을 맞췄다. |
-| 색상 | 사출 파랑·조립 초록과 기존 경고 색의 의미를 유지했다. 투명 테두리와 서리 유리 면이 밝은 카드에서 식별된다. 글로브의 날씨별 명암은 다르지만 공통 크리스털 형태와 받침을 유지한다. |
-| 이미지 | 개별 새 PNG를 실제 알파가 있는 무손실 WebP로 인코딩했다. 8장 모두 1254×1254이며 모든 알파·보이는 RGB 픽셀이 원본과 동일한 것을 독립 확인했다. 스트레칭·잘라내기·배경 사각형·체크무늬가 없다. 원본 시안을 잘라낸 이미지가 아니라 작은 카드에 맞춘 같은 콘셉트의 재제작이다. |
-| 문구·데이터 | 이번 그림 변경으로 데이터·번역 문구·계산식·API·AI 채택 조건을 변경하지 않았다. 비교 시안의 ‘크리스털’ 등 설명 문구를 운영 UI에 추가하지 않았다. |
-
-중앙 헤더는 맑음, 맑은 밤, 흐림, 비/야간, 눈, 뇌우의 실제 브라우저 영역을 확대해 각각 확인했다. 헤더 확대는 시간·기온 정렬과 글로브의 받침·투명 배경을 점검하는 데 사용했다. 전체 캡처에서는 두 공정 그림의 방향·바닥선·크기와 숫자 공간을 확인했다.
-
-## 비교·보정 이력
-
-- 최종 비교 전, 두 공정 PNG의 투명 여백 차이를 확인했다. 같은 이미지 박스만 사용하면 실제 바닥선이 달라지므로 사출 그림에 `top: 0.78rem`을 적용했다. 원본 이미지 자체는 편집하지 않았다.
-- 보정 후 `/tmp/wj-overview-board-qa/10-crystal-applied.jpg`를 선택 시안과 한 입력에서 비교했고, 이 비교에서는 추가 P0/P1/P2 수정이 발견되지 않았다.
-- 기존 흐림 전용 패딩은 새 정면 자산에 필요하지 않아 제거했다. 6종 헤더를 실제 표시 크기에서 다시 확인했다.
-
-## 동작·코드 검증
-
-- `node --test tests/overview-presentation.test.ts`: 5개 통과.
-- 변경 페이지와 `WeatherDisplay.tsx`의 ESLint 통과.
-- `npm run build`: TypeScript, Vite production, legacy CSS build 통과. 큰 JS 청크에 대한 기존 경고는 남아 있다.
-- 클릭으로 그림 3개가 모두 paused 상태가 되는 것을 확인하고 Enter로 재개했다. 12초 반복 애니메이션, `prefers-reduced-motion` 분기와 버튼 비활성 처리는 유지했다.
-- 브라우저에서 현재 표시되는 이미지 3장의 로딩 성공 확인. 마지막 브라우저 오류 로그는 비어 있었다.
-- 로컬 fixture는 기존 화면을 사용하는 합성 검증 서버이며 운영 서버나 API를 대체하지 않는다.
-
-## 자산 원본 추적
-
-다음 PNG를 시각적으로 검토한 뒤 크기 변경 없는 무손실 형식 변환만 수행했다. 이미지 생성 서비스 원본은 저장소 외부에 보존하며 최종 WebP는 `frontend/src/assets`에 있다.
-
-| 최종 자산 | 생성 PNG 원본 절대 경로 |
-| --- | --- |
-| overview-injection-crystal.webp | `/Users/macstudio_ted/.codex/generated_images/01a07933-19b3-7fc0-9dac-65bc7a1d4708/exec-d0ee0b9b-dd05-4435-bf03-c4dfbd2f26ac.png` |
-| overview-assembly-crystal.webp | `/Users/macstudio_ted/.codex/generated_images/01a07968-4f04-7df0-89d3-1ff9f4296a9c/exec-180da7ce-5f86-4d89-ba24-4258e216c323.png` |
-| overview-weather-clear-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07959-d958-79e0-8a58-91146e7fbd4e/exec-dde09198-b7f0-4933-8cc5-f7eab552507a.png` |
-| overview-weather-night-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07959-d958-79e0-8a58-91146e7fbd4e/exec-3d104e48-fe35-4043-a9bf-058d5910492a.png` |
-| overview-weather-cloudy-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-ae7a5466-a49a-4faf-8310-6fe3240c327d.png` |
-| overview-weather-rain-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-a357fc0c-fd79-4669-8cd0-debfe2d2afad.png` |
-| overview-weather-snow-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07968-4f04-7df0-89d3-1ff9f4296a9c/exec-4834ef67-d732-4644-8271-44ac497da6dc.png` |
-| overview-weather-thunder-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-7590ba9c-3e2d-4bbd-bcf5-d9025bab03a5.png` |
-
-## 완료 체크리스트와 남은 범위
-
-- [x] 선택한 크리스털 공정 2종 적용 및 시점·바닥선 통일.
-- [x] 정면 크리스털 날씨 6종 적용 및 한국어/중국어 표시 확인.
-- [x] 기존 레이아웃, 숫자, 데이터 계약, 그래픽 일시정지 유지.
-- [x] 시안/구현 비교, 빌드와 단위 검사, 브라우저 오류 확인.
-- [ ] 운영 배포와 실제 대형 현황판에서의 시청 거리 확인은 별도 단계다. 4K 기기의 실측 검증은 하지 않았다.
-
-후속 보완(P3): 8개 자산 총 9.34 MiB이며 처음에는 공정 2장과 해당 날씨 1장만 요청한다. 느린 현장 회선의 첫 로딩 시간은 운영 배포 이후 확인할 수 있다. 원본 충실도를 유지하는 이번 적용 이후, 필요하면 작은 표시 크기에 맞춘 제공 해상도를 별도로 검토한다.
-
----
-
-# 날씨 상태와 시각 설명의 수평 정렬 — 2026-09-07 후속 검증
-
-final result: passed
-
-## 비교 근거
-
-- 사용자 화면: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-30084aea-a016-4a3a-bebd-75f3333687f1.png` (658×370). 변경 전 헤더이며 요청 문장이 변경 방향을 지정한다.
-- 한국어 수정 헤더: `/tmp/wj-overview-board-qa/12-weather-row-ko.jpg` (632×352).
-- 중국어 수정 헤더: `/tmp/wj-overview-board-qa/13-weather-row-zh.jpg`.
-- 전체 화면: `/tmp/wj-overview-board-qa/14-weather-row-final-full.jpg` (1920×1080).
-- 실제 viewport 1920×1080 CSS px, devicePixelRatio 1. 헤더는 실제 DOM 영역으로 잘라 캡처했다. 사용자 이미지에는 외부 여백이 포함돼 있으므로 크기가 다른 프레임의 픽셀 일치로 평가하지 않았다.
-- 사용자 화면과 한국어 수정 헤더를 같은 비교 입력에서 열었다. 날짜·기온·맑음 상태는 같은 내용이며 현재 시계·관측 시각과 애니메이션 프레임은 시간 경과로 달라진다. 합성 DEMO 자료를 사용했다.
-
-## 요청에 따른 의도한 차이
-
-날씨 상태를 기온 오른쪽과 글로브 왼쪽 사이에 배치했다. 글로브에 가까운 우측 정렬로 관계를 드러내며 긴 상태는 자연스럽게 두 줄로 표시한다. 관측 시각은 현재 시각 설명과 같은 행에 놓고 두 설명의 크기·굵기·색을 통일했다. 전체 3×3 구조, 제목 중앙 정렬, 공정·날씨 이미지, 색상과 데이터는 그대로 유지한다.
-
-## 필수 표면 검토
-
-- 글꼴: 한국어와 중국어 모두 날짜/위치, 시각/기온의 top·bottom이 동일하다. 두 설명은 13.44px(0.7rem), 굵기 600, line-height 1로 동일하며 top 191.828125px, bottom 205.265625px로 일치한다. 상태는 0.88rem/650으로 기온보다 보조적인 위계다.
-- 간격·레이아웃: 두 영역이 같은 grid 행 정의를 공유한다. 글로브는 전체 세로 영역을 차지하며, 상태는 기온과 같은 수치 행에서 글로브 바로 왼쪽에 붙는다. 추가 상자나 구분선을 넣지 않았다.
-- 색상: 기존 남색 글자, 파란 기온, 회청색 설명을 유지했다. 지연된 관측 시각은 기존 주황색 경고를 유지한다.
-- 이미지: 기존 크리스털 파일을 그대로 사용한다. 글로브는 contain 비율을 유지하고 전체 형태가 보인다. 배경 사각형이나 잘림이 없다.
-- 문구·데이터: 번역 문구·온도·관측 시각의 정의와 미수신/미확인 처리를 변경하지 않았다. 미수신은 온도와 기상 수치를 ‘—’로, 미확인은 수신된 온도와 중립 아이콘을 그대로 표시한다.
-
-## 검증 결과 및 한계
-
-- 한국어/중국어 맑음, 한국어 ‘구름 조금’과 −18.8°C 및 이전 관측, 날씨 미수신, 상태 미확인을 브라우저에서 확인했다. 긴 상태는 두 줄이고 각 날씨 자식 요소의 수평 overflow가 없다.
-- 첫 수정 후 비교에서 추가 P0/P1/P2 문제는 발견되지 않았다. 글로브 옆 상태와 기온 아래 설명이 사용자의 요청대로 구분된다.
-- `eslint src/domains/boards/overview/WeatherDisplay.tsx` 및 `npm run build` 통과. 기존 큰 JS 청크 경고만 남아 있다. 간단한 배치 변경이므로 구현을 되풀이하는 새 단위 검사는 추가하지 않았다.
-- 마지막 브라우저 오류 로그 없음. 운영 배포 및 4K 현황판 실기 검증은 이번 범위에 포함하지 않았다.
-- 다음 단계는 이 헤더 배치의 사용자 확인 후 기존 종합현황판 개선분과 함께 배포하는 것이다.
-
----
-
-# 글로브 아래 중앙의 반투명 캡션 — 2026-09-07 최종 피드백
-
-final result: passed
-
-## 기준과 비교
-
-- 사용자 최종 지시: 반투명 캡션을 한 행으로 글로브 아랫부분에 가운데 맞춤한다. 앞선 기온 옆 날씨 상태 배치를 대체하는 요청이다.
-- 변경 전 헤더: `/tmp/wj-overview-board-qa/12-weather-row-ko.jpg` (632×352).
-- 최종 헤더: `/tmp/wj-overview-board-qa/17-weather-caption-bottom-final.jpg`.
-- 최종 전체 화면: `/tmp/wj-overview-board-qa/18-weather-caption-bottom-full.jpg` (1943×1257).
-- 변경 전후 한국어 맑음 헤더를 같은 비교 입력에서 확인했다. 각각 1920×1080 및 1943×1257 CSS viewport, DPR 1이며 프레임 배율 차이는 의도한 레이아웃 차이로 평가하지 않았다. 날짜·기온·기상 상태가 동일한 합성 DEMO이며 현재 시각과 애니메이션 프레임은 다르다.
-
-## 구현 및 시각 검토
-
-- `WeatherDisplay.tsx`에서 그림과 날씨 상태를 하나의 시각 영역으로 묶었다. CSS 두 열은 기온 정보와 글로브로 구성하고, 캡션은 글로브 아래쪽의 중앙에 고정했다.
-- 글꼴: 0.8rem/600의 한 줄 캡션. ‘구름 조금’, ‘날씨 미수신’은 줄바꿈이나 수평 넘침 없이 읽힌다. 기존 숫자와 한국어·중국어 폰트는 그대로다.
-- 간격: 최종 DOM에서 캡션과 이미지의 가로 중심이 모두 1178.71875px로 일치한다. 현재 시각 설명과 관측 시각도 top 276.109375px, bottom 289.703125px로 일치한다.
-- 색상: 옅은 흰색·청색 반투명 표면과 기존 회청색 글자, 작은 모서리·그림자로 크리스털 하단과 연결했다. 투명도 감소 설정에서는 불투명 배경을, 대비 증가 설정에서는 선명한 테두리를 사용한다.
-- 이미지: 기존 크리스털 자산을 그대로 사용했다. 중간 확인에서 grid 자식 이미지가 프레임보다 높게 계산되는 현상을 발견해, 고정 영역 안의 flex 정렬로 수정했다. 이후 computed image/frame 높이가 모두 154.594px인 것을 확인했고 최종 캡처를 다시 비교했다. 의도한 1.012배 미세 애니메이션 외의 확대나 자르기는 없다.
-- 내용: 날씨·관측 값과 미수신 처리를 바꾸지 않았다. 캡션은 상태 표시이며 버튼이나 새로운 조작을 추가하지 않는다.
-
-## 완료와 남은 범위
-
-- 한국어 맑음·긴 상태와 음수 기온·지연 관측·미수신, 중국어 맑은 밤을 확인했다. 기존 애니메이션과 움직임 감소 처리를 유지한다.
-- WeatherDisplay ESLint 및 최종 `npm run build` 통과. 마지막 브라우저 오류 로그 없음. 기존 큰 JS 청크 경고는 남아 있다.
-- 시안 대비 남은 P0/P1/P2 문제 없음. 운영 배포와 실제 현황판 시청 거리 검증은 별도 단계다.
-
----
-
-# 상단 여백·로고 테마 전환·중국어 제목 — 2026-09-08
-
-final result: passed
-
-## 사용자 기준과 의도한 변경
-
-- 사용자 제공 상단 화면: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-0cdf252b-e2f9-48cd-8236-3711822ae783.png`.
-- 변경 화면: `/tmp/wj-overview-spacing-qa/top-ko.jpg`, `top-zh-dense.jpg`. 원본과 한국어 수정본을 같은 이미지 입력에서 비교했다. 원본은 운영 자료, 수정본은 DEMO 합성이며 수량·시각 일치를 평가하지 않았다.
-- 삭제 요청한 하단 그래픽/최신성 행을 제거하고 시계·날씨가 그 높이를 사용한다. 글로브의 기존 하단 중앙 캡션을 유지하면서 그림의 높이 제한을 풀었다. 사출·조립 숫자 묶음을 남은 가운데 영역에 배치했다.
-- 이어진 사용자 요청에 따라 로고의 크기·위치를 조정하고 클릭으로 다크/라이트 전환을 추가했다. 전환 마크는 최종 지시대로 없다. 중국어 제목 9개는 900 굵기다. 기존 3×3, 라이트 색상과 수량 정의는 유지한다.
-
-## 배치·색·글꼴·이미지 검토
-
-- 첫 Chrome 확인 viewport는 1943×1257 CSS px, DPR 1이다. 기본 수량의 그림→숫자 / 숫자→진도 간격은 사출 43.16/36.77px, 조립 49.94/43.55px였다. 8자리 수량에서는 두 카드 모두 33.42/27.03px로 균형 있게 유지됐다. 수량 자체는 반올림하거나 자르지 않는다.
-- 인앱 브라우저에서 날짜/위치, 시계/기온, 현재 시각 설명/관측 시각의 top·bottom이 각각 일치했다. 캡션과 시각 영역의 중심 차이는 0.03px 미만이다. 이미지 로딩 3개 모두 성공했고 글로브 캡션은 한 줄이다.
-- 다크 전체 화면: `/tmp/wj-overview-spacing-qa/dark-zh-full.jpg`. 최종 라이트 중국어: `/tmp/wj-overview-spacing-qa/light-zh-final-full.jpg`. 다크에서 9개 카드, AI 본문, 보조 수치, 출고 막대와 차트 눈금·범례를 확인했다. 남색 표면과 밝은 본문, 파랑·초록·주황 의미를 유지하며 이미지 색 반전은 없다.
-- 인앱의 실제 측정 viewport는 1529×1917 CSS px이며 보드는 기존 16:9 비율로 가운데에 놓인다. 브라우저 확대율 때문에 일부 viewport 캡처가 잘려 fullPage 캡처로 전체 9개 카드를 다시 확인했다. 임시 viewport 설정은 해제했다. 1920 또는 4K 실기 확인으로 기록하지 않는다.
-- 중국어 제목 9개 모두 computed weight 900, 중앙 제목과 카드의 중심 차이 0px, 제목·생산 수량의 수평 넘침 없음. 로고는 이미지 하나만 포함하며 추가 SVG 표시가 없다.
-
-## 동작 검증과 완료 범위
-
-- 로고 Enter로 light 전환, 다른 탭 light 동기화, 다시 클릭 후 재로딩에서 dark 유지 확인. 수동 선택은 다음 08:00/20:00 경계까지만 유효하다.
-- Shanghai 08:00·20:00의 직전 1ms/정각, UTC/다른 오프셋 입력, 자정·연말, 만료된 저장값과 잘못된 저장값을 단위 검사했다. 실제 시계를 변경하거나 운영 데이터를 수정하지 않았다.
-- 독립 코드 검토에서 지적된 갱신 실패 안내 누락을 기존 새로고침 버튼과 접근성 상태로 복구했다. 성공 수신 후 실패 fixture에서 수량과 수신 시각이 그대로 유지됨을 확인했다.
-- 프런트 검사 161개 통과, 전체 ESLint 오류 0·기존 경고 31, production/legacy build 통과. 마지막 브라우저 오류 로그 없음. 추가 P0/P1/P2 문제 없음.
-- 이 기록은 로컬 표시·동작 검증이다. 최종 운영 반영은 PR의 배포 증빙과 운영 SHA로 별도 확인하며, 4K 현장 시청 거리 검증은 남아 있다.
-
----
-
-# 중앙 카드 정보 열과 글로브 균형 — 2026-09-08
-
-final result: passed
-
-- 날짜·시간 묶음과 위치·기온·관측 묶음을 각각 오른쪽으로 0.55rem 이동했다. 글로브와 하단 캡션은 함께 왼쪽으로 0.3rem 이동했다. 기존 그리드 폭, 글자 크기, 그림 크기와 세로 줄맞춤은 유지한다.
-- 변경 전 `/tmp/wj-overview-header-balance-qa/before-ko-full.jpg`, 변경 후 `after-ko-full.jpg`, `after-zh-dense-full.jpg`, `after-zh-dark-full.jpg`를 검토했다. 앞뒤 한국어 화면을 같은 이미지 입력에서 비교했다. 촬영 viewport가 달라 전체 프레임 크기 대신 카드 내부 상대 간격을 평가했다. 자료는 합성 DEMO다.
-- 날짜/위치의 top, 시계/기온의 bottom, 현재 시각 설명/관측의 top 차이는 각각 0px다. 캡션과 글로브 시각 영역의 가로 중심 차이는 약 0.013px다.
-- 1529×1917 CSS viewport에서 중국어 긴 날짜와 음수 기온 -18.8°C를 확인했다. 날짜→위치 간격은 약 6.88px, 기온 단위→글로브 시각 영역은 약 13.61px로 겹침이 없다. 캡션은 한 줄로 영역 안에 들어온다. 한국어 기본 상태와 중국어 다크 상태도 확인했다.
-- `npm run build` 및 `git diff --check` 통과. 브라우저 오류 로그 없음. 기존 큰 JS 청크 경고는 유지된다. CSS 미세 조정으로 별도 단위 테스트는 추가하지 않았다.
-- 이 변경은 `codex/overview-header-balance-20260908`의 로컬 구현·미리보기 검증이다. 앞서 배포된 PR #39 이후의 추가 변경이며 아직 운영에 배포하지 않았다.
+- Equipment selection opens the request inline; no full-page editor navigation or inspector logout.
+- Enter from the first numeric field focuses the next measurement input. Native Tab remains available.
+- Dimension save leaves the appearance value, judgement and unsaved indicator intact.
+- Item attribution displays assigned inspector QC001 and authenticated terminal recorder separately.
+- Actual synthetic request: area `dimension`, inspector ID 202, recorder ID 101, only the six dimension item IDs. Production/MES requests: none.
+- Korean/Chinese worksheet labels, empty requests and failed reads were observed. Failed reads disable unknown equipment instead of inventing statuses.
+- Normal-state console error check: none.
+
+## Remaining limits
+
+- Mobile equipment and table regions scroll locally and their page/body containers fit 390px. The shared shell still reports a larger root scroll extent during mobile browser resizing; full mobile shell acceptance is outside this desktop request.
+- PostgreSQL-specific concurrent lock regressions are present but could not run because local PostgreSQL is unavailable. They must run before production release.
+- Backend migration 0015 is additive and unapplied in production. Shared-terminal WJ attribution is implemented; the existing unverified MES partial/multi-executor contract remains blocked.
+
+## Checklist
+
+- [x] Selected desktop layout and user amendments implemented.
+- [x] Modern/legacy fixture build and focused frontend/backend checks passed.
+- [x] Browser interactions and full/focused visual comparison completed.
+- [x] Local preview kept available with synthetic data.
+- [ ] Production database migration, PostgreSQL CI and live MES role acceptance are separate release work.
 
 ---
 

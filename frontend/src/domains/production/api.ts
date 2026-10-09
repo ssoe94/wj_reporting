@@ -1,3 +1,4 @@
+import type { InjectionInspectionScope } from './injection-quality-binding';
 import { http } from "@/shared/api/http";
 import { deepAnalysisRequestScope, latestDeepAnalysisPath, type DeepAnalysisKind, type DeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
 export { DEEP_ANALYSIS_MODEL_ID } from "@/domains/ai/model-labels";
@@ -51,6 +52,9 @@ export type ProductionTransition = {
 };
 
 export type ProductionStatusMachine = {
+  machine_number?: number;
+  inspection_scope?: InjectionInspectionScope | null;
+  inspection_status?: unknown;
   machine_name: string;
   total_planned: number;
   total_actual: number;
@@ -85,8 +89,11 @@ function normalizeProductionStatus(data: Partial<ProductionStatusResponse> | nul
   };
 }
 
-export async function getProductionStatus(date: string) {
-  const response = await http.get<ProductionStatusResponse>(`/production/status/?date=${encodeURIComponent(date)}`);
+export async function getProductionStatus(date: string, options?: { skipAuth?: boolean }) {
+  const response = await http.get<ProductionStatusResponse>(
+    `/production/status/?date=${encodeURIComponent(date)}`,
+    options,
+  );
   return normalizeProductionStatus(response.data);
 }
 
@@ -99,6 +106,8 @@ export type ProductionPlanDatesResponse = {
 
 export type ProductionPlanRecord = {
   id?: number;
+  work_uid?: string | null;
+  work_version?: number;
   machine_name: string | null;
   lot_no?: string | null;
   model_name?: string | null;
@@ -953,7 +962,7 @@ export async function uploadProductionPlanFile(file: File, planType: PlanType, t
 export type ProductionPlanUpdatePayload = Partial<
   Pick<
     ProductionPlanRecord,
-    "machine_name" | "lot_no" | "model_name" | "part_spec" | "part_no" | "planned_quantity" | "sequence"
+    "machine_name" | "lot_no" | "model_name" | "part_spec" | "part_no" | "planned_quantity" | "sequence" | "work_version"
   >
 >;
 

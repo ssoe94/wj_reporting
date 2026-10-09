@@ -1,3 +1,7 @@
+import { InjectionQualityStatus } from '../components/InjectionQualityStatus';
+import { MesProductionReadStatusPanel } from '../components/MesProductionReadStatusPanel';
+import { reduceInjectionQuality } from '../injection-quality-status';
+import { selectBoardInspection } from '../injection-quality-binding';
 import { boardPartQueryOptions } from "../board-part-api";
 import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch";
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
@@ -7,8 +11,9 @@ import { getBoardCycleTime, getBoardTone, isMesDataReadyForBusinessDate, type Bo
 import { needsFieldPartNoReview } from "@/domains/production/injection-transition-analysis";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Factory, History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
+import { History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
@@ -33,16 +38,9 @@ const VISITOR_CYCLE_TIME_MIN_MULTIPLIER = 1.1;
 const VISITOR_CYCLE_TIME_MAX_MULTIPLIER = 1.12;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
 const PREVIOUS_SUMMARY_CACHE_VERSION = 4;
-const BOARD_MODEL_COLORS = [
-  "#109858",
-  "#2563eb",
-  "#d97706",
-  "#7c3aed",
-  "#db2777",
-  "#0891b2",
-  "#65a30d",
-  "#dc2626",
-] as const;
+// One calm hue for production; consecutive products alternate two shades and a
+// thin divider marks each change. Status colors stay reserved for the card state.
+const BOARD_PRODUCT_SHADES = ["#0f6e56", "#1d9e75"] as const;
 
 type PreviousSummaryCache = {
   version: number;
@@ -124,6 +122,7 @@ const boardCopy = {
     totalMachines: "전체 설비",
     managementRequired: "관리 필요",
     timeProgress: "시간 기준",
+    paceTitle: "시간 기준 대비 진도",
     progressGap: "진도 차이",
     noIssue: "이상 없음",
     running: "최근 형합 관측",
@@ -154,7 +153,7 @@ const boardCopy = {
     unplanned: "계획없음",
     currentCt: "현재 C/T",
     recentCt: "최근 60분 기준",
-    recentShots: "최근 60분 형합",
+    recentShots: "60분 형합",
     checkEquipment: "설비 상태 확인",
     visitorCt: "C/T 범위",
     enableVisitorMode: "방문객 모드 켜기",
@@ -224,6 +223,7 @@ const boardCopy = {
     totalMachines: "全部设备",
     managementRequired: "需要管理",
     timeProgress: "时间进度",
+    paceTitle: "相对时间进度",
     progressGap: "进度差异",
     noIssue: "无异常",
     running: "近期合模已观测",
@@ -254,7 +254,7 @@ const boardCopy = {
     unplanned: "无计划",
     currentCt: "当前周期",
     recentCt: "最近60分钟基准",
-    recentShots: "最近60分钟合模",
+    recentShots: "60分钟合模",
     checkEquipment: "核查设备状态",
     visitorCt: "周期范围",
     enableVisitorMode: "开启访客模式",
@@ -437,14 +437,6 @@ type TimelineProductWindow = {
   color: string;
 };
 
-function getStableColorIndex(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash) % BOARD_MODEL_COLORS.length;
-}
-
 function buildTimelineProductWindows(row: RealtimeProgressRow | undefined): TimelineProductWindow[] {
   if (!row?.segments.length) return [];
   const grouped = new Map<string, {
@@ -470,26 +462,15 @@ function buildTimelineProductWindows(row: RealtimeProgressRow | undefined): Time
     grouped.set(groupKey, current);
   });
 
-  const colorByModel = new Map<string, number>();
-  const usedColorIndexes = new Set<number>();
   let cumulativeShots = 0;
+  let productIndex = 0;
   return [...grouped.entries()].flatMap(([groupKey, group]) => {
     if (group.allocatedShots <= 0) return [];
+    const color = BOARD_PRODUCT_SHADES[productIndex % BOARD_PRODUCT_SHADES.length];
+    productIndex += 1;
     const partNo = [...group.partNos].join(" + ") || "-";
     const model = [...group.models].join(" + ") || "-";
     const classification = [...group.classifications].join(" + ") || "-";
-    const colorKey = model !== "-" ? model : partNo;
-    let colorIndex = colorByModel.get(colorKey);
-    if (colorIndex === undefined) {
-      colorIndex = getStableColorIndex(colorKey);
-      let attempts = 0;
-      while (usedColorIndexes.has(colorIndex) && attempts < BOARD_MODEL_COLORS.length) {
-        colorIndex = (colorIndex + 1) % BOARD_MODEL_COLORS.length;
-        attempts += 1;
-      }
-      colorByModel.set(colorKey, colorIndex);
-      usedColorIndexes.add(colorIndex);
-    }
     const startShot = cumulativeShots;
     cumulativeShots += group.allocatedShots;
     return [{
@@ -499,7 +480,7 @@ function buildTimelineProductWindows(row: RealtimeProgressRow | undefined): Time
       partNo,
       model,
       classification,
-      color: BOARD_MODEL_COLORS[colorIndex],
+      color,
     }];
   });
 }
@@ -822,18 +803,28 @@ type TimelineTooltip = {
   product?: string;
 };
 
+const TIMELINE_TICK_HOURS = [4, 8, 12, 16, 20];
+/** Sporadic setup or test shots do not make an unplanned machine "producing", so no stop hatching. */
+const TIMELINE_GAP_MIN_SHOTS = 50;
+
 function ProductionTimeline({
   businessDate,
   className,
   language,
   machineNumber,
   segments,
+  nowPct = 0,
+  showGaps = false,
 }: {
   businessDate: string;
   className: string;
   language: AppLanguage;
   machineNumber: number;
   segments: BoardTimelineSegment[];
+  /** Position of the latest MES observation within the business day, 0-100. */
+  nowPct?: number;
+  /** Hatch the part of the day already elapsed; production segments cover it where shots exist. */
+  showGaps?: boolean;
 }) {
   const copy = boardCopy[language];
   const tooltipId = useId();
@@ -881,11 +872,25 @@ function ProductionTimeline({
         role="group"
         tabIndex={0}
       >
+        {showGaps && nowPct > 0 ? (
+          <i aria-hidden="true" className="injection-board-timeline__gap" style={{ width: `${Math.min(100, nowPct)}%` }} />
+        ) : null}
+        {TIMELINE_TICK_HOURS.map((hour) => (
+          <i aria-hidden="true" className="injection-board-timeline__tick" key={hour} style={{ left: `${(hour / 24) * 100}%` }} />
+        ))}
+        {nowPct > 0 && nowPct < 100 ? (
+          <>
+            <i aria-hidden="true" className="injection-board-timeline__future" style={{ left: `${nowPct}%` }} />
+            <i aria-hidden="true" className="injection-board-timeline__now" style={{ left: `${nowPct}%` }} />
+          </>
+        ) : null}
         {segments.map((segment, index) => {
           const rangeLabel = `${formatTime(new Date(segment.startMs))}–${formatTime(new Date(segment.endMs))}`;
           return (
             <span
               aria-hidden="true"
+              className={index > 0 && segment.productKey && segments[index - 1].productKey
+                && segments[index - 1].productKey !== segment.productKey ? "is-product-start" : undefined}
               data-classification={segment.classification}
               data-end-ms={segment.endMs}
               data-model={segment.model}
@@ -933,6 +938,9 @@ function MachineBoardCard({
   machine,
   priorMorningShotGapCount,
   language,
+  inspection,
+  inspectionTransportError,
+  elapsedRate,
 }: {
   onPartSummary: (partNo: string) => void;
   businessDate: string;
@@ -940,8 +948,24 @@ function MachineBoardCard({
   machine: BoardMachine;
   priorMorningShotGapCount: number;
   language: AppLanguage;
+  inspection: ReturnType<typeof selectBoardInspection>;
+  inspectionTransportError: boolean;
+  /** Elapsed share of the business day at the latest MES time, 0-100. */
+  elapsedRate: number;
 }) {
   const copy = boardCopy[language];
+  const { businessDate: qualityDate, machineNumber: qualityMachine,
+    currentPlanId: qualityPlan, planVersion: qualityVersion } = inspection.scope;
+  const qualityScope = useMemo(() => ({ businessDate: qualityDate, machineNumber: qualityMachine,
+    currentPlanId: qualityPlan, planVersion: qualityVersion }),
+    [qualityDate, qualityMachine, qualityPlan, qualityVersion]);
+  const sourceAvailability = inspection.payload && typeof inspection.payload === 'object'
+    && 'availability' in inspection.payload ? inspection.payload.availability : undefined;
+  const qualityPayload = sourceAvailability === 'unavailable' ? null : inspection.payload;
+  const [qualityState, setQualityState] = useState(() => reduceInjectionQuality(null, qualityPayload, qualityScope));
+  useEffect(() => {
+    setQualityState(previous => reduceInjectionQuality(previous, qualityPayload, qualityScope));
+  }, [qualityPayload, qualityScope]);
   const row = machine.row;
   const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
   const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
@@ -956,6 +980,15 @@ function MachineBoardCard({
       { part_no: current.partNo, model_name: current.modelName, cavity: current.cavity, actual_piece_qty: current.estimatedQty },
     );
   }) ?? false;
+  const isShotCheckTone = machine.tone === "shot_issue" || machine.tone === "production_stopped";
+  // Progress against the elapsed business day, the same measure as the summary's progress gap.
+  const paceGap = row?.hasPlan && elapsedRate > 0 ? row.progressRate - elapsedRate : null;
+  const paceText = paceGap === null ? "" : `${paceGap >= 0 ? "+" : "−"}${Math.abs(Math.round(paceGap))}%p`;
+  // The last-shot time lives in the C/T box; morning counter gaps and part-number review keep their own label.
+  const lastShotLabel = showMorningHistory
+    ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
+    : partNoReview ? copy.partNoReview : copy.lastShot;
+  const lastShotValue = `${showMorningHistory ? `${copy.latestShort} ` : ""}${row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}`;
 
   return (
     <article className={`injection-board-card injection-board-card--${machine.tone}`} data-machine={machine.machineNumber}>
@@ -969,9 +1002,10 @@ function MachineBoardCard({
             : getStatusLabel(machine.tone, copy)}</em>
       </header>
 
-      <div
+      <MarqueeLine
         className="injection-board-card__part"
         title={[machine.activePart, machine.activeModel, machine.activeFamily].filter(Boolean).join(" · ")}
+        watch={`${machine.activePart}|${machine.activeModel}|${machine.activeFamily}|${machine.activePartNumbers.join(",")}`}
       >
         <strong>{!isVisitorMode && row?.hasPlan && machine.activePartNumbers.length
           ? machine.activePartNumbers.map((partNo, index) => <Fragment key={partNo}>
@@ -981,13 +1015,22 @@ function MachineBoardCard({
           : machine.activePart}</strong>
         {machine.activeModel ? <span>{machine.activeModel}</span> : null}
         {machine.activeFamily ? <em>{machine.activeFamily}</em> : null}
-      </div>
+      </MarqueeLine>
 
       <div className="injection-board-card__metrics">
-        <div>
-          <span>{machine.tone === "shot_issue" || machine.tone === "production_stopped" ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
-          <strong className={isVisitorMode && machine.tone !== "shot_issue" && machine.tone !== "production_stopped" ? "injection-board-card__ct-range" : undefined}>
-            {machine.tone === "shot_issue" || machine.tone === "production_stopped"
+        <div className="injection-board-card__metric">
+          <div className="injection-board-card__metric-head">
+            <span className="injection-board-card__metric-label" title={isShotCheckTone ? copy.checkEquipment : copy.recentCt}>
+              {isShotCheckTone ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}
+            </span>
+            {!isVisitorMode ? (
+              <Link className="injection-board-card__metric-link" to={machineHistoryUrl} title={historyLabel} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>
+                <History aria-hidden="true" size={13} strokeWidth={2.4} />
+              </Link>
+            ) : null}
+          </div>
+          <strong className={isVisitorMode && !isShotCheckTone ? "injection-board-card__ct-range" : undefined}>
+            {isShotCheckTone
               ? `${formatNumber(row?.recentShots ?? 0)}${copy.shots}`
               : machine.currentCycleTimeSec === null
                 ? "-"
@@ -995,12 +1038,25 @@ function MachineBoardCard({
                   ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                   : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          {!isVisitorMode ? <small>{machine.tone === "shot_issue" || machine.tone === "production_stopped" ? copy.checkEquipment : copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
+          <small title={`${lastShotLabel} · ${lastShotValue}`}>
+            {row?.lastShotAt || showMorningHistory || partNoReview ? <span>{lastShotLabel}</span> : null}
+            <b>{lastShotValue}</b>
+          </small>
         </div>
-        <div>
-          <span>{copy.progress}</span>
+        <div className="injection-board-card__metric">
+          <div className="injection-board-card__metric-head">
+            <span className="injection-board-card__metric-label">{copy.progress}</span>
+            {paceGap !== null ? (
+              <i className="injection-board-card__pace" title={copy.paceTitle} aria-label={`${copy.paceTitle} ${paceText}`}>{paceText}</i>
+            ) : null}
+          </div>
           <strong>{row?.hasPlan ? `${row.progressRate.toFixed(1)}%` : row?.shotCount ? `${formatNumber(row.shotCount)}${copy.shots}` : "-"}</strong>
-          <small>{row?.hasPlan ? `${formatNumber(row.estimatedQty)} / ${formatNumber(row.plannedQty)}` : copy.unplanned}</small>
+          <small>
+            {row?.hasPlan
+              ? <b>{formatNumber(row.estimatedQty)} / {formatNumber(row.plannedQty)}</b>
+              : <span>{copy.unplanned}</span>}
+
+          </small>
         </div>
       </div>
 
@@ -1009,13 +1065,13 @@ function MachineBoardCard({
         className="injection-board-card__track injection-board-card__timeline"
         language={language}
         machineNumber={machine.machineNumber}
+        nowPct={elapsedRate}
         segments={machine.timelineSegments}
+        showGaps={Boolean(row?.hasPlan || (row?.shotCount ?? 0) >= TIMELINE_GAP_MIN_SHOTS)}
       />
-      <footer>
-        <span>{showMorningHistory
-          ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
-          : partNoReview ? copy.partNoReview : copy.lastShot}</span>
-        <strong>{showMorningHistory ? `${copy.latestShort} ` : ""}{row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}</strong>
+      <footer className="injection-board-card__footer-with-quality">
+        <InjectionQualityStatus state={qualityState} expectedScope={qualityScope}
+          language={language} transportError={inspectionTransportError || sourceAvailability === 'error'} />
       </footer>
     </article>
   );
@@ -1220,7 +1276,7 @@ export function InjectionBoardPage() {
   });
   const statusQuery = useQuery({
     queryKey: ["production-status", requestedBusinessDate, "injection-board"],
-    queryFn: () => getProductionStatus(requestedBusinessDate),
+    queryFn: () => getProductionStatus(requestedBusinessDate, { skipAuth: true }),
     refetchInterval: BOARD_REFRESH_INTERVAL_MS,
     placeholderData: (previousData) => previousData,
   });
@@ -1279,7 +1335,7 @@ export function InjectionBoardPage() {
   });
   const previousStatusQuery = useQuery({
     queryKey: ["production-status", previousBusinessDate, "injection-board-history"],
-    queryFn: () => getProductionStatus(previousBusinessDate),
+    queryFn: () => getProductionStatus(previousBusinessDate, { skipAuth: true }),
     retry: 1,
     staleTime: 30 * 60_000,
     refetchOnWindowFocus: false,
@@ -1446,7 +1502,7 @@ export function InjectionBoardPage() {
             title={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
             type="button"
           >
-            <Factory aria-hidden="true" />
+            <img alt="" aria-hidden="true" className="injection-board__logo" src="/logo-transparent.png" />
           </button>
           <div className="injection-board__heading">
             <span>{copy.eyebrow}</span>
@@ -1457,7 +1513,14 @@ export function InjectionBoardPage() {
         <div className="injection-board__meta">
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatTime(latestMesTime)}</strong></div>
-          <div><span>{copy.refreshed}</span><strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong></div>
+          <div title={copy.autoRefresh}>
+            <span>
+              {copy.refreshed}
+              <i aria-label={copy.autoRefresh} className="injection-board__live-dot" role="img" />
+            </span>
+            <strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong>
+          </div>
+          {!isVisitorMode ? <MesProductionReadStatusPanel businessDate={requestedBusinessDate} language={language} variant="board" /> : null}
           <button
             className="injection-board__history-button"
             onClick={openPreviousSummary}
@@ -1466,9 +1529,8 @@ export function InjectionBoardPage() {
             <History aria-hidden="true" />
             {copy.previousSummary}
           </button>
-          <span className="injection-board__refresh-badge">{copy.autoRefresh}</span>
           <div className="injection-board__language" aria-label="Language">
-            <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">KOR</button>
+            <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">한국어</button>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>
           </div>
           <button
@@ -1532,7 +1594,7 @@ export function InjectionBoardPage() {
           </footer>
         </article>
 
-        <article className="injection-board-summary injection-board-summary--alerts">
+        <article className={`injection-board-summary injection-board-summary--alerts${statusCheckCount + warningCount + unplannedRunningCount === 0 ? " injection-board-summary--clear" : ""}`}>
           <header>
             <div><span>03</span><strong>{copy.actionRequired}</strong></div>
             <em>{copy.managementRequired}</em>
@@ -1553,12 +1615,20 @@ export function InjectionBoardPage() {
 
         {machines.map((machine) => (
           <MachineBoardCard
+            elapsedRate={elapsedRate}
             onPartSummary={setSummaryPartNo}
             businessDate={businessDate}
             isVisitorMode={isVisitorMode}
             key={machine.machineNumber}
             language={language}
             machine={machine}
+            inspection={selectBoardInspection({ businessDate, requestedBusinessDate,
+              machineNumber: machine.machineNumber, currentPlanId: machine.row?.transition?.current_plan_id,
+              planDate: planData?.plan_date, planRecords: planData?.injection.records ?? [],
+              machinePlanIds: (planData?.injection.records ?? [])
+                .filter(record => getMachineNumber(record.machine_name) === machine.machineNumber).map(record => record.id),
+              statusMachines: statusData?.injection ?? [] })}
+            inspectionTransportError={statusQuery.isError || planQuery.isError}
             priorMorningShotGapCount={visiblePreviousSnapshot.summary.rows.find((row) => Number(getMachineNumber(row.label) || row.key) === machine.machineNumber)?.morningShotGapCount ?? 0}
           />
         ))}

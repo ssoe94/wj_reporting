@@ -38,7 +38,7 @@ api.interceptors.request.use(
 
     const session = getAuthSessionSnapshot();
     if (request._authSessionId === undefined) {
-      request._authSessionId = session.id;
+      request._authSessionId = config.authSessionId === undefined ? session.id : config.authSessionId;
     }
     if (request._authSessionId !== session.id) {
       return Promise.reject(new AuthRefreshError('The authenticated session changed', false));
@@ -83,6 +83,7 @@ api.interceptors.response.use(
     if (
       originalRequest &&
       !originalRequest.skipAuth &&
+      !originalRequest.skipAuthRefresh &&
       error.response?.status === 401 &&
       !originalRequest._retry
     ) {
@@ -131,14 +132,12 @@ api.interceptors.response.use(
         : `API가 예상하지 않은 응답을 반환했습니다. (HTTP ${responseStatus})`;
     }
     
-    // HR validation responses may contain employee information; keep them out of logs.
+    // Keep HR failures out of logs; other endpoints log only request metadata.
     if (!originalRequest?.url?.startsWith('/analytics/hr/')) {
       console.error('[API Error]', {
         url: originalRequest?.url,
         method: originalRequest?.method,
         status: error.response?.status,
-        message: error.message,
-        data: error.response?.data,
       });
     }
     

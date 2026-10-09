@@ -1,7 +1,5 @@
 import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { isAxiosError } from "axios";
-import { GripVertical, MessageCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { injectionFleetMatrixQueryOptions } from "@/domains/mes/injection-matrix-query";
 import {
@@ -11,48 +9,27 @@ import {
   type TimeSlot,
 } from "@/domains/mes/api";
 import {
-  askProductionAi,
-  cancelAiJob,
   createMachiningManualReport,
   createProductionPlanItem,
-  getAiJob,
-  getAiWorkerStatus,
-  getLatestAiJob,
   getMachiningProvision,
   getInjectionActivityConfirmations,
   getInjectionDowntimeConfirmations,
   getProductionMesReportStats,
-  getProductionAiBriefing,
   getProductionPlanSummary,
   getProductionStatus,
   resetInjectionActivityConfirmation,
   saveInjectionActivityConfirmation,
   updateProductionPartCavity,
-  type InjectionActivityConfirmation,
   type InjectionActivityType,
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
-  type ProductionAiAskResponse,
-  type ProductionAiBriefingResponse,
-  type ProductionAiChatHistoryMessage,
-  type ProductionAiModelId,
   type ProductionMesReportStatsResponse,
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
   type ProductionStatusResponse,
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
-import { DeepAnalysisPanel } from "@/domains/ai/DeepAnalysisPanel";
-import {
-  describeAiModel,
-  getAiTierLabel,
-  getAiWorkerLabel,
-  getAiWorkerStateLabel,
-  withAiModelName,
-} from "@/domains/ai/model-labels";
-import { describeLocalAiHistory } from "@/domains/ai/local-ai-history";
-import { useAuth } from "@/contexts/AuthContext";
-import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { InjectionMachineBoard } from "@/domains/production/components/InjectionMachineBoard";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
   buildInjectionTransitionAnalysis,
@@ -119,114 +96,11 @@ type MachiningProgressPreview = {
 
 type KpiDetailKey = "injection" | "unplanned" | "machining" | "machines";
 
-type ProductionAiChatMessage = ProductionAiChatHistoryMessage & {
-  id: string;
-  label?: string;
-  tone?: "default" | "warning";
-  meta?: string[];
-  notice?: string;
-  includeInHistory?: boolean;
-  modelId?: ProductionAiModelId;
-};
-
-type ProductionAiQuestionRequest = {
-  question: string;
-  history: ProductionAiChatHistoryMessage[];
-  requestId: string;
-  businessDate: string;
-  language: AppLanguage;
-  modelId: ProductionAiModelId;
-};
-
-type ProductionAiActiveRequest = Pick<
-  ProductionAiQuestionRequest,
-  "requestId" | "businessDate" | "language" | "modelId"
-> & {
-  hasDeterministicAnswer: boolean;
-};
-
-type ProductionAiApiError = {
-  status: number | null;
-  code: string;
-  detail: string;
-};
-
-type ProductionAiChatViewportStyle = CSSProperties & {
-  "--production-ai-chat-bottom"?: string;
-  "--production-ai-chat-visible-height"?: string;
-};
-
-type ProductionAiChatVisibleViewport = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type ProductionAiChatLauncherPosition = {
-  x: number;
-  y: number;
-};
-
-type ProductionAiChatLauncherDrag = {
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startCenterX: number;
-  startCenterY: number;
-  width: number;
-  height: number;
-  moved: boolean;
-  lastPosition: ProductionAiChatLauncherPosition | null;
-};
-
 // Routine (local tier) model id sent with ask/latest requests; the display name comes from server data.
-const PRODUCTION_AI_MODEL_ID: ProductionAiModelId = "qwen38";
-const AI_CHAT_LAUNCHER_POSITION_KEY = "wj-production-ai-chat-launcher-position-v1";
-const AI_CHAT_LAUNCHER_MARGIN_PX = 8;
-const AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX = 5;
-
-function clampUnitInterval(value: number) {
-  return Math.min(1, Math.max(0, value));
-}
-
-function readAiChatLauncherPosition(): ProductionAiChatLauncherPosition | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const value = JSON.parse(window.localStorage.getItem(AI_CHAT_LAUNCHER_POSITION_KEY) || "null");
-    if (!value || typeof value !== "object") return null;
-    const x = Number((value as Record<string, unknown>).x);
-    const y = Number((value as Record<string, unknown>).y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x: clampUnitInterval(x), y: clampUnitInterval(y) };
-  } catch {
-    return null;
-  }
-}
-
-function persistAiChatLauncherPosition(position: ProductionAiChatLauncherPosition) {
-  try {
-    window.localStorage.setItem(AI_CHAT_LAUNCHER_POSITION_KEY, JSON.stringify(position));
-  } catch {
-    // Storage can be unavailable in private or restricted browser contexts.
-  }
-}
 
 /** Model id of a job as persisted by the server (result payload first, then scope). */
-function getAiJobModelId(job: { scope?: Record<string, unknown>; result_payload?: Record<string, unknown> } | null | undefined) {
-  const fromResult = getStringField(job?.result_payload ?? {}, "model_id");
-  if (fromResult) return fromResult;
-  return getStringField(job?.scope ?? {}, "model_id");
-}
 
 /** Display name of the model that produced a job, from server data only. */
-function getAiJobModelDisplayName(job: { model_name?: string; model_display_name?: string; scope?: Record<string, unknown>; result_payload?: Record<string, unknown> } | null | undefined) {
-  return describeAiModel({
-    modelId: getAiJobModelId(job),
-    modelName: job?.model_name || getStringField(job?.result_payload ?? {}, "model_name"),
-    modelDisplayName: job?.model_display_name,
-  }).displayName;
-}
 
 type InjectionActivityConfirmationForm = {
   activityType: InjectionActivityType | "";
@@ -390,7 +264,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 AI 보조 설명을 제공합니다.",
+    description: "사출기별 계획 진행, 정지·전환, MES 작업 상태를 한 화면에서 확인합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     dataUnavailable: "생산 데이터를 확인할 수 없습니다.",
     dataUnavailableHint: "필수 데이터 조회가 완료되지 않아 수치와 브리핑을 표시하지 않습니다. 조회 실패는 생산 실적 0건을 의미하지 않습니다.",
@@ -634,7 +508,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 AI 辅助说明。",
+    description: "按注塑机查看计划进度、停机·换型和 MES 任务状态。",
     loading: "正在读取生产现况。",
     dataUnavailable: "无法确认生产数据。",
     dataUnavailableHint: "必要数据尚未读取完成，暂不显示数值和简报。读取失败不代表生产实绩为 0。",
@@ -1008,9 +882,6 @@ const activitySelectionCopy = {
 } satisfies Record<AppLanguage, Record<string, string>>;
 
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
-const AI_WORKER_STATUS_REFRESH_INTERVAL_MS = 30_000;
-const AI_QUESTION_JOB_POLL_INTERVAL_MS = 1_500;
-const AI_QUESTION_JOB_POLL_TIMEOUT_MS = 3 * 60_000;
 const INJECTION_MACHINE_TOTAL = 17;
 const MACHINE_UTILIZATION_BUCKET_MINUTES = 5;
 const MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS = 7;
@@ -1028,96 +899,6 @@ function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
 }
 
-function getStringField(source: Record<string, unknown>, key: string) {
-  const value = source[key];
-  return typeof value === "string" ? value : "";
-}
-
-function getRecordField(source: Record<string, unknown>, key: string) {
-  const value = source[key];
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function workerResultMatchesBriefing(
-  result: Record<string, unknown>,
-  briefing: ProductionAiBriefingResponse | undefined,
-) {
-  if (!briefing) return false;
-  const resultFreshness = getRecordField(result, "data_freshness");
-  const resultFacts = getRecordField(result, "facts");
-  const resultInjection = resultFacts ? getRecordField(resultFacts, "injection") : null;
-  const resultMachining = resultFacts ? getRecordField(resultFacts, "machining") : null;
-  const resultWarnings = result.warnings;
-  const resultTopRisks = result.top_risks;
-  if (
-    !resultFreshness
-    || !resultInjection
-    || !resultMachining
-    || !Array.isArray(resultWarnings)
-    || !Array.isArray(resultTopRisks)
-  ) return false;
-
-  const freshnessMatches = [
-    "last_plan_updated_at",
-    "last_mes_recorded_at",
-    "last_machining_reported_at",
-    "is_stale",
-  ].every((key) => (resultFreshness[key] ?? null) === (briefing.data_freshness[key as keyof typeof briefing.data_freshness] ?? null));
-  const processMatches = (
-    resultProcess: Record<string, unknown>,
-    currentProcess: ProductionAiBriefingResponse["facts"]["injection"],
-  ) => [
-    "actual_qty",
-    "planned_qty",
-    "progress_rate",
-    "time_progress_rate",
-    "gap_qty",
-    "status",
-    "active_equipment_count",
-    "running_equipment_count",
-    "total_equipment_count",
-  ].every(
-    (key) => resultProcess[key] === currentProcess[key as keyof typeof currentProcess],
-  );
-  return freshnessMatches
-    && processMatches(resultInjection, briefing.facts.injection)
-    && processMatches(resultMachining, briefing.facts.machining)
-    && JSON.stringify(resultWarnings) === JSON.stringify(briefing.warnings)
-    && JSON.stringify(resultTopRisks) === JSON.stringify(briefing.top_risks);
-}
-
-function getProductionAiApiError(error: unknown): ProductionAiApiError {
-  if (!isAxiosError(error)) {
-    return { status: null, code: "", detail: "" };
-  }
-  const responseData = error.response?.data;
-  const payload = responseData && typeof responseData === "object"
-    ? responseData as Record<string, unknown>
-    : {};
-  const detail = getStringField(payload, "detail")
-    .replace(/\p{Cc}/gu, " ")
-    .trim()
-    .slice(0, 500);
-  return {
-    status: error.response?.status ?? null,
-    code: getStringField(payload, "code").trim().slice(0, 100),
-    detail,
-  };
-}
-
-async function cancelProductionAiJobBestEffort(jobId: number) {
-  try {
-    await cancelAiJob(jobId);
-    return true;
-  } catch (error) {
-    const status = isAxiosError(error) ? error.response?.status : null;
-    if (status === 400 || status === 404) return false;
-    return false;
-  }
-}
-
 function formatAiTimestamp(value: string | null | undefined, language: AppLanguage) {
   if (!value) return "-";
   const date = new Date(value);
@@ -1132,44 +913,6 @@ function formatAiTimestamp(value: string | null | undefined, language: AppLangua
     second: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-const briefingWarningCopy: Record<AppLanguage, Record<string, string>> = {
-  ko: {
-    injection_mes_data_missing: "사출 MES 실적이 없어 사출 진행 판단이 제한됩니다.",
-    injection_mes_data_stale: "사출 MES 실적 갱신이 지연되고 있습니다.",
-    injection_capacity_coverage_incomplete: "일부 계획 설비의 사출 MES 형합 데이터가 없어 전체 진행 판단이 제한됩니다.",
-    injection_plan_missing: "사출 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
-    machining_plan_missing: "가공 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
-    machining_actual_missing: "가공 실적이 없어 가공 진행 판단이 제한됩니다.",
-    ai_model_unavailable: "AI 보조 설명은 사용할 수 없지만 검증된 계산 결과는 정상 표시됩니다.",
-    ai_question_enqueue_failed: "AI 보조 설명 요청을 등록하지 못했습니다.",
-  },
-  zh: {
-    injection_mes_data_missing: "无注塑 MES 实绩，注塑进度判断受限。",
-    injection_mes_data_stale: "注塑 MES 实绩更新延迟。",
-    injection_capacity_coverage_incomplete: "部分计划设备缺少注塑 MES 合模数据，整体进度判断受限。",
-    injection_plan_missing: "无注塑生产计划，无法充分判断计划达成情况。",
-    machining_plan_missing: "无加工生产计划，无法充分判断计划达成情况。",
-    machining_actual_missing: "无加工实绩，加工进度判断受限。",
-    ai_model_unavailable: "AI 辅助说明不可用，但已验证的计算结果仍正常显示。",
-    ai_question_enqueue_failed: "无法提交 AI 辅助说明请求。",
-  },
-};
-
-function localizeBriefingWarning(code: string, language: AppLanguage) {
-  const localized = briefingWarningCopy[language][code];
-  if (localized) return localized;
-  return language === "ko"
-    ? "일부 데이터의 최신성 또는 완전성을 추가로 확인해야 합니다."
-    : "部分数据的时效性或完整性需要进一步确认。";
-}
-
-function formatBriefingFilters(filters: Record<string, unknown>) {
-  return Object.entries(filters)
-    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join(", ");
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
@@ -2516,44 +2259,6 @@ function buildProductionBriefContext(
   };
 }
 
-function buildScreenBriefingFallback(context: ProductionBriefContext, language: AppLanguage) {
-  const injectionRate = context.injectionPlanQty > 0
-    ? (context.actualInjectionOutput / context.injectionPlanQty) * 100
-    : null;
-  const machiningRate = context.machiningPlanQty > 0
-    ? (context.actualMachiningOutput / context.machiningPlanQty) * 100
-    : null;
-  const answer = language === "ko"
-    ? [
-      `사출은 추정 ${formatNumber(context.actualInjectionOutput)}개${injectionRate === null ? "" : `로 계획의 ${injectionRate.toFixed(1)}%`}입니다.`,
-      `가공은 ${formatNumber(context.actualMachiningOutput)}개${machiningRate === null ? "" : `로 계획의 ${machiningRate.toFixed(1)}%`}입니다.`,
-      `최근 60분 가동 설비는 ${context.runningMachineCount}대이며, 무계획 형합은 ${formatNumber(context.unplannedInjectionShots)}회입니다.`,
-    ].join(" ")
-    : [
-      `注塑估算产量为 ${formatNumber(context.actualInjectionOutput)} 个${injectionRate === null ? "" : `，完成计划的 ${injectionRate.toFixed(1)}%`}。`,
-      `加工实绩为 ${formatNumber(context.actualMachiningOutput)} 个${machiningRate === null ? "" : `，完成计划的 ${machiningRate.toFixed(1)}%`}。`,
-      `最近60分钟运行设备 ${context.runningMachineCount} 台，无计划合模 ${formatNumber(context.unplannedInjectionShots)} 次。`,
-    ].join("");
-  const risks: Array<{ label: string; detail: string }> = [];
-  if (context.unplannedInjectionShots > 0) {
-    risks.push({
-      label: language === "ko" ? "무계획 가동 확인" : "确认无计划运行",
-      detail: language === "ko"
-        ? `${context.unplannedInjectionMachineCount}대에서 ${formatNumber(context.unplannedInjectionShots)}회 형합이 기록되었습니다. Part No.와 작업 목적을 확인하세요.`
-        : `${context.unplannedInjectionMachineCount} 台设备记录了 ${formatNumber(context.unplannedInjectionShots)} 次合模，请确认 Part No. 与作业目的。`,
-    });
-  }
-  if (context.injectionPlanQty <= 0 || context.machiningPlanQty <= 0) {
-    risks.push({
-      label: language === "ko" ? "생산 계획 확인" : "确认生产计划",
-      detail: language === "ko"
-        ? "계획이 없는 공정은 진행률과 지연 여부를 판단할 수 없습니다. 기준일 계획 등록 여부를 확인하세요."
-        : "无计划的工序无法判断进度与延期情况，请确认基准日计划是否已登记。",
-    });
-  }
-  return { answer, risks };
-}
-
 function buildMachiningProgressPreview(
   planSummary: ProductionPlanSummaryResponse | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
@@ -2869,21 +2574,6 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
         ))}
       </div>
 
-      <section className="panel production-brief-panel">
-        <div className="production-brief-panel__header">
-          <div className="mes-skeleton-heading">
-            <span className="mes-skeleton-line mes-skeleton-line--eyebrow" />
-            <span className="mes-skeleton-line mes-skeleton-line--title" />
-          </div>
-          <span className="mes-skeleton-line production-skeleton-button" />
-        </div>
-        <div className="production-brief-panel__body production-skeleton-brief">
-          <span className="mes-skeleton-line mes-skeleton-line--wide" />
-          <span className="mes-skeleton-line" />
-          <span className="mes-skeleton-line mes-skeleton-line--short" />
-        </div>
-      </section>
-
       <section className="panel production-progress-panel">
         <div className="mes-skeleton-heading">
           <span className="mes-skeleton-line mes-skeleton-line--eyebrow" />
@@ -2921,29 +2611,9 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
 
 export function ProductionDashboardPage() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const canRequestDeepAnalysis = Boolean(user?.is_staff);
   const [language] = useStoredLanguage();
   const currentDate = getShanghaiBusinessDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
-  const [isAiAskOpen, setIsAiAskOpen] = useState(false);
-  const aiModelId = PRODUCTION_AI_MODEL_ID;
-  const briefingModelId = PRODUCTION_AI_MODEL_ID;
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
-  const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
-  const [aiQuestionJobId, setAiQuestionJobId] = useState<number | null>(null);
-  const [aiChatViewportStyle, setAiChatViewportStyle] = useState<ProductionAiChatViewportStyle>();
-  const [aiChatVisibleViewport, setAiChatVisibleViewport] = useState<ProductionAiChatVisibleViewport>(() => ({
-    left: 0,
-    top: 0,
-    width: typeof window === "undefined" ? 1024 : window.innerWidth,
-    height: typeof window === "undefined" ? 768 : window.innerHeight,
-  }));
-  const [aiChatLauncherPosition, setAiChatLauncherPosition] = useState<ProductionAiChatLauncherPosition | null>(
-    readAiChatLauncherPosition,
-  );
-  const [isAiChatLauncherDragging, setIsAiChatLauncherDragging] = useState(false);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
   const [activityConfirmationForm, setActivityConfirmationForm] = useState<InjectionActivityConfirmationForm>({
@@ -2955,13 +2625,6 @@ export function ProductionDashboardPage() {
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
   const [activityHover, setActivityHover] = useState<MachineActivityHover | null>(null);
-  const aiQuestionInputRef = useRef<HTMLTextAreaElement>(null);
-  const aiChatBodyRef = useRef<HTMLDivElement>(null);
-  const aiChatDrawerRef = useRef<HTMLElement>(null);
-  const aiChatLauncherRef = useRef<HTMLButtonElement>(null);
-  const aiChatLauncherDragRef = useRef<ProductionAiChatLauncherDrag | null>(null);
-  const suppressAiChatLauncherClickRef = useRef(false);
-  const previousAiChatScopeRef = useRef({ businessDate: currentDate, language });
   const suppressNextActivityPointerRef = useRef(false);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
@@ -3041,38 +2704,6 @@ export function ProductionDashboardPage() {
   const coreDashboardState = getDashboardDataState(coreDashboardSources);
   const isCoreDashboardDataReady = coreDashboardState.isReady;
   const hasCoreRefreshError = coreDashboardState.hasRefreshError;
-  const productionAiBriefingQuery = useQuery({
-    queryKey: ["production", "ai-briefing", businessDate, language],
-    queryFn: () => getProductionAiBriefing(businessDate, language),
-    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
-    refetchInterval: isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false,
-    retry: 1,
-  });
-  const latestAiJobQuery = useQuery({
-    queryKey: ["ai-job", "latest", businessDate, language, briefingModelId],
-    queryFn: () => getLatestAiJob(businessDate, language, briefingModelId),
-    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
-    refetchInterval: isCurrentDate ? 30_000 : false,
-    retry: false,
-  });
-  const aiWorkerStatusQuery = useQuery({
-    queryKey: ["ai-worker", "status", language],
-    queryFn: () => getAiWorkerStatus(language),
-    refetchInterval: AI_WORKER_STATUS_REFRESH_INTERVAL_MS,
-    retry: 1,
-  });
-  const aiQuestionJobQuery = useQuery({
-    queryKey: ["ai-job", "question", aiQuestionJobId],
-    queryFn: () => getAiJob(aiQuestionJobId as number),
-    enabled: aiQuestionJobId !== null,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && ["completed", "failed", "cancelled"].includes(status)
-        ? false
-        : AI_QUESTION_JOB_POLL_INTERVAL_MS;
-    },
-    retry: 1,
-  });
   const createManualReportMutation = useMutation({
     mutationFn: () => {
       if (!selectedMachiningRow?.plan_id) {
@@ -3267,10 +2898,6 @@ export function ProductionDashboardPage() {
     ),
     [businessDate, language, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
-  const screenBriefingFallback = useMemo(
-    () => buildScreenBriefingFallback(briefContext, language),
-    [briefContext, language],
-  );
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
@@ -3281,6 +2908,10 @@ export function ProductionDashboardPage() {
     ),
     [activityConfirmationsQuery.data?.confirmations],
   );
+  const activityConfirmedKeys = useMemo(
+    () => new Set(activityConfirmationByMachine.keys()),
+    [activityConfirmationByMachine],
+  );
   const activityTypeOptions = useMemo<Array<{ value: InjectionActivityType; label: string }>>(() => [
     { value: "production", label: copy.activityProduction },
     { value: "test_shot", label: copy.activityTestShot },
@@ -3290,10 +2921,6 @@ export function ProductionDashboardPage() {
     { value: "quality_check", label: copy.activityQualityCheck },
     { value: "other", label: copy.activityOther },
   ], [copy]);
-  const unresolvedActivityReviewCount = useMemo(
-    () => realtimeProgress.rows.filter((row) => !row.hasPlan && !activityConfirmationByMachine.has(row.key)).length,
-    [activityConfirmationByMachine, realtimeProgress.rows],
-  );
   const selectedActivityConfirmation = selectedActivityRow
     ? activityConfirmationByMachine.get(selectedActivityRow.key)
     : undefined;
@@ -3304,598 +2931,7 @@ export function ProductionDashboardPage() {
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
-  const productionAiBriefing = productionAiBriefingQuery.isError ? undefined : productionAiBriefingQuery.data;
-  const latestAiJob = latestAiJobQuery.data ?? undefined;
-  const latestAiJobResult = latestAiJob?.result_payload ?? {};
-  const latestAiJobSummary = getStringField(latestAiJobResult, "summary").trim();
-  const latestAiJobSource = getStringField(latestAiJobResult, "source");
-  const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
-  const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
-  const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
   // The top-level status fields describe the local tier; `workers[]` lists every tier.
-  const aiWorkerAvailableModelIds = (aiWorkerStatus?.available_model_ids ?? []).filter(
-    (modelId): modelId is ProductionAiModelId => modelId === PRODUCTION_AI_MODEL_ID,
-  );
-  const isAiModelAvailable = (modelId: ProductionAiModelId) => aiWorkerState === "online"
-    && aiWorkerStatus?.llm_ready === true
-    && aiWorkerAvailableModelIds.includes(modelId);
-  const aiSelectedModelIsAvailable = isAiModelAvailable(aiModelId);
-  const briefingModelIsAvailable = isAiModelAvailable(briefingModelId);
-  const localAiWorkerEntry = aiWorkerStatus?.workers?.find((worker) => worker.tier === "local"
-    || worker.available_model_ids?.includes(PRODUCTION_AI_MODEL_ID));
-  // Show the model name only when the worker has reported one; never guess from copy.
-  const localAiModelDisplayName = describeAiModel({
-    modelId: aiWorkerAvailableModelIds[0] ?? localAiWorkerEntry?.available_model_ids?.[0] ?? null,
-    modelName: aiWorkerStatus?.model_name || localAiWorkerEntry?.model_name,
-    modelDisplayName: aiWorkerStatus?.model_display_name || localAiWorkerEntry?.model_display_name,
-  }).displayName;
-  const localAiWorkerLabel = withAiModelName(getAiWorkerLabel(language), localAiModelDisplayName);
-  const localAiTierLabel = getAiTierLabel("local", language);
-  const latestAiJobActualModelId = getAiJobModelId(latestAiJob);
-  const latestAiJobUsedLocalLlm = latestAiJobSource === "local_llm_rewrite"
-    && !latestAiJobUsedFallback
-    && latestAiJob?.status === "completed"
-    && latestAiJobActualModelId === briefingModelId
-    && workerResultMatchesBriefing(latestAiJobResult, productionAiBriefing);
-  const latestAiJobModelDisplayName = getAiJobModelDisplayName(latestAiJob);
-  const briefingWorkerStateLabel = getAiWorkerStateLabel(aiWorkerState, language, localAiModelDisplayName);
-  const briefingModelStatusLabel = `${briefingWorkerStateLabel} · ${briefingModelIsAvailable ? copy.workerModelReady : copy.workerModelUnavailable}`;
-  const localAiHistory = describeLocalAiHistory(aiWorkerStatus, language);
-  const localAiHistoryClass = localAiHistory.state === "success" ? " production-ai-worker-status__pill--llm-ready"
-    : localAiHistory.state === "fallback" ? " production-ai-worker-status__pill--llm-unavailable" : "";
-  const briefingSeverityLabel = productionAiBriefing?.severity === "critical"
-    ? copy.severityCritical
-    : productionAiBriefing?.severity === "warning"
-      ? copy.severityWarning
-      : copy.severityNormal;
-  const briefingWarningLabels = productionAiBriefing
-    ? [...new Set(productionAiBriefing.warnings.map((warning) => localizeBriefingWarning(warning, language)))]
-    : [];
-  const briefingRiskEvaluationLimited = productionAiBriefing?.warnings.some((warning) => [
-    "injection_mes_data_missing",
-    "injection_mes_data_stale",
-    "injection_capacity_coverage_incomplete",
-    "injection_plan_missing",
-    "machining_plan_missing",
-    "machining_actual_missing",
-  ].includes(warning)) ?? false;
-  const briefingSourceLabel = briefingRiskEvaluationLimited
-    ? copy.deterministicSourceLimited
-    : copy.deterministicSource;
-  const aiQuestionJob = aiQuestionJobQuery.data;
-  const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
-  const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
-  const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
-  const activeAiModelId = aiActiveRequest?.modelId ?? aiModelId;
-  const activeAiModelIsAvailable = isAiModelAvailable(activeAiModelId);
-  const activeAiModelStatusLabel = activeAiModelIsAvailable
-    ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
-    : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`;
-  const aiQuestionJobModelDisplayName = getAiJobModelDisplayName(aiQuestionJob);
-  const aiQuestionJobActualModelId = getAiJobModelId(aiQuestionJob);
-  const aiQuestionJobModelMatchesRequest = !aiActiveRequest
-    || aiQuestionJobActualModelId === aiActiveRequest.modelId;
-  const aiQuestionJobUsedLocalLlm = aiQuestionJobSource === "local_llm_rewrite"
-    && aiQuestionJobResult.llm_fallback !== true
-    && aiQuestionJobModelMatchesRequest;
-  const aiQuestionJobFailed = aiQuestionJobStatus === "failed" || aiQuestionJobStatus === "cancelled";
-  const aiQuestionJobCompleted = aiQuestionJobStatus === "completed";
-  const aiQuestionJobStatusLabel = aiQuestionJobFailed
-    ? copy.aiAnswerFailed
-    : aiQuestionJobCompleted
-      ? aiQuestionJobUsedLocalLlm
-        ? copy.aiAnswerReady
-        : copy.aiAnswerFailed
-      : aiQuestionJobStatus === "claimed" || aiQuestionJobStatus === "running"
-        ? copy.aiAnswerRunning
-        : copy.aiAnswerQueued;
-  const visibleAiChatMessages = aiChatMessages.filter((message) => message.modelId === activeAiModelId);
-
-  function appendAiChatMessage(message: ProductionAiChatMessage) {
-    setAiChatMessages((current) => (
-      current.some((item) => item.id === message.id) ? current : [...current, message]
-    ));
-  }
-
-  function excludeAiQuestionFromHistory(requestId: string) {
-    setAiChatMessages((current) => current.map((message) => (
-      message.id === `${requestId}-user`
-        ? { ...message, includeInHistory: false }
-        : message
-    )));
-  }
-
-  const aiQuestionMutation = useMutation({
-    mutationFn: (request: ProductionAiQuestionRequest): Promise<ProductionAiAskResponse> => (
-      askProductionAi(
-        request.businessDate,
-        request.question,
-        request.language,
-        request.history,
-        request.modelId,
-      )
-    ),
-    onMutate: (request) => {
-      setAiActiveRequest({
-        requestId: request.requestId,
-        businessDate: request.businessDate,
-        language: request.language,
-        modelId: request.modelId,
-        hasDeterministicAnswer: false,
-      });
-      setAiQuestionJobId(null);
-      appendAiChatMessage({
-        id: `${request.requestId}-user`,
-        role: "user",
-        content: request.question,
-        includeInHistory: true,
-        modelId: request.modelId,
-      });
-      setAiQuestion("");
-    },
-    onSuccess: (payload, request) => {
-      const jobId = typeof payload.job_id === "number" ? payload.job_id : null;
-      if (request.businessDate !== businessDate || request.language !== language) {
-        if (jobId !== null) void cancelProductionAiJobBestEffort(jobId);
-        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
-        return;
-      }
-      if (payload.model_id !== request.modelId) {
-        if (jobId !== null) void cancelProductionAiJobBestEffort(jobId);
-        excludeAiQuestionFromHistory(request.requestId);
-        appendAiChatMessage({
-          id: `${request.requestId}-model-mismatch`,
-          role: "assistant",
-          content: copy.aiAnswerModelMismatchHint,
-          label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
-          tone: "warning",
-          includeInHistory: false,
-          modelId: request.modelId,
-        });
-        setAiQuestionJobId(null);
-        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
-        return;
-      }
-      const isDeterministicAnswer = payload.source === "calculated" || payload.source === "intent_calculated";
-      if (isDeterministicAnswer) {
-        appendAiChatMessage({
-          id: `${request.requestId}-deterministic-answer`,
-          role: "assistant",
-          content: payload.answer,
-          label: `${copy.aiAssistantAi} · ${copy.aiAnswerReady}`,
-          meta: [`${copy.aiSource}: ${copy.aiSourceVerified}`],
-          includeInHistory: true,
-          modelId: request.modelId,
-        });
-        setAiActiveRequest((current) => current?.requestId === request.requestId
-          ? { ...current, hasDeterministicAnswer: true }
-          : current);
-      } else if (jobId === null) {
-        excludeAiQuestionFromHistory(request.requestId);
-        const questionWasUnsupported = payload.source === "deterministic_unhandled";
-        appendAiChatMessage({
-          id: `${request.requestId}-model-unavailable`,
-          role: "assistant",
-          content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
-          label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
-          tone: "warning",
-          includeInHistory: false,
-          modelId: request.modelId,
-        });
-      }
-      setAiQuestionJobId(jobId);
-      if (jobId === null) {
-        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
-      }
-    },
-    onError: (error, request) => {
-      if (request.businessDate !== businessDate || request.language !== language) {
-        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
-        return;
-      }
-      const apiError = getProductionAiApiError(error);
-      excludeAiQuestionFromHistory(request.requestId);
-      const isQuestionInProgress = apiError.code === "ai_question_in_progress" || apiError.status === 429;
-      const isQueueUnavailable = apiError.code === "ai_question_enqueue_failed" || apiError.status === 503;
-      const isQuestionTooLong = apiError.code === "question_too_long";
-      const canShowServerDetail = Boolean(apiError.detail)
-        && apiError.status !== null
-        && apiError.status >= 400
-        && apiError.status < 500;
-      appendAiChatMessage({
-        id: `${request.requestId}-request-error`,
-        role: "assistant",
-        content: isQuestionInProgress
-          ? copy.aiQuestionInProgress
-          : isQueueUnavailable
-            ? copy.aiQueueUnavailable
-            : isQuestionTooLong
-              ? copy.aiQuestionTooLong
-              : canShowServerDetail
-                ? apiError.detail
-                : copy.aiRequestFailed,
-        label: isQuestionInProgress
-          ? copy.aiQuestionInProgressTitle
-          : isQueueUnavailable
-            ? copy.aiQueueUnavailableTitle
-            : isQuestionTooLong
-              ? copy.aiQuestionTooLongTitle
-              : canShowServerDetail
-                ? copy.aiRequestRejectedTitle
-                : copy.aiRequestFailedTitle,
-        tone: "warning",
-        includeInHistory: false,
-        modelId: request.modelId,
-      });
-      setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
-    },
-  });
-  const aiQuestionIsGenerating = aiQuestionMutation.isPending || (
-    aiQuestionJobId !== null
-    && !aiQuestionJobFailed
-    && !aiQuestionJobCompleted
-  );
-
-  useEffect(() => {
-    const previousScope = previousAiChatScopeRef.current;
-    const scopeChanged = previousScope.businessDate !== businessDate || previousScope.language !== language;
-    if (!scopeChanged) return;
-    previousAiChatScopeRef.current = { businessDate, language };
-    if (aiQuestionJobId !== null) {
-      void cancelProductionAiJobBestEffort(aiQuestionJobId);
-    }
-    setAiChatMessages([]);
-    setAiActiveRequest(null);
-    setAiQuestionJobId(null);
-  }, [aiQuestionJobId, businessDate, language]);
-
-  useEffect(() => {
-    if (
-      aiQuestionJobId === null
-      || !aiActiveRequest
-    ) return undefined;
-    const timedOutJobId = aiQuestionJobId;
-    let disposed = false;
-    let retryTimeoutId: number | undefined;
-    const scheduleRetry = (callback: () => void) => {
-      if (disposed) return;
-      retryTimeoutId = window.setTimeout(callback, 30_000);
-    };
-    const resolveTimedOutJob = async () => {
-      if (disposed) return;
-      let latestJob: Awaited<ReturnType<typeof getAiJob>>;
-      try {
-        latestJob = await getAiJob(timedOutJobId);
-      } catch {
-        scheduleRetry(() => void resolveTimedOutJob());
-        return;
-      }
-      if (!["completed", "failed", "cancelled"].includes(latestJob.status)) {
-        try {
-          latestJob = await cancelAiJob(timedOutJobId);
-        } catch {
-          // The job can finish between the status check and cancellation.
-          // Keep polling unless a second read confirms a terminal result.
-          try {
-            latestJob = await getAiJob(timedOutJobId);
-          } catch {
-            scheduleRetry(() => void resolveTimedOutJob());
-            return;
-          }
-        }
-      }
-      if (!["completed", "failed", "cancelled"].includes(latestJob.status)) {
-        scheduleRetry(() => void resolveTimedOutJob());
-        return;
-      }
-      if (!disposed) {
-        queryClient.setQueryData(["ai-job", "question", timedOutJobId], latestJob);
-      }
-    };
-    const timeoutId = window.setTimeout(() => {
-      void resolveTimedOutJob();
-    }, AI_QUESTION_JOB_POLL_TIMEOUT_MS);
-    return () => {
-      disposed = true;
-      window.clearTimeout(timeoutId);
-      if (retryTimeoutId !== undefined) window.clearTimeout(retryTimeoutId);
-    };
-  }, [aiActiveRequest, aiQuestionJobId, queryClient]);
-
-  useEffect(() => {
-    if (
-      !aiQuestionJob
-      || !aiActiveRequest
-      || aiActiveRequest.businessDate !== businessDate
-      || aiActiveRequest.language !== language
-    ) return;
-    const activeRequestId = aiActiveRequest.requestId;
-    const activeRequestModelId = aiActiveRequest.modelId;
-    if (aiQuestionJob.status === "completed") {
-      const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary").trim();
-      if (aiQuestionJobUsedLocalLlm && summary) {
-        appendAiChatMessage({
-          id: `${activeRequestId}-model-answer`,
-          role: "assistant",
-          content: summary,
-          label: `${localAiTierLabel} · ${copy.aiAnswerReady}`,
-          meta: [
-            `${copy.aiSource}: ${copy.aiSourceVerified}`,
-            ...(aiQuestionJobModelDisplayName ? [`${copy.workerModel}: ${aiQuestionJobModelDisplayName}`] : []),
-          ],
-          includeInHistory: true,
-          modelId: activeRequestModelId,
-        });
-      } else {
-        if (!aiActiveRequest.hasDeterministicAnswer) {
-          excludeAiQuestionFromHistory(activeRequestId);
-        }
-        appendAiChatMessage({
-          id: `${activeRequestId}-model-error`,
-          role: "assistant",
-          content: aiActiveRequest.hasDeterministicAnswer
-            ? copy.aiOptionalExplanationFailedHint
-            : aiQuestionJobModelMatchesRequest
-              ? copy.aiAnswerQueuedFailedHint
-              : copy.aiAnswerModelMismatchHint,
-          label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
-          tone: "warning",
-          includeInHistory: false,
-          modelId: activeRequestModelId,
-        });
-      }
-      setAiQuestionJobId(null);
-      setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
-      return;
-    }
-    if (aiQuestionJob.status === "failed" || aiQuestionJob.status === "cancelled") {
-      if (!aiActiveRequest.hasDeterministicAnswer) {
-        excludeAiQuestionFromHistory(activeRequestId);
-      }
-      appendAiChatMessage({
-        id: `${activeRequestId}-model-error`,
-        role: "assistant",
-        content: aiActiveRequest.hasDeterministicAnswer
-          ? copy.aiOptionalExplanationFailedHint
-          : copy.aiAnswerQueuedFailedHint,
-        label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
-        tone: "warning",
-        includeInHistory: false,
-        modelId: activeRequestModelId,
-      });
-      setAiQuestionJobId(null);
-      setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
-    }
-  }, [
-    aiActiveRequest,
-    aiQuestionJob,
-    aiQuestionJobModelDisplayName,
-    aiQuestionJobModelMatchesRequest,
-    aiQuestionJobUsedLocalLlm,
-    businessDate,
-    copy,
-    language,
-    localAiTierLabel,
-  ]);
-
-  useEffect(() => {
-    const cleanupListeners: Array<() => void> = [];
-    const listen = (target: EventTarget | null | undefined, eventName: string, listener: () => void) => {
-      if (!target) return;
-      target.addEventListener(eventName, listener as EventListener, { passive: true });
-      cleanupListeners.push(() => target.removeEventListener(eventName, listener as EventListener));
-    };
-    const cleanup = () => cleanupListeners.forEach((removeListener) => removeListener());
-
-    const configureStandaloneViewport = () => {
-      const updateStandaloneViewport = () => {
-        const visualViewport = window.visualViewport;
-        const viewportLeft = visualViewport?.offsetLeft ?? 0;
-        const viewportTop = visualViewport?.offsetTop ?? 0;
-        const viewportWidth = visualViewport?.width ?? window.innerWidth;
-        const viewportHeight = visualViewport?.height ?? window.innerHeight;
-        const viewportBottom = viewportTop + viewportHeight;
-        const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
-        setAiChatVisibleViewport({
-          left: viewportLeft,
-          top: viewportTop,
-          width: Math.max(64, viewportWidth),
-          height: Math.max(64, viewportHeight),
-        });
-        setAiChatViewportStyle({
-          "--production-ai-chat-bottom": `${Math.max(16, layoutHeight - viewportBottom + 16)}px`,
-          "--production-ai-chat-visible-height": `${Math.max(64, viewportHeight)}px`,
-        });
-      };
-
-      updateStandaloneViewport();
-      listen(window, "resize", updateStandaloneViewport);
-      listen(window.visualViewport, "resize", updateStandaloneViewport);
-      listen(window.visualViewport, "scroll", updateStandaloneViewport);
-    };
-
-    if (window.parent === window) {
-      configureStandaloneViewport();
-      return cleanup;
-    }
-
-    try {
-      const parentWindow = window.parent;
-      const parentDocument = parentWindow.document;
-      const frameElement = window.frameElement as HTMLElement | null;
-      if (!frameElement) {
-        configureStandaloneViewport();
-        return cleanup;
-      }
-
-      const getTopOcclusionBottom = (
-        frameRect: DOMRect,
-        viewportTop: number,
-        viewportBottom: number,
-      ) => {
-        const candidates = Array.from(parentDocument.querySelectorAll<HTMLElement>(
-          "header, [role='banner'], .sticky, .fixed, [data-sticky], [style*='position']",
-        ));
-        const coveringRects = candidates.flatMap((element) => {
-          const computedStyle = parentWindow.getComputedStyle(element);
-          if (
-            !["fixed", "sticky"].includes(computedStyle.position)
-            || computedStyle.display === "none"
-            || computedStyle.visibility === "hidden"
-            || Number(computedStyle.opacity) === 0
-          ) return [];
-          const rect = element.getBoundingClientRect();
-          if (
-            rect.width <= 0
-            || rect.height <= 0
-            || rect.bottom <= viewportTop
-            || rect.top >= viewportBottom
-            || rect.right <= frameRect.left
-            || rect.left >= frameRect.right
-          ) return [];
-
-          const overlapLeft = Math.max(rect.left, frameRect.left);
-          const overlapRight = Math.min(rect.right, frameRect.right);
-          const sampleX = Math.min(overlapRight - 1, Math.max(overlapLeft + 1, (overlapLeft + overlapRight) / 2));
-          const sampleY = Math.min(rect.bottom - 1, Math.max(rect.top + 1, (rect.top + rect.bottom) / 2));
-          const stack = parentDocument.elementsFromPoint(sampleX, sampleY);
-          const coveringIndex = stack.findIndex((stackElement) => (
-            stackElement === element || element.contains(stackElement)
-          ));
-          const frameIndex = stack.indexOf(frameElement);
-          if (coveringIndex < 0 || (frameIndex >= 0 && coveringIndex > frameIndex)) return [];
-          return [rect];
-        }).sort((left, right) => left.top - right.top);
-
-        return coveringRects.reduce((occlusionBottom, rect) => (
-          rect.top <= occlusionBottom + 16
-            ? Math.min(viewportBottom, Math.max(occlusionBottom, rect.bottom))
-            : occlusionBottom
-        ), viewportTop);
-      };
-
-      const updateEmbeddedViewport = () => {
-        const frameRect = frameElement.getBoundingClientRect();
-        const frameWidth = Math.max(frameRect.width, frameElement.offsetWidth, window.innerWidth);
-        const frameHeight = Math.max(frameRect.height, frameElement.offsetHeight, window.innerHeight);
-        const parentVisualViewport = parentWindow.visualViewport;
-        const viewportLeft = parentVisualViewport?.offsetLeft ?? 0;
-        const viewportTop = parentVisualViewport?.offsetTop ?? 0;
-        const viewportWidth = parentVisualViewport?.width ?? parentWindow.innerWidth;
-        const viewportHeight = parentVisualViewport?.height ?? parentWindow.innerHeight;
-        const viewportRight = viewportLeft + viewportWidth;
-        const viewportBottom = viewportTop + viewportHeight;
-        const intersectionLeft = Math.max(viewportLeft, frameRect.left);
-        const intersectionRight = Math.min(viewportRight, frameRect.right);
-        const intersectionTop = Math.max(viewportTop, frameRect.top);
-        const intersectionBottom = Math.min(viewportBottom, frameRect.bottom);
-        const occlusionBottom = getTopOcclusionBottom(frameRect, viewportTop, viewportBottom);
-        const effectiveTop = Math.max(intersectionTop, occlusionBottom);
-        const visibleTop = Math.max(0, Math.min(frameHeight, effectiveTop - frameRect.top));
-        const visibleLeft = Math.max(0, Math.min(frameWidth, intersectionLeft - frameRect.left));
-        const visibleRight = Math.max(
-          visibleLeft,
-          Math.min(frameWidth, intersectionRight - frameRect.left),
-        );
-        const visibleBottom = Math.max(
-          visibleTop,
-          Math.min(frameHeight, intersectionBottom - frameRect.top),
-        );
-        const visibleWidth = Math.max(64, visibleRight - visibleLeft);
-        const visibleHeight = Math.max(64, visibleBottom - visibleTop);
-        setAiChatVisibleViewport({
-          left: visibleLeft,
-          top: visibleTop,
-          width: visibleWidth,
-          height: visibleHeight,
-        });
-        setAiChatViewportStyle({
-          "--production-ai-chat-bottom": `${Math.max(16, frameHeight - visibleBottom + 16)}px`,
-          "--production-ai-chat-visible-height": `${visibleHeight}px`,
-        });
-      };
-
-      updateEmbeddedViewport();
-      listen(parentWindow, "scroll", updateEmbeddedViewport);
-      listen(parentWindow, "resize", updateEmbeddedViewport);
-      listen(parentWindow.visualViewport, "resize", updateEmbeddedViewport);
-      listen(parentWindow.visualViewport, "scroll", updateEmbeddedViewport);
-      listen(window, "resize", updateEmbeddedViewport);
-      listen(window.visualViewport, "resize", updateEmbeddedViewport);
-      listen(window.visualViewport, "scroll", updateEmbeddedViewport);
-    } catch {
-      configureStandaloneViewport();
-    }
-
-    return cleanup;
-  }, []);
-
-  useEffect(() => {
-    if (!aiChatLauncherPosition || !aiChatLauncherRef.current) return;
-    const rect = aiChatLauncherRef.current.getBoundingClientRect();
-    const horizontalInset = Math.min(
-      0.5,
-      (rect.width / 2 + AI_CHAT_LAUNCHER_MARGIN_PX) / aiChatVisibleViewport.width,
-    );
-    const verticalInset = Math.min(
-      0.5,
-      (rect.height / 2 + AI_CHAT_LAUNCHER_MARGIN_PX) / aiChatVisibleViewport.height,
-    );
-    const nextPosition = {
-      x: Math.min(1 - horizontalInset, Math.max(horizontalInset, aiChatLauncherPosition.x)),
-      y: Math.min(1 - verticalInset, Math.max(verticalInset, aiChatLauncherPosition.y)),
-    };
-    if (
-      Math.abs(nextPosition.x - aiChatLauncherPosition.x) < 0.0001
-      && Math.abs(nextPosition.y - aiChatLauncherPosition.y) < 0.0001
-    ) return;
-    setAiChatLauncherPosition(nextPosition);
-    persistAiChatLauncherPosition(nextPosition);
-  }, [
-    aiChatLauncherPosition,
-    aiChatVisibleViewport.height,
-    aiChatVisibleViewport.width,
-  ]);
-
-  useEffect(() => {
-    if (!isAiAskOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const focusId = window.requestAnimationFrame(() => aiQuestionInputRef.current?.focus());
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setIsAiAskOpen(false);
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(aiChatDrawerRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      ) ?? []);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.cancelAnimationFrame(focusId);
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      aiChatLauncherRef.current?.focus();
-    };
-  }, [isAiAskOpen]);
-
-  useEffect(() => {
-    if (!isAiAskOpen) return;
-    aiChatBodyRef.current?.scrollTo({ top: aiChatBodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [aiChatMessages, aiQuestionJobStatus, isAiAskOpen]);
 
   useEffect(() => {
     setActivitySelection(null);
@@ -3903,106 +2939,6 @@ export function ProductionDashboardPage() {
     setSelectedActivityRow(null);
     setActivityConfirmationError(null);
   }, [businessDate, language]);
-
-  function beginAiChatLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    aiChatLauncherDragRef.current = {
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startCenterX: rect.left + rect.width / 2,
-      startCenterY: rect.top + rect.height / 2,
-      width: rect.width,
-      height: rect.height,
-      moved: false,
-      lastPosition: aiChatLauncherPosition,
-    };
-    suppressAiChatLauncherClickRef.current = false;
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function moveAiChatLauncher(event: ReactPointerEvent<HTMLButtonElement>) {
-    const drag = aiChatLauncherDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - drag.startClientX;
-    const deltaY = event.clientY - drag.startClientY;
-    if (!drag.moved && Math.hypot(deltaX, deltaY) < AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX) return;
-
-    drag.moved = true;
-    setIsAiChatLauncherDragging(true);
-    event.preventDefault();
-
-    const horizontalInset = Math.min(
-      aiChatVisibleViewport.width / 2,
-      drag.width / 2 + AI_CHAT_LAUNCHER_MARGIN_PX,
-    );
-    const verticalInset = Math.min(
-      aiChatVisibleViewport.height / 2,
-      drag.height / 2 + AI_CHAT_LAUNCHER_MARGIN_PX,
-    );
-    const minCenterX = aiChatVisibleViewport.left + horizontalInset;
-    const maxCenterX = aiChatVisibleViewport.left + aiChatVisibleViewport.width - horizontalInset;
-    const minCenterY = aiChatVisibleViewport.top + verticalInset;
-    const maxCenterY = aiChatVisibleViewport.top + aiChatVisibleViewport.height - verticalInset;
-    const centerX = Math.min(maxCenterX, Math.max(minCenterX, drag.startCenterX + deltaX));
-    const centerY = Math.min(maxCenterY, Math.max(minCenterY, drag.startCenterY + deltaY));
-    const nextPosition = {
-      x: clampUnitInterval((centerX - aiChatVisibleViewport.left) / aiChatVisibleViewport.width),
-      y: clampUnitInterval((centerY - aiChatVisibleViewport.top) / aiChatVisibleViewport.height),
-    };
-    drag.lastPosition = nextPosition;
-    setAiChatLauncherPosition(nextPosition);
-  }
-
-  function finishAiChatLauncherDrag(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    suppressClick: boolean,
-  ) {
-    const drag = aiChatLauncherDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    aiChatLauncherDragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (drag.moved && drag.lastPosition) {
-      persistAiChatLauncherPosition(drag.lastPosition);
-      suppressAiChatLauncherClickRef.current = suppressClick;
-    }
-    setIsAiChatLauncherDragging(false);
-  }
-
-  function openAiChatFromLauncher() {
-    if (suppressAiChatLauncherClickRef.current) {
-      suppressAiChatLauncherClickRef.current = false;
-      return;
-    }
-    setIsAiAskOpen(true);
-  }
-
-  function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = aiQuestion.trim();
-    if (
-      !question
-      || aiQuestionMutation.isPending
-      || aiQuestionJobId !== null
-    ) return;
-    const history = aiChatMessages
-      .filter((message) => (
-        message.includeInHistory !== false && message.modelId === aiModelId
-      ))
-      .slice(-8)
-      .map(({ role, content }) => ({ role, content }));
-    aiQuestionMutation.mutate({
-      question,
-      history,
-      requestId: `question-${Date.now().toString(36)}`,
-      businessDate,
-      language,
-      modelId: aiModelId,
-    });
-  }
 
   const isInitialLoading = coreDashboardState.isInitialLoading;
   const isCoreDataFetching = coreDashboardSources.some(({ query }) => query.isFetching);
@@ -4499,23 +3435,6 @@ export function ProductionDashboardPage() {
     );
   }
 
-  function getActivityTypeLabel(activityType: InjectionActivityType) {
-    return activityTypeOptions.find((option) => option.value === activityType)?.label ?? activityType;
-  }
-
-  function getActivityConfirmationSummary(confirmation: InjectionActivityConfirmation) {
-    const confirmedAt = new Date(confirmation.confirmed_at);
-    const details = [
-      confirmation.part_no,
-      confirmation.model_name,
-      confirmation.note,
-      confirmation.confirmed_by_name
-        ? `${copy.activityConfirmedBy} ${confirmation.confirmed_by_name}${Number.isNaN(confirmedAt.getTime()) ? "" : ` ${formatTimeLabel(confirmedAt)}`}`
-        : "",
-    ].filter(Boolean);
-    return details.join(" · ") || copy.activityConfirmed;
-  }
-
   function openActivityConfirmation(row: RealtimeProgressRow) {
     const confirmation = activityConfirmationByMachine.get(row.key);
     setSelectedActivityRow(row);
@@ -4602,131 +3521,47 @@ export function ProductionDashboardPage() {
     });
   }
 
-  function renderProgressRow(row: RealtimeProgressRow) {
+  function renderProgressTrack(row: RealtimeProgressRow) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const displaySegments = getDisplaySegments(row.segments);
     const displayLabel = getLocalizedMachineLabel(row.label, language);
-    const isReviewRow = !row.hasPlan;
-    const activityConfirmation = isReviewRow ? activityConfirmationByMachine.get(row.key) : undefined;
-    const statusLabel = activityConfirmation
-      ? copy.activityConfirmed
-      : row.equipmentState === "running"
-      ? copy.running
-      : row.equipmentState === "paused"
-        ? copy.paused
-        : row.equipmentState === "unplanned_running"
-          ? copy.unplannedRunning
-          : row.equipmentState === "activity_review"
-            ? copy.activityReview
-            : "-";
-    const statusClass = [
-      "production-progress-status",
-      row.equipmentState === "running" ? "production-progress-status--running" : "",
-      row.equipmentState === "paused" ? "production-progress-status--paused" : "",
-      isReviewRow && !activityConfirmation ? "production-progress-status--review" : "",
-      activityConfirmation ? "production-progress-status--confirmed" : "",
-    ].filter(Boolean).join(" ");
-    const reviewIsRunning = row.equipmentState === "unplanned_running";
-    const reviewTitle = activityConfirmation
-      ? `${copy.activityConfirmed} · ${getActivityTypeLabel(activityConfirmation.activity_type)}`
-      : reviewIsRunning ? copy.productConfirmationTitle : copy.activityConfirmationTitle;
-    const reviewBody = activityConfirmation
-      ? getActivityConfirmationSummary(activityConfirmation)
-      : reviewIsRunning ? copy.productConfirmationBody : copy.activityConfirmationBody;
-
     return (
-      <article className={`production-progress-row${row.equipmentState === "paused" ? " production-progress-row--paused" : ""}${isReviewRow && !activityConfirmation ? " production-progress-row--review" : ""}${activityConfirmation ? " production-progress-row--confirmed" : ""}`} key={row.key}>
-        <div className="production-progress-row__head">
-          <div className="production-progress-row__identity">
-            <div className="production-progress-row__title">
-              <strong>{displayLabel}</strong>
-              {row.hasPlan ? (
-                <button
-                  aria-label={`${displayLabel} ${copy.detail}`}
-                  className="production-progress-detail-button"
-                  onClick={() => setSelectedProgressRow(row)}
-                  type="button"
-                >
-                  {copy.detail}
-                </button>
-              ) : null}
-            </div>
-            <span>
-              {isReviewRow
-                ? `${copy.noPlan} · ${copy.shotCount} ${formatNumber(row.shotCount)}`
-                : currentSegment
-                  ? `${copy.currentPart} ${currentSegment.partNo}`
-                  : copy.partProgress}
-            </span>
-            {row.equipmentState === "paused" ? (
-              <small className="production-progress-row__diagnostic">
-                {copy.noClampDuration} {formatNumber(Math.max(0, Math.round(row.idleMinutes ?? 0)))}m
-                {row.expectedCycleTimeSec !== null ? ` · ${copy.baselineCycleTime} ${row.expectedCycleTimeSec.toFixed(1)}s` : ""}
-              </small>
-            ) : null}
-          </div>
-          <div className="production-progress-row__state">
-            <span>{isReviewRow ? `${copy.shotCount} ${formatNumber(row.shotCount)}` : progressText}</span>
-            <em className={statusClass}>{statusLabel}</em>
-          </div>
-        </div>
-        {isReviewRow ? (
-          <div className={`production-progress-review-callout${activityConfirmation ? " production-progress-review-callout--confirmed" : ""}`}>
-            <div>
-              <strong>{reviewTitle}</strong>
-              <span>{reviewBody}</span>
-            </div>
-            <button className="production-progress-review-action" onClick={() => openActivityConfirmation(row)} type="button">
-              {activityConfirmation ? copy.activityEdit : reviewIsRunning ? copy.productInputAction : copy.activityCheckAction}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="production-progress-track-wrap">
-              <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
-                {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
-                  <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
-                    <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
-                  </span>
-                )}
-                {row.gapQty > 0 ? (
-                  <span
-                    className="production-part-overrun"
-                    style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
-                  >
-                    <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
-                  </span>
-                ) : null}
-              </div>
-              {renderProgressHoverCard({
-                label: displayLabel,
-                progressText,
-                actualLabel: copy.estimatedVsPlan,
-                actualQty: row.estimatedQty,
-                plannedQty: row.plannedQty,
-                gapQty: row.gapQty,
-                completedCount: row.completedCount,
-                inProgressCount: row.inProgressCount,
-                pendingCount: row.pendingCount,
-                currentPart: currentSegment?.partNo,
-                shotCount: row.shotCount,
-                recentShots: row.recentShots,
-                avgCavity: row.avgCavity,
-                showInjectionMetrics: true,
-                segments: row.segments,
-              })}
-            </div>
-            <div className="production-progress-state-strip">
-              <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
-              <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
-              <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
-              {renderOverrunChip(row.gapQty, row.plannedQty)}
-            </div>
-          </>
+    <div className="production-progress-track-wrap">
+      <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
+        {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
+          <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
+            <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
+          </span>
         )}
-      </article>
+        {row.gapQty > 0 ? (
+          <span
+            className="production-part-overrun"
+            style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
+          >
+            <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
+          </span>
+        ) : null}
+      </div>
+      {renderProgressHoverCard({
+        label: displayLabel,
+        progressText,
+        actualLabel: copy.estimatedVsPlan,
+        actualQty: row.estimatedQty,
+        plannedQty: row.plannedQty,
+        gapQty: row.gapQty,
+        completedCount: row.completedCount,
+        inProgressCount: row.inProgressCount,
+        pendingCount: row.pendingCount,
+        currentPart: currentSegment?.partNo,
+        shotCount: row.shotCount,
+        recentShots: row.recentShots,
+        avgCavity: row.avgCavity,
+        showInjectionMetrics: true,
+        segments: row.segments,
+      })}
+    </div>
     );
   }
 
@@ -5300,17 +4135,6 @@ export function ProductionDashboardPage() {
     );
   }
 
-  const aiChatLauncherStyle: ProductionAiChatViewportStyle = {
-    ...aiChatViewportStyle,
-    ...(aiChatLauncherPosition ? {
-      left: aiChatVisibleViewport.left + aiChatVisibleViewport.width * aiChatLauncherPosition.x,
-      top: aiChatVisibleViewport.top + aiChatVisibleViewport.height * aiChatLauncherPosition.y,
-      right: "auto",
-      bottom: "auto",
-      transform: "translate(-50%, -50%)",
-    } : {}),
-  };
-
   return (
     <section className="page production-dashboard" aria-busy={isLiveDataRefreshing}>
       <PageHeader
@@ -5319,60 +4143,19 @@ export function ProductionDashboardPage() {
         description={copy.description}
       />
 
-      {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
-
-      {!isCoreDashboardDataReady && !isInitialLoading ? (
-        <section className="panel">
-          <div className="notice notice--warning" role="alert">
-            <strong>{copy.dataUnavailable}</strong>
-            <p>{copy.dataUnavailableHint}</p>
-            <p>{copy.dataMissingSources}: {coreDashboardState.missingSources.map(({ label }) => label).join(" · ")}</p>
-          </div>
-          <label className="stat-card production-date-card">
-            <span className="stat-card__title">{copy.productionDate}</span>
-            <input
-              type="date"
-              value={businessDate}
-              max={currentDate}
-              onChange={(event) => setBusinessDate(event.target.value || currentDate)}
-            />
-            <span className="stat-card__hint">{copy.productionDateHint}</span>
-          </label>
-          <button className="button button--primary" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
-            {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
-          </button>
-        </section>
-      ) : null}
-
-      {isCoreDashboardDataReady ? (
-        <>
-          {hasCoreRefreshError ? (
-            <div className="notice notice--warning" role="alert">
-              <strong>{copy.dataRefreshFailed}</strong>
-              <p>{copy.dataRefreshFailedHint}</p>
-              <ul>
-                {coreDashboardState.failedSources.map(({ label, query }) => (
-                  <li key={label}>
-                    {label} · {copy.dataLastLoaded}: {formatAiTimestamp(query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null, language)}
-                  </li>
-                ))}
-              </ul>
-              <button className="button button--ghost" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
-                {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
-              </button>
-            </div>
-          ) : null}
-          <div className="stats-grid">
-            <label className="stat-card production-date-card">
-              <span className="stat-card__title">{copy.productionDate}</span>
-              <input
-                type="date"
-                value={businessDate}
-                max={currentDate}
-                onChange={(event) => setBusinessDate(event.target.value || currentDate)}
-              />
-              <span className="stat-card__hint">{copy.productionDateHint}</span>
-            </label>
+      <div className="stats-grid">
+        <label className="stat-card production-date-card">
+          <span className="stat-card__title">{copy.productionDate}</span>
+          <input
+            type="date"
+            value={businessDate}
+            max={currentDate}
+            onChange={(event) => setBusinessDate(event.target.value || currentDate)}
+          />
+          <span className="stat-card__hint">{copy.productionDateHint}</span>
+        </label>
+        {isCoreDashboardDataReady ? (
+          <>
             <StatCard
               hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}%`}
               hintTone={hasCoreRefreshError ? "neutral" : injectionRateTone}
@@ -5403,7 +4186,43 @@ export function ProductionDashboardPage() {
               title={copy.activeMachines}
               value={`${briefContext.activeMachineCount}/${briefContext.totalMachines}`}
             />
+          </>
+        ) : null}
+      </div>
+
+      {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
+
+      {!isCoreDashboardDataReady && !isInitialLoading ? (
+        <section className="panel">
+          <div className="notice notice--warning" role="alert">
+            <strong>{copy.dataUnavailable}</strong>
+            <p>{copy.dataUnavailableHint}</p>
+            <p>{copy.dataMissingSources}: {coreDashboardState.missingSources.map(({ label }) => label).join(" · ")}</p>
           </div>
+          <button className="button button--primary" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+            {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+          </button>
+        </section>
+      ) : null}
+
+      {isCoreDashboardDataReady ? (
+        <>
+          {hasCoreRefreshError ? (
+            <div className="notice notice--warning" role="alert">
+              <strong>{copy.dataRefreshFailed}</strong>
+              <p>{copy.dataRefreshFailedHint}</p>
+              <ul>
+                {coreDashboardState.failedSources.map(({ label, query }) => (
+                  <li key={label}>
+                    {label} · {copy.dataLastLoaded}: {formatAiTimestamp(query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null, language)}
+                  </li>
+                ))}
+              </ul>
+              <button className="button button--ghost" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+                {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+              </button>
+            </div>
+          ) : null}
 
           {activeKpiDetail === "injection" ? renderCumulativeKpiDetail({
             detailKey: "injection",
@@ -5445,297 +4264,50 @@ export function ProductionDashboardPage() {
 
           {activeKpiDetail === "machines" ? renderMachineActivityDetail() : null}
 
-          <section className="panel production-brief-panel">
-            <div className="production-brief-panel__header">
-              <div>
-                <p className="panel-card__eyebrow">{copy.localBrief}</p>
-                <h3 className="panel__title">{copy.briefTitle}</h3>
-              </div>
-              <div className="production-ai-model-selector production-brief-model-selector">
-                <strong>{copy.briefModelSelect}</strong>
-                <div className="production-ai-worker-status__states">
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${briefingModelIsAvailable ? "ready" : "unavailable"}`}>
-                    {briefingModelStatusLabel}
-                  </span>
-                </div>
-                <p>{copy.briefModelCompareHint}</p>
-              </div>
-            </div>
-
-            <div className="production-ai-worker-status">
-              <div className="production-ai-worker-status__states" role="status">
-                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${hasCoreRefreshError ? "unavailable" : "ready"}`}>
-                  {hasCoreRefreshError ? copy.dataRefreshFailed : copy.deterministicAnswerReady}
-                </span>
-                <span className={`production-ai-worker-status__pill${localAiHistoryClass}`}>
-                  {localAiHistory.label}{localAiHistory.reason ? ` · ${localAiHistory.reason}` : ""}
-                </span>
-              </div>
-              {aiWorkerStatus ? (
-                <dl className="production-ai-worker-status__meta">
-                  <div>
-                    <dt>{copy.workerLatestAttempt}</dt>
-                    <dd>{withAiModelName(formatAiTimestamp(aiWorkerStatus.last_analysis_completed_at, language), aiWorkerStatus.last_analysis_model_display_name)}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy.workerLastSuccessful}</dt>
-                    <dd>{aiWorkerStatus.last_successful_analysis_at ? formatAiTimestamp(aiWorkerStatus.last_successful_analysis_at, language) : copy.workerNoSuccessfulRecord}</dd>
-                  </div>
-                </dl>
-              ) : null}
-            </div>
-
-            <div className="production-brief-panel__body">
-              {hasCoreRefreshError ? (
-                <div className="notice notice--warning">{copy.dataBriefingPaused}</div>
-              ) : productionAiBriefingQuery.isLoading ? (
-                <p>{copy.briefLoading}</p>
-              ) : productionAiBriefing ? (
-                <article className={`production-ai-job production-ai-job--${productionAiBriefing.severity === "normal" ? "completed" : "failed"}`}>
-                  <div className="production-ai-job__header">
-                    <div>
-                      <strong>{copy.deterministicBriefTitle}</strong>
-                      <span>{briefingSourceLabel}</span>
-                    </div>
-                    <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${productionAiBriefing.severity === "normal" ? "ready" : "unavailable"}`}>
-                      {briefingSeverityLabel}
-                    </span>
-                  </div>
-
-                  <div className="production-ai-job__result">
-                    {productionAiBriefing.answer.split("\n\n").map((paragraph, index) => (
-                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                    ))}
-                  </div>
-
-                  <div className="production-brief-evidence">
-                    <span>
-                      {copy.freshness}: {productionAiBriefing.data_freshness.last_mes_recorded_at
-                        ? productionAiBriefing.data_freshness.is_stale
-                          ? copy.freshnessStale
-                          : copy.freshnessCurrent
-                        : copy.freshnessUnknown}
-                    </span>
-                    <span>{copy.planUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_plan_updated_at, language)}</span>
-                    <span>{copy.mesUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_mes_recorded_at, language)}</span>
-                    <span>{copy.machiningUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_machining_reported_at, language)}</span>
-                    <span>{productionAiBriefing.top_risks.length} {copy.topRisks}</span>
-                  </div>
-
-                  <div className="production-ai-job__result">
-                    <strong>{copy.topRisks}</strong>
-                    {productionAiBriefing.top_risks.length ? (
-                      <div className="production-ai-job__issues">
-                        {productionAiBriefing.top_risks.map((risk, index) => (
-                          <article className="production-ai-job__issue" key={`${risk.type}-${risk.label}-${index}`}>
-                            <span>{risk.process === "injection" ? copy.injectionFacilities : copy.machiningFacilities}</span>
-                            <strong>{risk.label}</strong>
-                            <p>
-                              {language === "ko"
-                                ? `현재 시간 기준 ${formatNumber(Math.abs(risk.gap_qty))}개 부족${risk.detail ? ` · ${risk.detail}` : ""}`
-                                : `较当前时间基准少 ${formatNumber(Math.abs(risk.gap_qty))} 个${risk.detail ? ` · ${risk.detail}` : ""}`}
-                            </p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : <p>{briefingRiskEvaluationLimited ? copy.riskEvaluationLimited : copy.noTopRisks}</p>}
-                  </div>
-
-                  {briefingWarningLabels.length ? (
-                    <div className="notice notice--warning">
-                      <strong>{copy.warningsTitle}</strong>
-                      <ul>
-                        {briefingWarningLabels.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  <details>
-                    <summary>{copy.evidenceTitle}</summary>
-                    <div className="production-ai-job__issues">
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.usedDataTitle}</strong>
-                        {productionAiBriefing.used_data.map((item) => {
-                          const filters = formatBriefingFilters(item.filters);
-                          return (
-                            <p key={item.name}>
-                              {item.name}: {formatNumber(item.row_count)} {language === "ko" ? "행" : "条"}
-                              {filters ? ` · ${filters}` : ""}
-                            </p>
-                          );
-                        })}
-                      </article>
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.calculationBasisTitle}</strong>
-                        {productionAiBriefing.calculation_basis.map((item, index) => (
-                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
-                        ))}
-                      </article>
-                      <article className="production-ai-job__issue">
-                        <strong>{copy.retrievalTraceTitle}</strong>
-                        {productionAiBriefing.retrieval_trace.map((item, index) => (
-                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
-                        ))}
-                      </article>
-                    </div>
-                  </details>
-                </article>
-              ) : (
-                <>
-                  <div className="notice notice--warning">{copy.briefFailed}</div>
-                  <article className="production-ai-job production-ai-job--failed">
-                    <div className="production-ai-job__header">
-                      <div>
-                        <strong>{copy.screenFallbackTitle}</strong>
-                        <span>{formatAiTimestamp(briefContext.latestUpdatedAt, language)}</span>
-                      </div>
-                    </div>
-                    <div className="production-ai-job__result">
-                      <p>{screenBriefingFallback.answer}</p>
-                    </div>
-                    {screenBriefingFallback.risks.length ? (
-                      <div className="production-ai-job__issues">
-                        {screenBriefingFallback.risks.map((risk) => (
-                          <article className="production-ai-job__issue" key={risk.label}>
-                            <strong>{risk.label}</strong>
-                            <p>{risk.detail}</p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                </>
-              )}
-
-              {!hasCoreRefreshError && latestAiJobUsedLocalLlm && latestAiJobSummary ? (
-                <article className="production-ai-job production-ai-job--completed">
-                  <div className="production-ai-job__header">
-                    <div>
-                      <strong>{localAiTierLabel}</strong>
-                      <span>
-                        {withAiModelName(formatAiTimestamp(latestAiJob?.completed_at, language), latestAiJobModelDisplayName)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="production-ai-job__result">
-                    {latestAiJobSummary.split("\n\n").map((paragraph, index) => (
-                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                    ))}
-                  </div>
-                </article>
-              ) : null}
-            </div>
-          </section>
-
-          <DeepAnalysisPanel canRequest={canRequestDeepAnalysis} kind="production_weekly" language={language} />
-
-          <section className="panel production-progress-panel">
-            <div className="production-progress-panel__header">
-              <div>
-                <p className="panel-card__eyebrow">{copy.progressEyebrow}</p>
-                <div className="production-progress-title-line">
-                  <h3 className="panel__title">{copy.progressTitle}</h3>
-                  <span
-                    className="production-progress-help"
-                    data-tooltip={copy.progressDescription}
-                    role="img"
-                    aria-label={copy.progressDescription}
-                  >
-                    ?
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="production-progress-grid">
-              <article className="production-progress-card">
-                <div className="production-progress-visual-summary">
-                  <div className={`production-progress-ring${realtimeProgress.estimatedQty > realtimeProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(realtimeProgress.progressRate)}>
-                    <strong>{getProgressText(realtimeProgress.progressRate)}</strong>
-                    <span>{copy.totalProgress}</span>
-                  </div>
-                  <div className="production-progress-summary-text">
-                    <h4>{copy.injectionProgress}</h4>
-                    <p>{copy.progressHint}</p>
-                    <div className="production-progress-state-strip">
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {realtimeProgress.completedCount}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {realtimeProgress.inProgressCount}</span>
-                      <span className="production-progress-chip">{copy.pending} {realtimeProgress.pendingCount}</span>
-                      {realtimeProgress.pausedCount > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--paused">{copy.pausedCount} {realtimeProgress.pausedCount}</span>
-                      ) : null}
-                      {unresolvedActivityReviewCount > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--review">{copy.reviewCount} {unresolvedActivityReviewCount}</span>
-                      ) : null}
-                      {renderOverrunChip(realtimeProgress.estimatedQty - realtimeProgress.plannedQty, realtimeProgress.plannedQty)}
-                    </div>
-                  </div>
-                </div>
-                <div className="production-progress-list">
-                  {realtimeProgress.rows.length ? (
-                    realtimeProgress.rows.map(renderProgressRow)
-                  ) : (
-                    <div className="notice notice--neutral">{copy.noProgressRows}</div>
-                  )}
-                </div>
-              </article>
-
-              <article className="production-progress-card production-progress-card--pending">
-                <div className="production-progress-visual-summary">
-                  <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
-                    <strong>{getProgressText(machiningProgress.progressRate)}</strong>
-                    <span>{copy.totalProgress}</span>
-                  </div>
-                  <div className="production-progress-summary-text">
-                    <h4>{copy.machiningProgress}</h4>
-                    <p>{copy.machiningSupplementHint}</p>
-                    <div className="production-progress-state-strip">
-                      <span className="production-progress-chip">{copy.mesQty} {formatNumber(machiningSummaryMesQty)}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(machiningSummaryManualOpenQty)}</span>
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.effectiveQty} {formatNumber(machiningSummaryEffectiveQty)}</span>
-                      {machiningSummaryAdvanceQty > 0 ? (
-                        <span className="production-progress-chip production-progress-chip--overrun">{copy.advanceQty} {formatNumber(machiningSummaryAdvanceQty)}</span>
-                      ) : null}
-                      <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
-                      <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
-                      <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
-                      {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty, machiningProgress.plannedQty)}
-                    </div>
-                  </div>
-                </div>
-                <div className="production-progress-list">
-                  {machiningProgress.rows.length ? (
-                    machiningProgress.rows.map(renderMachiningPreviewRow)
-                  ) : (
-                    <div className="notice notice--neutral">{copy.noProgressRows}</div>
-                  )}
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <InjectionTransitionPanel
+          <InjectionMachineBoard
+            activityConfirmedKeys={activityConfirmedKeys}
             analysis={transitionAnalysis}
+            businessDate={businessDate}
             confirmationState={downtimeConfirmationsQuery.isError ? "error" : downtimeConfirmationsQuery.isPending ? "loading" : "ready"}
             confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
-            mode="dashboard"
+            machiningRows={machiningProgress.rows.length ? machiningProgress.rows.map(renderMachiningPreviewRow) : <div className="notice notice--neutral">{copy.noProgressRows}</div>}
+            machiningSummary={(
+            <div className="production-progress-visual-summary">
+              <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
+                <strong>{getProgressText(machiningProgress.progressRate)}</strong>
+                <span>{copy.totalProgress}</span>
+              </div>
+              <div className="production-progress-summary-text">
+                <h4>{copy.machiningProgress}</h4>
+                <p>{copy.machiningSupplementHint}</p>
+                <div className="production-progress-state-strip">
+                  <span className="production-progress-chip">{copy.mesQty} {formatNumber(machiningSummaryMesQty)}</span>
+                  <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(machiningSummaryManualOpenQty)}</span>
+                  <span className="production-progress-chip production-progress-chip--completed">{copy.effectiveQty} {formatNumber(machiningSummaryEffectiveQty)}</span>
+                  {machiningSummaryAdvanceQty > 0 ? (
+                    <span className="production-progress-chip production-progress-chip--overrun">{copy.advanceQty} {formatNumber(machiningSummaryAdvanceQty)}</span>
+                  ) : null}
+                  <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
+                  <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
+                  <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
+                  {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty, machiningProgress.plannedQty)}
+                </div>
+              </div>
+            </div>
+            )}
+            onOpenActivity={openActivityConfirmation}
+            onOpenBoard={() => {
+              const boardUrl = new URL("/production/injection-board", window.location.origin);
+              window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
+            }}
+            onOpenDetail={setSelectedProgressRow}
+            productionStatus={productionStatusQuery.data}
+            productionStatusError={productionStatusQuery.isError}
+            progress={realtimeProgress}
+            renderTrack={renderProgressTrack}
           />
-
-          <div className="production-dashboard__board-launcher">
-            <span>{copy.openInjectionBoardHint}</span>
-            <button
-              className="button button--ghost"
-              onClick={() => {
-                const boardUrl = new URL("/production/injection-board", window.location.origin);
-                window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
-              }}
-              type="button"
-            >
-              {copy.openInjectionBoard}
-            </button>
-          </div>
 
           {selectedActivityRow ? createPortal(
             <div
@@ -6114,150 +4686,6 @@ export function ProductionDashboardPage() {
           ) : null}
         </>
       ) : null}
-
-      <button
-        aria-label={`${copy.askAi}. ${copy.aiLauncherDragHint}`}
-        aria-expanded={isAiAskOpen}
-        aria-haspopup="dialog"
-        className={`production-ai-chat-launcher production-ai-chat-launcher--ready${isAiChatLauncherDragging ? " is-dragging" : ""}`}
-        onClick={openAiChatFromLauncher}
-        onLostPointerCapture={(event) => finishAiChatLauncherDrag(event, false)}
-        onPointerCancel={(event) => finishAiChatLauncherDrag(event, false)}
-        onPointerDown={beginAiChatLauncherDrag}
-        onPointerMove={moveAiChatLauncher}
-        onPointerUp={(event) => finishAiChatLauncherDrag(event, true)}
-        ref={aiChatLauncherRef}
-        style={aiChatLauncherStyle}
-        title={copy.aiLauncherDragHint}
-        type="button"
-      >
-        <span aria-hidden="true" />
-        <MessageCircle aria-hidden="true" size={18} strokeWidth={2.2} />
-        {copy.askAi}
-        <GripVertical aria-hidden="true" className="production-ai-chat-launcher__grip" size={14} strokeWidth={2.2} />
-      </button>
-
-      {isAiAskOpen ? createPortal(
-        <div className="production-ai-chat-layer" style={aiChatViewportStyle}>
-          <button
-            aria-label={copy.closeAi}
-            className="production-ai-chat-overlay"
-            onClick={() => setIsAiAskOpen(false)}
-            tabIndex={-1}
-            type="button"
-          />
-          <section
-            aria-label={copy.aiAssistantTitle}
-            aria-modal="true"
-            className="production-ai-chat-drawer"
-            ref={aiChatDrawerRef}
-            role="dialog"
-          >
-            <header className="production-ai-chat-drawer__header">
-              <div>
-                <p className="panel-card__eyebrow">AI ASSISTANT</p>
-                <h3>{copy.aiAssistantTitle}</h3>
-                <div className="production-ai-chat-drawer__states" role="status">
-                  <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
-                    {copy.deterministicAnswerReady}
-                  </span>
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${activeAiModelIsAvailable ? "ready" : "unavailable"}`}>
-                    {activeAiModelStatusLabel}
-                  </span>
-                </div>
-              </div>
-              <button
-                aria-label={copy.closeAi}
-                className="button button--ghost production-ai-chat-drawer__close"
-                onClick={() => setIsAiAskOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={20} strokeWidth={2.2} />
-              </button>
-            </header>
-
-            <div className="production-ai-chat-drawer__body" ref={aiChatBodyRef}>
-              <p className="production-ai-chat-drawer__intro">{copy.aiAssistantIntro}</p>
-              {visibleAiChatMessages.map((message) => (
-                <article
-                  className={`production-ai-chat-message production-ai-chat-message--${message.role}${message.tone === "warning" ? " production-ai-chat-message--warning" : ""}`}
-                  key={message.id}
-                >
-                  <div className="production-ai-chat-message__header">
-                    <strong>{message.label || (message.role === "user" ? copy.aiAssistantUser : copy.aiAssistantAi)}</strong>
-                  </div>
-                  {message.content.split("\n\n").map((paragraph, index) => (
-                    <p key={`${message.id}-${index}`}>{paragraph}</p>
-                  ))}
-                  {message.notice ? <div className="notice notice--warning">{message.notice}</div> : null}
-                  {message.meta?.length ? (
-                    <div className="production-ai-chat-message__meta">
-                      {message.meta.map((item) => <span key={item}>{item}</span>)}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-
-              {aiQuestionIsGenerating ? (
-                <article className="production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--pending">
-                  <div className="production-ai-chat-message__header">
-                    <strong>{copy.aiAssistantAi} · {copy.aiAnswerTitle}</strong>
-                    <span aria-live="polite" role="status">
-                      {aiQuestionMutation.isPending ? copy.aiAnswerQueued : aiQuestionJobStatusLabel}
-                    </span>
-                  </div>
-                  <p className="production-ai-chat-message__typing">
-                    <span>{copy.aiAnswerQueuedHint}</span>
-                    <span aria-hidden="true" className="production-ai-chat-typing-dots">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                  </p>
-                </article>
-              ) : null}
-            </div>
-
-            <form className="production-ai-chat-drawer__footer" onSubmit={submitAiQuestion}>
-              <div className="production-ai-model-selector">
-                <strong>{copy.aiModelSelect}</strong>
-                <div className="production-ai-worker-status__states">
-                  <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
-                    {copy.deterministicAnswerReady}
-                  </span>
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiSelectedModelIsAvailable ? "ready" : "unavailable"}`}>
-                    {aiSelectedModelIsAvailable
-                      ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
-                      : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`}
-                  </span>
-                </div>
-                <p>{aiSelectedModelIsAvailable ? copy.aiModelCompareHint : copy.aiSelectedModelUnavailable}</p>
-              </div>
-              <label className="production-ai-chat__visually-hidden" htmlFor="production-ai-chat-question">
-                {copy.aiInputLabel}
-              </label>
-              <textarea
-                id="production-ai-chat-question"
-                onChange={(event) => setAiQuestion(event.target.value)}
-                placeholder={copy.aiQuestionPlaceholder}
-                ref={aiQuestionInputRef}
-                rows={3}
-                value={aiQuestion}
-              />
-              <div>
-                <span>{copy.aiQuestionScope}</span>
-                <button
-                  className="button button--primary"
-                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || aiQuestionJobId !== null}
-                  type="submit"
-                >
-                  {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      , document.body) : null}
     </section>
   );
 }

@@ -6,12 +6,17 @@ import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
 import { canAccessHr, isHrRoute } from '../domains/auth/hr-access';
-import { AuthRefreshError, refreshAccessToken } from '../domains/auth/auth-refresh';
+import { canUseInspectionBeta, isInspectionBetaRoute, parseInspectionAccess } from '../domains/auth/inspection-beta-access';
+import type { InspectionAccess } from '../domains/auth/inspection-beta-access';
+import { abortAuthActivity, AuthRefreshError, isDefinitiveSessionRejection, recordAuthActivity, refreshAccessToken } from '../domains/auth/auth-refresh';
+import { observeAuthActivity } from '../domains/auth/auth-activity';
+import { finishServerLogout } from '../domains/auth/server-logout';
+import { assertAuthSessionCurrent, beginAuthSessionEnd, createLoginAttemptGate } from '../domains/auth/auth-transition';
+import { commitAuthSession } from '../domains/auth/auth-commit';
 import {
-  clearTokens,
   getAuthSessionSnapshot,
+  getAuthSessionGeneration,
   invalidateAuthSession,
-  startAuthSession,
   subscribeToAuthStorage,
 } from '../domains/auth/auth-storage';
 import {
@@ -62,9 +67,13 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
+  authSessionId: string | null;
+  canAccessInspection: boolean;
   token: string | null;
   login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<boolean>;
+  isLoggingOut: boolean;
+  logoutError: boolean;
   retryAuth: () => void;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -103,8 +112,10 @@ function isTokenExpired(jwt: string): boolean {
   }
 }
 
-async function fetchUserInfo(): Promise<User> {
-  const response = await api.get('/injection/user/me/');
+async function fetchUserInfo(sessionId: string): Promise<User> {
+  if (getAuthSessionSnapshot().id !== sessionId) throw new Error('Authentication session changed');
+  const response = await api.get('/injection/user/me/', { authSessionId: sessionId });
+  if (getAuthSessionSnapshot().id !== sessionId) throw new Error('Authentication session changed');
   return response.data;
 }
 
@@ -119,20 +130,39 @@ function isDefinitiveIdentityError(error: unknown) {
   ) {
     return true;
   }
-  if (error.response?.status !== 401) return false;
-  return new Set(['token_not_valid', 'user_not_found', 'user_inactive', 'password_changed'])
-    .has(String(error.response.data?.code || ''));
+  return isDefinitiveSessionRejection(error.response?.status, error.response?.data?.code);
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
   const initialSessionRef = useRef(getAuthSessionSnapshot());
-  const [user, setUser] = useState<User | null>(null);
+  const [identity, setIdentity] = useState<{ sessionId: string; user: User } | null>(null);
+  const [inspectionAccess, setInspectionAccess] = useState<{ sessionId: string; value: InspectionAccess } | null>(null);
+  const user = identity?.sessionId === getAuthSessionSnapshot().id ? identity?.user ?? null : null;
   const [token, setToken] = useState<string | null>(initialSessionRef.current.access);
   const [isLoading, setIsLoading] = useState(true);
   const [authRecoveryError, setAuthRecoveryError] = useState<string | null>(null);
   const [sessionRevision, setSessionRevision] = useState(0);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState(false);
+  const logoutInFlight = useRef<{ sessionId: string | null; promise: Promise<boolean> } | null>(null);
   const sessionIdRef = useRef<string | null>(initialSessionRef.current.id);
+  const loginGate = useRef(createLoginAttemptGate(() => getAuthSessionSnapshot().id, getAuthSessionGeneration));
+
+  useEffect(() => {
+    const gate = loginGate.current;
+    return () => { gate.invalidate(); };
+  }, []);
+
+  useEffect(() => {
+    const sessionId = identity?.sessionId;
+    if (!sessionId || isLoggingOut) return;
+    return observeAuthActivity({
+      current: () => { try { assertAuthSessionCurrent(sessionId); return true; } catch { return false; } },
+      foreground: () => document.visibilityState === 'visible' && document.hasFocus(),
+      send: (activity) => recordAuthActivity(sessionId, activity),
+    });
+  }, [identity?.sessionId, isLoggingOut]);
 
   useEffect(() => subscribeToAuthStorage(() => {
     const session = getAuthSessionSnapshot();
@@ -144,27 +174,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     // Cached server data belongs to the authenticated principal that fetched
     // it. Remove it synchronously before a different account can render.
+    loginGate.current.invalidate();
+    abortAuthActivity(sessionIdRef.current);
     void queryClient.cancelQueries();
     queryClient.clear();
     setToken(session.access);
     sessionIdRef.current = session.id;
-    setUser(null);
+    setIdentity(null);
+    setInspectionAccess(null);
     setAuthRecoveryError(null);
+    setLogoutError(false);
+    if (logoutInFlight.current?.sessionId !== session.id) setIsLoggingOut(false);
     setIsLoading(true);
     setSessionRevision((current) => current + 1);
-  }), [queryClient]);
+  }, true), [queryClient]);
 
   useEffect(() => {
     let cancelled = false;
     let retryTimer: number | null = null;
 
-    const retainSessionAndRetry = (error: unknown, expectedSessionId: string | null) => {
+    const retainSessionAndRetry = (_error: unknown, expectedSessionId: string | null) => {
       if (cancelled) return;
       const currentSession = getAuthSessionSnapshot();
       if (currentSession.id !== expectedSessionId) return;
-      console.error('Authentication temporarily unavailable:', error);
+      console.error('Authentication temporarily unavailable');
       setToken(currentSession.access);
-      setUser(null);
+      setIdentity(null);
       setAuthRecoveryError('서버 연결이 불안정합니다. 로그인 정보는 유지되며 자동으로 다시 연결합니다.');
       setIsLoading(false);
       retryTimer = window.setTimeout(() => {
@@ -181,19 +216,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       let activeToken = sessionAtStartSnapshot.access;
       const storedRefresh = sessionAtStartSnapshot.refresh;
       const sessionAtStart = sessionAtStartSnapshot.id;
+      const isCurrent = () => !cancelled && getAuthSessionSnapshot().id === sessionAtStart;
 
       const clearSessionIfCurrent = () => {
-        if (cancelled || !invalidateAuthSession(sessionAtStart)) return;
-        setToken(null);
-        setUser(null);
-        setAuthRecoveryError(null);
-        setIsLoading(false);
+        if (!isCurrent()) return;
+        // The immediate storage subscriber reads whichever session is current;
+        // a late failure for A must not manually clear B's React state.
+        invalidateAuthSession(sessionAtStart);
       };
 
       if (!activeToken && !storedRefresh) {
-        if (!cancelled) {
+        if (isCurrent()) {
           setToken(null);
-          setUser(null);
+          setIdentity(null);
           setAuthRecoveryError(null);
           setIsLoading(false);
         }
@@ -213,14 +248,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
-      if (activeToken && !isTokenExpired(activeToken)) {
+      if (!isCurrent()) return;
+      if (sessionAtStart && activeToken && !isTokenExpired(activeToken)) {
         try {
           const userInfo = import.meta.env.DEV && isDevSessionToken(activeToken)
             ? getDevCurrentUser() as User
-            : await fetchUserInfo();
-          if (cancelled) return;
-          setToken(activeToken);
-          setUser(userInfo);
+            : await fetchUserInfo(sessionAtStart);
+          if (!isCurrent()) return;
+          let access: InspectionAccess | null = null;
+          try {
+            const response = await api.get('/quality/inspection-requests/capabilities/', { authSessionId: sessionAtStart });
+            if (isCurrent()) access = parseInspectionAccess(response.data);
+          } catch { /* Capabilities are optional to login, but inspection access defaults to denied. */ }
+          if (!isCurrent()) return;
+          setToken(getAuthSessionSnapshot().access);
+          setIdentity({ sessionId: sessionAtStart, user: userInfo });
+          setInspectionAccess(access ? { sessionId: sessionAtStart, value: access } : null);
           setAuthRecoveryError(null);
           setIsLoading(false);
         } catch (error) {
@@ -245,19 +288,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [sessionRevision]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
+    // Visiting /login directly must not bypass server revocation or a pending
+    // inspection guard. A failed/blocked logout leaves the existing draft intact.
+    if (getAuthSessionSnapshot().id && !await logout()) return false;
+    if (getAuthSessionSnapshot().id) return false;
+    const attempt = loginGate.current.begin();
     if (canUseDevLogin({ username, password })) {
       const { access, refresh } = createDevTokenPair();
-      startAuthSession(access, refresh);
-      setToken(access);
-      setUser(null);
-      setAuthRecoveryError(null);
-      setIsLoading(true);
-      return true;
+      try { return Boolean(await commitAuthSession(access, refresh, () => loginGate.current.isCurrent(attempt))); }
+      catch { return false; }
     }
 
     try {
       const response = await api.post('/token/', { username, password }, { skipAuth: true });
-      console.log('Login response:', response);
       
       // 응답이 있는지 확인
       if (!response || !response.data) {
@@ -267,33 +310,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const { access, refresh } = response.data;
       if (!access || !refresh) {
-        console.error('Missing tokens in response:', response.data);
+        console.error('Missing tokens in login response');
         return false;
       }
 
-      startAuthSession(access, refresh);
-      setToken(access);
-      setUser(null);
-      setAuthRecoveryError(null);
-      setIsLoading(true);
-      return true;
-    } catch (error) {
-      console.error('Login error:', error);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-      }
+      return Boolean(await commitAuthSession(access, refresh, () => loginGate.current.isCurrent(attempt)));
+    } catch {
+      console.error('Login failed');
       return false;
     }
   };
 
-  const logout = () => {
-    void queryClient.cancelQueries();
-    queryClient.clear();
-    clearTokens();
-    setToken(null);
-    setUser(null);
-    setAuthRecoveryError(null);
-    setIsLoading(false);
+  const logout = (): Promise<boolean> => {
+    const snapshot = getAuthSessionSnapshot();
+    if (logoutInFlight.current?.sessionId === snapshot.id) return logoutInFlight.current.promise;
+    loginGate.current.invalidate();
+    const releaseSession = beginAuthSessionEnd(snapshot.id);
+    if (!releaseSession) return Promise.resolve(false);
+    abortAuthActivity(snapshot.id);
+    setIsLoggingOut(true);
+    setLogoutError(false);
+    const operation = finishServerLogout(snapshot.id, {
+      currentSessionId: () => getAuthSessionSnapshot().id,
+      revoke: async () => {
+        const response = await api.post('/mes-connection/logout/',
+          snapshot.refresh ? { refresh: snapshot.refresh } : {},
+          { skipAuthRefresh: true, authSessionId: snapshot.id });
+        return response.data;
+      },
+      invalidateLocal: invalidateAuthSession,
+    }).then((success) => {
+      if (!success && getAuthSessionSnapshot().id === snapshot.id) setLogoutError(true);
+      return success;
+    }).finally(() => {
+      releaseSession();
+      if (logoutInFlight.current?.promise === operation) {
+        logoutInFlight.current = null;
+        setIsLoggingOut(false);
+      }
+    });
+    logoutInFlight.current = { sessionId: snapshot.id, promise: operation };
+    return operation;
   };
 
   const retryAuth = () => {
@@ -307,9 +364,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // 라우트 접근 권한 확인
+  const canAccessInspection = canUseInspectionBeta(user,
+    inspectionAccess?.sessionId === identity?.sessionId ? inspectionAccess?.value ?? null : null);
   const canAccessRoute = (route: string): boolean => {
     if (!user) return false;
     if (isHrRoute(route)) return canAccessHr(user);
+    if (isInspectionBetaRoute(route)) return canAccessInspection;
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);
     if (user.is_staff || hasPermission('is_admin')) return true;
 
@@ -338,9 +398,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    authSessionId: user ? identity!.sessionId : null,
+    canAccessInspection,
     token,
     login,
     logout,
+    isLoggingOut,
+    logoutError,
     retryAuth,
     isLoading,
     isAuthenticated: !!token,

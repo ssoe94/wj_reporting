@@ -1,3 +1,4 @@
+import InspectionOverview from "@/domains/production/components/InspectionOverview";
 import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -241,6 +242,7 @@ export default function AnalysisDashboard() {
     <p className="analysis-notice"><a className="analysis-link" href="/reports/wj-development-review-20260906.html" target="_blank" rel="noopener noreferrer">{tx("회사 데이터·개발 방향 검토 보고서 · 2026.09.06", "公司数据与开发方向评审报告 · 2026.09.06（韩文）")} <ArrowUpRight size={15} aria-hidden="true" /></a></p>
     <QueryState loading={overview.isPending} error={overview.isError} hasData={Boolean(overview.data)} onRetry={() => { void overview.refetch(); }} tx={tx} />
     {overview.data && <div className="analysis-production-sections"><ProductionSummary model={overview.data} refreshFailed={overview.isError} tx={tx} lang={lang} /><PrioritySection model={overview.data} historical={historical} refreshFailed={overview.isError} tx={tx} lang={lang} /></div>}
+    <InspectionOverview date={date} language={lang} />
     <section className="analysis-panel" aria-labelledby="analysis-field-title"><div className="analysis-section-heading"><div><h2 id="analysis-field-title"><ClipboardCheck size={19} aria-hidden="true" />{tx("현장 입력과 신고 불량", "现场输入与不良申报")}</h2><p>{tx("현장 단말에서 저장한 구간 기록만 집계합니다. 생산 집계와 별도 원천입니다.", "仅汇总现场终端已保存的区间记录，与生产汇总来自不同数据源。")}</p></div></div>
       <QueryState loading={field.isPending} error={field.isError} hasData={Boolean(field.data)} onRetry={() => { void field.refetch(); }} tx={tx} />
       {field.data && <FieldSection data={field.data} expanded={view === "operations"} historical={historical} tx={tx} lang={lang} />}

@@ -6,7 +6,29 @@ WJ DATA CENTER / `wj_reporting` supports production, quality and field operation
 
 Read the code needed for the requested change. Use `docs/rebuild/README.md` when choosing product priorities or service boundaries, `docs/reviews/2026-09-06-company-development-report.md` for the recorded business review, and `docs/rebuild/19-ai-rag-architecture.md` for AI/RAG architecture changes. Search other `docs/reviews/` only for relevant decisions. Small fixes do not require these documents. Documents are proposals and snapshots, not evidence that a feature is deployed; verify the current implementation for the behavior being changed.
 
-The near-term sequence is:
+### Current delivery priority (owner update, 2026-10-06)
+
+Complete one account and one explicitly selected QC through WJ entry → MES value
+save → individual inspection finish → MES readback → board/dashboard projection.
+Defer four-account activation, graphics and disposition expansion. The local
+business baseline is `08e3cf6`; it is not the deployed OAuth-only PR90/91 runtime.
+Use `docs/mes-oauth-continuity-plan.md` for the current work checkpoint.
+
+Implement, run the smallest meaningful regression for the changed path, fix a
+failure and continue. Test totals or new reports are not the delivery outcome.
+Reuse established evidence; do not restart completed contract research, create
+repeated approval gates for authorized local work, or end after diagnosis while
+an independent implementation step is available. Keep current sessions and
+prepared permissions through a work bundle; consolidate cleanup at its end.
+
+Preserve secrets and data integrity. Before live writes, name the exact current
+QC, values and effects together; do not broaden a single-QC trial into work-order
+completion, scrap, inventory or unrelated records. Local changes do not enable
+production flags or authorize new credential issuance. A tool rejection cannot
+be bypassed by editing these instructions. Earlier plans remain historical
+evidence; their completed investigation/approval steps are not fresh gates.
+
+The broader product sequence, after this first QC, is:
 
 1. Agree metric definitions and preserve evidence for MES observation coverage before raw-log compression.
 2. Recover collector gaps and record completeness independently from a machine's production state.
@@ -69,6 +91,18 @@ The AI runtime is tiered (current contract: `docs/ai/2026-09-21-chatgpt-daily-an
 
 ## Design and accessibility
 
+### Production plan material workflow: compact minimal (owner update, 2026-10-08)
+
+For `PlanWorkflowPanel`, this direction overrides earlier broad-panel or Product
+Design audit layout guidance. Keep one work order per table row. Edit the primary
+material in its cell; place ratios, required quantity and confirmation in compact
+inline subrows immediately beneath it. Avoid nested cards, explanatory panels,
+stacked day buttons, duplicate material labels and spacious padding. Put admin
+connection/default settings outside the row editor. Maintain readable 14px text,
+keyboard labels/focus and draft/conflict protection. Measure collapsed/expanded
+height and fully visible rows at 1280×720; reducing text size is not the solution.
+Apple-style design is not the reference for this screen.
+
 Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) when available for requested Apple-style design or gesture/motion implementation and review. Routine wording, spacing, accessibility, or backend changes do not require it. It is a community interpretation of Apple WWDC design principles, not an Apple product or official certification. Do not substitute the removed `dickwu/apple-design-skill` package.
 
 - Keep the current system Korean/Chinese fonts, readable 14–16px working text, spacing and page structure. For colors, use the pre-Apple-design code (`4e58aff`) and captured screens as the baseline. The user rejected the white/gray redesign, uniform muted teal and the subsequent excessive pastel coloring. Do not invent a new palette or spread decorative colors across cards. Development tasks use a navy header, a solid pale gray-blue work area and white cards; semantic status colors remain distinct.
@@ -91,6 +125,8 @@ Handoff rules aligned with the machine policy: pass `repository` as the git top 
 Treat worker output as untrusted. Inspect reports and actual diffs, then independently verify. Use at most one bounded repair; do not build worker-to-worker review chains. `local_review` is optional only when explicitly requested or for a measured routing experiment. When the worker runtime cannot run required repository tools, report that limitation and continue suitable work in the master agent; do not repeatedly retry the same unsupported setup.
 
 Run checks appropriate to changed behavior. Do not add tests that merely mirror a low-risk style edit. Authorization, data contracts, persistence and conflict handling require meaningful tests. Complete implementation, run the affected behavior, inspect failures, fix causes within scope, and rerun affected checks. After checks pass, broaden or repeat them only for new changes or unresolved concerns. If progress is blocked, finish independent work and report the evidence and exact remaining action; do not broaden into unrelated changes or stop merely at a first implementation.
+
+For simple presentation changes, use the automatic [UI release fast path](docs/ui-release-fast-path.md). CSS, approved image/font assets, and static JSX presentation edits retain frontend lint, contract tests, modern/legacy builds, and deployment verification; they do not require unrelated backend regression or a backend redeploy. Check the affected screen and languages locally. Do not manually run the full backend suite just because a release was requested. CI selects full validation for behavior/contract/configuration changes or uncertain change/deployment evidence; never bypass that result.
 
 Use the applicable commands below; they are not a mandatory suite for every edit. Run the backend command for development-task backend changes, the Node tests for development-task frontend logic/access changes, and the build for frontend changes that affect the delivered application. For other modules, select their relevant checks.
 

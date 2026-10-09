@@ -1,0 +1,9 @@
+body { margin: 0; background: #f1f5f9; color: #172b4d; font: 16px/1.6 system-ui, sans-serif; }
+main { max-width: 580px; margin: 48px auto; padding: 24px; background: white; }
+h1 { font-size: 24px; }
+label { display: block; margin-top: 16px; }
+input:not([type=checkbox]), select, textarea { box-sizing: border-box; width: 100%; min-height: 44px; font: inherit; }
+button { min-height: 44px; margin-top: 20px; padding: 8px 16px; font: inherit; color: white; background: #172b4d; border: 0; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+@media (max-width: 600px) { main { margin: 16px; padding: 20px; } }
