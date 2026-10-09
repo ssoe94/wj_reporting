@@ -2306,15 +2306,6 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                 available_days = response_data.get("available_days", [])
                 plan_type = response_data.get("plan_type")
 
-                if available_days and plan_type:
-                    # 2. Delete all existing plan entries within this date range for this plan type
-                    deleted_count, _ = ProductionPlan.objects.filter(
-                        plan_date__in=available_days,
-                        plan_type=plan_type
-                    ).delete()
-                else:
-                    deleted_count = 0
-
                 # 3. Create new records from the 'plan_long' data
                 plan_long_data = response_data.get("plan_long", [])
                 plans_to_create = []
@@ -2353,7 +2344,10 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                         )
                     )
                 
-                ProductionPlan.objects.bulk_create(plans_to_create)
+                from production.plan_workflow import replace_uploaded_plans
+                deleted_count = replace_uploaded_plans(
+                    plans_to_create, available_days, plan_type, request.user,
+                )
                 if available_days and plan_type:
                     for plan_date in available_days:
                         created_count = sum(

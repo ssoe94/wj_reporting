@@ -91,6 +91,18 @@ The AI runtime is tiered (current contract: `docs/ai/2026-09-21-chatgpt-daily-an
 
 ## Design and accessibility
 
+### Production plan material workflow: compact minimal (owner update, 2026-10-08)
+
+For `PlanWorkflowPanel`, this direction overrides earlier broad-panel or Product
+Design audit layout guidance. Keep one work order per table row. Edit the primary
+material in its cell; place ratios, required quantity and confirmation in compact
+inline subrows immediately beneath it. Avoid nested cards, explanatory panels,
+stacked day buttons, duplicate material labels and spacious padding. Put admin
+connection/default settings outside the row editor. Maintain readable 14px text,
+keyboard labels/focus and draft/conflict protection. Measure collapsed/expanded
+height and fully visible rows at 1280×720; reducing text size is not the solution.
+Apple-style design is not the reference for this screen.
+
 Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) when available for requested Apple-style design or gesture/motion implementation and review. Routine wording, spacing, accessibility, or backend changes do not require it. It is a community interpretation of Apple WWDC design principles, not an Apple product or official certification. Do not substitute the removed `dickwu/apple-design-skill` package.
 
 - Keep the current system Korean/Chinese fonts, readable 14–16px working text, spacing and page structure. For colors, use the pre-Apple-design code (`4e58aff`) and captured screens as the baseline. The user rejected the white/gray redesign, uniform muted teal and the subsequent excessive pastel coloring. Do not invent a new palette or spread decorative colors across cards. Development tasks use a navy header, a solid pale gray-blue work area and white cards; semantic status colors remain distinct.
