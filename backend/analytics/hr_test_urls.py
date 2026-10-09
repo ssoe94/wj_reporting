@@ -1,9 +1,12 @@
 from django.urls import path
-from .hr_views import HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
+from .hr_views import HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
 from injection.admin_approvals import AdminUserCreateView, SignupApprovalRequestsView, SignupApprovalApproveView
 from injection.views import UserProfileViewSet
 
 urlpatterns = [
+    path('api/analytics/hr/classification-reference/', HrClassificationReferenceView.as_view()),
+    path('api/analytics/hr/workbook-preview/', HrWorkbookPreviewView.as_view()),
+    path('api/analytics/hr/workbook-import/', HrWorkbookImportView.as_view()),
     path('api/admin/users/', AdminUserCreateView.as_view()),
     path('api/admin/user-profiles/', UserProfileViewSet.as_view({'get': 'list'})),
     path('api/admin/user-profiles/<int:pk>/', UserProfileViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'})),

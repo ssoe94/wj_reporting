@@ -264,3 +264,29 @@ class HrWorkspaceHistory(models.Model):
     class Meta:
         ordering = ['-id']
         constraints = [models.UniqueConstraint(fields=['workspace', 'version'], name='hr_history_workspace_version')]
+
+
+class HrClassificationReference(models.Model):
+    """Private company-wide initial allocation, independent of payroll months."""
+    key = models.CharField(max_length=20, primary_key=True, default='company')
+    reference = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(key='company'), name='hr_reference_company_only')]
+
+
+class HrClassificationHistory(models.Model):
+    reference = models.ForeignKey(HrClassificationReference, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-id']
+        constraints = [models.UniqueConstraint(fields=['reference', 'version'], name='hr_reference_history_version')]

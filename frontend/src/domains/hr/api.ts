@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import type { HrClassificationReferenceCommit, HrClassificationReferenceState, HrWorkbookBatch, HrWorkbookBatchCommit, HrWorkbookBatchPreview, HrWorkbookBatchResult } from './workbook-types';
 import type {
   HrAccessUser,
   HrImportCommit,
@@ -10,6 +11,22 @@ import type {
 } from "./types";
 
 const ROOT = "/analytics/hr";
+
+export async function getHrClassificationReference(signal?: AbortSignal): Promise<HrClassificationReferenceState> {
+  return (await api.get<HrClassificationReferenceState>(`${ROOT}/classification-reference/`, { signal })).data;
+}
+
+export async function saveHrClassificationReference(payload: HrClassificationReferenceCommit): Promise<HrClassificationReferenceState> {
+  return (await api.put<HrClassificationReferenceState>(`${ROOT}/classification-reference/`, payload)).data;
+}
+
+export async function previewHrWorkbookBatch(payload: HrWorkbookBatch): Promise<HrWorkbookBatchPreview> {
+  return (await api.post<HrWorkbookBatchPreview>(`${ROOT}/workbook-preview/`, payload)).data;
+}
+
+export async function importHrWorkbookBatch(payload: HrWorkbookBatchCommit): Promise<HrWorkbookBatchResult> {
+  return (await api.post<HrWorkbookBatchResult>(`${ROOT}/workbook-import/`, payload)).data;
+}
 
 function workspaceUrl(month: string): string {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {

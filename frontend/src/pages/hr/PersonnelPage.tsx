@@ -6,6 +6,7 @@ import { getHrAccess, updateHrAccess, updateHrWorkspace } from '../../domains/hr
 import { buildAssignments, getDepartmentTree, getDescendantIds, moveEmployee, validateDepartments, MAX_DEPARTMENTS } from '../../domains/hr/layout';
 import type { HrAccessUser, HrDepartment, HrEmployee, HrWorkspace } from '../../domains/hr/types';
 import HrImportPanel from './HrImportPanel';
+import HrWorkbookImportPanel from './HrWorkbookImportPanel';
 import HrAllocationBoard from './HrAllocationBoard';
 import HrCostRibbon from './HrCostRibbon';
 import { formatEmployeeCode } from '../../domains/hr/visualization';
@@ -60,6 +61,8 @@ export default function PersonnelPage() {
   const [baseline, setBaseline] = useState('');
   const [saving, setSaving] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
+  const [workbookBusy, setWorkbookBusy] = useState(false);
+  const [workbookDraft, setWorkbookDraft] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState('');
@@ -67,7 +70,7 @@ export default function PersonnelPage() {
   const [formError, setFormError] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const dirty = Boolean(draft && layoutKey(draft) !== baseline);
-  const busy = saving || importBusy;
+  const busy = saving || importBusy || workbookBusy;
 
   function receiveWorkspace(data: HrWorkspace) {
     const value = { departments: data.departments.map((item) => ({ ...item })), employees: data.employees.map((item) => ({ ...item })) };
@@ -76,18 +79,18 @@ export default function PersonnelPage() {
   useEffect(() => { if (workspace) receiveWorkspace(workspace); }, [workspace]);
   useEffect(() => { setDraft(null); setBaseline(''); setDepartmentForm(null); setNotice(''); }, [user?.id]);
   useEffect(() => {
-    if (!dirty && !busy && !departmentForm) return;
+    if (!dirty && !busy && !departmentForm && !workbookDraft) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     const onLink = (event: MouseEvent) => {
       const element = event.target instanceof Element ? event.target.closest('a[href]') : null;
       if (!(element instanceof HTMLAnchorElement) || element.target === '_blank' || element.hasAttribute('download') || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const next = new URL(element.href, window.location.href);
       if (next.pathname === window.location.pathname && next.search === window.location.search && next.origin === window.location.origin) return;
-      if (busy || !window.confirm(ko ? '저장하지 않은 배치 변경을 버리고 이동할까요?' : '放弃未保存的配置更改并离开吗？')) { event.preventDefault(); event.stopImmediatePropagation(); }
+      if (busy || !window.confirm(ko ? '저장하지 않은 배치·업로드 내용을 버리고 이동할까요?' : '放弃未保存的配置及上传内容并离开吗？')) { event.preventDefault(); event.stopImmediatePropagation(); }
     };
     window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', onLink, true);
     return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', onLink, true); };
-  }, [dirty, busy, ko, departmentForm]);
+  }, [dirty, busy, ko, departmentForm, workbookDraft]);
 
   const departments = draft?.departments ?? EMPTY_DEPARTMENTS;
   const employees = draft?.employees ?? EMPTY_EMPLOYEES;
@@ -111,7 +114,7 @@ export default function PersonnelPage() {
     catch (failure) { setSaveError(localHrError(failure, lang, ko ? '분류도를 적용하지 못했습니다.' : '无法应用分类图。')); }
   }
   function changeMonth(next: string) {
-    if (busy || next === month) return;
+    if (busy || workbookDraft || next === month) return;
     if ((dirty || departmentForm) && !window.confirm(ko ? '저장하지 않은 변경을 버리고 대상 월을 바꿀까요?' : '放弃未保存的更改并切换月份吗？')) return;
     setNotice(''); setSaveError(''); setConflict(false); setDepartmentForm(null); setDraft(null); setBaseline(''); setMonth(next);
   }
@@ -196,7 +199,7 @@ export default function PersonnelPage() {
     </div>;
   }
 
-  return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy} actions={<>
+  return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy || workbookDraft} actions={<>
     {hasCompanyCells && missingCompanyCells && <button className="hr-button" disabled={busy || Boolean(departmentForm)} onClick={applyCompanyCells}><Plus size={15} />{ko ? '추가 부문 적용' : '应用新增部门'}</button>}
     <button className="hr-button" disabled={!dirty || busy} onClick={discard}><Undo2 size={15} />{ko ? '되돌리기' : '撤销更改'}</button>
     <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button>
@@ -209,7 +212,10 @@ export default function PersonnelPage() {
       {notice && <p className="hr-floating-notice" role="status" aria-live="polite">{notice}</p>}
       {hasCompanyCells || departments.length > 0 ? <HrAllocationBoard key={month} departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={move} disabled={busy || Boolean(departmentForm)} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><p>{ko ? '분류를 적용하고 급여표를 올려 인원을 배치하세요.' : '应用分类并上传工资表后配置人员。'}</p><button className="hr-button" onClick={applyCompanyCells} disabled={busy}>{ko ? '분류도 적용' : '应用分类图'}</button></div>}
       <HrSource workspace={workspace} />
-      <HrImportPanel workspace={workspace} disabled={dirty || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />
+      <HrWorkbookImportPanel workspace={workspace} disabled={dirty || saving || importBusy || Boolean(departmentForm)} onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '회사 임금표를 저장했습니다.' : '已保存公司工资表。'); }} />
+      <details className="hr-panel hr-disclosure"><summary>{ko ? '기타 형식 · 단일 월 가져오기' : '其他格式 · 导入单月'}</summary>
+      <HrImportPanel workspace={workspace} disabled={dirty || saving || workbookBusy || workbookDraft || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />
+      </details>
       <details className="hr-panel hr-disclosure" open={departmentForm ? true : undefined}>
         <summary>{ko ? '분류 편집' : '编辑分类'}{departmentForm ? (ko ? ' · 편집 중' : ' · 编辑中') : ''}</summary>
         <div className="hr-compact-toolbar"><button className="hr-button" disabled={busy || companyNodes.every((node)=>departments.some((department)=>department.id===node.id))} onClick={applyCompanyCells}>{ko ? '회사 분류 적용' : '应用公司分类'}</button><span className="hr-muted">{departments.length} / {MAX_DEPARTMENTS} · {ko ? '최대 8단계' : '最多 8 级'}</span><button className="hr-button" disabled={busy || departments.length >= MAX_DEPARTMENTS} onClick={() => beginDepartment()}><Plus size={15} />{ko ? '추가 분류' : '添加分类'}</button></div>
