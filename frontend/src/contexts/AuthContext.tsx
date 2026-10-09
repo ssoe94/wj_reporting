@@ -5,6 +5,7 @@ import api from '../lib/api';
 import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
+import { canAccessHr, isHrRoute } from '../domains/auth/hr-access';
 import { AuthRefreshError, refreshAccessToken } from '../domains/auth/auth-refresh';
 import {
   clearTokens,
@@ -51,6 +52,7 @@ interface User {
   email: string;
   is_staff: boolean;
   is_superuser?: boolean;
+  can_access_hr?: boolean;
   groups: string[];
   department?: string;
   is_using_temp_password?: boolean;
@@ -307,6 +309,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // 라우트 접근 권한 확인
   const canAccessRoute = (route: string): boolean => {
     if (!user) return false;
+    if (isHrRoute(route)) return canAccessHr(user);
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);
     if (user.is_staff || hasPermission('is_admin')) return true;
 
