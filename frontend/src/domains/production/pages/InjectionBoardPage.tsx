@@ -12,7 +12,7 @@ import { needsFieldPartNoReview } from "@/domains/production/injection-transitio
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Factory, History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
+import { History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
@@ -1553,7 +1553,7 @@ export function InjectionBoardPage() {
             title={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
             type="button"
           >
-            <Factory aria-hidden="true" />
+            <img alt="" aria-hidden="true" className="injection-board__logo" src="/logo-transparent.png" />
           </button>
           <div className="injection-board__heading">
             <span>{copy.eyebrow}</span>
@@ -1564,7 +1564,13 @@ export function InjectionBoardPage() {
         <div className="injection-board__meta">
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatTime(latestMesTime)}</strong></div>
-          <div><span>{copy.refreshed}</span><strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong></div>
+          <div title={copy.autoRefresh}>
+            <span>
+              {copy.refreshed}
+              <i aria-label={copy.autoRefresh} className="injection-board__live-dot" role="img" />
+            </span>
+            <strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong>
+          </div>
           {!isVisitorMode ? <MesProductionReadStatusPanel businessDate={requestedBusinessDate} language={language} variant="board" /> : null}
           <button
             className="injection-board__history-button"
@@ -1574,9 +1580,8 @@ export function InjectionBoardPage() {
             <History aria-hidden="true" />
             {copy.previousSummary}
           </button>
-          <span className="injection-board__refresh-badge">{copy.autoRefresh}</span>
           <div className="injection-board__language" aria-label="Language">
-            <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">KOR</button>
+            <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">한국어</button>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>
           </div>
           <button

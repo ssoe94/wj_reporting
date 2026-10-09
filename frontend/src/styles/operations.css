@@ -13639,3 +13639,186 @@ select {
 @media (prefers-contrast: more) {
   .injection-board-card { border-width: 2px; }
 }
+
+/* Board heading: company logo as the visitor-mode toggle, and a firmer title. */
+.injection-board__mode-toggle,
+.injection-board--visitor .injection-board__mode-toggle {
+  width: 52px;
+  height: 48px;
+  padding: 5px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.06);
+}
+
+.injection-board--visitor .injection-board__mode-toggle {
+  border-color: rgba(196, 51, 36, 0.45);
+  box-shadow: 0 0 0 2px rgba(196, 51, 36, 0.12);
+}
+
+.injection-board__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.injection-board__title h1 {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.injection-board__heading > span {
+  letter-spacing: 0.14em;
+}
+
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board__mode-toggle,
+  .injection-board--visitor .injection-board__mode-toggle { width: 46px; height: 42px; padding: 4px; }
+}
+
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .injection-board__mode-toggle,
+  .injection-board--visitor .injection-board__mode-toggle { width: 78px; height: 68px; padding: 8px; }
+}
+
+/* Header controls: one height, one corner radius, one hairline border. */
+.injection-board__meta {
+  --board-ctl-h: 44px;
+  gap: 8px;
+}
+
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board__meta { --board-ctl-h: 38px; gap: 6px; }
+}
+
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .injection-board__meta { --board-ctl-h: 60px; gap: 12px; }
+}
+
+.injection-board__meta > div:not(.injection-board__language) {
+  box-sizing: border-box;
+  height: var(--board-ctl-h);
+  min-height: 0;
+  min-width: 0;
+  align-content: center;
+  gap: 1px;
+  padding: 0 12px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.injection-board__meta > div:not(.injection-board__language) > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--board-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.injection-board__meta > div:not(.injection-board__language) > strong {
+  color: #12384a;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.injection-board__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #17a35d;
+  box-shadow: 0 0 0 3px rgba(23, 163, 93, 0.16);
+}
+
+.injection-board__meta .injection-board__history-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--board-ctl-h);
+  padding: 0 14px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #12384a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.injection-board__meta .injection-board__history-button svg {
+  width: 16px;
+  height: 16px;
+  color: #1d7fa6;
+}
+
+.injection-board__meta .injection-board__history-button:hover,
+.injection-board__meta .injection-board__action:hover {
+  background: #f4f8f9;
+}
+
+.injection-board__meta .injection-board__language {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: stretch;
+  height: var(--board-ctl-h);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #eef3f5;
+}
+
+.injection-board__meta .injection-board__language button {
+  min-width: 52px;
+  height: auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6a7f88;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.injection-board__meta .injection-board__language button.is-active {
+  background: #ffffff;
+  color: #12384a;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.14);
+}
+
+.injection-board__meta .injection-board__action {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  width: var(--board-ctl-h);
+  height: var(--board-ctl-h);
+  padding: 0;
+  border: 1px solid #dde5e8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #12384a;
+}
+
+.injection-board__meta .injection-board__action svg {
+  width: 18px;
+  height: 18px;
+}
+
+.injection-board__meta button:focus-visible {
+  outline: 2px solid #1d7fa6;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .injection-board__meta .injection-board__history-button,
+  .injection-board__meta .injection-board__action,
+  .injection-board__meta .injection-board__language button { transition: background 140ms ease, box-shadow 140ms ease; }
+}
