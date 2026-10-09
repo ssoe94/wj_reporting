@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Search, X } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
+import { hrDepartmentLabel } from '../../domains/hr/labels';
 import { amountToCents } from '../../domains/hr/import';
 import { getDescendantIds } from '../../domains/hr/layout';
 import { formatEmployeeCode, getEmployeeCodeCollisions, getMovePreview } from '../../domains/hr/visualization';
@@ -63,7 +64,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
 
   function label(id: string | null) {
     if (id === null) return ko ? '미배치' : '待配置';
-    return COMPANY_CLASSIFICATION.leaders.find((leader) => leader.id === id)?.label ?? byId.get(id)?.name ?? catalog.nodes.find((node) => node.id === id)?.name ?? id;
+    return hrDepartmentLabel(id, byId.get(id)?.name ?? catalog.nodes.find((node) => node.id === id)?.name, lang);
   }
   function path(id: string | null) {
     if (id === null) return label(null);

@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Download, Upload, X } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { importHrWorkspace, previewHrImport } from '../../domains/hr/api';
-import { getClassificationLabel } from '../../domains/hr/company-structure';
+import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
+import { hrDepartmentLabel } from '../../domains/hr/labels';
 import { downloadTemplate, getHeaderColumns, parsePayrollRows, readWorkbook, suggestColumnMapping } from '../../domains/hr/import';
 import type { HrCostBasis, HrCurrency, HrImportPreview, HrWorkspace } from '../../domains/hr/types';
 import { isHrConflict, localHrError, money, safeHrError } from './hrCommon';
@@ -157,9 +158,10 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   }
   function classificationLabel(id: string | null | undefined) {
     if (!id) return ko ? '미배치' : '待配置';
-    const department = workspace.departments.find((item) => item.id === id);
-    const label = getClassificationLabel(id);
-    return department ? `${department.name} (${id})` : `${label || id}${label && label !== id ? ` (${id})` : ''}`;
+    const department = workspace.departments.find((item) => item.id === id) ?? COMPANY_CLASSIFICATION.nodes.find((item) => item.id === id);
+    const parent = workspace.departments.find((item) => item.id === department?.parent_id) ?? COMPANY_CLASSIFICATION.nodes.find((item) => item.id === department?.parent_id);
+    const label = hrDepartmentLabel(id, department?.name, lang);
+    return `${parent ? `${hrDepartmentLabel(parent.id, parent.name, lang)} / ` : ''}${label}`;
   }
   const missingCount = preview?.missing_cost_count ?? 0;
   const knownCount = preview?.known_cost_count ?? 0;

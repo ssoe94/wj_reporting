@@ -1,4 +1,5 @@
 import { COMPANY_ORGANIZATION } from '../../domains/hr/company-structure';
+import { hrOrganizationLabel } from '../../domains/hr/labels';
 import { useLang } from '../../i18n';
 import { CompanyChartViewport } from './CompanyClassificationChart';
 import './company-structure.css';
@@ -41,7 +42,7 @@ function connector(fromId: string, toId: string) {
 
 export default function CompanyOrganizationChart({ organization = COMPANY_ORGANIZATION }: { organization?: typeof COMPANY_ORGANIZATION }) {
   const { lang } = useLang(); const ko = lang === 'ko';
-  const nodes = organization.nodes;
+  const nodes = organization.nodes.map((node) => ({ ...node, label: hrOrganizationLabel(node.id, node.label, lang) }));
   function list(parentId: string | null) {
     return <ul>{nodes.filter((node) => node.parent_id === parentId).map((node) => <li key={node.id}><strong>{node.label.replaceAll('\n', ' ')}</strong>{nodes.some((child) => child.parent_id === node.id) && list(node.id)}</li>)}</ul>;
   }

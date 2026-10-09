@@ -11,6 +11,7 @@ import HrCostRibbon from './HrCostRibbon';
 import { formatEmployeeCode } from '../../domains/hr/visualization';
 import { centsToAmount } from '../../domains/hr/import';
 import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
+import { hrDepartmentLabel } from '../../domains/hr/labels';
 import { HrLoadState, HrShell, HrSource, currentHrMonth, isHrConflict, layoutSummary, localHrError, money, safeHrError, useHrWorkspace } from './hrCommon';
 
 type LayoutDraft = { departments: HrDepartment[]; employees: HrEmployee[] };
@@ -142,13 +143,14 @@ export default function PersonnelPage() {
     try {
       const next = moveEmployee(draft.employees, code, target, draft.departments);
       setDraft({ ...draft, employees: next }); setSaveError('');
-      const name = draft.departments.find((item) => item.id === target)?.name ?? (ko ? '미배치 명단' : '待配置名单');
+      const targetDepartment = draft.departments.find((item) => item.id === target);
+      const name = targetDepartment ? hrDepartmentLabel(targetDepartment.id, targetDepartment.name, lang) : (ko ? '미배치 명단' : '待配置名单');
       setNotice(ko ? `${formatEmployeeCode(employee.code)} 사번을 ${name}(으)로 이동했습니다. 변경 저장이 필요합니다.` : `已将 ${formatEmployeeCode(employee.code)} 移至 ${name}，请保存更改。`);
     } catch (failure) { setSaveError(safeHrError(failure, ko ? '인원을 이동하지 못했습니다.' : '无法移动人员。')); }
   }
   function beginDepartment(department?: HrDepartment, parent?: string) {
     if (busy) return;
-    setFormError(''); setDepartmentForm(department ? { ...department, isNew: false } : {
+    setFormError(''); setDepartmentForm(department ? { ...department, name: hrDepartmentLabel(department.id, department.name, lang), function: department.function ? hrDepartmentLabel(department.id, department.function, lang) : '', isNew: false } : {
       id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `dept-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: '', function: '', parent_id: parent ?? null, isNew: true,
     });
@@ -166,21 +168,22 @@ export default function PersonnelPage() {
     if (employees.some((item) => item.department_id === department.id) || departments.some((item) => item.parent_id === department.id)) {
       setSaveError(ko ? '인원과 하위 부서를 먼저 이동한 뒤 빈 부서를 삭제할 수 있습니다.' : '请先移动人员和下级部门，再删除空部门。'); return;
     }
-    if (window.confirm(ko ? `${department.name} 부서를 배치도에서 삭제할까요? 변경 저장 전에는 되돌릴 수 있습니다.` : `从配置图删除 ${department.name} 部门吗？保存之前可撤销。`)) {
+    if (window.confirm(ko ? `${hrDepartmentLabel(department.id, department.name, lang)} 부서를 배치도에서 삭제할까요? 변경 저장 전에는 되돌릴 수 있습니다.` : `从配置图删除 ${department.name} 部门吗？保存之前可撤销。`)) {
       setDraft({ ...draft, departments: departments.filter((item) => item.id !== department.id) }); setNotice(ko ? '빈 부서를 삭제했습니다. 변경 저장이 필요합니다.' : '已删除空部门，请保存更改。');
     }
   }
   function renderDepartment(node: ReturnType<typeof getDepartmentTree>[number]) {
     const department = node.department;
+    const label = hrDepartmentLabel(department.id, department.name, lang);
     const members = employees.filter((employee) => employee.department_id === department.id);
     const totals = summary.totals.get(department.id);
     const isCollapsed = collapsed.has(department.id);
     return <div className="hr-department-branch" key={department.id}>
-      <section className="hr-department-box" aria-label={department.name}>
-        <div className="hr-department-heading"><div><h3>{department.name}</h3><p>{department.function || (ko ? '기능 미등록' : '尚未填写职能')}</p></div><div className="hr-actions">
-          <button className="hr-icon-button" onClick={() => beginDepartment(department)} disabled={busy} aria-label={`${department.name} ${ko ? '부서 편집' : '编辑部门'}`}><Edit3 size={17} /></button>
-          <button className="hr-icon-button" onClick={() => beginDepartment(undefined, department.id)} disabled={busy || departments.length >= MAX_DEPARTMENTS} aria-label={`${department.name} ${ko ? '하위 부서 추가' : '添加下级部门'}`}><Plus size={17} /></button>
-          <button className="hr-icon-button" onClick={() => removeDepartment(department)} disabled={busy} aria-label={`${department.name} ${ko ? '빈 부서 삭제' : '删除空部门'}`}><Trash2 size={16} /></button></div></div>
+      <section className="hr-department-box" aria-label={label}>
+        <div className="hr-department-heading"><div><h3>{label}</h3><p>{department.function ? hrDepartmentLabel(department.id, department.function, lang) : (ko ? '기능 미등록' : '尚未填写职能')}</p></div><div className="hr-actions">
+          <button className="hr-icon-button" onClick={() => beginDepartment(department)} disabled={busy} aria-label={`${label} ${ko ? '부서 편집' : '编辑部门'}`}><Edit3 size={17} /></button>
+          <button className="hr-icon-button" onClick={() => beginDepartment(undefined, department.id)} disabled={busy || departments.length >= MAX_DEPARTMENTS} aria-label={`${label} ${ko ? '하위 부서 추가' : '添加下级部门'}`}><Plus size={17} /></button>
+          <button className="hr-icon-button" onClick={() => removeDepartment(department)} disabled={busy} aria-label={`${label} ${ko ? '빈 부서 삭제' : '删除空部门'}`}><Trash2 size={16} /></button></div></div>
         <div className="hr-department-figures"><span>{ko ? '직접 배치' : '直接配置'} <strong>{members.length} {ko ? '명' : '人'}</strong></span><span>{ko ? '직접 인건비' : '直接成本'} <strong>{money(totals ? totals.direct : 0, workspace!.currency, lang)}</strong></span>
           {node.children.length > 0 && <span>{ko ? '하위 포함' : '含下级'} <strong>{totals?.headcount ?? 0} {ko ? '명' : '人'} · {money(totals ? totals.total : 0, workspace!.currency, lang)}</strong></span>}</div>
 
@@ -197,7 +200,7 @@ export default function PersonnelPage() {
     <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button>
   </>}>
     {!allowed || loading || error || !workspace || !draft ? <HrLoadState allowed={allowed} loading={loading} error={error} retry={refresh} /> : <>
-      <HrCostRibbon departments={departments} employees={employees} currency={workspace.currency} basis={workspace.cost_basis === 'gross_salary' ? '应发工资' : workspace.cost_basis === 'employer_total' ? (ko ? '회사 부담 총액' : '公司承担总额') : workspace.cost_basis_label} hasSource={Boolean(workspace.source)} />
+      <HrCostRibbon departments={departments} employees={employees} currency={workspace.currency} basis={workspace.cost_basis === 'gross_salary' ? (ko ? '세전 급여' : '应发工资') : workspace.cost_basis === 'employer_total' ? (ko ? '회사 부담 총액' : '公司承担总额') : workspace.cost_basis_label} hasSource={Boolean(workspace.source)} />
       {dirty && <p className="hr-draft-indicator" role="status">{ko ? '저장 전 변경사항이 있습니다.' : '有尚未保存的更改。'}</p>}
       {saveError && <p role="alert" className="hr-alert is-error">{saveError}</p>}
       {conflict && <div role="alert" className="hr-alert is-warning"><span>{ko ? '최신 버전과 충돌했습니다. 초안을 확인한 뒤 다시 불러오세요.' : '与最新版本冲突，请确认草稿后重新加载。'}</span><button className="hr-button" disabled={busy} onClick={loadLatest}>{ko ? '최신 내용 불러오기' : '加载最新资料'}</button></div>}
@@ -211,7 +214,7 @@ export default function PersonnelPage() {
         {departmentForm && <section className="hr-department-editor" aria-label={ko ? '부서 정보 편집' : '编辑部门信息'}>
           <div className="hr-section-heading"><h2>{departmentForm.isNew ? (ko ? '새 분류' : '新分类') : (ko ? '분류 편집' : '编辑分类')}</h2><button className="hr-icon-button" aria-label={ko ? '편집 취소' : '取消编辑'} onClick={() => setDepartmentForm(null)}><X size={17} /></button></div>
           <form onSubmit={(event) => { event.preventDefault(); applyDepartment(); }}>
-            <div className="hr-form-grid"><label className="hr-field">{ko ? '이름' : '名称'}<input autoFocus maxLength={100} required value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} /></label><label className="hr-field">{ko ? '상위 분류' : '上级分类'}<select disabled={COMPANY_CLASSIFICATION.nodes.some((node)=>node.id===departmentForm.id)} value={departmentForm.parent_id ?? ''} onChange={(event) => setDepartmentForm({ ...departmentForm, parent_id: event.target.value || null })}><option value="">{ko ? '최상위' : '顶级'}</option>{departments.filter((item) => item.id !== departmentForm.id && !forbiddenParents.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
+            <div className="hr-form-grid"><label className="hr-field">{ko ? '이름' : '名称'}<input autoFocus maxLength={100} required value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} /></label><label className="hr-field">{ko ? '상위 분류' : '上级分类'}<select disabled={COMPANY_CLASSIFICATION.nodes.some((node)=>node.id===departmentForm.id)} value={departmentForm.parent_id ?? ''} onChange={(event) => setDepartmentForm({ ...departmentForm, parent_id: event.target.value || null })}><option value="">{ko ? '최상위' : '顶级'}</option>{departments.filter((item) => item.id !== departmentForm.id && !forbiddenParents.has(item.id)).map((item) => <option key={item.id} value={item.id}>{hrDepartmentLabel(item.id, item.name, lang)}</option>)}</select></label></div>
             <label className="hr-field">{ko ? '담당 기능' : '负责职能'}<textarea rows={2} maxLength={500} value={departmentForm.function} onChange={(event) => setDepartmentForm({ ...departmentForm, function: event.target.value })} /></label>
             {formError && <p role="alert" className="hr-alert is-error">{formError}</p>}
             <div className="hr-actions"><button type="submit" className="hr-button is-primary"><Check size={15} />{ko ? '반영' : '应用'}</button><button type="button" className="hr-button" onClick={() => setDepartmentForm(null)}>{ko ? '취소' : '取消'}</button></div>
