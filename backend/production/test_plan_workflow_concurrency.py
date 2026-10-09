@@ -101,6 +101,7 @@ class PlanWorkflowMigrationTests(TransactionTestCase):
     def test_additive_migration_preserves_existing_plan_and_change_log(self):
         from django.db.migrations.executor import MigrationExecutor
         executor = MigrationExecutor(connection)
+        current_schema = executor.loader.graph.leaf_nodes()
         executor.migrate([('production', '0015_mestaskactionlog')])
         old_apps = executor.loader.project_state([('production', '0015_mestaskactionlog')]).apps
         Plan = old_apps.get_model('production', 'ProductionPlan')
@@ -119,4 +120,6 @@ class PlanWorkflowMigrationTests(TransactionTestCase):
             self.assertEqual(Decimal(revision.snapshot['planned_quantity']),Decimal('1234'))
             self.assertEqual(ProductionPlanChangeLog.objects.get(pk=log.pk).summary,'legacy retained')
         finally:
-            MigrationExecutor(connection).migrate([('production','0016_plan_material_workflow')])
+            # Restore the complete current schema, including migrations after 0016,
+            # so later tests do not depend on their execution order.
+            MigrationExecutor(connection).migrate(current_schema)

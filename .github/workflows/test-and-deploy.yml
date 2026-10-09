@@ -120,7 +120,14 @@ jobs:
             production.test_mes_delivery_transport production.test_mes_delivery \
             production.test_mes_delivery_credentials production.test_mes_delivery_views \
             production.test_mes_delivery_postgres production.test_mes_delivery_read_contract \
-            production.test_mes_read_status
+            production.test_mes_read_status \
+            production.test_plan_workflow production.test_plan_workflow_transport \
+            production.test_plan_workflow_concurrency production.test_mes_create_diagnostic
+
+      - name: Validate isolated plan workflow and additive schema
+        run: |
+          python scripts/check-plan-workflow.py --migration-check
+          python scripts/check-plan-workflow.py
 
       - name: Validate isolated PostgreSQL inspection contracts
         run: |

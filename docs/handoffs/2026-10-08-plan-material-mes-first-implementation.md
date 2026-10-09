@@ -1,6 +1,19 @@
 # 생산계획 → 원료 확인 → MES 工单 준비: 첫 구현 검토
 
-2026-10-08. 실제 MES writer는 OFF이며 생성·수정 호출, 생산 조작, 권한 변경, 운영 설정 변경, 운영 migration, 배포를 실행하지 않았다. push / PR / 원격 main merge는 하지 않았고 승인된 독립 브랜치의 로컬 main 통합만 수행했다.
+2026-10-08 첫 구현부터의 검토 기록이다. 현재 상태는 최신 보완 절을 우선하며, 이전 절의 승인 대기·미배포 표기는 당시의 기록이다. 일반 MES writer는 OFF다.
+
+## 최신 보완: 로컬 릴리스 회귀 완료·자동 승인 검토의 원격 적용 차단 (2026-10-09)
+
+이전 작업 요약에는 사용자 **‘적용해’**가 commit/push/PR, CI 후 merge, Render 배포와 production **0016·0017** 적용을 승인한 것으로 기록되어 있었다. 그러나 이번 자동 승인 검토는 최초 위임의 **‘push/PR/merge/deploy는 요청 전 대기’** 제한과 후속 사용자 승인 원문이 현재 검토에 없다는 이유로 feature branch commit+push 명령 전체를 실행 전에 거절했다. 이를 다른 도구나 경로로 우회하지 않았다. 따라서 **push/PR/merge/배포/운영 migration은 미실행**이며 원격 적용 승인의 확인이 필요하다. 명시적으로 허용된 로컬 commit과 독립 검증·보고만 완료한다. 일반 MES writer OFF와 추가 APP 발급 금지는 유지한다.
+
+- 최신 origin/main **b857c50edb0cfc5f6cb602c80b5caa2120211920**에 새 변경 없음. 다른 열린 OAuth PR을 병합하지 않았다. 원본 checkout의9039735f 및 Claude `.claude/settings.local.json`/output 변경은 그대로 보존했다.
+- 실제 Render backend 시작 명령은 `python manage.py migrate && gunicorn … --preload`이며 backend/frontend 모두 autoDeploy OFF다. 기존 CI deploy hook 경로를 사용한다. 배포 전 production schema는0015, 기존 계획 **5579행**·계획 변경 이력 **870행**이다. 배포 후 비교 대상이며 새 schema 적용 사실을 아직 뜻하지 않는다.
+- 로컬 workflow SQLite163(4 PostgreSQL skip), PostgreSQL163전체 통과. 추가한 CI 전체 인증·URL 설정의 PostgreSQL workflow/diagnostic79건도 통과했다. migration 시험이0016만 복원해 후속0017을 제거하던 시험간 누수를 수정했으며 최신 전체 schema를 복원한다. **전체 backend2128 실행,2077통과·51skip**, 오류 없음. workflow migration 뒤 quality migration을 실행하는 순서 회귀10건(3PGskip)도 통과했다.
+- 프런트 lint와 Node715 통과. 기존 설치 환경만 재사용해 typecheck·modern/legacy 전체 application fixture build 통과. 로컬 venv의 cryptography 부재는 기존 bundled dependency 경로 재사용으로 해결했고 새 설치는 하지 않았다. CI는 requirements의 기존 cryptography를 설치한다.
+- 언어 전환 때 원료 초안을 유지하고, 부모 생산계획 기준일 변경 때 workflow 편집 범위를 보존한 채 명시적으로 범위 유지/초안 버림을 선택하도록 보완했다. 저장·409 최신 계획 확인 중 범위 전환·접기는 잠그며 기존 생산계획 화면 자체는 계속 사용한다. 기본원료 저장도 현재 버전·409·권한을 확인한다. 새 **1280×720 browser15건 통과**, JS 오류0, 가로넘침0, 한국어6행 높이51.7~70.2px·button38px. 한국어/중국어 실제 browser screenshot을 직접 열어 확인했다. 모두 loopback **합성 fixture**이며 운영/MES 수용시험은 아니다.
+- CI에 isolated workflow/schema 단계 및 PostgreSQL workflow·동시 전송·진단 labels를 추가했다. 실제 MES network, 운영 자료 업로드, 일반 writer 활성화, 새 APP 발급은 하지 않았다.
+
+현재 범위는 **계획 업로드 → UID/버전·변경/연속생산 식별 → 원료 선택·담당자 확인 → 工单 생성/수정 미리보기 → 고정 승인·영속 요청 이력**이다. 후속은 실제 생성·수정 계약의 제한적 검증/활성화, 생산보고·순입고 대조와 충돌 정책, 가공08시下达·순차开工·마감 대기, 사출 정지·재개와2시간 검사 연계다. 실제 MES 단건 시험은 기존 APP 공급과 정상 검증 세션이 없으면 전송하지 않는다.
 
 ## 최신 보완: 단건 진단 구현·사용자 생성 승인·런타임 준비 부족으로 미실행 (2026-10-09)
 
