@@ -14,6 +14,9 @@ from .hr_permissions import IsHrAuthorized, IsHrSuperuser
 from .hr_access_service import set_hr_access
 from .hr_service import save_import, save_layout, workspace_payload
 from .models import HrAccessGrant, HrMonthWorkspace
+from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializer, WorkbookCommitSerializer
+from .hr_workbook_service import build_preview, save_batch
+from .hr_reference_service import reference_payload, save_reference
 
 
 def validated_input(request, serializer_type):
@@ -62,6 +65,25 @@ class HrImportView(HrBaseView):
         validate_month(month)
         workspace = save_import(month, validated_input(request, SaveImportSerializer), request.user)
         return Response(workspace_payload(workspace))
+
+
+class HrClassificationReferenceView(HrBaseView):
+    def get(self, request):
+        return Response(reference_payload())
+
+    def put(self, request):
+        return Response(save_reference(validated_input(request, SaveReferenceSerializer), request.user))
+
+
+class HrWorkbookPreviewView(HrBaseView):
+    def post(self, request):
+        return Response(build_preview(validated_input(request, WorkbookBatchSerializer)))
+
+
+class HrWorkbookImportView(HrBaseView):
+    def post(self, request):
+        workspaces = save_batch(validated_input(request, WorkbookCommitSerializer), request.user)
+        return Response({'workspaces': [workspace_payload(workspace) for workspace in workspaces]})
 
 
 def access_payload():

@@ -29,7 +29,7 @@ from django.core.management import call_command
 from django.test.runner import DiscoverRunner
 call_command('makemigrations', 'analytics', check=True, dry_run=True)
 raise SystemExit(DiscoverRunner(verbosity=1).run_tests([
-    'analytics.test_hr', 'analytics.test_hr_user_permissions',
+    'analytics.test_hr', 'analytics.test_hr_workbooks', 'analytics.test_hr_reference', 'analytics.test_hr_user_permissions',
     'injection.test_admin_user_create.AdminUserCreateTests',
     'injection.test_admin_user_create.AdminUserEditTests',
 ]))
