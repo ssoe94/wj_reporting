@@ -8994,7 +8994,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 28px;
-  min-height: 82px;
+  min-height: 72px;
   margin: 8px 8px 0;
   padding: 8px 10px;
   border: 1px solid rgba(180, 204, 220, 0.9);
@@ -9069,7 +9069,7 @@ select {
 
 .injection-board__title h1 {
   margin: 0;
-  font-size: clamp(1.22rem, 1.55vw, 1.72rem);
+  font-size: clamp(1.1rem, 1.3vw, 1.45rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
 }
@@ -9232,8 +9232,8 @@ select {
 .injection-board-summary {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 9px;
-  padding: 13px 15px;
+  gap: 6px;
+  padding: 10px 12px;
   color: #ffffff;
 }
 
@@ -9267,7 +9267,7 @@ select {
 
 .injection-board-summary header > div > strong {
   overflow: hidden;
-  font-size: 1.45rem;
+  font-size: 1.15rem;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -9316,14 +9316,14 @@ select {
 }
 
 .injection-board-summary__hero > strong {
-  font-size: 3.25rem;
+  font-size: 2.65rem;
   line-height: 1;
   white-space: nowrap;
 }
 
 .injection-board-summary__hero > span {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
@@ -9339,11 +9339,11 @@ select {
   justify-items: center;
   gap: 3px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 5px 6px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.13);
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 800;
   text-align: center;
 }
@@ -9351,7 +9351,7 @@ select {
 .injection-board-summary__metrics strong {
   overflow: hidden;
   color: #ffffff;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   line-height: 1.1;
   text-align: center;
   text-overflow: ellipsis;
@@ -9576,10 +9576,10 @@ select {
 .injection-board-card {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) 14px auto;
-  gap: 8px;
+  gap: 5px;
   /* Content never widens the grid column, so badges stay inside the frame. */
   min-width: 0;
-  padding: 11px 13px;
+  padding: 8px 10px;
   border-width: 2px;
   border-left-width: 10px;
 }
@@ -9648,21 +9648,21 @@ select {
 }
 
 .injection-board-card__header strong {
-  font-size: 1.55rem;
+  font-size: 1.3rem;
 }
 
 .injection-board-card__header span {
   color: var(--board-muted);
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 800;
 }
 
 .injection-board-card__header em {
-  padding: 4px 7px;
+  padding: 3px 6px;
   border-radius: 999px;
   background: #65757d;
   color: #ffffff;
-  font-size: 0.86rem;
+  font-size: 0.74rem;
   font-style: normal;
   font-weight: 900;
 }
@@ -9719,7 +9719,7 @@ select {
 .injection-board-card__part em {
   min-width: 0;
   overflow: hidden;
-  font-size: 1.03rem;
+  font-size: 0.88rem;
   font-style: normal;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -9800,7 +9800,7 @@ select {
 .injection-board-card__metrics strong {
   width: 100%;
   margin-top: 2px;
-  font-size: 1.7rem;
+  font-size: 1.4rem;
   line-height: 1;
   text-align: center;
 }
@@ -10250,7 +10250,7 @@ select {
   }
 
   .injection-board__title h1 {
-    font-size: 1.55rem;
+    font-size: 1.3rem;
     white-space: nowrap;
   }
 
@@ -10432,7 +10432,7 @@ select {
   }
 
   .injection-board-summary header > div > strong {
-    font-size: 1.08rem;
+    font-size: 0.95rem;
   }
 
   .injection-board-summary header > em {
@@ -10449,7 +10449,7 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 2.25rem;
+    font-size: 1.95rem;
     white-space: nowrap;
   }
 
@@ -10490,8 +10490,8 @@ select {
 
   .injection-board-card {
     grid-template-rows: auto auto minmax(0, 1fr) 12px auto;
-    gap: 4px;
-    padding: 7px 8px;
+    gap: 3px;
+    padding: 6px 7px;
     border-left-width: 6px;
   }
 
@@ -10509,14 +10509,14 @@ select {
 
   .injection-board-card__header strong {
     flex: 0 0 auto;
-    font-size: 1.15rem;
+    font-size: 1rem;
     line-height: 1;
     white-space: nowrap;
   }
 
   .injection-board-card__header span {
     overflow: hidden;
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -10541,7 +10541,7 @@ select {
   .injection-board-card__part strong,
   .injection-board-card__part span,
   .injection-board-card__part em {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     line-height: 1.15;
   }
 
@@ -10614,7 +10614,7 @@ select {
   }
 
   .injection-board__title h1 {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
   }
 
   .injection-board__meta > div:not(.injection-board__language) {
@@ -10631,7 +10631,7 @@ select {
   }
 
   .injection-board-card__header strong {
-    font-size: 1.08rem;
+    font-size: 1rem;
   }
 }
 
@@ -10662,7 +10662,7 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 2rem;
+    font-size: 1.8rem;
   }
 
   .injection-board-summary__metrics > span {
@@ -13441,46 +13441,52 @@ select {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   max-width: 100%;
   margin-top: 4px;
-  font-size: 0.92rem;
+  font-size: 0.75rem;
   line-height: 1.15;
 }
 
 .injection-board-card__metric small span {
+  min-width: 0;
+  overflow: hidden;
   color: var(--board-muted);
   font-size: 0.76rem;
   font-weight: 800;
+  text-overflow: ellipsis;
 }
 
 .injection-board-card__metric small b {
+  flex: 0 0 auto;
   color: #1f3b47;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
 
 .injection-board-card footer.injection-board-card__footer-with-quality {
-  padding-top: 6px;
+  padding-top: 3px;
 }
 
-/* Card proportions: square timeline, taller bar and inspection band, metric boxes take the rest. */
+/* Reserve room for all three metric lines inside the fixed four-row board. */
 .injection-board-card {
-  --board-bar-h: 20px;
-  --board-band-h: 26px;
-  --board-band-fs: 0.8rem;
+  --board-bar-h: 16px;
+  --board-band-h: 23px;
+  --board-band-fs: 0.72rem;
+  --board-metric-value-size: 1.4rem;
+  --board-metric-support-size: 0.75rem;
 }
 
 @media (max-width: 1700px), (max-height: 950px) {
-  .injection-board-card { --board-bar-h: 16px; --board-band-h: 24px; --board-band-fs: 0.72rem; }
+  .injection-board-card { --board-bar-h: 12px; --board-band-h: 21px; --board-band-fs: 0.66rem; --board-metric-value-size: 1.15rem; --board-metric-support-size: 0.65rem; }
 }
 
 @media (max-height: 760px) {
-  .injection-board-card { --board-bar-h: 12px; --board-band-h: 22px; --board-band-fs: 0.68rem; }
+  .injection-board-card { --board-bar-h: 10px; --board-band-h: 20px; --board-band-fs: 0.64rem; }
 }
 
 @media (min-width: 2500px) and (min-height: 1350px) {
-  .injection-board-card { --board-bar-h: 28px; --board-band-h: 34px; --board-band-fs: 1rem; }
+  .injection-board-card { --board-bar-h: 24px; --board-band-h: 30px; --board-band-fs: 0.9rem; --board-metric-value-size: 1.7rem; --board-metric-support-size: 0.85rem; }
 }
 
 @media (min-width: 761px) {
@@ -13723,7 +13729,7 @@ select {
 
 .injection-board__meta > div:not(.injection-board__language) > strong {
   color: #12384a;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 800;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -13748,7 +13754,7 @@ select {
   border-radius: 10px;
   background: #ffffff;
   color: #12384a;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -13783,7 +13789,7 @@ select {
   border-radius: 7px;
   background: transparent;
   color: #6a7f88;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -13838,8 +13844,12 @@ select {
   .injection-board-card__metrics > .injection-board-card__metric {
     container-type: size;
     min-height: 0;
-    gap: clamp(0px, 2cqh, 3px);
-    padding: clamp(2px, 4cqh, 4px) 8px;
+    /* This element establishes the container; cqh here would size against an
+       ancestor (or the viewport), not the space inside the metric box. */
+    gap: 1px;
+    padding: 2px 5px;
+    font-size: var(--board-metric-support-size);
+    line-height: 1.1;
   }
 
   .injection-board-card__metric .injection-board-card__metric-head {
@@ -13848,7 +13858,7 @@ select {
 
   .injection-board-card__metric .injection-board-card__metric-label,
   .injection-board-card__metric .injection-board-card__pace {
-    font-size: clamp(0.58rem, 16cqh, 0.78rem);
+    font-size: clamp(0.58rem, 16cqh, 0.7rem);
   }
 
   .injection-board-card__metric .injection-board-card__metric-link {
@@ -13863,17 +13873,20 @@ select {
 
   .injection-board-card__metrics > .injection-board-card__metric strong {
     margin-top: 0;
-    font-size: clamp(0.9rem, 34cqh, 1.7rem);
+    font-size: var(--board-metric-value-size);
+    font-size: clamp(0.9rem, 30cqh, var(--board-metric-value-size));
     line-height: 1;
   }
 
   .injection-board-card__metrics > .injection-board-card__metric strong.injection-board-card__ct-range {
-    font-size: clamp(0.8rem, 24cqh, 1.18rem);
+    font-size: 1rem;
+    font-size: clamp(0.8rem, 24cqh, 1rem);
   }
 
   .injection-board-card__metrics > .injection-board-card__metric small {
     margin-top: 0;
-    font-size: clamp(0.56rem, 19cqh, 0.92rem);
+    font-size: var(--board-metric-support-size);
+    font-size: clamp(0.56rem, 18cqh, var(--board-metric-support-size));
     line-height: 1.05;
   }
 
