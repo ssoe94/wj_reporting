@@ -13528,11 +13528,21 @@ select {
   background: rgba(31, 59, 71, 0.16);
 }
 
+/* "Now": the time still ahead is one tone lighter; a hairline marks the boundary. */
+.injection-board-timeline__future {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
 .injection-board-timeline__now {
   z-index: 3;
-  width: 2px;
-  margin-left: -1px;
-  background: #1f3b47;
+  width: 1px;
+  background: rgba(16, 40, 52, 0.4);
 }
 
 .injection-board-card__pace {
@@ -13579,4 +13589,53 @@ select {
   width: 20px;
   height: 20px;
   margin-right: -4px;
+}
+
+/* Card frame: hairline border, soft depth, rounded corners. The state shows in the
+   border hue and a faint wash at the top; the header badge carries the label. */
+.injection-board-card {
+  --card-edge: #dde5e8;
+  --card-wash: rgba(120, 140, 148, 0.06);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--card-wash) 0, rgba(255, 255, 255, 0) 76px), #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 40, 52, 0.05), 0 8px 18px -12px rgba(16, 40, 52, 0.22);
+}
+
+.injection-board-card--running { --card-edge: rgba(0, 128, 74, 0.3); --card-wash: rgba(0, 142, 80, 0.08); }
+.injection-board-card--warning,
+.injection-board-card--transition_review { --card-edge: rgba(196, 126, 0, 0.42); --card-wash: rgba(214, 140, 0, 0.1); }
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue { --card-edge: rgba(196, 51, 36, 0.5); --card-wash: rgba(212, 60, 44, 0.1); }
+.injection-board-card--overproducing { --card-edge: rgba(98, 68, 184, 0.32); --card-wash: rgba(114, 84, 199, 0.08); }
+.injection-board-card--completed { --card-edge: rgba(7, 121, 141, 0.32); --card-wash: rgba(8, 127, 148, 0.08); }
+.injection-board-card--unplanned { --card-edge: rgba(8, 111, 181, 0.32); --card-wash: rgba(8, 119, 197, 0.08); }
+.injection-board-card--idle { --card-edge: #e1e7ea; --card-wash: rgba(120, 140, 148, 0.05); }
+.injection-board-card--stale { --card-edge: #d9dfe2; --card-wash: rgba(98, 109, 115, 0.07); }
+
+.injection-board-card--running,
+.injection-board-card--warning,
+.injection-board-card--transition_review,
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue,
+.injection-board-card--overproducing,
+.injection-board-card--completed,
+.injection-board-card--unplanned,
+.injection-board-card--idle,
+.injection-board-card--stale {
+  border-color: var(--card-edge);
+  background: linear-gradient(180deg, var(--card-wash) 0, rgba(255, 255, 255, 0) 76px), #ffffff;
+}
+
+/* Problems keep a little more presence without a stripe. */
+.injection-board-card--stopped,
+.injection-board-card--production_stopped,
+.injection-board-card--shot_issue {
+  box-shadow: 0 0 0 1px rgba(196, 51, 36, 0.14), 0 8px 18px -12px rgba(140, 30, 20, 0.35);
+}
+
+@media (prefers-contrast: more) {
+  .injection-board-card { border-width: 2px; }
 }

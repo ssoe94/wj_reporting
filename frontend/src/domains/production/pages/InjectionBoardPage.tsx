@@ -930,7 +930,10 @@ function ProductionTimeline({
           <i aria-hidden="true" className="injection-board-timeline__tick" key={hour} style={{ left: `${(hour / 24) * 100}%` }} />
         ))}
         {nowPct > 0 && nowPct < 100 ? (
-          <i aria-hidden="true" className="injection-board-timeline__now" style={{ left: `${nowPct}%` }} />
+          <>
+            <i aria-hidden="true" className="injection-board-timeline__future" style={{ left: `${nowPct}%` }} />
+            <i aria-hidden="true" className="injection-board-timeline__now" style={{ left: `${nowPct}%` }} />
+          </>
         ) : null}
         {segments.map((segment, index) => {
           const rangeLabel = `${formatTime(new Date(segment.startMs))}–${formatTime(new Date(segment.endMs))}`;
