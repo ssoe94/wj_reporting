@@ -275,9 +275,22 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {rows.map(row => <option key={row.uid} value={row.uid}>{row.plan_date} · {row.planned_quantity.replace(/\.0+$/, "")} · {row.approval ? (zh ? "已确认" : "확인됨") : (zh ? "待确认" : "미확인")}</option>)}
     </select>;
   }
-  function materialForm(rows: WorkflowRow[]) {
+  function materialDayScope(row: WorkflowRow, unit: unknown) {
+    const unitName = typeof unit === "string" ? (!zh && unit === "个" ? "개" : unit) : "";
+    const quantity = row.planned_quantity.replace(/\.0+$/, "");
+    return <span className="plan-workflow__source">{zh
+      ? `当日需求量 · ${row.plan_date.slice(5)} · 按${quantity}${unitName}计算`
+      : `일별 필요량 · ${row.plan_date.slice(5)} · ${quantity}${unitName} 기준`}</span>;
+  }
+  function outsideMaterialScope(group: WorkflowGroup, rows: WorkflowRow[]) {
+    const count = group.members.length - rows.length;
+    return count > 0 && <span className="plan-workflow__source">{zh
+      ? `范围外计划 ${count} 项 · 扩大期间查看` : `조회 밖 계획 ${count}건 · 기간을 넓혀 확인`}</span>;
+  }
+  function materialForm(group: WorkflowGroup, rows: WorkflowRow[]) {
     if (!data || !editing) return null;
     if (editing.identity_state === "identified" && (bomLoading || bomError || !bomSource)) return <div className="plan-workflow__editor">
+      <div className="plan-workflow__material-heading">{materialDayScope(editing, values.output_unit_name || editing.approval?.snapshot.output_unit_name)}{outsideMaterialScope(group, rows)}</div>
       {bomLoading ? <p role="status">{zh ? "正在读取MES BOM…" : "MES BOM 조회 중…"}</p>
         : <div role="alert" className="plan-workflow__blocked"><span>{zh ? "BOM读取失败。保留草稿，请重新查询。" : "BOM을 읽지 못했습니다. 초안을 보존했으니 다시 조회하세요."}</span>
           <button type="button" onClick={() => void (needsReview ? reviewLatest() : loadBom(editing, editing.approval?.snapshot || editing.previous_approval?.snapshot,
@@ -291,7 +304,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {editing.identity_state !== "identified" ? <div className="plan-workflow__identity-line">
         {dayPicker(rows, editing, true)}<label>{zh ? "任务标识" : "작업 동일성"}<select aria-label={zh ? "任务标识" : "작업 동일성"} value={previous} onChange={e => { changed(); setPrevious(e.target.value); }}><option value="">{zh ? "独立新任务" : "독립 새 작업"}</option>{editing.candidate_details.map(candidate => <option key={candidate.uid} value={candidate.uid}>{candidate.snapshot.plan_date} · {candidate.snapshot.machine_name} · {candidate.snapshot.planned_quantity} · {zh ? "顺序" : "순서"} {candidate.snapshot.sequence}</option>)}</select></label>
       </div> : <>
-        {rows.length > 1 && <div className="plan-workflow__material-heading">{dayPicker(rows, editing, true)}</div>}
+        <div className="plan-workflow__material-heading">{rows.length > 1 && dayPicker(rows, editing, true)}{materialDayScope(editing, values.output_unit_name)}{outsideMaterialScope(group, rows)}</div>
         {bomSource && <><span className="plan-workflow__source">BOM {bomSource.version}</span>
           <PlanBomInputs source={bomSource} catalog={data.catalog.materials} quantity={editing.planned_quantity}
             value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} hidePrimary ko={!zh} />
@@ -303,14 +316,14 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     </form>;
   }
   function compactDetail(group: WorkflowGroup, rows: WorkflowRow[], selected: boolean) {
-    if (selected) return materialForm(rows);
+    if (selected) return materialForm(group, rows);
     const row = rows.find(row => row.uid === dayUid) || rows[0];
     if (!row) return <span>{zh ? "扩大日期范围以确认。" : "조회 기간을 넓혀 확인하세요."}</span>;
     return <><div className="plan-workflow__basic">{row.part_spec?.trim() && row.part_spec !== "-" && <span>SPEC: {row.part_spec}</span>}{row.model_name?.trim() && row.model_name !== "-" && <span>MODEL: {row.model_name}</span>}{row.lot_no?.trim() && row.lot_no !== "-" && <span>LOT: {row.lot_no}</span>}</div><div className="plan-workflow__read-line">{rows.length > 1 && dayPicker(rows, row, false)}
-      <span className="plan-workflow__material-summary">{row.approval?.snapshot.inputs.map(input => <span key={`${input.material_id}:${input.unit_id}`}>{input.material_name} · {zh ? "配比" : "배합"} {input.numerator}/{input.denominator} · {zh ? "所需" : "필요"} {materialRequirement(row.planned_quantity, input.numerator, input.denominator) ?? "—"} {input.unit_name}</span>)}{!row.approval && label(group.blockers[0] || "material_confirmation")}</span>
+      <span className="plan-workflow__material-summary">{materialDayScope(row, row.approval?.snapshot.output_unit_name)}{row.approval?.snapshot.inputs.map(input => <span key={`${input.material_id}:${input.unit_id}`}>{input.material_name} · {zh ? "配比" : "배합"} {input.numerator}/{input.denominator} · {zh ? "所需" : "필요"} {materialRequirement(row.planned_quantity, input.numerator, input.denominator) ?? "—"} {input.unit_name}</span>)}{!row.approval && label(group.blockers[0] || "material_confirmation")}</span>
       {row.approval && <span className="plan-workflow__actor">{zh ? "实际确认" : "실제 확인"}: {row.approval.actor_name || "—"}<small><time dateTime={row.approval.approved_at}>{planConfirmationTime(row.approval.approved_at)}</time></small></span>}
       <button type="button" disabled={!data?.can_edit || mutate.isPending} onClick={() => leave(() => edit(row))}>{zh ? "编辑" : "편집"}</button>
-      {rows.length < group.members.length && <span title={zh ? "扩大日期范围可确认其余日期" : "조회 기간을 넓히면 다른 날짜 확인 가능"}>+{group.members.length - rows.length}{zh ? "日" : "일"}</span>}
+      {outsideMaterialScope(group, rows)}
     </div></>;
   }
   const workflowItems = (data?.preview || []).map(group => {

@@ -433,3 +433,41 @@ test('failed conflict reload hides approval controls and keeps the full draft fo
   assert.equal(f.button('저장').props.disabled, true); await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
   assert.equal(f.mutations.length, 0); assert.equal(f.calls.length, 0);
 });
+
+
+test('cross-range campaign total never replaces the selected daily material basis in read and edit views', async () => {
+  const data = serviceWorkflowFixture(['disabled']);
+  data.preview[0].members.push(serviceUid(999)); data.preview[0].quantity = '2300';
+  data.preview[0].planned_end = '2026-10-12T08:00:00+08:00';
+  const f = fixture(data); await f.expand();
+  assert.match(f.text(), /일별 필요량 · 10-10 · 1000개 기준/);
+  assert.match(f.text(), /조회 밖 계획 1건 · 기간을 넓혀 확인/);
+  await f.edit();
+  assert.match(f.text(), /일별 필요량 · 10-10 · 1000개 기준/);
+  assert.match(f.text(), /조회 밖 계획 1건 · 기간을 넓혀 확인/);
+  assert.match(f.text(), /필요량\s+20 kg/); assert.doesNotMatch(f.text(), /46 kg/);
+  assert.equal(f.elements().some(node => node.type === 'select' && node.props['aria-label'] === '확인 날짜 / 계획량'), false);
+  await f.language('zh'); assert.match(f.text(), /当日需求量 · 10-10 · 按1000个计算/);
+  assert.match(f.text(), /范围外计划 1 项 · 扩大期间查看/); assert.match(f.text(), /需求量\s+20 kg/);
+  await f.language('ko'); await f.changeReason('Daily scope confirmed'); await f.confirmMaterial(); f.saveMaterial();
+  assert.equal(f.mutations[0].plan_id, data.rows[0].id); assert.equal(f.mutations[0].uid, data.rows[0].uid);
+  assert.equal(f.mutations[0].quantity, undefined); assert.equal(f.calls.length, 0);
+});
+
+test('multi-day picker updates the visible daily basis and requirements without using campaign quantity', async () => {
+  const data = serviceWorkflowFixture();
+  data.rows[1].part_no = data.rows[0].part_no; data.rows[1].machine_name = data.rows[0].machine_name;
+  data.rows[1].plan_date = '2026-10-11'; data.rows[1].planned_quantity = '1300';
+  data.preview = [{ ...data.preview[0], members: data.rows.map(row => row.uid), quantity: '2300', planned_end: '2026-10-12T08:00:00+08:00' }];
+  const f = fixture(data, new Set(), true, true); await f.edit(); f.bomReads[0].reply.resolve(serviceBomFixture()); await f.flush();
+  assert.match(f.text(), /일별 필요량 · 10-10 · 1000개 기준/);
+  const picker = f.elements().find(node => node.type === 'select' && node.props['aria-label'] === '확인 날짜 / 계획량'); assert.ok(picker);
+  picker.props.onChange({ target: { value: data.rows[1].uid } }); await f.flush();
+  assert.equal(f.bomReads[1].params.plan_id, data.rows[1].id);
+  f.bomReads[1].reply.resolve({ ...serviceBomFixture(2), part_no: data.rows[0].part_no }); await f.flush();
+  assert.match(f.text(), /일별 필요량 · 10-11 · 1300개 기준/);
+  assert.match(f.text(), /필요량\s+26 kg/); assert.doesNotMatch(f.text(), /46 kg/);
+  await f.changeReason('Second daily scope'); await f.confirmMaterial(); f.saveMaterial();
+  assert.equal(f.mutations[0].plan_id, data.rows[1].id); assert.equal(f.mutations[0].uid, data.rows[1].uid);
+  assert.equal(f.calls.length, 0);
+});
