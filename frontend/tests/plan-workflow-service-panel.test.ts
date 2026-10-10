@@ -4,7 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import * as contract from '../src/domains/production/plan-workflow-service.ts';
 import { materialRequirement } from '../src/domains/production/plan-workflow-form.ts';
-import { serviceWorkflowFixture, serviceUid, SERVICE_SCOPE } from './fixtures/plan-workflow-service.ts';
+import { serviceWorkflowFixture, serviceBomFixture, serviceUid, SERVICE_SCOPE } from './fixtures/plan-workflow-service.ts';
 import type { WorkflowData } from '../src/domains/production/plan-workflow-api.ts';
 
 // Execute the real editor with deferred network stubs. No browser/auth/MES is available.
@@ -14,6 +14,12 @@ const compiled = ts.transpileModule(readFileSync(new URL('../src/domains/product
 const apiCompiled = ts.transpileModule(readFileSync(new URL('../src/domains/production/plan-workflow-service-api.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
+const workflowApiCompiled = ts.transpileModule(readFileSync(new URL('../src/domains/production/plan-workflow-api.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const bomCompiled = ts.transpileModule(readFileSync(new URL('../src/domains/production/components/PlanBomInputs.tsx', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+}).outputText;
 type Element = { type: unknown; props: Record<string, any> };
 const nodes = (value: any): Element[] => Array.isArray(value) ? value.flatMap(nodes)
   : value?.props ? [value, ...nodes(value.props.children)] : [];
@@ -22,17 +28,25 @@ const deferred = () => {
   const promise = new Promise<any>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
-function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(), fresh = true) {
+function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(), fresh = true, deferredBom = false) {
   const hooks: any[] = [], effects: (() => void)[] = [];
   const calls: { action: string; uids: string[]; scope: unknown; reply: ReturnType<typeof deferred>; options: any }[] = [];
   const mutations: Record<string, unknown>[] = [];
+  const bomReads: { params: any; reply: ReturnType<typeof deferred> }[] = [];
+  let mutationOptions: any;
   let index = 0, pending = false, data = initial, language = 'ko', dirty = false, saving = false, invalidations = 0;
   let tree: Element | null = null;
   let updatedAt = 1, isFetchedAfterMount = fresh, isError = false, isFetching = false;
   let session = 'SYNTHETIC-WJ-CHUNK-OWNER';
+  let date = SERVICE_SCOPE.start;
   const api: Record<string, any> = {};
   const apiDependencies: Record<string, any> = {
-    '@/shared/api/http': { http: { post: (_path: string, body: any, options: any) => {
+    '@/shared/api/http': { http: { get: (path: string, options: any) => {
+      assert.equal(path, '/production/plan-workflow/'); assert.equal(options.params.action, 'bom');
+      const entry = { params: options.params, reply: deferred() }; bomReads.push(entry);
+      if (!deferredBom) entry.reply.resolve(serviceBomFixture(options.params.plan_id));
+      return entry.reply.promise.then(data => ({ data }));
+    }, post: (_path: string, body: any, options: any) => {
       const entry = { scope: { start:body.start, end:body.end, plan_type:body.plan_type },
         uids: body.action === 'send' ? body.request_uids : [body.request_uid], action:body.action, reply:deferred(), options };
       calls.push(entry); return entry.reply.promise.then(value => ({ data:body.action==='send' ? {results:value} : value }));
@@ -42,6 +56,14 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     './plan-workflow-service': contract,
   };
   new Function('require','exports',apiCompiled)((name:string)=>{ assert.ok(name in apiDependencies,name); return apiDependencies[name]; },api);
+  const workflowApi: Record<string, any> = {};
+  new Function('require', 'exports', workflowApiCompiled)((name: string) => { assert.ok(name in apiDependencies, name); return apiDependencies[name]; }, workflowApi);
+  const jsx = (type: unknown, props: any) => typeof type === 'function' ? type(props) : ({ type, props });
+  const bom: Record<string, any> = {};
+  new Function('require', 'exports', bomCompiled)((name: string) => {
+    if (name === '../plan-workflow-form') return { materialRequirement };
+    assert.equal(name, 'react/jsx-runtime'); return { jsx, jsxs: jsx };
+  }, bom);
   const dependencies: Record<string, any> = {
     react: { Fragment: 'Fragment',
       useState: (initialValue: any) => { const slot = index++; if (!(slot in hooks)) hooks[slot] = typeof initialValue === 'function' ? initialValue() : initialValue;
@@ -50,43 +72,42 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
       useEffect: (callback: () => void, deps: unknown[]) => { const slot = index++; if (!hooks[slot] || deps.some((value, i) => value !== hooks[slot][i])) {
         hooks[slot] = deps; effects.push(callback); } },
     },
-    'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }) },
+    'react/jsx-runtime': { jsx, jsxs: jsx },
     '@tanstack/react-query': {
       useQuery: () => ({ data, isLoading: false, isError, isFetching, dataUpdatedAt: updatedAt, isFetchedAfterMount, refetch: async () => ({ data }) }),
       useQueryClient: () => ({ invalidateQueries: async () => { invalidations += 1; } }),
-      useMutation: () => ({ isPending: false, mutate: (body: Record<string, unknown>) => mutations.push(body) }),
+      useMutation: (options: any) => { mutationOptions = options; return { isPending: false, mutate: (body: Record<string, unknown>) => mutations.push(body) }; },
     },
-    '../plan-workflow-api': { workflowLabels: { created: ['생성 성공', '创建成功'], already_exists: ['기존 工单 확인됨', '已确认现有工单'],
-      uncertain: ['결과 불확실 · 재조회', '结果不确定 · 需复查'], checking: ['생성 전 조회 중 · 재전송 금지', '创建前查询中 · 禁止重发'],
-      plan_quantity_review: ['계획수량 범위·소수 정밀도 확인 필요', '需确认计划量范围及小数精度'],
-      blocked: ['생성 차단 · 확인 필요', '创建受阻 · 需核对'],
-      failed: ['생성 실패 · 결과 확인 필요', '创建失败 · 需核对结果'] } },
+    '../plan-workflow-api': workflowApi, './PlanBomInputs': bom,
     '../plan-workflow-form': { materialRequirement }, '../plan-workflow-service': contract,
     '../plan-workflow-service-api': api, './plan-workflow.css': {},
   };
   const exports: Record<string, any> = {};
   new Function('require', 'exports', compiled)((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, exports);
   const dirtyChanged = (value: boolean) => { dirty = value; }, pendingChanged = (value: boolean) => { saving = value; };
-  const render = () => { index = 0; pending = false; tree = exports.WorkflowEditor({ date: SERVICE_SCOPE.start, language,
+  const render = () => { index = 0; pending = false; tree = exports.WorkflowEditor({ date, language,
     onDirtyChange: dirtyChanged, onPendingChange: pendingChanged, sendAttempts: attempts }); effects.splice(0).forEach(effect => effect()); };
   const flush = async () => { for (let n = 0; n < 12; n += 1) { await Promise.resolve(); if (pending) render(); } };
   const button = (label: string) => { const found = nodes(tree).find(node => node.type === 'button' && node.props.children === label); assert.ok(found, label); return found; };
   const checkbox = (n = 0) => nodes(tree).filter(node => node.type === 'input' && node.props.type === 'checkbox' && String(node.props['aria-label'] || '').startsWith(language === 'ko' ? '선택 ' : '选择 '))[n];
   render();
-  return { calls, attempts, mutations, flush, button, checkbox,
+  return { calls, attempts, mutations, bomReads, flush, button, checkbox,
+    mutationError: async (status: number) => { mutationOptions.onError({ response: { status } }); await flush(); },
+    date: async (next: string) => { date = next; render(); await flush(); },
+    scopeType: async (next: string) => { nodes(tree).find(node => node.type === 'select' && node.props['aria-label'] === '공정')!.props.onChange({ target: { value: next } }); await flush(); },
     queue: async (stage: string) => { nodes(tree).find(node => node.type === 'button' && node.props['data-stage'] === stage)!.props.onClick(); await flush(); },
     expand: async (position = 0) => { nodes(tree).filter(node => node.type === 'button' && node.props.className === 'plan-workflow__expand')[position].props.onClick(); await flush(); },
     mesEvidence: () => nodes(tree).map(node => node.props['aria-description'] || '').join(' '),
     stages: () => nodes(tree).filter(node => node.type === 'button' && node.props['data-stage']).map(node => node.props['data-stage']),
     elements: () => nodes(tree),
-    changeMaterial: async (position: number, key: string) => { nodes(tree).filter(node => node.type === 'select' && node.props['aria-label'] === 'MES 자재 / 단위')[position].props.onChange({ target: { value: key } }); await flush(); },
+    changeMaterial: async (position: number, key: string) => { nodes(tree).filter(node => node.type === 'select' && String(node.props['aria-label'] || '').startsWith('사용 원료 '))[position].props.onChange({ target: { value: key } }); await flush(); },
     select: async (n = 0) => { const box = checkbox(n); assert.equal(box.props.disabled, false); box.props.onChange({ target: { checked: true } }); await flush(); },
     text: () => nodes(tree).flatMap(node => typeof node.props.children === 'string' ? [node.props.children] : Array.isArray(node.props.children) ? node.props.children.filter((v: unknown) => typeof v === 'string') : []).join(' '),
     setData: async (next: WorkflowData) => { data = next; updatedAt += 1; isFetchedAfterMount = true; isError = false; isFetching = false; render(); await flush(); },
     failedGet: async () => { isError = true; isFetching = false; isFetchedAfterMount = true; render(); await flush(); },
     replaceSession: () => { session='SYNTHETIC-REPLACEMENT-OWNER'; },
     language: async (next: string) => { language = next; render(); await flush(); },
-    edit: async () => { nodes(tree).find(node => node.type === 'button' && node.props.className === 'plan-workflow__material-cell')!.props.onClick(); await flush(); },
+    edit: async (part = 'SYN-PART-1') => { const row = nodes(tree).find(node => node.type === 'tr' && node.props['data-group-key'] === `synthetic-${part.replace('SYN-PART-', '')}`); assert.ok(row); nodes(row).find(node => node.type === 'button' && node.props.className === 'plan-workflow__material-cell')!.props.onClick(); await flush(); },
     changeReason: async (value: string) => { nodes(tree).find(node => node.type === 'input' && node.props['aria-label'] === '확인 사유 / 근거')!.props.onChange({ target: { value } }); await flush(); },
     confirmMaterial: async () => { nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox' && !node.props['aria-label'])!.props.onChange({ target: { checked: true } }); await flush(); },
     saveMaterial: () => nodes(tree).find(node => node.type === 'form' && node.props.id === 'plan-material-draft')!.props.onSubmit({ preventDefault() {} }),
@@ -94,19 +115,6 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     state: () => ({ dirty, saving, invalidations }),
   };
 }
-test('raw substitution keeps the other input rows, ratios and units in the saved approval', async () => {
-  const data = serviceWorkflowFixture();
-  const metal = { ...data.catalog.materials[0], key: 'metal', material_id: '3001', material_code: 'SYN-METAL', unit_id: '3002', unit_name: '个' };
-  const substitute = { ...data.catalog.materials[0], key: 'substitute', material_id: '3003', material_code: 'SYN-ABS-B' };
-  data.catalog.materials.push(metal, substitute);
-  data.rows[0].approval!.snapshot.inputs.push({ ...metal, numerator: '3', denominator: '1', required_quantity: '3000' });
-  const f = fixture(data); await f.edit(); await f.changeMaterial(0, substitute.key);
-  await f.changeReason('Resin substitution; retain metal'); await f.confirmMaterial(); f.saveMaterial();
-  const inputs = f.mutations[0].inputs as Record<string, string>[];
-  assert.equal(inputs.length, 2); assert.equal(inputs[0].key, 'substitute');
-  assert.equal(inputs[0].numerator, '0.02'); assert.equal(inputs[1].key, 'metal');
-  assert.equal(inputs[1].numerator, '3'); assert.equal(inputs[1].denominator, '1'); assert.equal(f.calls.length, 0);
-});
 test('business queue follows current approvals and preserves actual actor and time', async () => {
   const data = serviceWorkflowFixture(); data.rows[0].approval = null; data.preview[0].blockers = ['material_confirmation'];
   const f = fixture(data); await f.queue('materials'); assert.match(f.text(), /SYN-PART-1/); assert.doesNotMatch(f.text(), /SYN-PART-2/);
@@ -132,9 +140,10 @@ test('unversioned materials and absent mold can be explicitly approved while MES
   assert.equal(f.button('저장').props.disabled, true);
   await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
   f.saveMaterial();
-  assert.equal(f.mutations[0].action, 'approve'); assert.equal(f.mutations[0].output_version, '');
+  assert.equal(f.mutations[0].action, 'approve'); assert.equal(f.mutations[0].output_version, undefined);
   assert.equal(f.mutations[0].mold_code, '');
-  assert.equal((f.mutations[0].inputs as { material_version: string }[])[0].material_version, '');
+  assert.deepEqual(f.mutations[0].inputs, [{ source_row_id: 'SYN-ROW-1-RAW', material_code: 'SYN-ABS' }]);
+  assert.equal(f.mutations[0].bom_hash, 'SYN-HASH-1-A');
   assert.equal(f.calls.length, 0); assert.equal(f.button('선택 工单 MES 생성').props.disabled, true);
 });
 test('one selected creation is explicit and double gestures are fenced before React renders', async () => {
@@ -279,4 +288,123 @@ test('zero-count queues disappear while a refreshed draft remains reachable outs
   await f.setData(serviceWorkflowFixture());
   assert.deepEqual(f.stages(), ['all', 'issue']); assert.equal(f.reason(), 'retained outside filter');
   assert.equal(f.button('저장').props.disabled, true); assert.equal(f.calls.length, 0);
+});
+
+function withSubstitute() {
+  const data = serviceWorkflowFixture();
+  const substitute = { ...data.catalog.materials[0], key: 'synthetic-substitute', material_id: '3003', material_code: 'SYN-ABS-B' };
+  data.catalog.materials.push(substitute);
+  return data;
+}
+function threeRowBom() {
+  const source = serviceBomFixture();
+  const metal = (index: number) => ({ ...source.inputs[0], source_row_id: `SYN-METAL-ROW-${index}`, seq: String(index),
+    material_id: `SYN-METAL-ID-${index}`, material_code: `SYN-METAL-${index}`, material_name: `SYNTHETIC METAL ${index}`,
+    unit_id: 'SYN-PIECE-UNIT', unit_name: '个', numerator: String(index + 1),
+    category_code: 'CAT-FIXED', category_name: 'Hardware', replaceable: false });
+  source.inputs = [metal(1), metal(2), { ...source.inputs[0], seq: '3' }];
+  return source;
+}
+const rawSelects = (f: ReturnType<typeof fixture>) => f.elements().filter(node => node.type === 'select' && String(node.props['aria-label'] || '').startsWith('사용 원료 '));
+
+test('opening an editor reads scoped BOM; replacing the third raw row preserves both fixed hardware rows', async () => {
+  const data = withSubstitute(), source = threeRowBom(), f = fixture(data, new Set(), true, true);
+  await f.edit();
+  assert.deepEqual(f.bomReads.map(read => read.params), [{ ...SERVICE_SCOPE, action: 'bom', plan_id: 1 }]);
+  assert.equal(rawSelects(f).length, 0); assert.equal(f.button('저장').props.disabled, true);
+  await f.changeReason('Before BOM is visible'); await f.confirmMaterial();
+  f.bomReads[0].reply.resolve(source); await f.flush();
+  assert.equal(f.button('저장').props.disabled, true, 'confirmation before the BOM read is not accepted');
+  assert.equal(rawSelects(f).length, 1); assert.equal(rawSelects(f)[0].props['aria-label'], '사용 원료 3. SYN-ABS');
+  assert.match(f.text(), /SYN-METAL-1/); assert.match(f.text(), /SYN-METAL-2/);
+  assert.equal(f.elements().filter(node => node.type === 'button' && /추가|제거|삭제/.test(String(node.props.children))).length, 0);
+  assert.equal(f.elements().filter(node => node.type === 'input' && /배합|분자|분모/.test(String(node.props['aria-label']))).length, 0);
+  await f.changeMaterial(0, 'SYN-ABS-B'); await f.changeReason('Keep fixed hardware'); await f.confirmMaterial();
+  assert.equal(f.button('저장').props.disabled, false); f.saveMaterial();
+  assert.deepEqual(f.mutations[0], { action: 'approve', plan_id: 1, uid: data.rows[0].uid, version: 1,
+    bom_hash: source.hash, bom_version: source.version, resource_code: 'SYN-INJ-01', mold_code: 'SYN-MOLD', reason: 'Keep fixed hardware',
+    inputs: [{ source_row_id: 'SYN-METAL-ROW-1', material_code: 'SYN-METAL-1' },
+      { source_row_id: 'SYN-METAL-ROW-2', material_code: 'SYN-METAL-2' }, { source_row_id: 'SYN-ROW-1-RAW', material_code: 'SYN-ABS-B' }] });
+  assert.equal(f.calls.length, 0);
+});
+
+test('BOM failure has no legacy fallback; only explicit retry restores an approvable form', async () => {
+  const f = fixture(serviceWorkflowFixture(), new Set(), true, true); await f.edit();
+  f.bomReads[0].reply.reject(Error('SYNTHETIC BOM read denied')); await f.flush();
+  await f.changeReason('Keep my reason'); await f.confirmMaterial(); f.saveMaterial();
+  assert.equal(f.mutations.length, 0); assert.equal(rawSelects(f).length, 0);
+  assert.match(f.text(), /BOM을 읽지 못했습니다/); assert.equal(f.button('저장').props.disabled, true);
+  f.button('BOM 재조회').props.onClick(); await f.flush(); assert.equal(f.bomReads.length, 2);
+  f.bomReads[1].reply.resolve(serviceBomFixture()); await f.flush();
+  assert.equal(f.reason(), 'Keep my reason'); assert.equal(rawSelects(f).length, 1);
+  assert.equal(f.button('저장').props.disabled, true, 'a retry must clear confirmation');
+  await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
+  assert.equal(f.calls.length, 0); assert.equal(f.mutations.length, 0);
+});
+
+test('late BOM responses cannot replace a newer row draft or repopulate a changed scope', async () => {
+  const f = fixture(withSubstitute(), new Set(), true, true); await f.edit(); await f.edit('SYN-PART-2');
+  f.bomReads[1].reply.resolve(serviceBomFixture(2)); await f.flush();
+  await f.changeMaterial(0, 'SYN-ABS-B'); await f.changeReason('Second row draft');
+  f.bomReads[0].reply.resolve(threeRowBom()); await f.flush();
+  assert.equal(f.reason(), 'Second row draft'); assert.equal(rawSelects(f)[0].props.value, 'SYN-ABS-B');
+  assert.doesNotMatch(f.text(), /SYN-METAL-1/); await f.confirmMaterial(); f.saveMaterial();
+  assert.equal(f.mutations[0].plan_id, 2); assert.equal(f.mutations[0].bom_hash, 'SYN-HASH-2-A');
+  const g = fixture(serviceWorkflowFixture(), new Set(), true, true); await g.edit(); await g.scopeType('machining');
+  g.bomReads[0].reply.resolve(threeRowBom()); await g.flush();
+  assert.equal(rawSelects(g).length, 0); assert.equal(g.elements().some(node => node.props.id === 'plan-material-draft'), false);
+  await g.edit(); assert.equal(g.bomReads[1].params.plan_type, 'machining');
+});
+
+test('legacy approvals never seed replacements; only an exact current BOM hash restores selected source rows', async () => {
+  for (const match of ['legacy', 'changed', 'same']) {
+    const data = withSubstitute(), source = serviceBomFixture();
+    const snapshot = data.rows[0].approval!.snapshot;
+    snapshot.inputs[0].material_code = 'SYN-ABS-B'; snapshot.inputs[0].source_row_id = 'SYN-ROW-1-RAW';
+    if (match !== 'legacy') snapshot.bom_source = { ...source, hash: match === 'same' ? source.hash : 'OLD-HASH' };
+    const f = fixture(data); await f.edit();
+    assert.equal(rawSelects(f)[0].props.value, match === 'same' ? 'SYN-ABS-B' : 'SYN-ABS', match);
+    assert.equal(f.button('저장').props.disabled, true, 'restoration never auto confirms');
+  }
+});
+
+test('409 preserves substitutions and reason until explicit latest BOM review, then requires confirmation again', async () => {
+  const f = fixture(withSubstitute(), new Set(), true, true); await f.edit();
+  f.bomReads[0].reply.resolve(threeRowBom()); await f.flush(); await f.changeMaterial(0, 'SYN-ABS-B');
+  await f.changeReason('Replacement draft'); await f.confirmMaterial(); f.saveMaterial();
+  await f.mutationError(409);
+  assert.equal(f.reason(), 'Replacement draft'); assert.equal(rawSelects(f)[0].props.value, 'SYN-ABS-B');
+  assert.equal(rawSelects(f)[0].props.disabled, true); assert.equal(f.button('저장').props.disabled, true);
+  assert.equal(f.bomReads.length, 1); f.saveMaterial(); assert.equal(f.mutations.length, 1);
+  f.button('최신 계획 확인').props.onClick(); await f.flush(); assert.equal(f.bomReads.length, 2);
+  const next = threeRowBom(); next.hash = 'SYN-UPDATED-HASH'; next.version = 'B'; next.setup.bom_version = 'B';
+  next.inputs[0].numerator = '7';
+  f.bomReads[1].reply.resolve(next); await f.flush();
+  assert.equal(f.reason(), 'Replacement draft'); assert.equal(rawSelects(f)[0].props.value, 'SYN-ABS');
+  assert.match(f.text(), /7\s+个\s+\/\s+1\s+个/); assert.equal(f.button('저장').props.disabled, true);
+  await f.confirmMaterial(); f.saveMaterial(); assert.equal(f.mutations[1].bom_hash, 'SYN-UPDATED-HASH');
+  assert.equal(f.mutations[1].bom_version, 'B'); assert.equal(f.calls.length, 0);
+});
+
+test('same-hash explicit review keeps the draft, and trusted setup fields remain readonly', async () => {
+  const f = fixture(withSubstitute()); await f.edit(); await f.changeMaterial(0, 'SYN-ABS-B');
+  await f.changeReason('Keep selection'); await f.mutationError(409);
+  f.button('최신 계획 확인').props.onClick(); await f.flush();
+  assert.equal(rawSelects(f)[0].props.value, 'SYN-ABS-B'); assert.equal(f.reason(), 'Keep selection');
+  const settings = f.elements().find(node => node.props.className === 'plan-workflow__fields'); assert.ok(settings);
+  const setupInputs = nodes(settings).filter(node => node.type === 'input');
+  assert.equal(setupInputs.filter(node => node.props.readOnly).length, 7);
+  assert.equal(setupInputs.filter(node => !node.props.readOnly).length, 2);
+  assert.equal(f.button('저장').props.disabled, true);
+});
+
+test('invalid required quantities and a mismatched product BOM cannot be approved', async () => {
+  for (const failure of ['invalid-ratio', 'wrong-product']) {
+    const f = fixture(serviceWorkflowFixture(), new Set(), true, true); await f.edit();
+    const source = serviceBomFixture();
+    if (failure === 'invalid-ratio') source.inputs[0].denominator = '0'; else source.part_no = 'UNRELATED-PART';
+    f.bomReads[0].reply.resolve(source); await f.flush(); await f.changeReason('Invalid source'); await f.confirmMaterial(); f.saveMaterial();
+    assert.equal(f.button('저장').props.disabled, true); assert.equal(f.mutations.length, 0);
+    if (failure === 'wrong-product') assert.equal(rawSelects(f).length, 0);
+  }
 });
