@@ -74,6 +74,8 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
   const checkbox = (n = 0) => nodes(tree).filter(node => node.type === 'input' && node.props.type === 'checkbox' && String(node.props['aria-label'] || '').startsWith(language === 'ko' ? '선택 ' : '选择 '))[n];
   render();
   return { calls, attempts, mutations, flush, button, checkbox,
+    queue: async (position: number) => { nodes(tree).filter(node => node.type === 'button' && 'aria-pressed' in node.props)[position].props.onClick(); await flush(); },
+    changeMaterial: async (position: number, key: string) => { nodes(tree).filter(node => node.type === 'select' && node.props['aria-label'] === 'MES 자재 / 단위')[position].props.onChange({ target: { value: key } }); await flush(); },
     select: async (n = 0) => { const box = checkbox(n); assert.equal(box.props.disabled, false); box.props.onChange({ target: { checked: true } }); await flush(); },
     text: () => nodes(tree).flatMap(node => typeof node.props.children === 'string' ? [node.props.children] : Array.isArray(node.props.children) ? node.props.children.filter((v: unknown) => typeof v === 'string') : []).join(' '),
     setData: async (next: WorkflowData) => { data = next; updatedAt += 1; isFetchedAfterMount = true; isError = false; isFetching = false; render(); await flush(); },
@@ -88,6 +90,34 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     state: () => ({ dirty, saving, invalidations }),
   };
 }
+test('raw substitution keeps the other input rows, ratios and units in the saved approval', async () => {
+  const data = serviceWorkflowFixture();
+  const metal = { ...data.catalog.materials[0], key: 'metal', material_id: '3001', material_code: 'SYN-METAL', unit_id: '3002', unit_name: '个' };
+  const substitute = { ...data.catalog.materials[0], key: 'substitute', material_id: '3003', material_code: 'SYN-ABS-B' };
+  data.catalog.materials.push(metal, substitute);
+  data.rows[0].approval!.snapshot.inputs.push({ ...metal, numerator: '3', denominator: '1', required_quantity: '3000' });
+  const f = fixture(data); await f.edit(); await f.changeMaterial(0, substitute.key);
+  await f.changeReason('Resin substitution; retain metal'); await f.confirmMaterial(); f.saveMaterial();
+  const inputs = f.mutations[0].inputs as Record<string, string>[];
+  assert.equal(inputs.length, 2); assert.equal(inputs[0].key, 'substitute');
+  assert.equal(inputs[0].numerator, '0.02'); assert.equal(inputs[1].key, 'metal');
+  assert.equal(inputs[1].numerator, '3'); assert.equal(inputs[1].denominator, '1'); assert.equal(f.calls.length, 0);
+});
+test('business queue follows current approvals and preserves actual actor and time', async () => {
+  const data = serviceWorkflowFixture(); data.rows[0].approval = null; data.preview[0].blockers = ['material_confirmation'];
+  const f = fixture(data); await f.queue(2); assert.match(f.text(), /SYN-PART-1/); assert.doesNotMatch(f.text(), /SYN-PART-2/);
+  await f.queue(3); assert.doesNotMatch(f.text(), /SYN-PART-1/); assert.match(f.text(), /SYN-PART-2/);
+  f.button('자재·원료').props.onClick(); await f.flush();
+  assert.match(f.text(), /SYNTHETIC QA/); assert.match(f.text(), /2026-10-10 07:00/);
+  assert.doesNotMatch(f.text(), /실제 확인: 韦凯/); assert.equal(f.calls.length, 0);
+});
+test('a refreshed approval cannot hide the active draft from its previous queue', async () => {
+  const data = serviceWorkflowFixture(); data.rows[0].approval = null; data.preview[0].blockers = ['material_confirmation'];
+  const f = fixture(data); await f.queue(2); await f.edit(); await f.changeReason('Keep draft across refresh');
+  await f.setData(serviceWorkflowFixture());
+  assert.equal(f.reason(), 'Keep draft across refresh'); assert.equal(f.state().dirty, true);
+  assert.ok(f.button('취소')); assert.equal(f.calls.length, 0);
+});
 test('unversioned materials and absent mold can be explicitly approved while MES creation stays OFF', async () => {
   const data = serviceWorkflowFixture(); data.write_enabled = false;
   data.catalog.materials[0].material_version = '';

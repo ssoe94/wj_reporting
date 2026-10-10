@@ -1,12 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as service from '../src/domains/production/plan-workflow-service.ts';
+import { serviceWorkflowFixture } from './fixtures/plan-workflow-service.ts';
 import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowScope } from '../src/domains/production/plan-workflow-api.ts';
 
 const UID = '00000000-0000-4000-8000-000000000001';
 const OTHER_UID = '00000000-0000-4000-8000-000000000002';
 const MES_ID = '17000000000000001';
 const SCOPE: WorkflowScope = { start: '2026-10-08', end: '2026-10-10', plan_type: 'injection' };
+test('queue never treats an old MES ID as completion after plan or material changes', () => {
+  const data = serviceWorkflowFixture(['created']); const group = data.preview[0];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'created');
+  group.blockers = ['mes_observation_incomplete'];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'created');
+  group.blockers = [];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'uncertain', MES_ID), 'review');
+  assert.equal(service.planWorkflowStage(group, data.rows, null, MES_ID), 'review');
+  assert.equal(service.planWorkflowStage(group, data.rows, null, null), 'issue');
+  group.blockers = ['material_confirmation']; data.rows[0].approval = null;
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'materials');
+  group.blockers = ['plan_quantity_review'];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'plan');
+  assert.equal(service.planConfirmationTime('2026-10-09T23:00:00Z'), '2026-10-10 07:00');
+});
 function uid(index: number) { return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`; }
 
 function fixture() {

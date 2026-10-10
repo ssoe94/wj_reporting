@@ -1,4 +1,25 @@
-import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowScope } from "./plan-workflow-api";
+import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowRow, WorkflowScope } from "./plan-workflow-api";
+
+export type PlanWorkflowStage = "plan" | "materials" | "issue" | "review" | "created";
+/** Business queue only; never grants permissions or substitutes for send eligibility. */
+export function planWorkflowStage(group: WorkflowGroup, rows: WorkflowRow[], state: string | null,
+  mesId: string | null): PlanWorkflowStage {
+  if (group.blockers.some(code => ["identity_confirmation", "plan_quantity_review", "work_target_changed_review"].includes(code))
+    || rows.some(row => row.identity_state !== "identified" || row.quantity_valid === false)) return "plan";
+  if (group.blockers.includes("material_confirmation") || rows.some(row => !row.approval)) return "materials";
+  if (!rows.length || group.blockers.some(code => code !== "mes_observation_incomplete")
+    || (state && ["checking", "sending", "uncertain", "readback_pending", "review", "failed", "blocked"].includes(state))) return "review";
+  if (mesId && state && ["created", "already_exists", "confirmed"].includes(state)) return "created";
+  if (mesId || group.blockers.length) return "review";
+  return "issue";
+}
+
+export function planConfirmationTime(value: string): string {
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime())) return "—";
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(time);
+}
 
 export const PLAN_CREATE_BATCH_LIMIT = 50;
 export const PLAN_CREATE_REQUEST_LIMIT = 3;
