@@ -82,10 +82,25 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     language: async (next: string) => { language = next; render(); await flush(); },
     edit: async () => { nodes(tree).find(node => node.type === 'button' && node.props.className === 'plan-workflow__material-cell')!.props.onClick(); await flush(); },
     changeReason: async (value: string) => { nodes(tree).find(node => node.type === 'input' && node.props['aria-label'] === '확인 사유 / 근거')!.props.onChange({ target: { value } }); await flush(); },
+    confirmMaterial: async () => { nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox' && !node.props['aria-label'])!.props.onChange({ target: { checked: true } }); await flush(); },
+    saveMaterial: () => nodes(tree).find(node => node.type === 'form' && node.props.id === 'plan-material-draft')!.props.onSubmit({ preventDefault() {} }),
     reason: () => nodes(tree).find(node => node.type === 'input' && node.props['aria-label'] === '확인 사유 / 근거')?.props.value,
     state: () => ({ dirty, saving, invalidations }),
   };
 }
+test('unversioned materials can be explicitly approved while MES creation stays OFF', async () => {
+  const data = serviceWorkflowFixture(); data.write_enabled = false;
+  data.catalog.materials[0].material_version = '';
+  data.rows[0].approval!.snapshot.inputs[0].material_version = '';
+  data.rows[0].approval!.snapshot.output_version = '';
+  const f = fixture(data); await f.edit(); await f.changeReason('MES has no material version');
+  assert.equal(f.button('저장').props.disabled, true);
+  await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
+  f.saveMaterial();
+  assert.equal(f.mutations[0].action, 'approve'); assert.equal(f.mutations[0].output_version, '');
+  assert.equal((f.mutations[0].inputs as { material_version: string }[])[0].material_version, '');
+  assert.equal(f.calls.length, 0); assert.equal(f.button('선택 工单 MES 생성').props.disabled, true);
+});
 test('one selected creation is explicit and double gestures are fenced before React renders', async () => {
   const f = fixture(); await f.flush(); assert.equal(f.calls.length, 0);
   await f.select(); const stale = f.button('선택 工单 MES 생성'); stale.props.onClick(); stale.props.onClick(); await f.flush();

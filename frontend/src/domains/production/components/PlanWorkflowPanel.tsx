@@ -18,7 +18,7 @@ const fieldLabels: Record<string, [string, string]> = { bom_version: ["BOM/배�
   mold_code: ["금형·셋업 코드", "模具／设置编号"], resource_code: ["MES 설비 코드", "MES设备编号"],
   process_code: ["MES 공정 코드", "MES工序编号"], process_num: ["공정 순번", "工序序号"],
   route_code: ["공정경로 코드", "工艺路线编号"], output_unit_name: ["제품 단위명", "产品单位名称"],
-  output_unit_id: ["제품 단위 ID", "产品单位ID"], output_version: ["제품 물료 버전", "产品物料版本"] };
+  output_unit_id: ["제품 단위 ID", "产品单位ID"], output_version: ["제품 물료 버전 (있는 경우)", "产品物料版本（如有）"] };
 
 export function PlanWorkflowPanel({ date, language }: Props) {
   const [open, setOpen] = useState(false);
@@ -192,9 +192,10 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     setDefaultTarget(null); setDayUid(row.uid); setEditing(row); applySnapshot(row.approval?.snapshot || row.previous_approval?.snapshot || row.recommendation?.snapshot || null);
     setReason(""); setConfirmed(false); setMessage(""); setPrevious(""); setDirty(false); setNeedsReview(false);
   }
-  const completeMaterial = fields.every(field => values[field]?.trim()) && inputs.every(input =>
+  const completeConnection = fields.every(field => field === "output_version" || values[field]?.trim());
+  const completeMaterial = completeConnection && inputs.every(input =>
     data?.catalog.materials.some(option => option.key === input.key && option.selectable)
-    && input.material_version.trim() && materialRequirement(editing?.planned_quantity || "", input.numerator, input.denominator) !== null);
+    && materialRequirement(editing?.planned_quantity || "", input.numerator, input.denominator) !== null);
   const currentRow = data?.rows.find(row => row.uid === editing?.uid);
   const canSave = data?.can_edit && confirmed && reason.trim() && !busy && !dateReviewRequired && !needsReview
     && currentRow?.id === editing?.id && currentRow?.version === editing?.version
@@ -251,7 +252,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {editing.identity_state !== "identified" ? <div className="plan-workflow__identity-line">
         {dayPicker(rows, editing, true)}<label>{zh ? "任务标识" : "작업 동일성"}<select aria-label={zh ? "任务标识" : "작업 동일성"} value={previous} onChange={e => { changed(); setPrevious(e.target.value); }}><option value="">{zh ? "独立新任务" : "독립 새 작업"}</option>{editing.candidate_details.map(candidate => <option key={candidate.uid} value={candidate.uid}>{candidate.snapshot.plan_date} · {candidate.snapshot.machine_name} · {candidate.snapshot.planned_quantity} · {zh ? "顺序" : "순서"} {candidate.snapshot.sequence}</option>)}</select></label>
       </div> : <>
-        {(!fields.every(field => values[field]?.trim()) || inputs.some(input => !input.material_version.trim())) && <span className="plan-workflow__blocked">{zh ? "连接信息不完整，请管理员补充。" : "연결정보 부족 · 관리자 등록 필요"}</span>}
+        {!completeConnection && <span className="plan-workflow__blocked">{zh ? "连接信息不完整，请管理员补充。" : "연결정보 부족 · 관리자 등록 필요"}</span>}
         {inputs.map((input, index) => <div className="plan-workflow__input-row" key={index}>
           {index === 0 ? dayPicker(rows, editing, true) : <select aria-label={zh ? "MES原料／单位" : "MES 원료 / 단위"} required value={input.key} onChange={e => { changed(); const next = [...inputs]; const selected = data.catalog.materials.find(row => row.key === e.target.value); next[index] = { ...input, key: e.target.value, material_version: selected?.material_version || "" }; setInputs(next); }}><option value="">{zh ? "选择原料" : "원료 선택"}</option>{data.catalog.materials.map(row => <option disabled={!row.selectable} key={row.key} value={row.key}>{row.material_code} · {row.material_name} · {row.unit_name}</option>)}</select>}
           <div className="plan-workflow__ratio"><span>{zh ? "配比" : "배합"}</span>{(["numerator", "denominator"] as const).map(field => <Fragment key={field}>{field === "denominator" && <span>/</span>}<input aria-label={field === "numerator" ? (zh ? "原料配比" : "원료 배합량") : (zh ? "对应产品数" : "기준 제품수")} required value={input[field]} inputMode="decimal" onChange={e => { changed(); const next = [...inputs]; next[index] = { ...input, [field]: e.target.value }; setInputs(next); }} /><span>{field === "numerator" ? data.catalog.materials.find(row => row.key === input.key)?.unit_name : values.output_unit_name}</span></Fragment>)}</div>
@@ -346,7 +347,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     </tbody></table></div>
     {data.can_manage_defaults && editing && <details className="plan-workflow__diagnostics"><summary>{zh ? "管理员连接／默认原料" : "관리자 연결 / 기본원료"}</summary>
       <div className="plan-workflow__fields">{fields.map(field => <label key={field}>{fieldLabels[field][zh ? 1 : 0]}<input form="plan-material-draft" value={values[field] || ""} onChange={e => { changed(); setValues({ ...values, [field]: e.target.value }); }} /></label>)}
-        {inputs.map((input, index) => <label key={index}>{zh ? "物料版本" : "물료 버전"} · {data.catalog.materials.find(row => row.key === input.key)?.material_code}<input form="plan-material-draft" value={input.material_version} onChange={e => { changed(); const next = [...inputs]; next[index] = { ...input, material_version: e.target.value }; setInputs(next); }} /></label>)}</div>
+        {inputs.map((input, index) => <label key={index}>{zh ? "物料版本（如有）" : "물료 버전 (있는 경우)"} · {data.catalog.materials.find(row => row.key === input.key)?.material_code}<input form="plan-material-draft" value={input.material_version} onChange={e => { changed(); const next = [...inputs]; next[index] = { ...input, material_version: e.target.value }; setInputs(next); }} /></label>)}</div>
       {editing.approval && <button type="button" onClick={() => leave(() => { const row = editing; clearDraft(); setDefaultTarget(row); setDefaultReason(""); setDefaultConfirmed(false); })}>{zh ? "修改默认原料" : "기본원료 변경"}</button>}
     </details>}
     {defaultForm}

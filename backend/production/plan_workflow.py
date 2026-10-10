@@ -52,6 +52,13 @@ def text(value, maximum=255):
     return value.strip()
 
 
+def material_version(value):
+    # MES permits unversioned materials; never invent a version to approve them.
+    if value is None or isinstance(value, str) and not value.strip():
+        return ''
+    return text(value)
+
+
 def exact_id(value):
     # API input is text: JavaScript numbers may already have lost precision.
     if not isinstance(value, str):
@@ -262,13 +269,15 @@ def approve_materials(plan, data, actor):
         with localcontext() as context:
             context.prec = 100
             required = Decimal(str(plan.planned_quantity)) * Decimal(numerator) / Decimal(denominator)
-        inputs.append({**item, 'material_version': text(row.get('material_version') or item['material_version']),
+        inputs.append({**item, 'material_version': material_version(row.get('material_version'))
+                       or material_version(item['material_version']),
                        'numerator': numerator, 'denominator': denominator,
                        'required_quantity': decimal_text(format(required, 'f'))})
     if len({row['material_id'] for row in inputs}) != len(inputs):
         raise ValidationError('Duplicate material.')
     setup = {key: text(data.get(key)) for key in ('bom_version', 'mold_code', 'resource_code',
-              'process_code', 'process_num', 'route_code', 'output_unit_name', 'output_version')}
+              'process_code', 'process_num', 'route_code', 'output_unit_name')}
+    setup['output_version'] = material_version(data.get('output_version'))
     setup['output_unit_id'] = exact_id(data.get('output_unit_id'))
     setup['inputs'] = sorted(inputs, key=lambda row: row['material_id'])
     setup['source_refreshed_at'] = catalog['refreshed_at']

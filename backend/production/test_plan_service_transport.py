@@ -221,6 +221,42 @@ class PlanServicePersistenceTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(payload['inputMaterialOpenV2COs'][0]['subInputAmountNumerator'], '0.02')
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['materialCode'], 'SYNTHETIC-PART')
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['unitName'], '个')
+        self.assertEqual(payload['inputMaterialOpenV2COs'][0]['version'], 'V1')
+        self.assertEqual(payload['outputMaterialOpenCOs'][0]['version'], 'V1')
+        self.assert_no_transport()
+
+    def test_unversioned_materials_can_be_approved_and_prepared_without_invented_versions(self):
+        self.catalog.payload[0]['material']['version'] = None
+        self.catalog.save(update_fields=['payload'])
+        data = approval_data(self.plan)
+        data['inputs'][0]['material_version'] = ''
+        approval = self.approve(inputs=data['inputs'], output_version=None)
+        self.assertEqual(approval.snapshot['output_version'], '')
+        self.assertEqual(approval.snapshot['inputs'][0]['material_version'], '')
+        payload = self.prepare().contract['payload']
+        self.assertNotIn('version', payload['inputMaterialOpenV2COs'][0])
+        self.assertNotIn('version', payload['outputMaterialOpenCOs'][0])
+        self.assertEqual(payload['inputMaterialOpenV2COs'][0]['subInputAmountNumerator'], '0.02')
+        self.assert_no_transport()
+
+    def test_blank_input_version_preserves_a_version_from_the_selected_mes_catalog(self):
+        data = approval_data(self.plan)
+        data['inputs'][0]['material_version'] = ''
+        approval = self.approve(inputs=data['inputs'])
+        self.assertEqual(approval.snapshot['inputs'][0]['material_version'], 'V1')
+        self.assertEqual(self.prepare().contract['payload']['inputMaterialOpenV2COs'][0]['version'], 'V1')
+        self.assert_no_transport()
+
+    def test_optional_versions_still_reject_invalid_types_and_placeholder_values(self):
+        for value in (False, 0, [], {}, '-', 'x' * 256):
+            for field in ('input', 'output'):
+                with self.subTest(value=value, field=field):
+                    data = approval_data(self.plan)
+                    if field == 'input': data['inputs'][0]['material_version'] = value
+                    else: data['output_version'] = value
+                    result = self.action('approve', plan_id=self.plan.pk, **data)
+                    self.assertEqual(result.status_code, 400, result.data)
+        self.assertFalse(PlanMaterialApproval.objects.exists())
         self.assert_no_transport()
 
 
