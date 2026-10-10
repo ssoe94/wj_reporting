@@ -380,7 +380,9 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
             response = original_sender(url, **kwargs)
             body = parse_json_exact(response.content)
             if url.endswith(LIST_PATH) and body['data']['total'] == 0:
-                return synthetic_response(MISSING_ORDER)
+                # Live ALI errors omit data and fieldPermission altogether.
+                return synthetic_response({key: value for key, value in MISSING_ORDER.items()
+                    if key not in ('data', 'fieldPermission')})
             return synthetic_response({**body, 'needCheck': None})
 
         result = self.dispatch(transport=self.service(sender=observed_envelopes))
@@ -392,6 +394,10 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
             self.dispatch()
         self.assertEqual(self.paths().count(CREATE_PATH), 1)
 
+    def test_explicit_null_missing_order_is_also_absent(self):
+        transport = self.service(sender=Mock(return_value=synthetic_response(MISSING_ORDER)))
+        self.assertIsNone(transport.find_by_code('SYNTHETIC'))
+
     def test_similar_missing_order_errors_never_authorize_import(self):
         from .plan_service_transport import LIST_PATH
         from .plan_workflow_contract import CREATE_PATH
@@ -400,7 +406,7 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
             {**MISSING_ORDER, 'code': '200066'},
             {**MISSING_ORDER, 'subCode': 'OTHER_NOT_FOUND'},
             {**MISSING_ORDER, 'data': {}},
-            {key: value for key, value in MISSING_ORDER.items() if key != 'data'},
+            *[{**MISSING_ORDER, 'data': value} for value in ([], '', 0, False)],
             *[{**MISSING_ORDER, 'needCheck': value} for value in (None, 1, False, '0')],
             {**MISSING_ORDER, 'fieldPermission': {'noAccess': ['workOrderCode']}},
             {**MISSING_ORDER, 'fieldPermission': []},

@@ -67,7 +67,7 @@ def _body(response, *, exact_code_lookup=False):
     missing_order = (exact_code_lookup and type(body.get('code')) is int
         and body['code'] == 200066
         and body.get('subCode') == 'MED-DOMAIN/WORK_ORDER_BASE_WORK_ORDER_NOT_FOUND'
-        and 'data' in body and body['data'] is None
+        and body.get('data') is None
         and type(body.get('needCheck')) is int and body['needCheck'] == 0)
     if (type(body.get('code')) is not int or body['code'] != 200) and not missing_order:
         raise PlanTransportError('provider_result_rejected')
