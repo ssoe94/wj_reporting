@@ -1,8 +1,8 @@
 """Factory import from the approved plan/material snapshot.
 
-Import fields: official Blacklake HW document 1686645473258363. Inline materials
-use useBomFlag=0 by the factory's selected policy; tenant precedence still needs
-the separately approved live trial. No per-product server allowlist is used.
+Import fields: official Blacklake MED document 1686655055663528. Inline materials
+use useBomFlag=0 to preserve the approved inputs. BOM version linkage is separate
+from that verified material assignment. No per-product server allowlist is used.
 """
 from datetime import datetime
 from decimal import Decimal
@@ -12,6 +12,10 @@ from .plan_workflow_contract import CREATE_PATH, UPDATE_PATH
 
 INITIAL_STATUS = 1  # CREATED; dispatch/start are separate later operations.
 REPORT_FLAG = 1
+PRODUCTION_DEPARTMENTS = {'injection': 'ZS', 'machining': 'JG'}
+# WJ's planning owner, confirmed against existing orders and by the operator.
+PLANNING_DEPARTMENT = '002'  # 营业
+PLANNING_USER = '2299'  # 徐佳; not the WJ user who presses Send.
 
 
 def build_contract(order, intent):
@@ -24,7 +28,12 @@ def build_contract(order, intent):
             'code': order.code, 'plannedAmount': intent['quantity'], 'planFinishTime': end}]}}, [
                 'task_quantity_propagation_and_allowed_state_review']
     setup = intent['setup']
+    department = PRODUCTION_DEPARTMENTS.get(intent['plan_type'])
+    if department is None:
+        return {}, ['production_department_required']
     payload = {'code': order.code, 'externalOrderCode': order.code, 'identifier': order.code,
+        'productionDepartmentCode': department, 'planningDepartmentCode': PLANNING_DEPARTMENT,
+        'planningUserCode': PLANNING_USER,
         'planStartTime': start, 'planFinishTime': end, 'resourceCode': setup['resource_code'],
         'enableSop': 0, 'specifiedMaterial': 1, 'useBomFlag': 0, 'useProcessRouteFlag': 1,
         'status': INITIAL_STATUS,
@@ -42,5 +51,5 @@ def build_contract(order, intent):
         'processPlanOpenCOs': [{'code': setup['process_code'], 'processNum': setup['process_num'],
                                'reportFlag': REPORT_FLAG}]}
     encode_exact_json(payload)
-    return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686645473258363',
+    return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686655055663528',
             'authentication': 'service_app', 'readback_scope': 'base_creation'}, []
