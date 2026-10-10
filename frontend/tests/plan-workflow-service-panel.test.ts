@@ -168,6 +168,9 @@ test('a concurrent preflight checking result is shown as pending and never offer
 test('OFF preserves the plan and material draft while disabling creation', async () => {
   const data = serviceWorkflowFixture(); data.write_enabled = false; const f = fixture(data);
   assert.match(f.text(), /MES 생성 OFF/); assert.match(f.text(), /SYN-PART-1/); assert.equal(f.checkbox().props.disabled, true);
+  assert.ok(!f.elements().some(node => node.type === 'button' && node.props.children === 'MES 생성'));
+  const tasks = f.elements().filter(node => node.props.className === 'plan-workflow__task');
+  assert.ok(tasks.every(node => !JSON.stringify(node).includes('徐佳')));
   await f.edit(); await f.changeReason('SYNTHETIC approval draft'); assert.equal(f.state().dirty, true);
   await f.language('zh'); assert.equal(f.reason(), undefined); // Korean label changed, the same input value remains.
   await f.language('ko'); assert.equal(f.reason(), 'SYNTHETIC approval draft');

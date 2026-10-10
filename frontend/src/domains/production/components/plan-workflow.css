@@ -16,8 +16,8 @@
 .plan-workflow__filters > label input { width: 138px; }
 .plan-workflow__filters > label select { width: 156px; }
 .plan-workflow__off { margin-left: auto; background: #fff3e6; color: #994718; font-weight: 650; padding: 6px 8px; border-radius: 5px; white-space: nowrap; }
-.plan-workflow__policy { position: relative; color: #475d78; }
-.plan-workflow__policy p { position: absolute; z-index: 2; right: 0; top: 22px; width: min(440px, 70vw); border: 1px solid #b9c7d9; background: #f4f7fb; padding: 10px; border-radius: 5px; box-shadow: 0 4px 14px #13253d18; }
+.plan-workflow__policy { color: #475d78; }
+.plan-workflow__policy p { max-width: 760px; padding: 4px 0 8px; }
 .plan-workflow summary { cursor: pointer; min-height: 38px; display: flex; align-items: center; gap: 6px; }
 .plan-workflow summary::before { content: '▸'; }
 .plan-workflow details[open] > summary::before { content: '▾'; }
