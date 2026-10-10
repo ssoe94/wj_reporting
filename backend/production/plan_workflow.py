@@ -52,8 +52,8 @@ def text(value, maximum=255):
     return value.strip()
 
 
-def material_version(value):
-    # MES permits unversioned materials; never invent a version to approve them.
+def optional_text(value):
+    # Preserve absent versions/setup identities instead of inventing values.
     if value is None or isinstance(value, str) and not value.strip():
         return ''
     return text(value)
@@ -269,15 +269,16 @@ def approve_materials(plan, data, actor):
         with localcontext() as context:
             context.prec = 100
             required = Decimal(str(plan.planned_quantity)) * Decimal(numerator) / Decimal(denominator)
-        inputs.append({**item, 'material_version': material_version(row.get('material_version'))
-                       or material_version(item['material_version']),
+        inputs.append({**item, 'material_version': optional_text(row.get('material_version'))
+                       or optional_text(item['material_version']),
                        'numerator': numerator, 'denominator': denominator,
                        'required_quantity': decimal_text(format(required, 'f'))})
     if len({row['material_id'] for row in inputs}) != len(inputs):
         raise ValidationError('Duplicate material.')
-    setup = {key: text(data.get(key)) for key in ('bom_version', 'mold_code', 'resource_code',
+    setup = {key: text(data.get(key)) for key in ('bom_version', 'resource_code',
               'process_code', 'process_num', 'route_code', 'output_unit_name')}
-    setup['output_version'] = material_version(data.get('output_version'))
+    setup['output_version'] = optional_text(data.get('output_version'))
+    setup['mold_code'] = optional_text(data.get('mold_code'))
     setup['output_unit_id'] = exact_id(data.get('output_unit_id'))
     setup['inputs'] = sorted(inputs, key=lambda row: row['material_id'])
     setup['source_refreshed_at'] = catalog['refreshed_at']
@@ -372,7 +373,9 @@ def preview(start, end, plan_type, context=None):
         if plan_type == 'injection' and counts[(plan.machine_name, str(plan.plan_date))] > 1:
             blockers.append('multiple_rows_setup_review')
         setup_hash = digest(setup) if setup else ''
-        same = (plan_type == 'injection' and current and not blockers and not current['blockers']
+        # Unknown mold/setup is valid for one day, not evidence of continuity.
+        same = (plan_type == 'injection' and current and setup and setup.get('mold_code')
+            and not blockers and not current['blockers']
             and current['machine_name'] == plan.machine_name and current['part_no'] == plan.part_no
             and current['lot_no'] == (plan.lot_no or '') and current['setup_fingerprint'] == setup_hash
             and date.fromisoformat(current['last_date']) + timedelta(days=1) == plan.plan_date)

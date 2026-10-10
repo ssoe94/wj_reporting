@@ -88,16 +88,18 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     state: () => ({ dirty, saving, invalidations }),
   };
 }
-test('unversioned materials can be explicitly approved while MES creation stays OFF', async () => {
+test('unversioned materials and absent mold can be explicitly approved while MES creation stays OFF', async () => {
   const data = serviceWorkflowFixture(); data.write_enabled = false;
   data.catalog.materials[0].material_version = '';
   data.rows[0].approval!.snapshot.inputs[0].material_version = '';
   data.rows[0].approval!.snapshot.output_version = '';
+  data.rows[0].approval!.snapshot.mold_code = '';
   const f = fixture(data); await f.edit(); await f.changeReason('MES has no material version');
   assert.equal(f.button('저장').props.disabled, true);
   await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
   f.saveMaterial();
   assert.equal(f.mutations[0].action, 'approve'); assert.equal(f.mutations[0].output_version, '');
+  assert.equal(f.mutations[0].mold_code, '');
   assert.equal((f.mutations[0].inputs as { material_version: string }[])[0].material_version, '');
   assert.equal(f.calls.length, 0); assert.equal(f.button('선택 工单 MES 생성').props.disabled, true);
 });

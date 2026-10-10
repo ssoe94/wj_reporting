@@ -15,7 +15,7 @@ type EditorProps = Props & { onDirtyChange: (dirty: boolean) => void; onPendingC
 type InputDraft = { key: string; numerator: string; denominator: string; material_version: string };
 const fields = ["bom_version", "mold_code", "resource_code", "process_code", "process_num", "route_code", "output_unit_name", "output_unit_id", "output_version"] as const;
 const fieldLabels: Record<string, [string, string]> = { bom_version: ["BOM/배합 버전", "BOM／配方版本"],
-  mold_code: ["금형·셋업 코드", "模具／设置编号"], resource_code: ["MES 설비 코드", "MES设备编号"],
+  mold_code: ["금형·셋업 코드 (있는 경우)", "模具／设置编号（如有）"], resource_code: ["MES 설비 코드", "MES设备编号"],
   process_code: ["MES 공정 코드", "MES工序编号"], process_num: ["공정 순번", "工序序号"],
   route_code: ["공정경로 코드", "工艺路线编号"], output_unit_name: ["제품 단위명", "产品单位名称"],
   output_unit_id: ["제품 단위 ID", "产品单位ID"], output_version: ["제품 물료 버전 (있는 경우)", "产品物料版本（如有）"] };
@@ -192,7 +192,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     setDefaultTarget(null); setDayUid(row.uid); setEditing(row); applySnapshot(row.approval?.snapshot || row.previous_approval?.snapshot || row.recommendation?.snapshot || null);
     setReason(""); setConfirmed(false); setMessage(""); setPrevious(""); setDirty(false); setNeedsReview(false);
   }
-  const completeConnection = fields.every(field => field === "output_version" || values[field]?.trim());
+  const completeConnection = fields.every(field => ["output_version", "mold_code"].includes(field) || values[field]?.trim());
   const completeMaterial = completeConnection && inputs.every(input =>
     data?.catalog.materials.some(option => option.key === input.key && option.selectable)
     && materialRequirement(editing?.planned_quantity || "", input.numerator, input.denominator) !== null);
