@@ -138,9 +138,7 @@ def _unit(material, unit_id, unit_name):
 
 def _simple_controls(row):
     controls = row.get('bomFeedingControls')
-    if controls is None:
-        return
-    if not isinstance(controls, list) or len(controls) > 1:
+    if not isinstance(controls, list) or len(controls) != 1:
         _fail('complex_control')
     for control in controls:
         control = _object(control)
@@ -160,6 +158,17 @@ def _simple_controls(row):
         for key in ('inputAmountNumerator', 'inputAmountDenominator'):
             if Decimal(_decimal(control.get(key), positive=True)) != Decimal(_decimal(row.get(key), positive=True)):
                 _fail('complex_control')
+        # The import control DTO has no denominator. Only the observed /1
+        # recipe can be preserved without inventing a conversion contract.
+        if (type(control.get('lineSeq')) is not int or control['lineSeq'] < 1
+                or Decimal(_decimal(control['inputAmountDenominator'])) != 1):
+            _fail('complex_control')
+        return {'lineSeq': str(control['lineSeq']),
+            'inputAmountNumerator': _decimal(control['inputAmountNumerator'], True),
+            'feedFlag': _enum(control['inputMaterialControl'], (0, 1)),
+            'backFlush': _enum(control['backFlush'], (0, 1)),
+            'inputQcState': json.dumps(sorted(_enum(item, (1, 2, 3, 4)) for item in states), separators=(',', ':')),
+            'limit': 1}
 
 
 def read_bom(part_no, actor_id, *, reader=None):
@@ -251,7 +260,7 @@ def read_bom(part_no, actor_id, *, reader=None):
         if (_id(row.get('inputProcessId')) != node_id or _id(input_node.get('id')) != node_id
                 or input_node.get('processNum') != process_num):
             _fail('input_process')
-        _simple_controls(row)
+        feeding_control = _simple_controls(row)
         category_code, category_name = _category(material)
         unit_id, unit_name = _id(row.get('unitId')), _text(row.get('unitName'))
         _unit(material, unit_id, unit_name)
@@ -262,7 +271,7 @@ def read_bom(part_no, actor_id, *, reader=None):
             'numerator': _decimal(row.get('inputAmountNumerator'), True),
             'denominator': _decimal(row.get('inputAmountDenominator'), True),
             'category_code': category_code, 'category_name': category_name,
-            'replaceable': category_code == RAW_CATEGORY})
+            'replaceable': category_code == RAW_CATEGORY, 'feeding_control': feeding_control})
     inputs.sort(key=lambda item: (item['seq'], item['source_row_id']))
     return {'id': _id(bom['id']), 'part_no': part_no, 'version': _text(bom['version']),
         'material_id': _id(bom['materialId']), 'hash': _hash(bom, route), 'inputs': inputs,

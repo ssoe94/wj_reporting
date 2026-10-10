@@ -20,7 +20,11 @@ For new BOM-backed approvals, record the current source BOM ID/version/hash and 
 
 Read the one enabled default BOM for the exact part number and its single-process route through the existing pure APP transport. Keep all input rows, sequence numbers, units and ratios. Only leaf category CAT-011 resin rows may be replaced, with an enabled material in that same category and exact unit. Re-read source and replacement metadata before creation; a changed or unavailable source blocks the write.
 
-This first scope supports one output, productRate=100, lossRate=0, one process, and no nested/alternative/split BOM. Unsupported structures stop for review. Basic feeding-control fields are checked and hashed but are not copied into the explicit-input create payload; this change does not claim to reproduce MES feeding/backflush/QC behavior. Actual M2 acceptance must inspect the full input list and relevant operating controls before M3.
+This first scope supports one output, productRate=100, lossRate=0, one process, and no nested/alternative/split BOM. Unsupported structures stop for review. Each input requires one verified control line, a denominator of 1, ordinary feed type, and no quantity bounds or SOP control. The official import control DTO has no denominator or feedType field; other shapes are not inferred.
+
+Full existing-order evidence exposed a concrete difference missed by quantity-only acceptance: the prior WJ order's two hardware rows have mandatory feed=1/backflush=0, while all three compared operational orders and the current BOM have mandatory feed=0/backflush=1. Resin is 1/1 in all four orders. The existing WJ order stays unchanged.
+
+New BOM approvals preserve line sequence, numerator, mandatory-feed flag, backflush flag, QC states and no-bound limit. The create payload sends these through the documented inputMaterialControlOpenCOs fields (feedFlag, backFlush, inputQcState as a JSON string, limit, lineSeq and inputAmountNumerator). The source and its controls are reread before creating. New contracts reread every input and its controls, bracketed by equal base reads; a mismatch becomes review and is never resent. This is documented request support and local regression evidence, not proof that MES has accepted a new controlled import. Actual M2 acceptance must verify that on the next authorized order.
 
 ## Evidence
 

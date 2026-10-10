@@ -42,7 +42,9 @@ def build_contract(order, intent):
             'unitName': row['unit_name'],
             'subInputAmountNumerator': row['numerator'], 'subInputAmountDenominator': row['denominator'],
             'specificProcessInput': 1, 'inputProcessNum': setup['process_num'],
-            'splitSopControlInput': 0, 'lossRate': '0'} for index, row in enumerate(setup['inputs'])],
+            'splitSopControlInput': 0, 'lossRate': '0',
+            **({'inputMaterialControlOpenCOs': [row['feeding_control']]}
+               if 'feeding_control' in row else {})} for index, row in enumerate(setup['inputs'])],
         'outputMaterialOpenCOs': [{'lineSeq': '0', 'mainFlag': 1, 'materialCode': intent['part_no'],
             'plannedAmount': intent['quantity'], 'unitName': setup['output_unit_name'],
             **({'version': setup['output_version']} if setup['output_version'] else {}),
