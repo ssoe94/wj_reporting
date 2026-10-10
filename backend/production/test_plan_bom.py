@@ -72,6 +72,37 @@ def submitted(source, replacement=None):
 
 
 class PlanBomTests(SimpleTestCase):
+    def test_raw_per_piece_override_preserves_source_fixed_rows_and_exact_controls(self):
+        reader = FixtureReader()
+        source = read_bom(PART, 1, reader=reader)
+        before = deepcopy(source)
+        rows = submitted(source, 'RESIN')
+        rows[2]['numerator'] = '0.4312500001'
+        result = resolve_inputs(source, rows, 1, reader=reader)
+        self.assertEqual(source, before)
+        self.assertEqual(result[:2], before['inputs'][:2])
+        self.assertEqual(result[2]['numerator'], '0.4312500001')
+        self.assertEqual(result[2]['denominator'], '1')
+        self.assertEqual(result[2]['feeding_control'], {
+            **before['inputs'][2]['feeding_control'], 'inputAmountNumerator': '0.4312500001'})
+        self.assertEqual(result[2]['material_code'], 'RESIN')
+
+    def test_ratio_overrides_reject_fixed_unknown_non_piece_or_inexact_values(self):
+        source = read_bom(PART, 1, reader=FixtureReader())
+        for value in ('', '0', '-1', 'NaN', 'Infinity', '1e-3', ' 0.4', '+0.4',
+                      '0.12345678901', '1000000000000001', 0.429, 1, True, None):
+            rows = submitted(source); rows[2]['numerator'] = value
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                resolve_inputs(source, rows, 1)
+        for field, value in (('replaceable', False), ('category_code', 'CAT-052'), ('denominator', '2')):
+            altered = deepcopy(source); altered['inputs'][2][field] = value
+            rows = submitted(altered); rows[2]['numerator'] = '0.5'
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                resolve_inputs(altered, rows, 1)
+        rows = submitted(source); rows[0]['numerator'] = '3'
+        with self.assertRaises(ValidationError):
+            resolve_inputs(source, rows, 1)
+
     def test_unverified_product_yield_is_never_treated_as_100_percent(self):
         for value in (None, '99', '101', 100.0):
             with self.subTest(value=value):

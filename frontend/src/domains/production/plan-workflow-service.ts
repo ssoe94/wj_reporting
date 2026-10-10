@@ -21,6 +21,20 @@ export function planConfirmationTime(value: string): string {
     day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(time);
 }
 
+/** The exclusive 08:00 finish belongs to the following day, not a second plan day. */
+export function planDateLabel(group: Pick<WorkflowGroup, "planned_start" | "planned_end">, zh: boolean): string {
+  const start = planConfirmationTime(group.planned_start).slice(0, 10);
+  const finish = new Date(group.planned_end);
+  if (start === "—" || !Number.isFinite(finish.getTime())) return "—";
+  const last = planConfirmationTime(new Date(finish.getTime() - 86_400_000).toISOString()).slice(0, 10);
+  const short = (date: string) => date.slice(5).replace("-", "/");
+  return `${short(start)}${start === last ? "" : `–${short(last)}`} ${zh ? "计划" : "계획"}`;
+}
+
+export function planPeriodTitle(group: Pick<WorkflowGroup, "planned_start" | "planned_end">): string {
+  return `${planConfirmationTime(group.planned_start)} → ${planConfirmationTime(group.planned_end)} (Asia/Shanghai)`;
+}
+
 export const PLAN_CREATE_BATCH_LIMIT = 50;
 export const PLAN_CREATE_REQUEST_LIMIT = 3;
 export function requestUid(value: unknown): value is string {

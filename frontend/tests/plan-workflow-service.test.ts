@@ -8,6 +8,14 @@ const UID = '00000000-0000-4000-8000-000000000001';
 const OTHER_UID = '00000000-0000-4000-8000-000000000002';
 const MES_ID = '17000000000000001';
 const SCOPE: WorkflowScope = { start: '2026-10-08', end: '2026-10-10', plan_type: 'injection' };
+test('business date labels exclude the next-day finish and preserve actual multi-day periods across month boundaries', () => {
+  const single = { planned_start: '2026-10-12T08:00:00+08:00', planned_end: '2026-10-13T08:00:00+08:00' };
+  assert.equal(service.planDateLabel(single, false), '10/12 계획');
+  assert.equal(service.planDateLabel(single, true), '10/12 计划');
+  const continuous = { planned_start: '2026-12-31T00:00:00Z', planned_end: '2027-01-03T00:00:00Z' };
+  assert.equal(service.planDateLabel(continuous, false), '12/31–01/02 계획');
+  assert.equal(service.planPeriodTitle(continuous), '2026-12-31 08:00 → 2027-01-03 08:00 (Asia/Shanghai)');
+});
 test('queue never treats an old MES ID as completion after plan or material changes', () => {
   const data = serviceWorkflowFixture(['created']); const group = data.preview[0];
   assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'created');

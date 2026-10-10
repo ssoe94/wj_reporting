@@ -387,7 +387,9 @@ def dispatch_service_create(request_uid, transport):
             fresh = validate_source(req.intent['setup']['bom_source'], transport.actor_id)
             approved = req.intent['setup']['inputs']
             resolved = resolve_inputs(fresh, [{'source_row_id': row['source_row_id'],
-                'material_code': row['material_code']} for row in approved], transport.actor_id)
+                'material_code': row['material_code'],
+                **({'numerator': row['numerator']} if row.get('replaceable') is True else {})}
+                for row in approved], transport.actor_id)
             fields = ('source_row_id', 'material_id', 'material_code', 'material_version',
                       'unit_id', 'unit_name', 'numerator', 'denominator', 'feeding_control')
             if ([{key: row[key] for key in fields} for row in resolved]

@@ -41,7 +41,7 @@ export type PlanBomCatalogMaterial = {
   unit_name: string;
   selectable: boolean;
 };
-export type PlanBomInputSelection = { source_row_id: string; material_code: string };
+export type PlanBomInputSelection = { source_row_id: string; material_code: string; numerator?: string };
 export type PlanBomInputsProps = {
   source: PlanBomSource | null;
   catalog: readonly PlanBomCatalogMaterial[];
@@ -55,6 +55,19 @@ export type PlanBomInputsProps = {
 
 export function initialPlanBomInputs(source: PlanBomSource): PlanBomInputSelection[] {
   return source.inputs.map(({ source_row_id, material_code }) => ({ source_row_id, material_code }));
+}
+
+export function canEditPlanBomRatio(row: PlanBomSourceInput): boolean {
+  return row.replaceable === true && row.category_code === "CAT-011" && /^1(?:\.0+)?$/.test(row.denominator);
+}
+
+export function selectedPlanBomNumerator(row: PlanBomSourceInput, value: readonly PlanBomInputSelection[]): string {
+  return value.find(input => input.source_row_id === row.source_row_id)?.numerator ?? row.numerator;
+}
+
+function validNumerator(value: string): boolean {
+  return /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,10})?$/.test(value)
+    && materialRequirement("1", value, "1") !== null;
 }
 
 function replacementOptions(row: PlanBomSourceInput, catalog: readonly PlanBomCatalogMaterial[]) {
@@ -84,7 +97,9 @@ export function isPlanBomSelectionValid(source: PlanBomSource | null, catalog: r
   if (!source || !hasExactSourceRows(source, value)) return false;
   return source.inputs.every(row => {
     const selected = value.find(input => input.source_row_id === row.source_row_id)!;
-    return replacementOptions(row, catalog).some(option => option.material_code === selected.material_code);
+    return replacementOptions(row, catalog).some(option => option.material_code === selected.material_code)
+      && (selected.numerator === undefined || (canEditPlanBomRatio(row)
+        && validNumerator(selected.numerator)));
   });
 }
 
@@ -116,10 +131,20 @@ function materialSelect({ source, catalog, value, onChange, disabled = false, ko
   </select>;
 }
 
-function materialAmounts(row: PlanBomSourceInput, source: PlanBomSource, quantity: string, ko: boolean) {
-  const required = materialRequirement(quantity, row.numerator, row.denominator);
+function materialAmounts(row: PlanBomSourceInput, source: PlanBomSource, props: PlanBomInputsProps) {
+  const { quantity, value, onChange, disabled, ko } = props;
+  const numerator = selectedPlanBomNumerator(row, value);
+  const required = materialRequirement(quantity, numerator, row.denominator);
+  const editable = canEditPlanBomRatio(row);
   return <>
-    <span className="plan-workflow__ratio">{row.numerator} {row.unit_name} / {row.denominator} {source.setup.output_unit_name}</span>
+    {editable ? <label className="plan-workflow__ratio"><span>{ko ? "개당 배합" : "每件配比"}</span>
+      <input aria-label={`${ko ? "개당 원료 배합" : "每件原料配比"} ${row.material_code}`} inputMode="decimal"
+        value={numerator} aria-invalid={required === null || !validNumerator(numerator)} disabled={disabled || !hasExactSourceRows(source, value)}
+        onChange={event => { if (disabled || !hasExactSourceRows(source, value)) return;
+          onChange(value.map(input => input.source_row_id === row.source_row_id
+            ? { ...input, numerator: event.target.value } : { ...input })); }} />
+      <span>{row.unit_name} / 1 {source.setup.output_unit_name}</span>
+    </label> : <span className="plan-workflow__ratio">{row.numerator} {row.unit_name} / {row.denominator} {source.setup.output_unit_name}</span>}
     <span className={`plan-workflow__requirement${required === null ? " plan-workflow__blocked" : ""}`}>
       {ko ? "필요량 " : "需求量 "}{required === null ? (ko ? "확인 필요" : "待核对") : `${required} ${row.unit_name}`}
     </span>
@@ -127,12 +152,22 @@ function materialAmounts(row: PlanBomSourceInput, source: PlanBomSource, quantit
 }
 
 /** Place this editor in the material table cell; the primary row need not be the first BOM row. */
-export function PlanBomPrimaryInput(props: PlanBomInputsProps) {
+export function PlanBomPrimaryInput(props: PlanBomInputsProps & {
+  onActivate?: () => void; idleLabel?: string; loading?: boolean; rowLabel?: string;
+}) {
   const { source, ko } = props;
   const primary = source?.inputs.find(row => row.replaceable === true);
-  if (!source || source.inputs.length === 0) return <span className="plan-workflow__blocked">
+  if ((!source || source.inputs.length === 0) && !props.onActivate) return <span className="plan-workflow__blocked">
     {ko ? "BOM 확인 필요" : "需核对BOM"}
   </span>;
+  if (!source || source.inputs.length === 0) return <div className="plan-workflow__material-summary" style={{ fontSize: 14 }}>
+    <select aria-label={`${ko ? "원료 선택" : "选择原料"} ${props.rowLabel || ""}`.trim()}
+      aria-busy={props.loading || undefined} value="" disabled={props.disabled || !props.onActivate}
+      onFocus={props.onActivate} onChange={() => {}}>
+      <option value="">{props.loading ? (ko ? "BOM 조회 중…" : "正在读取BOM…")
+        : props.idleLabel || (ko ? "BOM 확인 필요" : "需核对BOM")}</option>
+    </select>
+  </div>;
   if (!primary) return <span>{ko ? "고정 자재만 사용" : "仅使用固定物料"}</span>;
   return <div className="plan-workflow__material-summary" data-source-row-id={primary.source_row_id} style={{ fontSize: 14 }}>
     {materialSelect(props, primary, source.inputs.indexOf(primary))}
@@ -140,7 +175,7 @@ export function PlanBomPrimaryInput(props: PlanBomInputsProps) {
 }
 
 export function PlanBomInputs(props: PlanBomInputsProps) {
-  const { source, catalog, quantity, value, hidePrimary = false, ko } = props;
+  const { source, catalog, value, hidePrimary = false, ko } = props;
   if (!source || source.inputs.length === 0) return <p className="plan-workflow__blocked" role="alert">
     {ko ? "BOM을 불러오지 못했습니다. 다시 조회하세요." : "未能读取BOM，请重新查询。"}
   </p>;
@@ -157,7 +192,7 @@ export function PlanBomInputs(props: PlanBomInputsProps) {
           <span>{ko ? "사용 원료" : "使用原料"}</span>
           {materialSelect(props, row, index)}
         </label> : <span>{ko ? "고정 자재" : "固定物料"}</span>}
-        {materialAmounts(row, source, quantity, ko)}
+        {materialAmounts(row, source, props)}
       </div>;
     })}
   </div>;
