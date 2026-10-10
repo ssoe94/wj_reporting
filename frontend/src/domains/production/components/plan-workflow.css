@@ -3,13 +3,10 @@
 .plan-workflow p { margin: 4px 0; line-height: 1.5; }
 .plan-workflow__heading, .plan-workflow__filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .plan-workflow__heading { justify-content: space-between; }
-.plan-workflow__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 10px 0 4px; list-style: none; }
-.plan-workflow__steps li { display: grid; gap: 3px; padding: 9px 12px; border: 1px solid #d5deea; border-radius: 5px; background: #f4f7fb; }
-.plan-workflow__steps strong { color: #193859; font-size: 15px; }
-.plan-workflow__steps span { font-weight: 650; }
-.plan-workflow__queue { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 6px; }
+.plan-workflow__queue { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
 .plan-workflow__queue button[aria-pressed=true] { background: #193859; border-color: #193859; color: white; }
 .plan-workflow__material-heading, .plan-workflow__basic { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; margin: 6px 0; }
+.plan-workflow__basic:empty { display: none; }
 .plan-workflow__material-heading select { width: auto; }
 .plan-workflow__source { color: #475d78; }
 .plan-workflow__body { margin-top: 6px; border-top: 1px solid #d5deea; padding-top: 6px; }
@@ -18,7 +15,7 @@
 .plan-workflow__filters > label { flex-direction: row; align-items: center; width: auto; white-space: nowrap; }
 .plan-workflow__filters > label input { width: 138px; }
 .plan-workflow__filters > label select { width: 156px; }
-.plan-workflow__off { margin-left: auto; background: #e8edf4; color: #193859; font-weight: 650; padding: 6px 8px; border-radius: 5px; white-space: nowrap; }
+.plan-workflow__off { margin-left: auto; background: #fff3e6; color: #994718; font-weight: 650; padding: 6px 8px; border-radius: 5px; white-space: nowrap; }
 .plan-workflow__policy { position: relative; color: #475d78; }
 .plan-workflow__policy p { position: absolute; z-index: 2; right: 0; top: 22px; width: min(440px, 70vw); border: 1px solid #b9c7d9; background: #f4f7fb; padding: 10px; border-radius: 5px; box-shadow: 0 4px 14px #13253d18; }
 .plan-workflow summary { cursor: pointer; min-height: 38px; display: flex; align-items: center; gap: 6px; }
@@ -27,15 +24,21 @@
 .plan-workflow__table-wrap { overflow-x: auto; margin-top: 8px; }
 .plan-workflow__caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .plan-workflow table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.plan-workflow .pw-select { width: 4%; } .plan-workflow .pw-product { width: 17%; } .plan-workflow .pw-machine { width: 8%; }
-.plan-workflow .pw-period { width: 14%; } .plan-workflow .pw-quantity { width: 8%; }
-.plan-workflow .pw-material { width: 17%; } .plan-workflow .pw-status { width: 15%; }
-.plan-workflow .pw-actions { width: 17%; }
+.plan-workflow .pw-select { width: 4%; } .plan-workflow .pw-product { width: 18%; } .plan-workflow .pw-machine { width: 8%; }
+.plan-workflow .pw-period { width: 13%; } .plan-workflow .pw-quantity { width: 8%; }
+.plan-workflow .pw-material { width: 20%; } .plan-workflow .pw-status { width: 18%; }
+.plan-workflow .pw-actions { width: 11%; }
 .plan-workflow th, .plan-workflow td { text-align: left; vertical-align: middle; padding: 4px 6px; border-bottom: 1px solid #dce3ee; overflow-wrap: anywhere; font-weight: 400; }
 .plan-workflow thead th { background: #edf2f8; font-weight: 650; padding: 7px 6px; }
 .plan-workflow th strong { font-weight: 650; }
 .plan-workflow small { display: block; font-size: 14px; line-height: 1.35; color: #475d78; margin-top: 2px; }
-.plan-workflow__preparing { color: #475d78; }
+.plan-workflow__product-line { display: flex; align-items: center; min-width: 0; gap: 3px; }
+.plan-workflow__product-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-workflow button.plan-workflow__expand { min-width: 28px; padding: 4px; border-color: transparent; background: transparent; }
+.plan-workflow__mobile-machine, .plan-workflow__mobile-summary { display: none; }
+.plan-workflow__period { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.plan-workflow__task > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-workflow__detail-status { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 2px 0 6px; }
 .plan-workflow__quantity { font-variant-numeric: tabular-nums; font-weight: 650 !important; }
 .plan-workflow__machine { white-space: nowrap; }
 .plan-workflow__row-actions, .plan-workflow__actions { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -48,10 +51,11 @@
 .plan-workflow__editor { display: grid; gap: 4px; margin: 0; padding: 0; }
 .plan-workflow__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
 .plan-workflow__input-row { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(200px, 1fr) minmax(110px, .7fr) auto; align-items: center; gap: 6px; border-bottom: 1px solid #dce3ee; padding: 6px 0; }
+.plan-workflow__input-row.is-primary { grid-template-columns: minmax(260px, 1fr) minmax(120px, 1fr) auto; padding: 2px 0; }
 .plan-workflow__ratio { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .plan-workflow__ratio input { min-width: 0; max-width: 82px; }
 .plan-workflow__requirement { font-variant-numeric: tabular-nums; }
-.plan-workflow__confirmation { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto auto; align-items: center; gap: 6px; }
+.plan-workflow__confirmation { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; align-items: center; gap: 6px; }
 .plan-workflow .plan-workflow__check { flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; }
 .plan-workflow__read-line { display: flex; align-items: center; gap: 6px; }
 .plan-workflow__read-line > select { width: 220px; flex-shrink: 0; }
@@ -73,6 +77,43 @@
 .plan-workflow button:disabled { opacity: .55; cursor: default; }
 .plan-workflow button:active:not(:disabled) { background: #e6eef7; }
 .plan-workflow button:focus-visible, .plan-workflow input:focus-visible, .plan-workflow select:focus-visible, .plan-workflow summary:focus-visible { outline: 2px solid #007ea8; outline-offset: 2px; }
-@media(max-width: 1000px) { .plan-workflow__off { margin-left: 0; } }
-@media(max-width: 760px) { .plan-workflow__orders { min-width: 800px; } .plan-workflow__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__input-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-workflow__confirmation { grid-template-columns: minmax(160px, 1fr) auto auto auto; } }
-@media(max-width: 560px) { .plan-workflow__steps { grid-template-columns: 1fr; } }
+@media(max-width: 1000px) { .plan-workflow__off { margin-left: 0; } .plan-workflow .pw-status { width: 16%; } .plan-workflow .pw-actions { width: 13%; } }
+@media(max-width: 760px) {
+  .plan-workflow { padding: 8px; }
+  .plan-workflow__heading { align-items: flex-start; flex-wrap: nowrap; }
+  .plan-workflow__heading .panel__title { font-size: 16px; line-height: 1.4; }
+  .plan-workflow__heading > button { flex-shrink: 0; }
+  .plan-workflow__filters { gap: 6px; }
+  .plan-workflow__filters > label:first-child { width: 100%; }
+  .plan-workflow__filters > label input { width: 122px; }
+  .plan-workflow__queue { flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 5px; }
+  .plan-workflow__queue button { white-space: nowrap; flex-shrink: 0; }
+  .plan-workflow__table-wrap { overflow: visible; }
+  .plan-workflow__orders colgroup, .plan-workflow__orders thead { display: none; }
+  .plan-workflow__orders, .plan-workflow__orders tbody { display: block; }
+  .plan-workflow__order { display: grid; grid-template-columns: 24px minmax(0, 1fr) 92px; align-items: center; padding: 5px 0; border-bottom: 1px solid #dce3ee; }
+  .plan-workflow__orders .plan-workflow__order > td, .plan-workflow__orders .plan-workflow__order > th { border: 0; padding: 0 3px; min-width: 0; }
+  .plan-workflow__order > td:first-child { grid-column: 1; grid-row: 1; }
+  .plan-workflow__order .plan-workflow__product { grid-column: 2; grid-row: 1; }
+  .plan-workflow__order .plan-workflow__action { grid-column: 3; grid-row: 1; }
+  .plan-workflow__row-actions > button { width: 100%; padding: 5px 4px; }
+  .plan-workflow__orders .plan-workflow__machine, .plan-workflow__orders .plan-workflow__period,
+  .plan-workflow__orders .plan-workflow__quantity, .plan-workflow__orders .plan-workflow__material,
+  .plan-workflow__orders .plan-workflow__task { display: none; }
+  .plan-workflow__orders .plan-workflow__material.is-editing { display: block; grid-column: 2 / 4; grid-row: 2; padding-top: 5px; }
+  .plan-workflow__product-line { gap: 2px; }
+  .plan-workflow__product-line strong { flex: 1; }
+  .plan-workflow__mobile-machine { display: inline; white-space: nowrap; color: #475d78; }
+  .plan-workflow__mobile-summary { display: block; padding-left: 29px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .plan-workflow__detail-row, .plan-workflow__detail-row > td { display: block; }
+  .plan-workflow__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-workflow__input-row, .plan-workflow__input-row.is-primary { grid-template-columns: minmax(0, 1fr) auto; }
+  .plan-workflow__input-row > label, .plan-workflow__ratio { grid-column: 1 / -1; }
+  .plan-workflow__ratio input { max-width: 70px; }
+  .plan-workflow__confirmation { grid-template-columns: minmax(0, 1fr) auto; }
+  .plan-workflow__confirmation > input { grid-column: 1 / -1; }
+  .plan-workflow__read-line { flex-wrap: wrap; }
+  .plan-workflow__material-summary { flex-basis: 100%; }
+  .plan-workflow__identity-line { grid-template-columns: minmax(0, 1fr); }
+  .plan-workflow__send-actions > span:last-child { flex-basis: 100%; }
+}
