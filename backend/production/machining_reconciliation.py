@@ -297,11 +297,6 @@ def build_machining_provision_payload(business_date: Any, days: int = 3) -> dict
         )
         .order_by("plan_date", "machine_name", "sequence", "id")
     )
-    last_plan_hash_by_part: dict[str, str] = {}
-    for plan in plans:
-        if plan.part_no:
-            last_plan_hash_by_part[normalize_part_no(plan.part_no)] = plan_identity_for_plan(plan)
-
     matched_by_manual, matched_by_mes = get_match_totals()
     manual_reports = list(
         MachiningManualReport.objects
@@ -359,8 +354,10 @@ def build_machining_provision_payload(business_date: Any, days: int = 3) -> dict
         direct_mes_qty = 0
         remaining_mes_qty = max(0, safe_int(mes_qty_by_part.get(part_no)) - consumed_mes_qty_by_part[part_no])
         if remaining_mes_qty > 0:
-            allocation_limit = remaining_mes_qty if last_plan_hash_by_part.get(part_no) == plan_hash else planned_qty
-            direct_mes_qty = min(remaining_mes_qty, max(0, allocation_limit))
+            # MES reports do not identify a plan row. Keep the full quantity on
+            # the earliest matching plan: exceeding its target is not evidence
+            # that another line or a later plan has already been produced.
+            direct_mes_qty = remaining_mes_qty
             consumed_mes_qty_by_part[part_no] += direct_mes_qty
 
         effective_actual_qty = direct_mes_qty + matched_manual_qty + manual_open_qty
