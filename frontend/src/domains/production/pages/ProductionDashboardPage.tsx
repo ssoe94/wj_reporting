@@ -3335,14 +3335,14 @@ export function ProductionDashboardPage() {
         {dates.map(({ date, records }) => (
           <section className="production-upcoming-plans__date" key={date} aria-label={`${date} ${copy.planDate}`}>
             <h4>{date} · {language === "ko" ? "목표" : "目标"} {formatNumber(records.reduce((sum, record) => sum + Number(record.planned_quantity), 0))}</h4>
-            <div className="machine-board__table-wrap">
+            <div className="machine-board__table-wrap" role="region" aria-label={`${date} ${copy.planDate}`} tabIndex={0}>
               <table className="production-upcoming-plans__table">
                 <thead><tr>
-                  <th>{language === "ko" ? "설비" : "设备"}</th>
-                  <th>{language === "ko" ? "품목" : "物料"}</th>
-                  <th>LOT</th>
-                  <th>{language === "ko" ? "계획" : "计划数量"}</th>
-                  {planType === "machining" ? <><th>{copy.advanceQty}</th><th>{copy.manualReport}</th></> : null}
+                  <th scope="col">{language === "ko" ? "설비" : "设备"}</th>
+                  <th scope="col">{language === "ko" ? "품목" : "物料"}</th>
+                  <th scope="col">LOT</th>
+                  <th scope="col">{language === "ko" ? "계획" : "计划数量"}</th>
+                  {planType === "machining" ? <><th scope="col">{copy.advanceQty}</th><th scope="col">{copy.manualReport}</th></> : null}
                 </tr></thead>
                 <tbody>{records.map((record, index) => {
                   const name = getPlanDisplayName(record.part_no, record.model_name, record.part_spec);
