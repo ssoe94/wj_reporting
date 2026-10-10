@@ -37,7 +37,7 @@ def build_contract(order, intent):
         'planStartTime': start, 'planFinishTime': end, 'resourceCode': setup['resource_code'],
         'enableSop': 0, 'specifiedMaterial': 1, 'useBomFlag': 0, 'useProcessRouteFlag': 1,
         'status': INITIAL_STATUS,
-        'inputMaterialOpenV2COs': [{'seq': str(index + 1), 'materialCode': row['material_code'],
+        'inputMaterialOpenV2COs': [{'seq': str(row.get('seq', index + 1)), 'materialCode': row['material_code'],
             **({'version': row['material_version']} if row['material_version'] else {}),
             'unitName': row['unit_name'],
             'subInputAmountNumerator': row['numerator'], 'subInputAmountDenominator': row['denominator'],

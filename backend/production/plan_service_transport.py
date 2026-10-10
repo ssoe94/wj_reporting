@@ -1,6 +1,6 @@
 """Service APP factory creation; durable per-order fences and exact-code reads.
 
-Only import, base list and base detail are allowed. This does not dispatch,
+Only import, base list/detail and explicit master reads are allowed. This does not dispatch,
 start, amend, report, warehouse or generate inspections. Base readback records
 creation separately from the unverified material/BOM and production totals.
 """
@@ -23,6 +23,10 @@ from .permissions import user_can_edit_plan
 
 LIST_PATH = '/med/open/v2/work_order/base/_list'
 BASE_PATH = '/med/open/v2/work_order/base/_detail'
+MASTER_READ_PATHS = frozenset({
+    '/med/open/v2/bom/_list', '/med/open/v2/bom/_detail',
+    '/med/open/v2/process_route/_detail', '/material/open/v2/material/_list_by_codes',
+})
 CREATE_REQUEST_LIMIT = 3
 READBACK_STATES = frozenset({'checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed'})
 
@@ -112,7 +116,7 @@ class PlanMesServiceTransport:
 
     @sensitive_variables()
     def _post(self, path, payload, *, write=False):
-        if path not in (LIST_PATH, BASE_PATH, CREATE_PATH) or write != (path == CREATE_PATH):
+        if path not in {LIST_PATH, BASE_PATH, CREATE_PATH, *MASTER_READ_PATHS} or write != (path == CREATE_PATH):
             raise PlanTransportError('route_not_supported')
         if write and not writes_enabled():
             raise WorkflowConflict('MES plan writer is disabled.')
@@ -307,6 +311,21 @@ def dispatch_service_create(request_uid, transport):
             return _observe(req, transport, existed=True, known_id=found)
         except PlanTransportError as error:
             return _finish(req, transport, 'review', mes_id_value=found, blockers=[error.code])
+    if req.intent['setup'].get('bom_source'):
+        from .plan_bom import validate_source, resolve_inputs
+        from rest_framework.exceptions import ValidationError
+        try:
+            fresh = validate_source(req.intent['setup']['bom_source'], transport.actor_id)
+            approved = req.intent['setup']['inputs']
+            resolved = resolve_inputs(fresh, [{'source_row_id': row['source_row_id'],
+                'material_code': row['material_code']} for row in approved], transport.actor_id)
+            fields = ('source_row_id', 'material_id', 'material_code', 'material_version',
+                      'unit_id', 'unit_name', 'numerator', 'denominator')
+            if ([{key: row[key] for key in fields} for row in resolved]
+                    != [{key: row[key] for key in fields} for row in approved]):
+                raise WorkflowConflict('mes_bom_replacement_changed')
+        except (PlanTransportError, WorkflowConflict, ValidationError):
+            return _finish(req, transport, 'failed', blockers=['mes_bom_changed_or_unavailable'])
     try:
         req = _claim(req.uid, transport.actor_id, creation=True, reservation_id=req._reservation_id)
     except WorkflowConflict:
