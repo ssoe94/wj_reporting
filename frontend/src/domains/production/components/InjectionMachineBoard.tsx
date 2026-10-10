@@ -5,8 +5,9 @@ import { useLang } from "@/i18n";
 import type { InjectionDowntimeConfirmation, ProductionStatusResponse } from "@/domains/production/api";
 import type { InjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 import type { RealtimeProgressRow, RealtimeProgressSummary } from "@/domains/production/realtime-progress";
+import { getPlanDisplayName } from "@/domains/production/machining-progress";
 import { getMesTaskReconciliation } from "@/domains/production/mes-task-reconciliation-api";
-import { assessmentTone, reconciliationQueryOptions, type ReconciliationTask } from "@/domains/production/mes-task-reconciliation";
+import { assessmentTone, reconciliationQueryOptions, type ReconciliationPlan, type ReconciliationTask } from "@/domains/production/mes-task-reconciliation";
 import {
   buildMachineBoardRows,
   INJECTION_MACHINE_COUNT,
@@ -61,6 +62,7 @@ type InjectionMachineBoardProps = {
   onOpenActivity: (row: RealtimeProgressRow) => void;
   machiningSummary: ReactNode;
   machiningRows: ReactNode;
+  upcomingPlans?: Partial<Record<BoardTab, ReactNode>>;
   onOpenBoard: () => void;
 };
 
@@ -106,6 +108,7 @@ export function InjectionMachineBoard({
   onOpenActivity,
   machiningSummary,
   machiningRows,
+  upcomingPlans,
   onOpenBoard,
 }: InjectionMachineBoardProps) {
   const { t } = useLang();
@@ -241,7 +244,7 @@ export function InjectionMachineBoard({
       if (!todayPlans.length) return <span className="machine-board__muted">{text("noPlanNoShot")}</span>;
       return (
         <div className="machine-board__production-head">
-          <strong>{todayPlans.map((plan) => plan.part_no || "—").join(" · ")}</strong>
+          <strong>{todayPlans.map((plan) => planDisplayName(row, plan)).join(" · ")}</strong>
           <span>{text("planNoShot")} · {formatNumber(todayPlans.reduce((sum, plan) => sum + plan.planned_quantity, 0), language)}</span>
         </div>
       );
@@ -257,14 +260,14 @@ export function InjectionMachineBoard({
       );
     }
     const current = item.segments.find((segment) => segment.status === "in_progress");
+    const displaySegment = current
+      ?? item.segments.find((segment) => segment.status === "pending")
+      ?? item.segments.at(-1);
     return (
       <div className="machine-board__production">
         <div className="machine-board__production-head">
           <strong>
-            {current?.partNo
-              ?? item.segments.find((segment) => segment.status === "pending")?.partNo
-              ?? item.segments.at(-1)?.partNo
-              ?? "—"}
+            {getPlanDisplayName(displaySegment?.partNo, displaySegment?.modelName)}
           </strong>
           <span>
             {formatNumber(item.estimatedQty, language)} / {formatNumber(item.plannedQty, language)}
@@ -274,6 +277,11 @@ export function InjectionMachineBoard({
         {renderTrack(item)}
       </div>
     );
+  }
+
+  function planDisplayName(row: MachineBoardRow, plan: ReconciliationPlan) {
+    const segment = row.progress?.segments.find((segment) => segment.planId === plan.plan_id);
+    return getPlanDisplayName(plan.part_no, segment?.modelName);
   }
 
   function renderStops(row: MachineBoardRow) {
@@ -503,7 +511,7 @@ export function InjectionMachineBoard({
               {machine.plans.map((plan) => (
                 <li key={plan.plan_id}>
                   <span>{plan.plan_date.slice(5)} · {mesText("sequence")} {plan.sequence}</span>
-                  <strong>{plan.part_no || "—"}</strong>
+                  <strong>{planDisplayName(row, plan)}</strong>
                   <span>{formatNumber(plan.planned_quantity, language)} · LOT {plan.lot_no || "—"}</span>
                   <span className={`machine-board__badge${assessmentTone(plan.assessment) === "warning" ? " machine-board__badge--warning" : ""}`}>
                     {mesText(`assessment.${plan.assessment}`)}
@@ -518,7 +526,7 @@ export function InjectionMachineBoard({
               {item.segments.map((segment) => (
                 <li key={segment.key}>
                   <span>{mesText("sequence")} {segment.sequence}</span>
-                  <strong>{segment.partNo || "—"}</strong>
+                  <strong>{getPlanDisplayName(segment.partNo, segment.modelName)}</strong>
                   <span>{formatNumber(segment.estimatedQty, language)} / {formatNumber(segment.plannedQty, language)}</span>
                 </li>
               ))}
@@ -785,6 +793,7 @@ export function InjectionMachineBoard({
           <div className="production-progress-list">{machiningRows}</div>
         </div>
       )}
+      {upcomingPlans?.[tab]}
       {actionDialog ? <MesTaskActionDialog items={actionDialog.items} onClose={closeActions} title={actionDialog.title} /> : null}
     </section>
   );

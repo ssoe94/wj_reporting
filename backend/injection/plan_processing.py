@@ -350,13 +350,9 @@ class ProductionPlanProcessor:
         return parsed.date().isoformat()
 
     def _filter_identified_rows(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Injection plans can identify model-only or trial orders without a LOT
-        # number. Machining keeps its existing LOT requirement.
-        identifier_columns = (
-            ("lot_no", "model", "fg_part_no", "sg_part_no", "part_spec")
-            if self.plan_type == "injection"
-            else ("lot_no",)
-        )
+        # Either workbook can identify a plan by its model or part when LOT is
+        # blank. Quantity-only subtotal rows still have no order identity.
+        identifier_columns = ("lot_no", "model", "fg_part_no", "sg_part_no", "part_spec")
         mask = pd.Series(False, index=df.index, dtype=bool)
         for column in identifier_columns:
             if column not in df.columns:

@@ -13928,3 +13928,15 @@ select {
 .injection-board-machine-history dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid #d8e3e9; }
 .injection-board-machine-history dt { color: #506b7c; }
 .injection-board-machine-history dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Daily target cards stay scoped to the selected date; later plans keep their own dates. */
+.production-upcoming-plans { font-size: 14px; }
+.production-upcoming-plans__date { margin-top: 14px; }
+.production-upcoming-plans__date h4 { margin: 0 0 8px; font-size: 14px; font-weight: 650; }
+.production-upcoming-plans__table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 14px; }
+.production-upcoming-plans__table th,
+.production-upcoming-plans__table td { padding: 8px 10px; border-bottom: 1px solid var(--border-color, #dbe5ee); text-align: left; }
+.production-upcoming-plans__table th { font-weight: 650; }
+.production-upcoming-plans__table strong { font-weight: 550; }
+.production-upcoming-plans__table small { display: block; font-size: 14px; opacity: 0.75; }
+.production-upcoming-plans__table .production-upcoming-plans__quantity { text-align: right; font-variant-numeric: tabular-nums; }
