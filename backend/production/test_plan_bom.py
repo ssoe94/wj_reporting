@@ -93,6 +93,10 @@ class PlanBomTests(SimpleTestCase):
             (BOM_DETAIL, {'id': 100}), (ROUTE_DETAIL, {'id': 200})])
         self.assertNotIn('creator', source)
         self.assertNotIn('bomFeedingControls', source['inputs'][0])
+        self.assertEqual([row['feeding_control'] for row in source['inputs']], [
+            {'lineSeq': '10', 'inputAmountNumerator': numerator, 'feedFlag': mandatory,
+             'backFlush': 1, 'inputQcState': '[1,2]', 'limit': 1}
+            for numerator, mandatory in [('3', 0), ('1', 0), ('0.429', 1)]])
 
     def test_only_third_resin_changes_and_whole_fixed_rows_ratios_and_source_remain(self):
         reader = FixtureReader()
@@ -102,7 +106,8 @@ class PlanBomTests(SimpleTestCase):
         self.assertEqual(result[:2], source['inputs'][:2])
         self.assertEqual(result[2]['material_id'], '14')
         self.assertEqual(result[2]['material_code'], 'RESIN')
-        for key in ('source_row_id', 'seq', 'numerator', 'denominator', 'unit_id', 'unit_name', 'replaceable'):
+        for key in ('source_row_id', 'seq', 'numerator', 'denominator', 'unit_id', 'unit_name',
+                    'replaceable', 'feeding_control'):
             self.assertEqual(result[2][key], source['inputs'][2][key])
         self.assertEqual(result[2]['material_version'], '')
         self.assertEqual(source, before)
@@ -120,6 +125,7 @@ class PlanBomTests(SimpleTestCase):
             [{**valid[0], 'material_code': 'OTHER'}, *valid[1:]],
             [{**valid[0], 'numerator': '0.1'}, *valid[1:]],
             [{**valid[0], 'replaceable': True}, *valid[1:]],
+            [{**valid[0], 'feeding_control': {'backFlush': 0}}, *valid[1:]],
             [{**valid[0], 'source_row_id': 101}, *valid[1:]]]
         for rows in bad:
             with self.subTest(rows=rows), self.assertRaises(ValidationError):
@@ -199,7 +205,9 @@ class PlanBomTests(SimpleTestCase):
         reader.bom['bomInputMaterials'][0]['bomFeedingControls'][0]['backFlush'] = enum(0)
         changed = read_bom(PART, 1, reader=reader)
         self.assertNotEqual(initial['hash'], changed['hash'])
-        self.assertEqual(initial['inputs'], changed['inputs'])
+        self.assertEqual(initial['inputs'][0]['feeding_control']['backFlush'], 1)
+        self.assertEqual(changed['inputs'][0]['feeding_control']['backFlush'], 0)
+        self.assertEqual(initial['inputs'][1:], changed['inputs'][1:])
         for change in ('multiple', 'bound', 'upper', 'sop', 'different_ratio'):
             reader = FixtureReader(); row = reader.bom['bomInputMaterials'][0]
             control = row['bomFeedingControls'][0]
@@ -208,6 +216,42 @@ class PlanBomTests(SimpleTestCase):
             if change == 'upper': control['inputUpperLimit'] = '10'
             if change == 'sop': control['inputSopControlCode'] = 'CONTROL'
             if change == 'different_ratio': control['inputAmountNumerator'] = '99'
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                read_bom(PART, 1, reader=reader)
+
+    def test_missing_unknown_or_inexact_controls_never_fall_back_to_master_defaults(self):
+        for change in ('missing', 'null', 'empty', 'multiple', 'line_missing', 'line_zero',
+                       'line_bool', 'line_text', 'mandatory_missing', 'mandatory_unknown',
+                       'backflush_missing', 'backflush_bool', 'feed_type_unknown',
+                       'qc_missing', 'qc_empty', 'qc_duplicate', 'qc_unknown',
+                       'bound_missing', 'bound_unknown', 'denominator_missing', 'denominator_two'):
+            reader = FixtureReader()
+            row = reader.bom['bomInputMaterials'][0]
+            control = row['bomFeedingControls'][0]
+            if change == 'missing': del row['bomFeedingControls']
+            if change == 'null': row['bomFeedingControls'] = None
+            if change == 'empty': row['bomFeedingControls'] = []
+            if change == 'multiple': row['bomFeedingControls'] *= 2
+            if change == 'line_missing': del control['lineSeq']
+            if change == 'line_zero': control['lineSeq'] = 0
+            if change == 'line_bool': control['lineSeq'] = True
+            if change == 'line_text': control['lineSeq'] = '10'
+            if change == 'mandatory_missing': del control['inputMaterialControl']
+            if change == 'mandatory_unknown': control['inputMaterialControl'] = enum(2)
+            if change == 'backflush_missing': del control['backFlush']
+            if change == 'backflush_bool': control['backFlush'] = enum(True)
+            if change == 'feed_type_unknown': control['feedType'] = enum(1)
+            if change == 'qc_missing': del control['inputQcState']
+            if change == 'qc_empty': control['inputQcState'] = []
+            if change == 'qc_duplicate': control['inputQcState'] = [enum(1), enum(1)]
+            if change == 'qc_unknown': control['inputQcState'] = [enum(99)]
+            if change == 'bound_missing': del control['inputBoundType']
+            if change == 'bound_unknown': control['inputBoundType'] = enum(99)
+            if change == 'denominator_missing': del control['inputAmountDenominator']
+            if change == 'denominator_two':
+                # Even matching parent/control ratios cannot be represented by
+                # the documented control-write DTO when denominator is not 1.
+                row['inputAmountDenominator'] = control['inputAmountDenominator'] = '2'
             with self.subTest(change=change), self.assertRaises(ValidationError):
                 read_bom(PART, 1, reader=reader)
 
