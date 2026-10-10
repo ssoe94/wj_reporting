@@ -31,6 +31,10 @@ APP_TOKEN = 'SYNTHETIC-SERVICE-APP-ONLY'
 APP_REFRESHED = 'SYNTHETIC-SERVICE-APP-REFRESHED'
 ORIGIN = 'https://v3-ali.blacklake.cn'
 ROUTE_BASE = '/api/openapi/domain/web/v1/route'
+# ALI response observed before the 2026-10-10 M1 trial (no order data or secrets).
+MISSING_ORDER = {'code': 200066, 'message': '未找到生产工单{0}',
+    'subCode': 'MED-DOMAIN/WORK_ORDER_BASE_WORK_ORDER_NOT_FOUND',
+    'data': None, 'needCheck': 0, 'fieldPermission': None}
 
 
 def synthetic_response(value, *, status=200):
@@ -217,6 +221,42 @@ class PlanServicePersistenceTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(payload['inputMaterialOpenV2COs'][0]['subInputAmountNumerator'], '0.02')
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['materialCode'], 'SYNTHETIC-PART')
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['unitName'], '个')
+        self.assertEqual(payload['inputMaterialOpenV2COs'][0]['version'], 'V1')
+        self.assertEqual(payload['outputMaterialOpenCOs'][0]['version'], 'V1')
+        self.assert_no_transport()
+
+    def test_unversioned_materials_can_be_approved_and_prepared_without_invented_versions(self):
+        self.catalog.payload[0]['material']['version'] = None
+        self.catalog.save(update_fields=['payload'])
+        data = approval_data(self.plan)
+        data['inputs'][0]['material_version'] = ''
+        approval = self.approve(inputs=data['inputs'], output_version=None)
+        self.assertEqual(approval.snapshot['output_version'], '')
+        self.assertEqual(approval.snapshot['inputs'][0]['material_version'], '')
+        payload = self.prepare().contract['payload']
+        self.assertNotIn('version', payload['inputMaterialOpenV2COs'][0])
+        self.assertNotIn('version', payload['outputMaterialOpenCOs'][0])
+        self.assertEqual(payload['inputMaterialOpenV2COs'][0]['subInputAmountNumerator'], '0.02')
+        self.assert_no_transport()
+
+    def test_blank_input_version_preserves_a_version_from_the_selected_mes_catalog(self):
+        data = approval_data(self.plan)
+        data['inputs'][0]['material_version'] = ''
+        approval = self.approve(inputs=data['inputs'])
+        self.assertEqual(approval.snapshot['inputs'][0]['material_version'], 'V1')
+        self.assertEqual(self.prepare().contract['payload']['inputMaterialOpenV2COs'][0]['version'], 'V1')
+        self.assert_no_transport()
+
+    def test_optional_versions_still_reject_invalid_types_and_placeholder_values(self):
+        for value in (False, 0, [], {}, '-', 'x' * 256):
+            for field in ('input', 'output'):
+                with self.subTest(value=value, field=field):
+                    data = approval_data(self.plan)
+                    if field == 'input': data['inputs'][0]['material_version'] = value
+                    else: data['output_version'] = value
+                    result = self.action('approve', plan_id=self.plan.pk, **data)
+                    self.assertEqual(result.status_code, 400, result.data)
+        self.assertFalse(PlanMaterialApproval.objects.exists())
         self.assert_no_transport()
 
 
@@ -329,6 +369,76 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         result = self.dispatch()
         self.assertEqual(result['state'], 'created')
         self.assertEqual(result['mes_id'], WORK_ID)
+
+    def test_observed_missing_order_and_null_success_envelopes_create_once_with_readback(self):
+        from .plan_service_transport import LIST_PATH, BASE_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        from .plan_workflow import WorkflowConflict
+        original_sender = self.sender
+
+        def observed_envelopes(url, **kwargs):
+            response = original_sender(url, **kwargs)
+            body = parse_json_exact(response.content)
+            if url.endswith(LIST_PATH) and body['data']['total'] == 0:
+                return synthetic_response(MISSING_ORDER)
+            return synthetic_response({**body, 'needCheck': None})
+
+        result = self.dispatch(transport=self.service(sender=observed_envelopes))
+        self.assertEqual((result['state'], result['mes_id']), ('created', WORK_ID))
+        self.assertEqual(self.paths(), [LIST_PATH, CREATE_PATH, LIST_PATH, BASE_PATH])
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.attempt, 1)
+        with self.assertRaises(WorkflowConflict):
+            self.dispatch()
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_similar_missing_order_errors_never_authorize_import(self):
+        from .plan_service_transport import LIST_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        cases = [
+            {**MISSING_ORDER, 'code': 3500060},
+            {**MISSING_ORDER, 'code': '200066'},
+            {**MISSING_ORDER, 'subCode': 'OTHER_NOT_FOUND'},
+            {**MISSING_ORDER, 'data': {}},
+            {key: value for key, value in MISSING_ORDER.items() if key != 'data'},
+            *[{**MISSING_ORDER, 'needCheck': value} for value in (None, 1, False, '0')],
+            {**MISSING_ORDER, 'fieldPermission': {'noAccess': ['workOrderCode']}},
+            {**MISSING_ORDER, 'fieldPermission': []},
+        ]
+        for body in cases:
+            with self.subTest(body=body):
+                self.scripts[LIST_PATH] = [synthetic_response(body)]
+                result = self.dispatch()
+                self.assertEqual(result['state'], 'failed')
+                self.assertNotIn(CREATE_PATH, self.paths())
+                self.req.refresh_from_db()
+                self.assertEqual(self.req.attempt, 0)
+
+    def test_missing_order_envelope_is_rejected_outside_exact_list_lookup(self):
+        from .plan_service_transport import LIST_PATH, BASE_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        from .plan_workflow_transport import PlanTransportError
+        for path, payload in ((BASE_PATH, {'workOrderCode': 'SYNTHETIC'}),
+                (CREATE_PATH, {'code': 'SYNTHETIC'}),
+                (LIST_PATH, {'workOrderCode': 'SYNTHETIC'}),
+                (LIST_PATH, {'exactWorkOrderCode': ' '})):
+            with self.subTest(path=path, payload=payload):
+                transport = self.service(sender=Mock(return_value=synthetic_response(MISSING_ORDER)))
+                with self.assertRaises(PlanTransportError):
+                    transport._post(path, payload, write=path == CREATE_PATH)
+
+    def test_null_need_check_does_not_relax_http_or_field_permissions(self):
+        from .plan_service_transport import _body
+        from .plan_workflow_transport import PlanTransportError
+        for status in (401, 403, 500):
+            with self.subTest(status=status), self.assertRaises(PlanTransportError):
+                _body(synthetic_response({'code': 200, 'needCheck': None}, status=status))
+        with self.assertRaises(PlanTransportError):
+            _body(synthetic_response({'code': 200, 'needCheck': None,
+                'fieldPermission': {'noAccess': ['id']}}))
+        for value in (False, True, '0', 1, -1):
+            with self.subTest(needCheck=value), self.assertRaises(PlanTransportError):
+                _body(synthetic_response({'code': 200, 'needCheck': value}))
 
     def test_http_401_refreshes_only_service_app_once_then_uses_it_for_import_and_reads(self):
         from .plan_service_transport import LIST_PATH

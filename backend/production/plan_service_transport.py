@@ -41,7 +41,7 @@ def _identifier(value):
 
 
 @sensitive_variables()
-def _body(response):
+def _body(response, *, exact_code_lookup=False):
     if getattr(response, 'history', ()):
         raise PlanTransportError('redirect_rejected')
     if response.status_code == 401:
@@ -62,9 +62,17 @@ def _body(response):
         raise PlanTransportError('app_authentication_rejected')
     if body.get('subCode') == 'URL_NO_PERMISSION' or body.get('code') in (403, 3500060):
         raise PlanTransportError('permission_required')
-    if type(body.get('code')) is not int or body['code'] != 200:
+    # Observed ALI exact-code lookup: an absent order is a domain error,
+    # not an empty page. Never accept this envelope on detail or write routes.
+    missing_order = (exact_code_lookup and type(body.get('code')) is int
+        and body['code'] == 200066
+        and body.get('subCode') == 'MED-DOMAIN/WORK_ORDER_BASE_WORK_ORDER_NOT_FOUND'
+        and 'data' in body and body['data'] is None
+        and type(body.get('needCheck')) is int and body['needCheck'] == 0)
+    if (type(body.get('code')) is not int or body['code'] != 200) and not missing_order:
         raise PlanTransportError('provider_result_rejected')
-    if 'needCheck' in body and (type(body['needCheck']) is not int or body['needCheck'] != 0):
+    # Successful ALI reads and import ACKs include this optional field as null.
+    if body.get('needCheck') is not None and (type(body['needCheck']) is not int or body['needCheck'] != 0):
         raise PlanTransportError('write_confirmation_required')
     permissions = body.get('fieldPermission')
     if permissions is not None and (not isinstance(permissions, dict)
@@ -116,7 +124,9 @@ class PlanMesServiceTransport:
                     params={'access_token': self._token}, data=encode_exact_json(payload),
                     headers={'Content-Type': 'application/json'}, timeout=(3, 15 if write else 7),
                     allow_redirects=False)
-                return _body(response)
+                return _body(response, exact_code_lookup=(path == LIST_PATH
+                    and type(payload.get('exactWorkOrderCode')) is str
+                    and bool(payload['exactWorkOrderCode'].strip())))
             except PlanTransportError as error:
                 # Only explicit 401 proves an authentication rejection. An
                 # uncertain HTTP result or timeout never retries a write.
@@ -132,6 +142,8 @@ class PlanMesServiceTransport:
 
     def find_by_code(self, code):
         body = self._post(LIST_PATH, {'exactWorkOrderCode': code, 'page': 1, 'size': 25})
+        if body['code'] == 200066:
+            return None
         node = body.get('data')
         if (not isinstance(node, dict) or type(node.get('total')) is not int or node['total'] not in (0, 1)
                 or type(node.get('page')) is not int or node['page'] != 1

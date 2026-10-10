@@ -129,6 +129,19 @@ class PlanWorkflowTests(TestCase):
         self.assertEqual(snapshot(new)['planned_quantity'], baseline_quantity)
         self.assertEqual(digest(snapshot(new)), revision.fingerprint)
 
+    def test_absent_mold_allows_one_day_preparation_without_merging_adjacent_days(self):
+        first = new_plan(day=8, actor=self.user)
+        second = new_plan(day=9, actor=self.user)
+        for plan in (first, second): self.approve(plan, mold_code='')
+        groups = self.groups()
+        self.assertEqual([g['members'] for g in groups], [[str(first.work_uid)], [str(second.work_uid)]])
+        self.assertTrue(all(g['setup']['mold_code'] == '' and not g['blockers'] for g in groups))
+        results = prepare(date(2026, 10, 8), date(2026, 10, 8), 'injection', [groups[0]['key']], self.user)
+        request = PlanMesRequest.objects.get(uid=results[0]['uid'])
+        self.assertEqual(request.intent['quantity'], '1000.0')
+        self.assertEqual(request.work_order.members, [str(first.work_uid)])
+        self.assertEqual(request.intent['planned_end'], '2026-10-09T08:00:00+08:00')
+
     def test_campaign_total_limit_blocks_whole_campaign_without_splitting(self):
         plans = [new_plan(day=day, quantity=800000000000000, actor=self.user) for day in (8, 9, 10)]
         for plan in plans: self.approve(plan)
