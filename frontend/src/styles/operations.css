@@ -5158,6 +5158,7 @@ select {
 
 .plan-hero {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -5176,8 +5177,11 @@ select {
 
 .plan-hero__controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
   padding: 10px;
   border: 1px solid rgba(0, 142, 195, 0.12);
@@ -5398,8 +5402,11 @@ select {
 
 .plan-hero__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .plan-hero__link {
@@ -5412,8 +5419,10 @@ select {
 
 .plan-hero__actions .button {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
   min-height: 38px;
   padding: 0 16px;
   border: 1px solid rgba(0, 142, 195, 0.18);

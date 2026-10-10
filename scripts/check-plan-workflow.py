@@ -83,16 +83,18 @@ elif preview:
         'amount': {'amount': '20', 'unit': {'id': '2', 'name': 'KG'}}})
     catalog.save(update_fields=['payload'])
     for day, quantity in [(8, 1000), (9, 1000), (10, 300)]:
-        plan = new_plan(day=day, quantity=quantity, actor=user)
+        plan = new_plan(day=day, quantity=quantity, actor=user, part_spec='SYNTHETIC SPEC')
         approve_materials(plan, approval_data(plan), user)
-    new_plan(day=8, part='SYNTHETIC-UNCONFIRMED', machine='imm02', actor=user)
+    new_plan(day=8, part='SYNTHETIC-UNCONFIRMED', machine='imm02', actor=user, part_spec='SYNTHETIC SPEC')
     # Several orders on a small monitor; all isolated fixtures, no MES masters.
     for index in range(3, 7):
-        plan = new_plan(day=8, part=f'SYNTHETIC-P{index:02}', machine=f'imm{index:02}', actor=user)
+        plan = new_plan(day=8, part=f'SYNTHETIC-P{index:02}', machine=f'imm{index:02}', actor=user,
+            part_spec='SYNTHETIC SPEC')
         approved = approval_data(plan)
         approved['resource_code'] = f'SYNTHETIC-IMM{index:02}'
         approve_materials(plan, approved, user)
     synthetic_parts = frozenset(ProductionPlan.objects.values_list('part_no', flat=True))
+    synthetic_material_ids = {part: 17000000000010000 + index for index, part in enumerate(sorted(synthetic_parts))}
 
     class SyntheticBomReader(FixtureReader):
         """Only the seeded local plans and the one synthetic resin replacement exist."""
@@ -116,17 +118,30 @@ elif preview:
                     raise AssertionError('Unexpected synthetic BOM detail request')
             elif path == MATERIAL_LIST:
                 if payload != {'codes': ['RESIN'], 'queryFieldList': [1, 4]}:
-                    raise AssertionError('Unexpected synthetic material replacement')
+                    codes = payload.get('codes')
+                    if (not isinstance(codes, list) or not 1 <= len(codes) <= 100
+                            or not all(isinstance(code, str) and code in synthetic_parts for code in codes)
+                            or len(set(codes)) != len(codes)
+                            or payload != {'codes': codes, 'queryFieldList': [1, 4]}):
+                        raise AssertionError('Unexpected synthetic material master read')
+                    data = [{'baseInfo': {'id': synthetic_material_ids[code], 'code': code,
+                        'specification': 'SYNTHETIC EXISTING SPEC' if code == 'SYNTHETIC-PART' else None},
+                        'category': {'code': 'SYNTHETIC-EXISTING', 'name': '既有分类'} if code == 'SYNTHETIC-PART' else None,
+                        'categoryAllLevel': None} for code in codes]
+                    self.calls.append((path, payload))
+                    return {'code': 200, 'data': data, 'needCheck': None, 'fieldPermission': None}
             else:
                 raise AssertionError('Only synthetic BOM reads are available')
             return super().post(path, payload)
 
     with patch('requests.sessions.Session.request', side_effect=AssertionError('MES network forbidden in synthetic preview')), \
-            patch('production.plan_bom.BomReader', SyntheticBomReader):
+            patch('production.plan_bom.BomReader', SyntheticBomReader), \
+            patch('production.plan_master_gaps.BomReader', SyntheticBomReader):
         call_command('runserver', f'127.0.0.1:{preview_port}', use_reloader=False)
 else:
     from django.test.runner import DiscoverRunner
-    labels = ['production.test_plan_bom', 'production.test_plan_bom_views', 'production.test_plan_service_transport', 'production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials', 'production.test_plan_workflow', 'production.test_plan_workflow_read_context', 'production.test_plan_workflow_performance', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
+    labels = ['production.test_plan_master_gaps', 'production.test_plan_master_gaps_views',
+        'production.test_plan_bom', 'production.test_plan_bom_views', 'production.test_plan_service_transport', 'production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials', 'production.test_plan_workflow', 'production.test_plan_workflow_read_context', 'production.test_plan_workflow_performance', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
         'production.test_plan_workflow_concurrency', 'production.test_mes_delivery', 'production.test_mes_task_actions', 'injection.tests']
     if '--diagnostic' in sys.argv:
         labels = ['production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials']

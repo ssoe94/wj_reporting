@@ -102,6 +102,17 @@ class PlanWorkflowView(APIView):
     def get(self, request):
         start, end, plan_type = scope(request.query_params)
         if not user_can_view_plan(request.user, plan_type): raise PermissionDenied()
+        if request.query_params.get('action') == 'master_gaps':
+            if not request.user.is_active: raise PermissionDenied()
+            if plan_type != 'injection':
+                raise ValidationError('mes_master_injection_spec_only')
+            from .plan_master_gaps import read_master_gaps
+            plans = ProductionPlan.objects.filter(plan_type=plan_type, plan_date__range=(start, end))\
+                .order_by('part_no', 'plan_date', 'machine_name', 'id')
+            try:
+                return Response(read_master_gaps(plans, request.user.pk))
+            except PlanTransportError as error:
+                return Response({'detail': error.code}, status=502)
         if request.query_params.get('action') == 'bom':
             plan = selected_plan(request.query_params.get('plan_id'), start, end, plan_type)
             try:

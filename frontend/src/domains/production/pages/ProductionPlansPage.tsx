@@ -1,3 +1,4 @@
+import { PlanMasterGapsModal } from "../components/PlanMasterGapsModal";
 import { PlanWorkflowPanel } from "../components/PlanWorkflowPanel";
 import { buildCavityEditPartNos } from "../cavity-edit-payload";
 import { refreshPlanQueriesAfterSave } from "../plan-save-refresh";
@@ -838,6 +839,17 @@ export function ProductionPlansPage() {
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
   const [workflowOpenRequest, setWorkflowOpenRequest] = useState(0);
+  const [masterGapsDate, setMasterGapsDate] = useState<string | null>(null);
+  const masterGapsTriggerRef = useRef<HTMLButtonElement>(null);
+  const masterGapsFromReport = useRef(false);
+  const closeMasterGaps = () => {
+    setMasterGapsDate(null);
+    if (masterGapsFromReport.current) {
+      masterGapsFromReport.current = false;
+      window.requestAnimationFrame(() => masterGapsTriggerRef.current?.focus());
+    }
+  };
+  const masterGapsLabel = language === "ko" ? "MES 규격·분류 공란 확인" : "检查 MES 规格·分类空白";
   const [uploadChangeReport, setUploadChangeReport] = useState<UploadChangeReport | null>(null);
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -2291,6 +2303,8 @@ export function ProductionPlansPage() {
             ) : null}
           </div>
           <div className="plan-hero__actions">
+            {!isViewingLocalSample && <button ref={masterGapsTriggerRef} className="button button--ghost button--mini" type="button" title={masterGapsLabel} aria-label={masterGapsLabel}
+              onClick={() => setMasterGapsDate(selectedDate)}>{language === "ko" ? "MES 공란 확인" : "MES 空白核对"}</button>}
             {canLoadLocalSample ? (
               <button
                 className="button button--ghost plan-hero__sample"
@@ -2323,6 +2337,8 @@ export function ProductionPlansPage() {
           {uploadStatus.message}
           {uploadStatus.tone === "success" && !isViewingLocalSample && <a href="#plan-mes-workflow" className="button button--ghost"
             onClick={() => setWorkflowOpenRequest(value => value + 1)}>{language === "ko" ? "자재·원료 확인으로 이동" : "前往用料确认"}</a>}
+          {uploadStatus.tone === "success" && !isViewingLocalSample && <button className="button button--ghost" type="button"
+            onClick={() => setMasterGapsDate(selectedDate)}>{masterGapsLabel}</button>}
         </div>
       ) : null}
 
@@ -2554,12 +2570,18 @@ export function ProductionPlansPage() {
               </button>
             </div>
 
+            <button className="button button--ghost" type="button" onClick={() => {
+              masterGapsFromReport.current = true;
+              setMasterGapsDate(uploadChangeReport.date);
+              setUploadChangeReport(null);
+            }}>{masterGapsLabel}</button>
             <div className="change-report-grid">
               {uploadChangeReport.processes.map(renderProcessChange)}
             </div>
           </section>
         </div>
       ) : null}
+      {masterGapsDate && <PlanMasterGapsModal date={masterGapsDate} language={language} onClose={closeMasterGaps} />}
 
     </section>
   );
