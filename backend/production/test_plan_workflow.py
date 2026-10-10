@@ -422,13 +422,34 @@ class PlanWorkflowTests(TestCase):
         self.assertIn(self.client.get('/api/production/plan-workflow/').status_code,(401,403))
 
     def test_material_approval_api_roundtrip_preserves_exact_ids_and_actor(self):
-        plan=new_plan(actor=self.user)
-        scope={'start':'2026-10-08','end':'2026-10-08','plan_type':'injection','plan_id':plan.pk,'action':'approve'}
-        response=self.client.post('/api/production/plan-workflow/',{**scope,**approval_data(plan)},format='json')
-        self.assertEqual(response.status_code,201,response.data)
-        self.assertEqual(response.data['snapshot']['inputs'][0]['material_id'],'17000000000000001')
-        self.assertEqual(PlanMaterialApproval.objects.get().actor_id,self.user.pk)
-        self.assertEqual(PlanMaterialDefault.objects.count(),0)
+        from .plan_bom import read_bom, resolve_inputs
+        from .test_plan_bom import FixtureReader, PART, submitted
+        plan = new_plan(part=PART, actor=self.user)
+        reader = FixtureReader()
+        first = reader.bom['bomInputMaterials'][0]
+        first['id'] = 17000000000000011
+        first['materialId'] = first['material']['baseInfo']['id'] = 17000000000000001
+        first['unitId'] = first['material']['unitList'][0]['id'] = 17000000000000002
+        source = read_bom(PART, self.user.pk, reader=reader)
+        payload = {'start': '2026-10-08', 'end': '2026-10-08', 'plan_type': 'injection',
+            'plan_id': plan.pk, 'action': 'approve', 'uid': str(plan.work_uid), 'version': plan.work_version,
+            'bom_hash': source['hash'], 'bom_version': source['version'], 'inputs': submitted(source),
+            'resource_code': 'SYNTHETIC-IMM01', 'mold_code': '', 'reason': 'SYNTHETIC complete BOM review'}
+        with patch('production.plan_workflow_views.read_bom', return_value=source) as read, \
+                patch('production.plan_workflow_views.resolve_inputs', side_effect=lambda bom, rows, actor:
+                    resolve_inputs(bom, rows, actor, reader=reader)) as resolve:
+            response = self.client.post('/api/production/plan-workflow/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        saved = response.json()['snapshot']
+        self.assertEqual(len(saved['inputs']), 3)
+        self.assertEqual(saved['inputs'][0]['material_id'], '17000000000000001')
+        self.assertEqual(saved['inputs'][0]['unit_id'], '17000000000000002')
+        self.assertEqual(saved['inputs'][0]['source_row_id'], '17000000000000011')
+        self.assertEqual(saved['bom_source'], source)
+        read.assert_called_once_with(PART, self.user.pk)
+        self.assertEqual(resolve.call_args.args[2], self.user.pk)
+        self.assertEqual(PlanMaterialApproval.objects.get().actor_id, self.user.pk)
+        self.assertEqual(PlanMaterialDefault.objects.count(), 0)
 
     def test_invalid_range_and_direct_write_action_rejected(self):
         response=self.client.get('/api/production/plan-workflow/?start=2026-10-08&end=2026-12-08&plan_type=injection')

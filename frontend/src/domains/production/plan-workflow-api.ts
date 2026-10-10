@@ -1,9 +1,10 @@
 import { http } from "@/shared/api/http";
 import type { PlanType } from "./api";
+import type { PlanBomSource } from "./components/PlanBomInputs";
 export type MaterialOption = { key: string; material_id: string; material_code: string; material_name: string;
   material_version: string; unit_id: string; unit_name: string; selectable: boolean };
-export type MaterialInput = MaterialOption & { numerator: string; denominator: string; required_quantity: string };
-export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[] };
+export type MaterialInput = MaterialOption & { source_row_id?: string; numerator: string; denominator: string; required_quantity: string };
+export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[]; bom_source?: PlanBomSource };
 export type WorkflowRow = { id: number; uid: string; version: number; plan_date: string; machine_name: string;
   part_no: string; planned_quantity: string; default_version: number; identity_state: string; candidates: string[];
   lot_no?: string; model_name?: string; part_spec?: string;
@@ -24,6 +25,9 @@ export type WorkflowData = { write_enabled: boolean; can_edit: boolean; can_mana
 export type WorkflowScope = { start: string; end: string; plan_type: PlanType };
 export async function getPlanWorkflow(scope: WorkflowScope) {
   return (await http.get<WorkflowData>("/production/plan-workflow/", { params: scope })).data;
+}
+export async function getPlanBom(scope: WorkflowScope, planId: number): Promise<PlanBomSource> {
+  return (await http.get<PlanBomSource>("/production/plan-workflow/", { params: { ...scope, action: "bom", plan_id: planId } })).data;
 }
 export async function changePlanWorkflow(scope: WorkflowScope, data: Record<string, unknown>) {
   return (await http.post("/production/plan-workflow/", { ...scope, ...data })).data;

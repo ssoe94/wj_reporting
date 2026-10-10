@@ -282,10 +282,16 @@ def approve_materials(plan, data, actor):
     setup['output_unit_id'] = exact_id(data.get('output_unit_id'))
     setup['inputs'] = sorted(inputs, key=lambda row: row['material_id'])
     setup['source_refreshed_at'] = catalog['refreshed_at']
+    return save_material_approval(plan, setup, actor, data.get('reason'))
+
+
+def save_material_approval(plan, setup, actor, reason):
+    """Persist an already validated complete input snapshot using the existing audit."""
+    work = PlanWorkIdentity.objects.get(uid=plan.work_uid)
     setup['quantity'] = decimal_text(str(plan.planned_quantity))
     setup['uid'], setup['version'] = str(plan.work_uid), plan.work_version
     revision = work.revisions.get(version=plan.work_version)
-    reason = text(data.get('reason'), 500)
+    reason = text(reason, 500)
     previous = revision.approvals.order_by('-id').first()
     if (previous and previous.fingerprint == digest(setup)
             and previous.actor_id == actor.pk and previous.reason == reason):

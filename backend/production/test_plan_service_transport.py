@@ -98,12 +98,15 @@ class PlanServiceFixture:
     def action(self, action, **fields):
         return self.api.post(URL, {**SCOPE, 'action': action, **fields}, format='json')
 
-    def approve(self, plan=None, **changes):
+    def approve(self, plan=None, *, server_actor=None, **changes):
         plan = plan or self.plan
         data = {**approval_data(plan), **changes}
-        result = self.action('approve', plan_id=plan.pk, **data)
-        self.assertEqual(result.status_code, 201, result.data)
-        return PlanMaterialApproval.objects.get(pk=result.data['approval_id'])
+        # Historical stored contracts remain valid; new HTTP approvals are
+        # covered by test_plan_bom_views and must read the complete live BOM.
+        from .plan_workflow import approve_materials, lock_type
+        with transaction.atomic():
+            lock_type(plan.plan_type)
+            return approve_materials(plan, data, server_actor or self.user)
 
     def prepare(self, plan=None):
         plan = plan or self.plan
@@ -126,7 +129,7 @@ class PlanServiceFixture:
             token_provider=self.token_provider, sender=sender or self.sender)
 
     def sender(self, url, **kwargs):
-        from .plan_service_transport import LIST_PATH, BASE_PATH
+        from .plan_service_transport import LIST_PATH, BASE_PATH, INPUT_PATH
         from .plan_workflow_contract import CREATE_PATH
         self.assertFalse(kwargs['allow_redirects'])
         self.assertEqual(kwargs['headers']['Content-Type'], 'application/json')
@@ -156,6 +159,11 @@ class PlanServiceFixture:
                 if code in self.created_codes else [])
             return synthetic_response({'code': 200, 'needCheck': 0,
                 'data': {'list': rows, 'total': len(rows), 'page': 1}})
+        if path == INPUT_PATH:
+            code = payload['workOrderCode']
+            self.assertEqual(payload, {'workOrderCode': code, 'workOrderId': int(WORK_ID), 'warehouseFlag': False})
+            req = PlanMesRequest.objects.select_related('work_order').get(work_order__code=code)
+            return synthetic_response({'code': 200, 'needCheck': None, 'data': self.input_rows(req)})
         self.assertEqual(path, BASE_PATH)
         code = payload['workOrderCode']
         self.assertEqual(payload, {'workOrderCode': code, 'workOrderId': int(WORK_ID), 'warehouseFlag': False})
@@ -1047,7 +1055,7 @@ class PlanServiceHistoryTests(PlanServiceFixture, TransactionTestCase):
 
     def test_wj_revision_approval_and_preparation_keep_each_server_actor_despite_client_actor_fields(self):
         self.api.force_authenticate(self.other)
-        approval = self.approve(actor=self.user.pk, actor_id=self.user.pk)
+        approval = self.approve(server_actor=self.other, actor=self.user.pk, actor_id=self.user.pk)
         preparer = get_user_model().objects.create_user(
             username='SYNTHETIC-service-plan-preparer', is_staff=True, is_superuser=True)
         self.api.force_authenticate(preparer)
@@ -1073,3 +1081,254 @@ class PlanServiceHistoryTests(PlanServiceFixture, TransactionTestCase):
         for query in queries:
             self.assertFalse(query['sql'].lstrip().upper().startswith(('INSERT ', 'UPDATE ', 'DELETE ')))
         self.assert_no_transport()
+
+
+@override_settings(MES_PLAN_REVIEWED_CONTRACT=None, MES_PLAN_WRITES_ENABLED=True)
+class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
+    """New HTTP approvals must revalidate the recipe before reserving a write."""
+
+    def setUp(self):
+        super().setUp()
+        from .plan_bom import read_bom, resolve_inputs
+        from .test_plan_bom import FixtureReader, PART, submitted
+        self.assertEqual(self.plan.part_no, PART)
+        self.reader = FixtureReader()
+        self.source = read_bom(PART, self.user.pk, reader=self.reader)
+        with patch('production.plan_workflow_views.read_bom',
+                side_effect=lambda part, actor: read_bom(part, actor, reader=self.reader)) as read, \
+                patch('production.plan_workflow_views.resolve_inputs',
+                    side_effect=lambda source, rows, actor:
+                        resolve_inputs(source, rows, actor, reader=self.reader)) as resolve:
+            response = self.action('approve', plan_id=self.plan.pk,
+                uid=str(self.plan.work_uid), version=self.plan.work_version,
+                bom_hash=self.source['hash'], bom_version=self.source['version'],
+                inputs=submitted(self.source, 'RESIN'), resource_code='SYNTHETIC-IMM01',
+                mold_code='', reason='SYNTHETIC complete BOM with confirmed resin')
+        self.assertEqual(response.status_code, 201, response.data)
+        read.assert_called_once_with(PART, self.user.pk)
+        self.assertEqual(resolve.call_args.args[2], self.user.pk)
+        self.approval = PlanMaterialApproval.objects.get(pk=response.data['approval_id'])
+        self.assertEqual(self.approval.snapshot['bom_source'], self.source)
+        self.assertEqual([row['material_code'] for row in self.approval.snapshot['inputs']],
+            ['HARDWARE-A', 'HARDWARE-B', 'RESIN'])
+        self.prepare()
+        self.assertEqual(self.req.intent['setup']['bom_source'], self.source)
+        self.assertEqual((self.req.attempt, self.req.actor_id), (0, self.user.pk))
+        self.assert_no_transport()
+        self.reader.calls.clear()
+
+    def input_rows(self, req=None):
+        # Observed input-detail shape: the create response is never substituted
+        # for this independently read list or its nested control values.
+        from .test_plan_bom import enum
+        req = req or self.req
+        return [{'id': 700 + index, 'seq': row['seq'], 'materialId': int(row['material_id']),
+            'material': {'baseInfo': {'id': int(row['material_id']), 'code': row['material_code']}},
+            'unitId': int(row['unit_id']), 'unitName': row['unit_name'],
+            'inputAmountNumerator': row['numerator'], 'inputAmountDenominator': row['denominator'],
+            'specificProcessInput': 1, 'inputProcessId': 701, 'inputProcessNum': '10',
+            'bomFeedingControls': [{'lineSeq': 10, 'inputAmountNumerator': row['numerator'],
+                'inputAmountDenominator': '1', 'inputMaterialControl': 1 if index == 2 else 0,
+                'backFlush': 1, 'inputQcState': [enum(1), enum(2)], 'inputBoundType': enum(1),
+                'feedType': enum(0), 'inputUpperLimit': None, 'inputLowerLimit': None,
+                'inputUpperLimitRatio': None, 'inputLowerLimitRatio': None,
+                'singleFeedMaterialAmount': None, 'inputSopControlId': None, 'inputSopControlDTO': None}]
+            } for index, row in enumerate(req.intent['setup']['inputs'])]
+
+    def send_bom(self, *, validation_error=None, resolved_transform=None):
+        from .plan_bom import resolve_inputs, validate_source
+
+        def validate(source, actor):
+            self.req.refresh_from_db()
+            self.assertEqual((self.req.state, self.req.attempt), ('checking', 0))
+            self.assertFalse(connection.in_atomic_block)
+            if validation_error is not None:
+                raise validation_error
+            return validate_source(source, actor, reader=self.reader)
+
+        def resolve(source, rows, actor):
+            result = resolve_inputs(source, rows, actor, reader=self.reader)
+            return resolved_transform(result) if resolved_transform else result
+
+        with patch('production.plan_bom.validate_source', side_effect=validate) as validate_call, \
+                patch('production.plan_bom.resolve_inputs', side_effect=resolve) as resolve_call, \
+                patch('production.plan_workflow_views.PlanMesServiceTransport',
+                    side_effect=lambda *, actor_id:
+                        self.service(actor=get_user_model().objects.get(pk=actor_id))):
+            response = self.action('send', request_uids=[str(self.req.uid)])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.validate_call, self.resolve_call = validate_call, resolve_call
+        return response.data['results'][0]
+
+    def assert_bom_rejected_before_create(self, result):
+        from .plan_service_transport import LIST_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['blockers'], ['mes_bom_changed_or_unavailable'])
+        self.assertEqual(self.paths(), [LIST_PATH])
+        self.assertEqual(self.paths().count(CREATE_PATH), 0)
+        self.req.refresh_from_db()
+        self.req.work_order.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt), ('failed', 0))
+        self.assertFalse(self.req.work_order.mes_id)
+        self.assertFalse(self.req.events.filter(state='sending').exists())
+        self.assertEqual(PlanMaterialApproval.objects.count(), 1)
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.snapshot['bom_source'], self.source)
+
+    def test_changed_recipe_hash_stops_before_import_attempt(self):
+        # A valid changed recipe must fail the saved-source comparison.
+        row = self.reader.bom['bomInputMaterials'][0]
+        row['inputAmountNumerator'] = '4'
+        row['bomFeedingControls'][0]['inputAmountNumerator'] = '4'
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.validate_call.assert_called_once_with(self.source, self.user.pk)
+        self.resolve_call.assert_not_called()
+
+    def test_source_permission_error_stops_before_import_attempt(self):
+        from .plan_workflow_transport import PlanTransportError
+        self.assert_bom_rejected_before_create(
+            self.send_bom(validation_error=PlanTransportError('permission_required')))
+        self.resolve_call.assert_not_called()
+
+    def test_malformed_fresh_source_stops_before_import_attempt(self):
+        self.reader.page['total'] = 2
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.resolve_call.assert_not_called()
+
+    def test_replacement_material_identity_drift_stops_before_import_attempt(self):
+        # Same code/category/unit, but a different master identity is not the
+        # material the operator approved; resolve itself otherwise accepts it.
+        self.reader.materials[0]['baseInfo']['id'] = 15
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.assertEqual(self.resolve_call.call_count, 1)
+
+    def test_replacement_unit_identity_drift_stops_before_import_attempt(self):
+        self.reader.materials[0]['unitList'][0]['id'] = 3
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.assertEqual(self.resolve_call.call_count, 1)
+
+    def test_replacement_unit_name_drift_stops_before_import_attempt(self):
+        self.reader.materials[0]['unitList'][0]['name'] = 'G'
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.assertEqual(self.resolve_call.call_count, 1)
+
+    def test_source_control_change_stops_before_import_attempt(self):
+        from .test_plan_bom import enum
+        self.reader.bom['bomInputMaterials'][0]['bomFeedingControls'][0]['backFlush'] = enum(0)
+        self.assert_bom_rejected_before_create(self.send_bom())
+        self.resolve_call.assert_not_called()
+
+    def test_resolved_controls_must_still_match_the_approved_snapshot(self):
+        def changed(rows):
+            rows[0]['feeding_control']['backFlush'] = 0
+            return rows
+        self.assert_bom_rejected_before_create(self.send_bom(resolved_transform=changed))
+        self.assertEqual(self.resolve_call.call_count, 1)
+
+    def test_matching_fresh_bom_and_replacement_create_once_for_authenticated_sender(self):
+        from .plan_bom import MATERIAL_LIST
+        from .plan_service_transport import BASE_PATH, LIST_PATH, INPUT_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        self.api.force_authenticate(self.other)
+        result = self.send_bom()
+        self.assertEqual((result['state'], result['mes_id']), ('created', WORK_ID))
+        self.validate_call.assert_called_once_with(self.source, self.other.pk)
+        self.assertEqual(self.resolve_call.call_args.args[2], self.other.pk)
+        self.assertIn((MATERIAL_LIST, {'codes': ['RESIN'], 'queryFieldList': [1, 4]}), self.reader.calls)
+        self.assertEqual(self.paths(), [LIST_PATH, CREATE_PATH, LIST_PATH, BASE_PATH, INPUT_PATH, BASE_PATH])
+        payload = next(call['payload'] for call in self.calls if call['path'] == CREATE_PATH)
+        self.assertEqual([(row['seq'], row['materialCode'], row['subInputAmountNumerator'],
+            row['subInputAmountDenominator'], row['unitName']) for row in payload['inputMaterialOpenV2COs']],
+            [('20', 'HARDWARE-A', '3', '1', '个'), ('30', 'HARDWARE-B', '1', '1', '个'),
+             ('40', 'RESIN', '0.429', '1', 'KG')])
+        self.assertEqual([row['inputMaterialControlOpenCOs'] for row in payload['inputMaterialOpenV2COs']], [
+            [{'lineSeq': '10', 'inputAmountNumerator': numerator, 'feedFlag': mandatory,
+              'backFlush': 1, 'inputQcState': '[1,2]', 'limit': 1}]
+            for numerator, mandatory in [('3', 0), ('1', 0), ('0.429', 1)]])
+        self.req.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt, self.req.actor_id), ('created', 1, self.user.pk))
+        self.assertEqual(self.req.events.get(state='sending').evidence['actor_id'], self.other.pk)
+        self.assertEqual(self.send_bom()['state'], 'blocked')
+        self.validate_call.assert_not_called()
+        self.resolve_call.assert_not_called()
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_old_wj_hardware_defaults_require_review_and_read_only_recheck_never_resends(self):
+        from .plan_service_transport import INPUT_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        rows = self.input_rows()
+        for row in rows[:2]:
+            row['bomFeedingControls'][0].update(inputMaterialControl=1, backFlush=0)
+        self.scripts[INPUT_PATH] = [synthetic_response({'code': 200, 'data': rows})]
+        result = self.send_bom()
+        self.assertEqual(result['state'], 'review')
+        self.assertIn('feeding_control_snapshot_mismatch', result['blockers'])
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.attempt, 1)
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+        self.assertEqual(self.send_bom()['state'], 'blocked')
+        # The default independent read now supplies the correct controls.
+        self.assertEqual(self.recheck()['state'], 'created')
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_incomplete_or_changed_input_identity_and_controls_never_pass_readback(self):
+        from .plan_service_transport import INPUT_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        from .test_plan_bom import enum
+        changes = ('missing_row', 'duplicate_row', 'material_id', 'nested_id', 'material_code',
+            'seq', 'unit_id', 'unit_name', 'row_ratio', 'process', 'unspecified_process',
+            'missing_controls', 'empty_controls', 'multiple_controls', 'line_seq', 'control_ratio',
+            'control_denominator', 'mandatory_bool', 'backflush_bool', 'qc', 'qc_duplicate',
+            'bound', 'feed_type', 'upper_bound', 'single_feed', 'sop_id', 'sop_control')
+        for index, change in enumerate(changes):
+            rows = self.input_rows()
+            row = rows[0]; control = row['bomFeedingControls'][0]
+            if change == 'missing_row': rows.pop()
+            if change == 'duplicate_row': rows[1] = rows[0]
+            if change == 'material_id': row['materialId'] = 99
+            if change == 'nested_id': row['material']['baseInfo']['id'] = 99
+            if change == 'material_code': row['material']['baseInfo']['code'] = 'WRONG'
+            if change == 'seq': row['seq'] = 99
+            if change == 'unit_id': row['unitId'] = 99
+            if change == 'unit_name': row['unitName'] = 'KG'
+            if change == 'row_ratio': row['inputAmountNumerator'] = '4'
+            if change == 'process': row['inputProcessNum'] = '20'
+            if change == 'unspecified_process': row['specificProcessInput'] = 0
+            if change == 'missing_controls': del row['bomFeedingControls']
+            if change == 'empty_controls': row['bomFeedingControls'] = []
+            if change == 'multiple_controls': row['bomFeedingControls'] *= 2
+            if change == 'line_seq': control['lineSeq'] = 20
+            if change == 'control_ratio': control['inputAmountNumerator'] = '4'
+            if change == 'control_denominator': control['inputAmountDenominator'] = '2'
+            if change == 'mandatory_bool': control['inputMaterialControl'] = False
+            if change == 'backflush_bool': control['backFlush'] = True
+            if change == 'qc': control['inputQcState'] = [enum(1), enum(3)]
+            if change == 'qc_duplicate': control['inputQcState'] = [enum(1), enum(2), enum(2)]
+            if change == 'bound': control['inputBoundType'] = enum(2)
+            if change == 'feed_type': control['feedType'] = enum(1)
+            if change == 'upper_bound': control['inputUpperLimit'] = '100'
+            if change == 'single_feed': control['singleFeedMaterialAmount'] = '1'
+            if change == 'sop_id': control['inputSopControlId'] = 123
+            if change == 'sop_control': control['inputSopControlDTO'] = {'code': 'UNEXPECTED'}
+            self.scripts[INPUT_PATH] = [synthetic_response({'code': 200, 'data': rows})]
+            with self.subTest(change=change):
+                result = self.send_bom() if index == 0 else self.recheck()
+                self.assertEqual(result['state'], 'review')
+                self.assertIn('feeding_control_snapshot_mismatch', result['blockers'])
+                self.req.refresh_from_db()
+                self.assertEqual(self.req.attempt, 1)
+                self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_base_change_around_input_read_keeps_one_import_in_review(self):
+        from .plan_service_transport import BASE_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        before, after = self.detail(), self.detail()
+        after['data']['updatedAt'] += 1
+        self.scripts[BASE_PATH] = [synthetic_response(before), synthetic_response(after)]
+        result = self.send_bom()
+        self.assertEqual(result['state'], 'review')
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.attempt, 1)
+        self.assertEqual(self.send_bom()['state'], 'blocked')
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)

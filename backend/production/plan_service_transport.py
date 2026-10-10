@@ -1,11 +1,14 @@
 """Service APP factory creation; durable per-order fences and exact-code reads.
 
-Only import, base list and base detail are allowed. This does not dispatch,
-start, amend, report, warehouse or generate inspections. Base readback records
-creation separately from the unverified material/BOM and production totals.
+Only import, base/input detail and explicit master reads are allowed. This does
+not dispatch, start, amend, report, warehouse or generate inspections. New BOM
+contracts also verify feeding controls; creation remains separate from full
+output/BOM linkage and production totals.
 """
 import hmac
+import json
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -23,6 +26,11 @@ from .permissions import user_can_edit_plan
 
 LIST_PATH = '/med/open/v2/work_order/base/_list'
 BASE_PATH = '/med/open/v2/work_order/base/_detail'
+INPUT_PATH = '/med/open/v2/work_order/input_material/_detail'
+MASTER_READ_PATHS = frozenset({
+    '/med/open/v2/bom/_list', '/med/open/v2/bom/_detail',
+    '/med/open/v2/process_route/_detail', '/material/open/v2/material/_list_by_codes',
+})
 CREATE_REQUEST_LIMIT = 3
 READBACK_STATES = frozenset({'checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed'})
 
@@ -112,7 +120,7 @@ class PlanMesServiceTransport:
 
     @sensitive_variables()
     def _post(self, path, payload, *, write=False):
-        if path not in (LIST_PATH, BASE_PATH, CREATE_PATH) or write != (path == CREATE_PATH):
+        if path not in {LIST_PATH, BASE_PATH, INPUT_PATH, CREATE_PATH, *MASTER_READ_PATHS} or write != (path == CREATE_PATH):
             raise PlanTransportError('route_not_supported')
         if write and not writes_enabled():
             raise WorkflowConflict('MES plan writer is disabled.')
@@ -173,6 +181,10 @@ class PlanMesServiceTransport:
         # Import data/id is optional in the official contract; exact code
         # lookup supplies the durable MES identity independently of the ACK.
         return self._post(CREATE_PATH, contract['payload'], write=True)
+
+    def read_inputs(self, code, work_order_id):
+        return self._post(INPUT_PATH, {'workOrderCode': code,
+            'workOrderId': mes_id(work_order_id), 'warehouseFlag': False}).get('data')
 
 
 def _current(req):
@@ -272,6 +284,60 @@ def public_result(req):
         'verified_scope': evidence.get('verified_scope'), 'material_assignment_verified': False}
 
 
+def _feeding_matches(intent, payload, actual):
+    """Compare the explicit single-line controls, bound to every approved input."""
+    def number(value):
+        if type(value) not in (str, int, Decimal):
+            raise ValueError()
+        result = Decimal(value)
+        if not result.is_finite():
+            raise ValueError()
+        return result
+
+    def integer(value, expected):
+        return type(value) is int and value == expected
+
+    try:
+        expected_rows = payload['inputMaterialOpenV2COs']
+        if not isinstance(actual, list) or len(actual) != len(expected_rows):
+            return False
+        remaining = {row['material_code']: row for row in intent['setup']['inputs']}
+        expected = {row['materialCode']: row for row in expected_rows}
+        for row in actual:
+            material = row['material']['baseInfo']
+            code = material['code']
+            source, sent = remaining.pop(code), expected[code]
+            control, = row['bomFeedingControls']
+            wanted, = sent['inputMaterialControlOpenCOs']
+            if not (_identifier(row['materialId']) == source['material_id']
+                    == _identifier(material['id'])
+                    and integer(row['seq'], int(sent['seq']))
+                    and _identifier(row['unitId']) == source['unit_id']
+                    and row['unitName'] == source['unit_name']
+                    and number(row['inputAmountNumerator']) == number(source['numerator'])
+                    and number(row['inputAmountDenominator']) == number(source['denominator'])
+                    and row['inputProcessNum'] == intent['setup']['process_num']
+                    and integer(row['specificProcessInput'], 1)
+                    and integer(control['lineSeq'], int(wanted['lineSeq']))
+                    and number(control['inputAmountNumerator']) == number(wanted['inputAmountNumerator'])
+                    and number(control['inputAmountDenominator']) == 1
+                    and integer(control['inputMaterialControl'], wanted['feedFlag'])
+                    and integer(control['backFlush'], wanted['backFlush'])
+                    and integer(control['inputBoundType']['code'], wanted['limit'])
+                    and integer(control['feedType']['code'], 0)
+                    and all(control[key] is None for key in ('inputUpperLimit', 'inputLowerLimit',
+                        'inputUpperLimitRatio', 'inputLowerLimitRatio', 'singleFeedMaterialAmount',
+                        'inputSopControlId', 'inputSopControlDTO'))):
+                return False
+            states = control['inputQcState']
+            if (not isinstance(states, list) or any(type(x['code']) is not int for x in states)
+                    or sorted(x['code'] for x in states) != json.loads(wanted['inputQcState'])):
+                return False
+        return not remaining
+    except (KeyError, TypeError, ValueError, InvalidOperation, PlanTransportError):
+        return False
+
+
 def _observe(req, transport, *, existed=False, known_id=None):
     found = known_id or transport.find_by_code(req.work_order.code)
     if found is None:
@@ -291,6 +357,13 @@ def _observe(req, transport, *, existed=False, known_id=None):
             or status['code'] not in range(6) or assignment_mismatch):
         return _finish(req, transport, 'review', mes_id_value=found,
             blockers=['existing_code_snapshot_mismatch'], base=base)
+    if any('inputMaterialControlOpenCOs' in row for row in payload['inputMaterialOpenV2COs']):
+        inputs = transport.read_inputs(req.work_order.code, found)
+        after = transport.read_base(req.work_order.code, found)
+        if (base != after or type(base.get('updatedAt')) is not int or base['updatedAt'] <= 0
+                or not _feeding_matches(req.intent, payload, inputs)):
+            return _finish(req, transport, 'review', mes_id_value=found,
+                blockers=['feeding_control_snapshot_mismatch'], base=base)
     return _finish(req, transport, 'already_exists' if existed else 'created', mes_id_value=found, base=base)
 
 
@@ -307,6 +380,21 @@ def dispatch_service_create(request_uid, transport):
             return _observe(req, transport, existed=True, known_id=found)
         except PlanTransportError as error:
             return _finish(req, transport, 'review', mes_id_value=found, blockers=[error.code])
+    if req.intent['setup'].get('bom_source'):
+        from .plan_bom import validate_source, resolve_inputs
+        from rest_framework.exceptions import ValidationError
+        try:
+            fresh = validate_source(req.intent['setup']['bom_source'], transport.actor_id)
+            approved = req.intent['setup']['inputs']
+            resolved = resolve_inputs(fresh, [{'source_row_id': row['source_row_id'],
+                'material_code': row['material_code']} for row in approved], transport.actor_id)
+            fields = ('source_row_id', 'material_id', 'material_code', 'material_version',
+                      'unit_id', 'unit_name', 'numerator', 'denominator', 'feeding_control')
+            if ([{key: row[key] for key in fields} for row in resolved]
+                    != [{key: row[key] for key in fields} for row in approved]):
+                raise WorkflowConflict('mes_bom_replacement_changed')
+        except (PlanTransportError, WorkflowConflict, ValidationError):
+            return _finish(req, transport, 'failed', blockers=['mes_bom_changed_or_unavailable'])
     try:
         req = _claim(req.uid, transport.actor_id, creation=True, reservation_id=req._reservation_id)
     except WorkflowConflict:
