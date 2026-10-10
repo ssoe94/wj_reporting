@@ -334,6 +334,47 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(self.req.attempt, 0)
         self.assertEqual(self.req.work_order.mes_id, WORK_ID)
 
+    def test_import_quality_state_rejection_keeps_safe_reason_and_one_attempt_fence(self):
+        from .plan_workflow import WorkflowConflict
+        from .plan_workflow_contract import CREATE_PATH
+        self.scripts[CREATE_PATH] = [synthetic_response({
+            'code': 0, 'subCode': 'MED-DOMAIN/IMPORT_CREATE_ERROR', 'needCheck': 0,
+            'data': ['投料质量状态输入不合法'] * 3,
+            'message': 'SYNTHETIC-PRIVATE-PROVIDER-TEXT', 'requestQuery': APP_TOKEN})]
+        result = self.dispatch()
+        self.assertEqual((result['state'], result['attempt']), ('failed', 1))
+        self.assertEqual(result['blockers'], ['input_quality_state_invalid'])
+        event = self.req.events.order_by('-id').first()
+        self.assertEqual(event.evidence['blockers'], result['blockers'])
+        self.assertNotIn('SYNTHETIC-PRIVATE', json.dumps(event.evidence))
+        self.assertNotIn(APP_TOKEN, json.dumps(event.evidence))
+        self.assertEqual(self.recheck()['state'], 'uncertain')
+        event.refresh_from_db()
+        self.assertEqual(event.evidence['blockers'], ['input_quality_state_invalid'])
+        calls_before = len(self.calls)
+        with self.assertRaises(WorkflowConflict):
+            self.dispatch()
+        self.assertEqual(len(self.calls), calls_before)
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_quality_state_reason_requires_exact_import_rejection_envelope(self):
+        from .plan_service_transport import _body
+        from .plan_workflow_transport import PlanTransportError
+        known = {'code': 0, 'subCode': 'MED-DOMAIN/IMPORT_CREATE_ERROR', 'needCheck': 0,
+            'data': ['投料质量状态输入不合法']}
+        for changes in ({'code': False}, {'code': '0'}, {'needCheck': False},
+                {'needCheck': 1}, {'subCode': 'OTHER'}, {'data': []},
+                {'data': ['投料质量状态输入不合法', 'SYNTHETIC-PRIVATE']},
+                {'data': ['投料质量状态输入不合法 token=SYNTHETIC-PRIVATE']},
+                {'data': ['投料质量状态输入不合法'] * 501}):
+            with self.subTest(changes=changes):
+                with self.assertRaises(PlanTransportError) as caught:
+                    _body(synthetic_response({**known, **changes}), create_response=True)
+                self.assertEqual(caught.exception.code, 'provider_result_rejected')
+        with self.assertRaises(PlanTransportError) as caught:
+            _body(synthetic_response(known))
+        self.assertEqual(caught.exception.code, 'provider_result_rejected')
+
     def test_import_timeout_is_recovered_by_code_query_without_retransmission(self):
         from .plan_workflow_contract import CREATE_PATH
         original_sender = self.sender

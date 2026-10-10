@@ -49,7 +49,7 @@ def _identifier(value):
 
 
 @sensitive_variables()
-def _body(response, *, exact_code_lookup=False):
+def _body(response, *, exact_code_lookup=False, create_response=False):
     if getattr(response, 'history', ()):
         raise PlanTransportError('redirect_rejected')
     if response.status_code == 401:
@@ -78,6 +78,15 @@ def _body(response, *, exact_code_lookup=False):
         and body.get('data') is None
         and type(body.get('needCheck')) is int and body['needCheck'] == 0)
     if (type(body.get('code')) is not int or body['code'] != 200) and not missing_order:
+        # Observed ALI import rejection (2026-10-11). Retain only a fixed
+        # semantic reason, never provider text, request data or credentials.
+        errors = body.get('data')
+        if (create_response and type(body.get('code')) is int and body['code'] == 0
+                and body.get('subCode') == 'MED-DOMAIN/IMPORT_CREATE_ERROR'
+                and type(body.get('needCheck')) is int and body['needCheck'] == 0
+                and isinstance(errors, list) and 1 <= len(errors) <= 500
+                and all(value == '投料质量状态输入不合法' for value in errors)):
+            raise PlanTransportError('input_quality_state_invalid')
         raise PlanTransportError('provider_result_rejected')
     # Successful ALI reads and import ACKs include this optional field as null.
     if body.get('needCheck') is not None and (type(body['needCheck']) is not int or body['needCheck'] != 0):
@@ -132,7 +141,7 @@ class PlanMesServiceTransport:
                     params={'access_token': self._token}, data=encode_exact_json(payload),
                     headers={'Content-Type': 'application/json'}, timeout=(3, 15 if write else 7),
                     allow_redirects=False)
-                return _body(response, exact_code_lookup=(path == LIST_PATH
+                return _body(response, create_response=write, exact_code_lookup=(path == LIST_PATH
                     and type(payload.get('exactWorkOrderCode')) is str
                     and bool(payload['exactWorkOrderCode'].strip())))
             except PlanTransportError as error:
@@ -404,7 +413,7 @@ def dispatch_service_create(request_uid, transport):
     except (PlanTransportError, WorkflowConflict) as error:
         if getattr(error, 'code', '') in ('write_confirmation_required', 'field_permission_required'):
             return _finish(req, transport, 'review', blockers=[error.code])
-        if getattr(error, 'code', '') in ('permission_required', 'provider_result_rejected',
+        if getattr(error, 'code', '') in ('permission_required', 'provider_result_rejected', 'input_quality_state_invalid',
                 'app_authentication_rejected', 'service_app_unavailable'):
             return _finish(req, transport, 'failed', blockers=[error.code])
         _finish(req, transport, 'uncertain', blockers=[getattr(error, 'code', 'readback_required')])
