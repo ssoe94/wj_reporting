@@ -826,6 +826,9 @@ class AiWorkerPeriodicEnqueueView(APIView):
         if quality_enqueue.get('created'):
             created_count += 1
         quality_job = quality_enqueue.get('job')
+        from quality.action_result_translation import enqueue_missing_translations
+        quality_translation_enqueue = enqueue_missing_translations()
+        created_count += quality_translation_enqueue['created_count']
         from quality.classification_audit import enqueue_stale_quality_report_audits
 
         quality_audit_enqueue = enqueue_stale_quality_report_audits(
@@ -881,6 +884,7 @@ class AiWorkerClaimView(APIView):
             AiJob.JOB_TYPE_PRODUCTION_MACHINE,
             AiJob.JOB_TYPE_QUALITY_IMAGE,
             AiJob.JOB_TYPE_DEEP_ANALYSIS,
+            AiJob.JOB_TYPE_QUALITY_TRANSLATION,
         ]
         # Production and deep analysis jobs are routed purely by scope.model_id.
         production_job_types = [
@@ -939,8 +943,8 @@ class AiWorkerClaimView(APIView):
                 )
                 .annotate(
                     # 0 today's daily attention · 1 other daily attention ·
-                    # 2 interactive question · 3 hourly briefing · 4 manual ·
-                    # 5 weekly/deep · 6 photo audits; FIFO inside each rank.
+                    # 2 question · 3 hourly · 4 manual/source edits ·
+                    # 5 deep/history translations · 6 photo audits; FIFO per rank.
                     trigger_priority=Case(
                         When(
                             scope__trigger=QUALITY_DAILY_TRIGGER,
@@ -950,6 +954,8 @@ class AiWorkerClaimView(APIView):
                         When(scope__trigger=QUALITY_DAILY_TRIGGER, then=Value(1)),
                         When(scope__trigger='question', then=Value(2)),
                         When(scope__trigger='hourly', then=Value(3)),
+                        When(job_type=AiJob.JOB_TYPE_QUALITY_TRANSLATION, scope__enqueue_reason='source_change', then=Value(4)),
+                        When(job_type=AiJob.JOB_TYPE_QUALITY_TRANSLATION, then=Value(5)),
                         When(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS, then=Value(5)),
                         When(scope__trigger='weekly', then=Value(5)),
                         When(scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER, then=Value(6)),
@@ -1034,7 +1040,14 @@ class AiWorkerJobTransitionView(APIView):
             })
         job.status = AiJob.STATUS_COMPLETED
         worker_result = serializer.validated_data['result_payload']
-        if is_daily_quality_summary_job(job):
+        from quality.action_result_translation import accept_translation, is_translation_job
+        if is_translation_job(job):
+            job.result_payload = accept_translation(
+                job, worker_result,
+                prompt_version=serializer.validated_data.get('prompt_version'),
+                model_name=display_model_name(serializer.validated_data.get('model_name')),
+            )
+        elif is_daily_quality_summary_job(job):
             job.result_payload = restore_authoritative_quality_result(job, worker_result)
         elif is_quality_report_audit_job(job):
             job.result_payload = restore_authoritative_quality_report_audit_result(
@@ -1076,6 +1089,9 @@ class AiWorkerJobTransitionView(APIView):
         self.assert_claim_lease(job, serializer.validated_data)
         job.status = AiJob.STATUS_FAILED
         job.error_message = serializer.validated_data['error_message']
+        from quality.action_result_translation import is_translation_job, record_translation_failure
+        if is_translation_job(job):
+            record_translation_failure(job)
         job.model_name = display_model_name(serializer.validated_data.get('model_name'))
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.completed_at = timezone.now()

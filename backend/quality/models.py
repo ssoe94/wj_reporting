@@ -66,6 +66,20 @@ class QualityReport(models.Model):
         super().save(*args, **kwargs)
 
 
+class QualityActionResultTranslation(models.Model):
+    """A replaceable Korean view; the report source remains authoritative."""
+    report = models.OneToOneField(QualityReport, on_delete=models.CASCADE, related_name='action_result_translation')
+    source_sha256 = models.CharField(max_length=64)
+    text = models.TextField(blank=True, default='')
+    prompt_version = models.CharField(max_length=64)
+    model_name = models.CharField(max_length=128, blank=True, default='')
+    translated_at = models.DateTimeField(null=True, blank=True)
+    job = models.ForeignKey('ai_core.AiJob', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    retry_after = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Supplier(models.Model):
     """IQC 공급자 목록"""
     name = models.CharField('공급자명', max_length=128, unique=True)

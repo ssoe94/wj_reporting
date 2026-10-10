@@ -21,17 +21,22 @@ QUALITY_REPORT_TIMEZONE = ZoneInfo('Asia/Shanghai')
 
 class QualityReportSerializer(serializers.ModelSerializer):
     source_import = serializers.SerializerMethodField()
+    action_result_translation = serializers.SerializerMethodField()
+
+    def get_action_result_translation(self, instance):
+        from .action_result_translation import translation_representation
+        return translation_representation(instance)
 
     class Meta:
         model = QualityReport
         fields = [
             'id', 'report_dt', 'section', 'model', 'part_no', 'lot_qty',
             'inspection_qty', 'defect_qty', 'defect_rate', 'judgement',
-            'phenomenon', 'disposition', 'action_result',
+            'phenomenon', 'disposition', 'action_result', 'action_result_translation',
             'image1', 'image2', 'image3', 'image4', 'image5',
             'source_import', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['source_import', 'created_at', 'updated_at']
+        read_only_fields = ['source_import', 'action_result_translation', 'created_at', 'updated_at']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
