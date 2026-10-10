@@ -7,7 +7,6 @@ import {
   Eye,
   FolderOpen,
   RotateCcw,
-  Save,
   Search,
   SlidersHorizontal,
   Trash2,
@@ -18,7 +17,6 @@ import { useLang } from '../../i18n';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
-import { Textarea } from '../../components/ui/textarea';
 import { Button } from '../../components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
@@ -37,6 +35,9 @@ import {
 } from '../../hooks/useAssemblyParts';
 import { useAuth } from '../../contexts/AuthContext';
 import type { QualityReportHistoryScope } from './importTypes';
+import QualityActionResult from './QualityActionResult';
+import { actionResultSourceUpdate } from '../../domains/quality/action-result-translation';
+import type { ActionResultTranslation } from '../../domains/quality/action-result-translation';
 
 // 서버에서 받아올 데이터 타입 정의
 interface QualityReport {
@@ -53,6 +54,7 @@ interface QualityReport {
   phenomenon?: string;
   disposition?: string;
   action_result?: string;
+  action_result_translation?: ActionResultTranslation | null;
   image1?: string;
   image2?: string;
   image3?: string;
@@ -530,9 +532,12 @@ export default function QualityReportHistory({
       return data;
     },
     placeholderData: reportScopeKey ? undefined : (previousData) => previousData,
+    refetchInterval: (query) => query.state.data?.results?.some(
+      (report: QualityReport) => report.action_result_translation?.status === 'pending',
+    ) ? 15000 : false,
   });
 
-  const reports: QualityReport[] = Array.isArray(data?.results) ? data.results : [];
+  const reports = useMemo<QualityReport[]>(() => Array.isArray(data?.results) ? data.results : [], [data]);
   const totalCount = data?.count || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const visibleReportIds = useMemo(() => reports.map((report) => report.id), [reports]);
@@ -540,6 +545,13 @@ export default function QualityReportHistory({
   const reportMutationInFlight = isDeleting || savingId !== null;
   const allVisibleSelected = visibleReportIds.length > 0 && selectedVisibleCount === visibleReportIds.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+
+  useEffect(() => {
+    setSelectedReport((current) => {
+      if (!current) return current;
+      return reports.find((report) => report.id === current.id) || current;
+    });
+  }, [reports]);
 
   useEffect(() => {
     setPageInput(String(page));
@@ -597,21 +609,58 @@ export default function QualityReportHistory({
 
   const handleSaveActionResult = async (reportId: number) => {
     if (!canEditQuality) return;
-    const actionResult = actionResults[reportId] || '';
+    const sourceDraft = actionResults[reportId];
+    if (typeof sourceDraft !== 'string') return;
     setSavingId(reportId);
     try {
-      await api.patch(`/quality/reports/${reportId}/`, {
-        action_result: actionResult
+      const { data: updated } = await api.patch<QualityReport>(
+        `/quality/reports/${reportId}/`, actionResultSourceUpdate(sourceDraft),
+      );
+      setSelectedReport((current) => current?.id === reportId ? updated : current);
+      setActionResults((previous) => {
+        const next = { ...previous };
+        delete next[reportId];
+        return next;
       });
       toast.success(t('save_success'));
-      queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
-      setEditingId(null);
+      setEditingId((current) => current === reportId ? null : current);
+      await queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
     } catch (_err) {
       toast.error(t('save_fail'));
     } finally {
       setSavingId(null);
     }
   };
+
+  const renderActionResult = (report: QualityReport, context: 'mobile' | 'table' | 'detail') => (
+    <QualityActionResult
+      source={report.action_result}
+      translation={report.action_result_translation}
+      editorId={`${context}-action-result-${report.id}`}
+      contextLabel={`${(report.report_dt || '').slice(0, 10)} · ${report.model}`}
+      canEdit={canEditQuality}
+      editing={editingId === report.id}
+      sourceDraft={actionResults[report.id] ?? report.action_result ?? ''}
+      saving={savingId === report.id}
+      disabled={reportMutationInFlight}
+      onStartEditing={() => {
+        setActionResults((previous) => ({
+          ...previous, [report.id]: previous[report.id] ?? report.action_result ?? '',
+        }));
+        setEditingId(report.id);
+      }}
+      onSourceChange={(source) => setActionResults((previous) => ({ ...previous, [report.id]: source }))}
+      onSave={() => handleSaveActionResult(report.id)}
+      onCancel={() => {
+        setEditingId(null);
+        setActionResults((previous) => {
+          const next = { ...previous };
+          delete next[report.id];
+          return next;
+        });
+      }}
+    />
+  );
 
   const toggleReportSelection = (reportId: number) => {
     if (!canEditQuality || reportMutationInFlight) return;
@@ -1308,10 +1357,6 @@ export default function QualityReportHistory({
             </div>
           ) : (
             reports.map((r: QualityReport) => {
-              const isEditing = editingId === r.id;
-              const currentValue = actionResults[r.id] !== undefined
-                ? actionResults[r.id]
-                : (r.action_result || '');
               const images = getReportImages(r);
 
               return (
@@ -1412,37 +1457,8 @@ export default function QualityReportHistory({
                     </div>
 
                     <div className="border-t border-gray-100 pt-3">
-                      <Label htmlFor={`mobile-action-result-${r.id}`} className="text-xs font-medium text-gray-500">
-                        {t('quality.action_result')}
-                      </Label>
-                      {canEditQuality ? (
-                        <Textarea
-                          rows={3}
-                          id={`mobile-action-result-${r.id}`}
-                          value={currentValue}
-                          onChange={(event) => {
-                            setActionResults((previous) => ({ ...previous, [r.id]: event.target.value }));
-                            if (!isEditing) setEditingId(r.id);
-                          }}
-                          placeholder={t('quality.action_result_placeholder')}
-                          className="mt-2 w-full min-w-0 resize-y text-base leading-6"
-                        />
-                      ) : (
-                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800">
-                          {currentValue || '-'}
-                        </p>
-                      )}
-                      {canEditQuality && isEditing && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleSaveActionResult(r.id)}
-                          disabled={savingId === r.id}
-                          className="mt-2 w-full bg-indigo-600 text-white hover:bg-indigo-700"
-                        >
-                          <Save className={`mr-2 h-4 w-4 ${savingId === r.id ? 'animate-pulse' : ''}`} />
-                          {savingId === r.id ? t('saving') : t('quality.save_action')}
-                        </Button>
-                      )}
+                      <p className="mb-2 text-xs font-medium text-gray-500">{t('quality.action_result')}</p>
+                      {renderActionResult(r, 'mobile')}
                     </div>
 
                     <div className={`grid gap-2 border-t border-gray-100 pt-3 ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -1515,9 +1531,6 @@ export default function QualityReportHistory({
                 <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
               ) : (
                 reports.map((r: QualityReport) => {
-                  const isEditing = editingId === r.id;
-                  const currentValue = actionResults[r.id] !== undefined ? actionResults[r.id] : (r.action_result || '');
-                  
                   return (
                     <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-indigo-50' : 'hover:bg-indigo-50/50'}`}>
                       {canEditQuality && (
@@ -1580,45 +1593,7 @@ export default function QualityReportHistory({
                         })()}
                       </td>
                       <td className="px-2 py-3 align-top">
-                        <div className="flex flex-col gap-1">
-                          {canEditQuality ? (
-                            <Textarea
-                              rows={3}
-                              aria-label={`${t('quality.action_result')} · ${(r.report_dt || '').slice(0, 10)} · ${r.model}`}
-                              value={currentValue}
-                              onChange={(e) => {
-                                setActionResults(prev => ({ ...prev, [r.id]: e.target.value }));
-                                if (!isEditing) setEditingId(r.id);
-                              }}
-                              placeholder={t('quality.action_result_placeholder')}
-                              className="w-full min-w-0 resize-y text-sm leading-6"
-                            />
-                          ) : (
-                            <p className="whitespace-pre-wrap break-words text-sm leading-5 text-gray-700">
-                              {currentValue || '-'}
-                            </p>
-                          )}
-                          {canEditQuality && isEditing && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleSaveActionResult(r.id)}
-                              disabled={savingId === r.id}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white whitespace-nowrap px-2 text-xs"
-                            >
-                              {savingId === r.id ? (
-                                <span className="flex items-center gap-1">
-                                  <Save className="w-3 h-3 animate-pulse" />
-                                  {t('saving')}
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1">
-                                  <Save className="w-3 h-3" />
-                                  {t('quality.save_action')}
-                                </span>
-                              )}
-                            </Button>
-                          )}
-                        </div>
+                        {renderActionResult(r, 'table')}
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-center gap-2">
@@ -1957,13 +1932,13 @@ export default function QualityReportHistory({
               )}
 
               {/* 처리 결과 */}
-              {selectedReport.action_result && (
+              {(selectedReport.action_result || canEditQuality) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('quality.action_result')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border whitespace-pre-wrap">
-                    {selectedReport.action_result}
+                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                    {renderActionResult(selectedReport, 'detail')}
                   </div>
                 </div>
               )}

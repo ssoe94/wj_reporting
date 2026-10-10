@@ -139,7 +139,7 @@ class QualityImportPagination(PageNumberPagination):
 
 class QualityReportViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, QualityPermission]
-    queryset = QualityReport.objects.select_related('source_import_row').all()
+    queryset = QualityReport.objects.select_related('source_import_row', 'action_result_translation__job').all()
     serializer_class = QualityReportSerializer
     pagination_class = QualityReportPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

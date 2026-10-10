@@ -22,6 +22,7 @@ try:
         production_question_analysis,
         quality_daily_attention_summary,
         quality_report_taxonomy_audit,
+        quality_action_result_translation,
     )
     from .llm_client import (
         DEFAULT_LLM_TIMEOUT_SECONDS,
@@ -36,6 +37,7 @@ except ImportError:
         production_question_analysis,
         quality_daily_attention_summary,
         quality_report_taxonomy_audit,
+        quality_action_result_translation,
     )
     from llm_client import (
         DEFAULT_LLM_TIMEOUT_SECONDS,
@@ -49,6 +51,7 @@ HANDLERS = {
     "production_daily_analysis": production_daily_analysis,
     "production_machine_analysis": production_machine_analysis,
     "quality_image_analysis": quality_daily_attention_summary,
+    "quality_action_result_translation": quality_action_result_translation,
 }
 
 QWEN38_MODEL_ID = "qwen38"
@@ -1895,6 +1898,11 @@ def handle_job(
     if not handler:
         raise ValueError(f"Unsupported job type: {job_type}")
 
+    if handler is quality_action_result_translation:
+        if not use_llm or llm is None:
+            raise RuntimeError('Quality translation requires the local model.')
+        return handler.handle(job, llm, model_name)
+
     if hasattr(handler, "validate_job"):
         handler.validate_job(job)
 
@@ -2222,6 +2230,8 @@ def _process_claimed_jobs(
                 outcome = "server_rejected"
             elif accepted.get("llm_fallback") is True:
                 outcome = "deterministic_fallback"
+            elif accepted_source == "local_qwen38_translation":
+                outcome = "llm_success" if accepted.get("accepted_translation") is True else "server_rejected"
             elif accepted_source in {"local_llm_rewrite", "local_qwen38_multimodal"}:
                 outcome = "llm_success"
             elif accepted_source == "deterministic":

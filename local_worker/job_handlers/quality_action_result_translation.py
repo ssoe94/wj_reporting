@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from collections import Counter
 from typing import Any
 
@@ -54,7 +55,7 @@ def prepare_source(source: str) -> tuple[str, dict[str, str]]:
 
 
 def protected_tokens(value: str) -> Counter:
-    return Counter(re.findall(r"[A-Za-z0-9]+(?:[._/%:+-][A-Za-z0-9]+)*", value))
+    return Counter(re.findall(r"(?<![A-Za-z0-9])[-+−]?[A-Za-z0-9]+(?:[._/%:+-][A-Za-z0-9]+)*(?:[%％])?", value))
 
 
 def validate_translation(source: str, translated: Any) -> str:
@@ -69,6 +70,11 @@ def validate_translation(source: str, translated: Any) -> str:
         raise ValueError("Translation changed a company name.")
     if "完成" not in source and "完毕" not in source and "완료" not in source and "완료" in value:
         raise ValueError("Translation added an unsupported completion status.")
+    for original, translated in [('返工', '재작업'), ('报废', '폐기'), ('退货', '반품'),
+                                 ('邀请', '요청'), ('全检', '전수'), ('入库', '입고'),
+                                 ('出库', '출고'), ('擦拭', '닦')]:
+        if original in source and translated not in value:
+            raise ValueError('Translation omitted a source action.')
     return value
 
 
@@ -86,5 +92,26 @@ def translate_text(source: str, llm) -> str:
     if protected_tokens(prepared) != protected_tokens(text):
         raise ValueError("Translation changed a protected token.")
     for token, name in replacements.items():
+        if prepared.count(token) != text.count(token):
+            raise ValueError("Translation changed a protected name placeholder.")
         text = text.replace(token, name)
     return validate_translation(source, text)
+
+
+def handle(job: dict, llm, model_name: str) -> tuple[dict, str]:
+    payload, scope = job.get('input_payload'), job.get('scope')
+    if not isinstance(payload, dict) or not isinstance(scope, dict):
+        raise ValueError('Translation requires a server source snapshot and scope.')
+    if (payload.get('schema_version') != SCHEMA_VERSION or payload.get('model_id') != 'qwen38'
+            or payload.get('prompt_version') != PROMPT_VERSION or payload.get('language') != 'ko'
+            or type(payload.get('report_id')) is not int or payload['report_id'] <= 0
+            or any(scope.get(key) != payload.get(key) for key in ('report_id', 'source_sha256', 'model_id', 'language', 'prompt_version'))):
+        raise ValueError('Unsupported quality translation contract.')
+    source = payload.get('source_text')
+    if (not isinstance(source, str) or not source.strip() or len(source) > MAX_SOURCE_LENGTH
+            or hashlib.sha256(source.encode('utf-8')).hexdigest() != payload.get('source_sha256')):
+        raise ValueError('Invalid translation source fingerprint.')
+    translated = translate_text(source, llm)
+    return {'schema_version': SCHEMA_VERSION, 'source': 'local_qwen38_translation',
+            'source_sha256': payload['source_sha256'], 'language': 'ko',
+            'translation': translated, 'llm_fallback': False, 'model_name': model_name}, PROMPT_VERSION
