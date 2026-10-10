@@ -49,7 +49,7 @@ class InspectionRoleMigrationTests(TransactionTestCase):
         executor.migrate(self.latest)
         upgraded = executor.loader.project_state(self.latest).apps
         self.assertEqual(set(connection.introspection.table_names()) - tables,
-            {'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult', 'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
+            {'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult', 'quality_inspectioninspector', 'quality_inspectionweeklyroster', 'quality_qualityactionresulttranslation'})
         for name, snapshot in snapshots.items():
             self.assertEqual(list(upgraded.get_model('quality', name).objects.values()), snapshot)
         for name in ('InspectionShiftSetting', 'InspectionRoleWorkflow', 'InspectionAreaResult', 'InspectionInspector', 'InspectionWeeklyRoster'):
@@ -117,7 +117,7 @@ class InspectionShiftEffectiveMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.migrate(self.latest)
         upgraded = executor.loader.project_state(self.latest).apps
-        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
+        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster', 'quality_qualityactionresulttranslation'})
         for name, snapshot in snapshots.items():
             fields = list(snapshot[0])
             self.assertEqual(list(upgraded.get_model('quality', name).objects.values(*fields)), snapshot)
@@ -171,7 +171,7 @@ class InspectionSharedTerminalMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.migrate(self.latest)
         upgraded = executor.loader.project_state(self.latest).apps
-        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
+        self.assertEqual(set(connection.introspection.table_names()) - tables, {'quality_inspectioninspector', 'quality_inspectionweeklyroster', 'quality_qualityactionresulttranslation'})
         for name, snapshot in snapshots.items():
             self.assertEqual(list(upgraded.get_model('quality', name).objects.values(*snapshot[0])), snapshot)
         row = upgraded.get_model('quality', 'InspectionRoleWorkflow').objects.get(pk=workflow.pk)

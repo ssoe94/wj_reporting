@@ -69,6 +69,11 @@ The migrations add a translation table and a job-type choice; they do not alter
 existing source data. The existing backend deployment start command applies
 migrations before starting the new application. Rolling back application code
 can leave these additive structures in place without changing historical notes.
+As with existing inspection foreign keys, old application code does not know the
+new cache relation: suspend report deletion after an application rollback while
+translation cache rows remain. Upgrade/rollback tests cover this FK boundary and
+preserve the original report on a rejected old-code delete; source reads/edits
+remain compatible with retained additive tables.
 
 After reviewed PR merge, verify main CI, backend health, fresh build-info commit
 and a hydrated live history in both languages. Update the main checkout without

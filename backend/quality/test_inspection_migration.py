@@ -42,29 +42,42 @@ class InspectionMigrationCompatibilityTests(TransactionTestCase):
             uom='EA', warehouse_ref='SYNTHETIC-WAREHOUSE', lot_ref='SYNTHETIC-OLD-LOT',
             work_started_at=timezone.now(), assigned_to_id=self.user.pk, assigned_to_name=self.user.username)
 
-    def test_forward_preserves_existing_rows_and_only_adds_inspection_tables(self):
+    def test_forward_preserves_existing_rows_and_only_adds_expected_tables(self):
         before_tables = set(connection.introspection.table_names())
         rows = {(app, model): list(self.old.get_model(app, model).objects.values()) for app, model in
                 [('auth', 'User'), ('quality', 'QualityReport'), ('production', 'ProductionPlan')]}
         upgraded = self.upgrade()
         self.assertEqual(set(connection.introspection.table_names()) - before_tables,
                          {'quality_inspectionrequest', 'quality_inspectionaudit', 'quality_inspectionoperation', 'quality_inspectionmesbinding', 'quality_inspectionnonconformance',
-                          'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult', 'quality_inspectioninspector', 'quality_inspectionweeklyroster'})
+                          'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult', 'quality_inspectioninspector', 'quality_inspectionweeklyroster', 'quality_qualityactionresulttranslation'})
         for (app, model), existing in rows.items():
             self.assertEqual(list(upgraded.get_model(app, model).objects.values()), existing)
         for name in ('0010_inspection_requests', '0011_inspection_requests', '0012_inspection_requests', '0013_inspection_roles'):
             self.assertTrue(all(isinstance(operation, migrations.CreateModel) for operation in
                                 import_module('quality.migrations.' + name).Migration.operations))
+        self.assertTrue(all(isinstance(operation, migrations.CreateModel) for operation in
+                            import_module('quality.migrations.0018_qualityactionresulttranslation').Migration.operations))
 
     def test_previous_models_can_read_and_edit_existing_rows_with_new_tables_retained(self):
         upgraded = self.upgrade()
         inspection = self.create_inspection(upgraded)
+        cache = upgraded.get_model('quality', 'QualityActionResultTranslation').objects.create(
+            report_id=self.report.pk, source_sha256='b' * 64, prompt_version='SYNTHETIC-upgrade', text='SYNTHETIC 번역')
         self.old.get_model('quality', 'QualityReport').objects.filter(pk=self.report.pk).update(
             phenomenon='SYNTHETIC edit by previous code')
         self.assertEqual(upgraded.get_model('quality', 'QualityReport').objects.get(pk=self.report.pk).phenomenon,
                          'SYNTHETIC edit by previous code')
         self.assertEqual(self.old.get_model('production', 'ProductionPlan').objects.get(pk=self.plan.pk).planned_quantity, 100)
         self.assertTrue(upgraded.get_model('quality', 'InspectionRequest').objects.filter(pk=inspection.pk).exists())
+        self.assertTrue(upgraded.get_model('quality', 'QualityActionResultTranslation').objects.filter(pk=cache.pk).exists())
+
+    def test_old_code_report_delete_with_translation_cache_is_a_rollback_limit(self):
+        upgraded = self.upgrade()
+        upgraded.get_model('quality', 'QualityActionResultTranslation').objects.create(
+            report_id=self.report.pk, source_sha256='b' * 64, prompt_version='SYNTHETIC-upgrade')
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.old.get_model('quality', 'QualityReport').objects.get(pk=self.report.pk).delete()
+        self.assertTrue(upgraded.get_model('quality', 'QualityReport').objects.filter(pk=self.report.pk).exists())
 
     def test_previous_user_delete_is_protected_by_new_fk_and_is_a_rollback_limit(self):
         upgraded = self.upgrade()
