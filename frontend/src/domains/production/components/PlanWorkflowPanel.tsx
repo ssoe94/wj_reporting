@@ -277,6 +277,12 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   }
   function materialForm(rows: WorkflowRow[]) {
     if (!data || !editing) return null;
+    if (editing.identity_state === "identified" && (bomLoading || bomError || !bomSource)) return <div className="plan-workflow__editor">
+      {bomLoading ? <p role="status">{zh ? "正在读取MES BOM…" : "MES BOM 조회 중…"}</p>
+        : <div role="alert" className="plan-workflow__blocked"><span>{zh ? "BOM读取失败。保留草稿，请重新查询。" : "BOM을 읽지 못했습니다. 초안을 보존했으니 다시 조회하세요."}</span>
+          <button type="button" onClick={() => void (needsReview ? reviewLatest() : loadBom(editing, editing.approval?.snapshot || editing.previous_approval?.snapshot,
+            bomSource ? { source: bomSource, inputs } : undefined))}>{zh ? "重新查询BOM" : "BOM 재조회"}</button></div>}
+    </div>;
     return <form id="plan-material-draft" className="plan-workflow__editor" onSubmit={e => { e.preventDefault(); if (canSave) submit(editing.identity_state !== "identified"
       ? { action: "resolve_identity", plan_id: editing.id, version: editing.version, previous_uid: previous || null, reason }
       : { action: "approve", plan_id: editing.id, uid: editing.uid, version: editing.version,
@@ -286,14 +292,10 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
         {dayPicker(rows, editing, true)}<label>{zh ? "任务标识" : "작업 동일성"}<select aria-label={zh ? "任务标识" : "작업 동일성"} value={previous} onChange={e => { changed(); setPrevious(e.target.value); }}><option value="">{zh ? "独立新任务" : "독립 새 작업"}</option>{editing.candidate_details.map(candidate => <option key={candidate.uid} value={candidate.uid}>{candidate.snapshot.plan_date} · {candidate.snapshot.machine_name} · {candidate.snapshot.planned_quantity} · {zh ? "顺序" : "순서"} {candidate.snapshot.sequence}</option>)}</select></label>
       </div> : <>
         {rows.length > 1 && <div className="plan-workflow__material-heading">{dayPicker(rows, editing, true)}</div>}
-        {bomLoading ? <p role="status">{zh ? "正在读取MES BOM…" : "MES BOM 조회 중…"}</p> : bomError || !bomSource
-          ? <div role="alert" className="plan-workflow__blocked"><span>{zh ? "BOM读取失败。保留草稿，请重新查询。" : "BOM을 읽지 못했습니다. 초안을 보존했으니 다시 조회하세요."}</span>
-            <button type="button" onClick={() => void loadBom(editing, editing.approval?.snapshot || editing.previous_approval?.snapshot,
-              bomSource ? { source: bomSource, inputs } : undefined)}>{zh ? "重新查询BOM" : "BOM 재조회"}</button></div>
-          : <><span className="plan-workflow__source">BOM {bomSource.version}</span>
-            <PlanBomInputs source={bomSource} catalog={data.catalog.materials} quantity={editing.planned_quantity}
-              value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} hidePrimary ko={!zh} />
-            {!completeConnection && <span className="plan-workflow__blocked">{zh ? "设备连接信息缺失，请管理员补充。" : "설비 연결정보 부족 · 관리자 등록 필요"}</span>}</>}
+        {bomSource && <><span className="plan-workflow__source">BOM {bomSource.version}</span>
+          <PlanBomInputs source={bomSource} catalog={data.catalog.materials} quantity={editing.planned_quantity}
+            value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} hidePrimary ko={!zh} />
+          {!completeConnection && <span className="plan-workflow__blocked">{zh ? "设备连接信息缺失，请管理员补充。" : "설비 연결정보 부족 · 관리자 등록 필요"}</span>}</>}
       </>}
       <div className="plan-workflow__confirmation"><input aria-label={zh ? "确认理由／依据" : "확인 사유 / 근거"} placeholder={zh ? "确认依据" : "확인 근거"} required maxLength={500} value={reason} onChange={e => { setDirty(true); setReason(e.target.value); }} />
       <label className="plan-workflow__check"><input type="checkbox" checked={confirmed} disabled={editing.identity_state === "identified" && (bomLoading || bomError || !bomSource || needsReview)} onChange={e => { if (editing.identity_state === "identified" && (bomLoading || bomError || !bomSource || needsReview)) return; setDirty(true); setConfirmed(e.target.checked); }} />{zh ? "计划·原料确认" : "계획·원료 확인"}</label>

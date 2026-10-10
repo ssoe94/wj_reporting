@@ -312,7 +312,7 @@ test('opening an editor reads scoped BOM; replacing the third raw row preserves 
   await f.edit();
   assert.deepEqual(f.bomReads.map(read => read.params), [{ ...SERVICE_SCOPE, action: 'bom', plan_id: 1 }]);
   assert.equal(rawSelects(f).length, 0); assert.equal(f.button('저장').props.disabled, true);
-  await f.changeReason('Before BOM is visible'); await f.confirmMaterial();
+  assert.equal(f.elements().some(node => node.props.id === 'plan-material-draft'), false, 'no approval form before BOM read');
   f.bomReads[0].reply.resolve(source); await f.flush();
   assert.equal(f.button('저장').props.disabled, true, 'confirmation before the BOM read is not accepted');
   assert.equal(rawSelects(f).length, 1); assert.equal(rawSelects(f)[0].props['aria-label'], '사용 원료 3. SYN-ABS');
@@ -331,12 +331,12 @@ test('opening an editor reads scoped BOM; replacing the third raw row preserves 
 test('BOM failure has no legacy fallback; only explicit retry restores an approvable form', async () => {
   const f = fixture(serviceWorkflowFixture(), new Set(), true, true); await f.edit();
   f.bomReads[0].reply.reject(Error('SYNTHETIC BOM read denied')); await f.flush();
-  await f.changeReason('Keep my reason'); await f.confirmMaterial(); f.saveMaterial();
+  assert.equal(f.elements().some(node => node.props.id === 'plan-material-draft'), false, 'BOM failure offers no fallback form');
   assert.equal(f.mutations.length, 0); assert.equal(rawSelects(f).length, 0);
   assert.match(f.text(), /BOM을 읽지 못했습니다/); assert.equal(f.button('저장').props.disabled, true);
   f.button('BOM 재조회').props.onClick(); await f.flush(); assert.equal(f.bomReads.length, 2);
   f.bomReads[1].reply.resolve(serviceBomFixture()); await f.flush();
-  assert.equal(f.reason(), 'Keep my reason'); assert.equal(rawSelects(f).length, 1);
+  assert.equal(rawSelects(f).length, 1); await f.changeReason('After successful BOM read');
   assert.equal(f.button('저장').props.disabled, true, 'a retry must clear confirmation');
   await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
   assert.equal(f.calls.length, 0); assert.equal(f.mutations.length, 0);
@@ -403,8 +403,23 @@ test('invalid required quantities and a mismatched product BOM cannot be approve
     const f = fixture(serviceWorkflowFixture(), new Set(), true, true); await f.edit();
     const source = serviceBomFixture();
     if (failure === 'invalid-ratio') source.inputs[0].denominator = '0'; else source.part_no = 'UNRELATED-PART';
-    f.bomReads[0].reply.resolve(source); await f.flush(); await f.changeReason('Invalid source'); await f.confirmMaterial(); f.saveMaterial();
+    f.bomReads[0].reply.resolve(source); await f.flush();
+    if (failure === 'invalid-ratio') { await f.changeReason('Invalid source'); await f.confirmMaterial(); f.saveMaterial(); }
     assert.equal(f.button('저장').props.disabled, true); assert.equal(f.mutations.length, 0);
     if (failure === 'wrong-product') assert.equal(rawSelects(f).length, 0);
   }
+});
+
+
+test('failed conflict reload hides approval controls and keeps the full draft for the explicit retry', async () => {
+  const f = fixture(withSubstitute(), new Set(), true, true); await f.edit();
+  f.bomReads[0].reply.resolve(threeRowBom()); await f.flush(); await f.changeMaterial(0, 'SYN-ABS-B');
+  await f.changeReason('Keep draft through reload error'); await f.confirmMaterial(); await f.mutationError(409);
+  f.button('최신 계획 확인').props.onClick(); await f.flush(); f.bomReads[1].reply.reject(Error('SYNTHETIC read failure')); await f.flush();
+  assert.equal(f.elements().some(node => node.props.id === 'plan-material-draft'), false);
+  assert.equal(rawSelects(f).length, 0); assert.equal(f.button('저장').props.disabled, true);
+  f.button('BOM 재조회').props.onClick(); await f.flush(); f.bomReads[2].reply.resolve(threeRowBom()); await f.flush();
+  assert.equal(f.reason(), 'Keep draft through reload error'); assert.equal(rawSelects(f)[0].props.value, 'SYN-ABS-B');
+  assert.equal(f.button('저장').props.disabled, true); await f.confirmMaterial(); assert.equal(f.button('저장').props.disabled, false);
+  assert.equal(f.mutations.length, 0); assert.equal(f.calls.length, 0);
 });
