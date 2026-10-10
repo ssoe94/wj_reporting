@@ -233,6 +233,9 @@ def _finish(req, transport, state, *, mes_id_value='', blockers=None, base=None,
         'production_totals_verified': False, 'checked_at': timezone.now().isoformat()}
     if base is not None:
         evidence['base'] = {key: base.get(key) for key in ('code', 'plannedStartTime', 'plannedFinishTime', 'status')}
+        evidence['base']['assignment_codes'] = {key: (base.get(key) or {}).get('code')
+            if isinstance(base.get(key), dict) else None
+            for key in ('productionDepartment', 'planningDepartment', 'planningUser')}
     with transaction.atomic():
         lock_type(req.work_order.plan_type)
         current = PlanMesRequest.objects.select_for_update().select_related('work_order').get(pk=req.pk)
@@ -277,10 +280,15 @@ def _observe(req, transport, *, existed=False, known_id=None):
     base = transport.read_base(req.work_order.code, found)
     payload = req.contract['payload']
     status = base.get('status')
+    # Old persisted contracts did not send these fields; read them according to
+    # their original contract, while new creates must verify each assignment.
+    assignment_mismatch = any(key + 'Code' in payload and (
+        not isinstance(base.get(key), dict) or base[key].get('code') != payload[key + 'Code'])
+        for key in ('productionDepartment', 'planningDepartment', 'planningUser'))
     if (base.get('plannedStartTime') != payload['planStartTime']
             or base.get('plannedFinishTime') != payload['planFinishTime']
             or not isinstance(status, dict) or type(status.get('code')) is not int
-            or status['code'] not in range(6)):
+            or status['code'] not in range(6) or assignment_mismatch):
         return _finish(req, transport, 'review', mes_id_value=found,
             blockers=['existing_code_snapshot_mismatch'], base=base)
     return _finish(req, transport, 'already_exists' if existed else 'created', mes_id_value=found, base=base)

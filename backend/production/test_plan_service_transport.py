@@ -183,6 +183,8 @@ class PlanServiceFixture:
             'updatedAt': payload['planStartTime'], 'actualStartTime': None,
             'specifiedMaterial': 1, 'status': {'code': 1},
             'resource': {'code': req.intent['setup']['resource_code']},
+            **{key: {'code': payload[key + 'Code']} for key in
+                ('productionDepartment', 'planningDepartment', 'planningUser') if key + 'Code' in payload},
         }, 'fieldPermission': {'noAccess': []}}
 
     def change_plan_quantity(self, quantity):
@@ -215,6 +217,9 @@ class PlanServicePersistenceTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(req.contract['readback_scope'], 'base_creation')
         payload = req.contract['payload']
         self.assertEqual(payload['status'], 1)
+        self.assertEqual(payload['productionDepartmentCode'], 'ZS')
+        self.assertEqual(payload['planningDepartmentCode'], '002')
+        self.assertEqual(payload['planningUserCode'], '2299')
         self.assertEqual(payload['useBomFlag'], 0)
         self.assertEqual(payload['processPlanOpenCOs'][0]['reportFlag'], 1)
         self.assertEqual(payload['inputMaterialOpenV2COs'][0]['materialCode'], 'SYNTHETIC-RM')
@@ -223,6 +228,18 @@ class PlanServicePersistenceTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['unitName'], '个')
         self.assertEqual(payload['inputMaterialOpenV2COs'][0]['version'], 'V1')
         self.assertEqual(payload['outputMaterialOpenCOs'][0]['version'], 'V1')
+        self.assert_no_transport()
+
+    def test_machining_department_is_jg_even_when_setup_process_has_another_code(self):
+        from .plan_service_contract import build_contract
+        self.approve(process_code='SYNTHETIC-ASSEMBLY')
+        req = self.prepare()
+        intent = {**req.intent, 'plan_type': 'machining'}
+        contract, blockers = build_contract(req.work_order, intent)
+        self.assertEqual(blockers, [])
+        self.assertEqual(contract['payload']['productionDepartmentCode'], 'JG')
+        self.assertEqual(contract['payload']['planningDepartmentCode'], '002')
+        self.assertEqual(contract['payload']['planningUserCode'], '2299')
         self.assert_no_transport()
 
     def test_unversioned_materials_can_be_approved_and_prepared_without_invented_versions(self):
@@ -584,6 +601,25 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         self.assertNotIn(CREATE_PATH, self.paths())
         self.req.refresh_from_db()
         self.assertEqual(self.req.attempt, 0)
+
+    def test_missing_or_wrong_assignments_cannot_be_reported_as_created(self):
+        from .plan_service_transport import BASE_PATH
+        for key, value in [('productionDepartment', None), ('productionDepartment', {'code': 'JG'}),
+                           ('planningDepartment', {'code': 'ZS'}), ('planningUser', {'code': 'other'})]:
+            with self.subTest(key=key, value=value):
+                body = self.detail()
+                body['data'][key] = value
+                self.scripts[BASE_PATH] = [synthetic_response(body)]
+                result = self.dispatch() if self.req.attempt == 0 else self.recheck()
+                self.assertEqual(result['state'], 'review')
+                self.assertIn('existing_code_snapshot_mismatch', result['blockers'])
+                self.req.refresh_from_db()
+                self.assertEqual(self.req.attempt, 1)
+                self.assertEqual(self.req.work_order.mes_id, '')
+        self.assertEqual(self.recheck()['state'], 'created')
+        evidence = self.req.events.latest('id').evidence
+        self.assertEqual(evidence['base']['assignment_codes'], {
+            'productionDepartment': 'ZS', 'planningDepartment': '002', 'planningUser': '2299'})
 
     def test_permission_rejection_after_import_is_terminal_for_resend_and_does_not_claim_success(self):
         from .plan_workflow_contract import CREATE_PATH
