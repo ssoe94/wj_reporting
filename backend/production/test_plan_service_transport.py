@@ -1089,11 +1089,19 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
 
     def setUp(self):
         super().setUp()
-        from .plan_bom import read_bom, resolve_inputs
-        from .test_plan_bom import FixtureReader, PART, submitted
+        from .plan_bom import read_bom
+        from .test_plan_bom import FixtureReader, PART
         self.assertEqual(self.plan.part_no, PART)
         self.reader = FixtureReader()
         self.source = read_bom(PART, self.user.pk, reader=self.reader)
+        self.approve_complete_bom()
+
+    def approve_complete_bom(self, numerator=None):
+        from .plan_bom import read_bom, resolve_inputs
+        from .test_plan_bom import PART, submitted
+        inputs = submitted(self.source, 'RESIN')
+        if numerator is not None:
+            inputs[2]['numerator'] = numerator
         with patch('production.plan_workflow_views.read_bom',
                 side_effect=lambda part, actor: read_bom(part, actor, reader=self.reader)) as read, \
                 patch('production.plan_workflow_views.resolve_inputs',
@@ -1102,7 +1110,7 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
             response = self.action('approve', plan_id=self.plan.pk,
                 uid=str(self.plan.work_uid), version=self.plan.work_version,
                 bom_hash=self.source['hash'], bom_version=self.source['version'],
-                inputs=submitted(self.source, 'RESIN'), resource_code='SYNTHETIC-IMM01',
+                inputs=inputs, resource_code='SYNTHETIC-IMM01',
                 mold_code='', reason='SYNTHETIC complete BOM with confirmed resin')
         self.assertEqual(response.status_code, 201, response.data)
         read.assert_called_once_with(PART, self.user.pk)
@@ -1253,6 +1261,38 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
         self.validate_call.assert_not_called()
         self.resolve_call.assert_not_called()
         self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_raw_ratio_is_reapplied_to_fresh_bom_and_control_before_one_create(self):
+        from .test_plan_bom import PART
+        from .plan_workflow_contract import CREATE_PATH
+        self.plan = new_plan(part=PART, machine='SYNTHETIC-IMM02', quantity=1692.0, actor=self.user)
+        self.approve_complete_bom(numerator='0.4312500001')
+        result = self.send_bom()
+        self.assertEqual(result['state'], 'created')
+        self.assertEqual(self.resolve_call.call_args.args[1][2]['numerator'], '0.4312500001')
+        payload = next(call['payload'] for call in self.calls if call['path'] == CREATE_PATH)
+        raw = payload['inputMaterialOpenV2COs'][2]
+        self.assertEqual(raw['subInputAmountNumerator'], '0.4312500001')
+        self.assertEqual(raw['inputMaterialControlOpenCOs'][0]['inputAmountNumerator'], '0.4312500001')
+        self.assertEqual([row['subInputAmountNumerator'] for row in payload['inputMaterialOpenV2COs'][:2]], ['3', '1'])
+        self.assertEqual(self.req.intent['setup']['bom_source']['inputs'][2]['numerator'], '0.429')
+        self.req.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt), ('created', 1))
+
+    def test_raw_override_still_rejects_changed_original_bom_before_any_create(self):
+        from .test_plan_bom import PART
+        from .plan_workflow_contract import CREATE_PATH
+        self.plan = new_plan(part=PART, machine='SYNTHETIC-IMM02', quantity=1000.0, actor=self.user)
+        self.approve_complete_bom(numerator='0.5')
+        raw = self.reader.bom['bomInputMaterials'][2]
+        raw['inputAmountNumerator'] = '0.43'
+        raw['bomFeedingControls'][0]['inputAmountNumerator'] = '0.43'
+        result = self.send_bom()
+        self.assertEqual(result['blockers'], ['mes_bom_changed_or_unavailable'])
+        self.req.refresh_from_db()
+        self.assertEqual((self.req.state, self.req.attempt), ('failed', 0))
+        self.assertEqual(self.paths().count(CREATE_PATH), 0)
+        self.resolve_call.assert_not_called()
 
     def test_old_wj_hardware_defaults_require_review_and_read_only_recheck_never_resends(self):
         from .plan_service_transport import INPUT_PATH

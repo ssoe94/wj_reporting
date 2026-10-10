@@ -188,7 +188,10 @@ class PlanWorkflowView(APIView):
                     with localcontext() as ctx:
                         ctx.prec = 100
                         required = Decimal(str(plan.planned_quantity)) * Decimal(item['numerator']) / Decimal(item['denominator'])
-                    inputs.append({**item, 'required_quantity': decimal_text(format(required, 'f'))})
+                        # Float-backed integer plan quantities may carry a trailing
+                        # .0; discard insignificant zeros, never significant digits.
+                        required_text = format(required.normalize(), 'f')
+                    inputs.append({**item, 'required_quantity': decimal_text(required_text)})
                 setup = {**bom_source['setup'], 'inputs': inputs, 'bom_source': bom_source,
                     'resource_code': text(request.data.get('resource_code')),
                     'mold_code': optional_text(request.data.get('mold_code'))}
