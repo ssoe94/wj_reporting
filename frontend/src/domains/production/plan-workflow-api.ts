@@ -6,6 +6,7 @@ export type MaterialInput = MaterialOption & { numerator: string; denominator: s
 export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[] };
 export type WorkflowRow = { id: number; uid: string; version: number; plan_date: string; machine_name: string;
   part_no: string; planned_quantity: string; default_version: number; identity_state: string; candidates: string[];
+  lot_no?: string; model_name?: string; part_spec?: string;
   quantity_valid?: boolean;
   candidate_details: { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number; planned_quantity: string } }[];
   approval: { id: number; snapshot: MaterialSnapshot; approved_at: string; actor_name?: string } | null;
