@@ -376,12 +376,14 @@ def preview(start, end, plan_type, context=None):
         if not row['quantity_valid']: blockers.append('plan_quantity_review')
         if row['identity_state'] != 'identified': blockers.append('identity_confirmation')
         if not approval: blockers.append('material_confirmation')
-        if plan_type == 'injection' and counts[(plan.machine_name, str(plan.plan_date))] > 1:
-            blockers.append('multiple_rows_setup_review')
         setup_hash = digest(setup) if setup else ''
         # Unknown mold/setup is valid for one day, not evidence of continuity.
+        # Multiple rows on either boundary day must stay separate orders, but
+        # an identified row with its own current approval can be prepared.
         same = (plan_type == 'injection' and current and setup and setup.get('mold_code')
             and not blockers and not current['blockers']
+            and counts[(plan.machine_name, str(plan.plan_date))] == 1
+            and counts[(current['machine_name'], current['last_date'])] == 1
             and current['machine_name'] == plan.machine_name and current['part_no'] == plan.part_no
             and current['lot_no'] == (plan.lot_no or '') and current['setup_fingerprint'] == setup_hash
             and date.fromisoformat(current['last_date']) + timedelta(days=1) == plan.plan_date)

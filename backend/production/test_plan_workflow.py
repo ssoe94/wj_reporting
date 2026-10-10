@@ -154,6 +154,71 @@ class PlanWorkflowTests(TestCase):
         self.assertEqual(results[0]['state'], 'blocked')
         self.assertFalse(PlanMesRequest.objects.exists())
 
+    def test_selected_lot_on_multirow_day_prepares_only_its_current_approved_row(self):
+        other = new_plan(day=12, quantity=228, lot_no='OTHER', actor=self.user)
+        selected = new_plan(day=12, quantity=1692, lot_no='SELECTED', sequence=2, actor=self.user)
+        PlanWorkIdentity.objects.filter(uid__in=[other.work_uid, selected.work_uid]).update(resolution='confirmation')
+        with transaction.atomic():
+            resolve_identity(selected, {'version': 1, 'reason': 'Selected as an independent LOT'}, self.user)
+        approval = self.approve(selected, mold_code='')
+        groups = {g['lot_no']: g for g in self.groups()}
+        self.assertEqual(groups['SELECTED']['blockers'], [])
+        self.assertEqual(set(groups['OTHER']['blockers']), {'identity_confirmation', 'material_confirmation'})
+        results = prepare(date(2026, 10, 12), date(2026, 10, 12), 'injection',
+                          [groups['SELECTED']['key'], groups['OTHER']['key']], self.user)
+        self.assertEqual([r['state'] for r in results], ['disabled', 'blocked'])
+        request = PlanMesRequest.objects.get()
+        self.assertEqual(request.intent['members'], [str(selected.work_uid)])
+        self.assertEqual(request.intent['approval_ids'], [approval.pk])
+        self.assertEqual(request.intent['versions'], {str(selected.work_uid): 2})
+        self.assertEqual(request.intent['quantity'], '1692.0')
+        self.assertEqual(request.intent['planned_start'], '2026-10-12T08:00:00+08:00')
+        self.assertEqual(request.intent['planned_end'], '2026-10-13T08:00:00+08:00')
+        self.assertEqual(request.attempt, 0)
+        self.assertEqual(request.work_order.mes_id, '')
+
+    def test_multirow_day_blocks_continuity_on_both_sides_even_with_matching_setup(self):
+        plans = [new_plan(day=day, sequence=seq, actor=self.user)
+                 for day, seq in ((8, 1), (9, 1), (9, 2), (10, 1))]
+        for plan in plans:
+            self.approve(plan)
+        groups = self.groups()
+        self.assertEqual([g['members'] for g in groups], [[str(p.work_uid)] for p in plans])
+        self.assertTrue(all(not g['blockers'] for g in groups))
+        # A one-day filter still sees adjacent day boundaries without merging.
+        selected = preview(date(2026, 10, 10), date(2026, 10, 10), 'injection')
+        self.assertEqual([g['members'] for g in selected], [[str(plans[-1].work_uid)]])
+
+    def test_multirow_day_does_not_reuse_an_approval_from_an_older_revision(self):
+        selected = new_plan(actor=self.user)
+        self.approve(selected)
+        with transaction.atomic():
+            selected.planned_quantity = 1692
+            selected.save(update_fields=['planned_quantity'])
+            _record(selected, self.user, 'edited')
+        new_plan(sequence=2, lot_no='OTHER', actor=self.user)
+        group = next(g for g in self.groups() if str(selected.work_uid) in g['members'])
+        self.assertEqual(group['blockers'], ['material_confirmation'])
+        result = prepare(date(2026, 10, 8), date(2026, 10, 8), 'injection', [group['key']], self.user)
+        self.assertEqual(result[0]['state'], 'blocked')
+        self.assertFalse(PlanMesRequest.objects.exists())
+
+    def test_new_multirow_boundary_does_not_silently_split_an_existing_campaign(self):
+        plans = [new_plan(day=day, actor=self.user) for day in (8, 9, 10)]
+        for plan in plans:
+            self.approve(plan)
+        original = self.groups()[0]
+        prepare(date(2026, 10, 8), date(2026, 10, 10), 'injection', [original['key']], self.user)
+        extra = new_plan(day=9, sequence=2, lot_no='OTHER', actor=self.user)
+        self.approve(extra)
+        with self.assertRaises(WorkflowConflict):
+            prepare(date(2026, 10, 8), date(2026, 10, 10), 'injection', [original['key']], self.user)
+        for group in self.groups():
+            if str(extra.work_uid) not in group['members']:
+                self.assertIn('campaign_members_changed', group['blockers'])
+        self.assertEqual(PlanMesRequest.objects.count(), 1)
+        self.assertEqual(PlanWorkOrder.objects.get().members, [str(p.work_uid) for p in plans])
+
     def test_invalid_day_is_a_visible_boundary_between_approved_days(self):
         first = new_plan(day=8, actor=self.user)
         middle = new_plan(day=9, quantity=123.4567890123456, actor=self.user)

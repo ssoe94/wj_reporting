@@ -143,7 +143,7 @@ class PlanWorkflowPerformanceTests(NoMesNetworkMixin, TestCase):
         for name in ('duplicate_a', 'duplicate_b'):
             group = self.group_for(data, name)
             self.assertEqual(group['members'], [str(self.fixture['named'][name].work_uid)])
-            self.assertIn('multiple_rows_setup_review', group['blockers'])
+            self.assertEqual(group['blockers'], [])
         identity = self.row_for(data, 'identity')
         self.assertEqual(identity['identity_state'], 'confirmation')
         self.assertEqual(len(identity['candidate_details']), 1)
