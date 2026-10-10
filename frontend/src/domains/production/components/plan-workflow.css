@@ -8,6 +8,7 @@
 .plan-workflow__material-heading, .plan-workflow__basic { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; margin: 6px 0; }
 .plan-workflow__basic:empty { display: none; }
 .plan-workflow__material-heading select { width: auto; }
+.plan-workflow__mobile-status { display: none; }
 .plan-workflow__source { color: #475d78; }
 .plan-workflow__body { margin-top: 6px; border-top: 1px solid #d5deea; padding-top: 6px; }
 .plan-workflow label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -84,8 +85,9 @@
   .plan-workflow__heading .panel__title { font-size: 16px; line-height: 1.4; }
   .plan-workflow__heading > button { flex-shrink: 0; }
   .plan-workflow__filters { gap: 6px; }
-  .plan-workflow__filters > label:first-child { width: 100%; }
-  .plan-workflow__filters > label input { width: 122px; }
+  .plan-workflow__filters > label:first-child { flex: 0 0 100%; width: 100%; }
+  .plan-workflow__filters > label:not(:first-child) { flex: 0 0 calc((100% - 6px) / 2); width: calc((100% - 6px) / 2); flex-direction: column; align-items: stretch; gap: 2px; }
+  .plan-workflow__filters > label input { width: 100%; min-width: 0; }
   .plan-workflow__queue { flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 5px; }
   .plan-workflow__queue button { white-space: nowrap; flex-shrink: 0; }
   .plan-workflow__table-wrap { overflow: visible; }
@@ -96,6 +98,7 @@
   .plan-workflow__order > td:first-child { grid-column: 1; grid-row: 1; }
   .plan-workflow__order .plan-workflow__product { grid-column: 2; grid-row: 1; }
   .plan-workflow__order .plan-workflow__action { grid-column: 3; grid-row: 1; }
+  .plan-workflow__mobile-status { display: inline; color: #475d78; line-height: 1.35; }
   .plan-workflow__row-actions > button { width: 100%; padding: 5px 4px; }
   .plan-workflow__orders .plan-workflow__machine, .plan-workflow__orders .plan-workflow__period,
   .plan-workflow__orders .plan-workflow__quantity, .plan-workflow__orders .plan-workflow__material,
