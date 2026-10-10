@@ -307,6 +307,16 @@ function threeRowBom() {
 }
 const rawSelects = (f: ReturnType<typeof fixture>) => f.elements().filter(node => node.type === 'select' && String(node.props['aria-label'] || '').startsWith('사용 원료 '));
 
+test('collapsed BOM summary uses the replaced raw row and keeps the complete list in its title', () => {
+  const data = serviceWorkflowFixture(), source = threeRowBom();
+  const snapshot = data.rows[0].approval!.snapshot;
+  snapshot.bom_source = source;
+  snapshot.inputs = source.inputs.map(input => ({ ...snapshot.inputs[0], ...input }));
+  snapshot.inputs[2].material_code = 'SYN-ABS-B';
+  const f = fixture(data), summary = f.button('SYN-ABS-B 외 2개');
+  assert.equal(summary.props.title, 'SYN-METAL-1 + SYN-METAL-2 + SYN-ABS-B');
+});
+
 test('opening an editor reads scoped BOM; replacing the third raw row preserves both fixed hardware rows', async () => {
   const data = withSubstitute(), source = threeRowBom(), f = fixture(data, new Set(), true, true);
   await f.edit();

@@ -364,6 +364,11 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {visibleItems.map(({ group, rows, request, mesId, requestState, stage }) => {
         const selected = editing && group.members.includes(editing.uid);
         const snapshot = rows[0]?.approval?.snapshot;
+        const rawId = snapshot?.bom_source?.inputs.find(input => input.replaceable)?.source_row_id;
+        const primary = (rawId && snapshot?.inputs.find(input => input.source_row_id === rawId)) || snapshot?.inputs[0];
+        const materialSummary = primary ? primary.material_code + ((snapshot?.inputs.length || 0) > 1
+          ? (zh ? ` 等${snapshot!.inputs.length}项` : ` 외 ${snapshot!.inputs.length - 1}개`) : "")
+          : (zh ? "确认用料" : "투입 자재 확인");
         const eligible = canSendPlanRequest(data, group, request, sendAttempts);
         const isOpen = expanded === group.key || !!selected;
         const taskLabels: Record<PlanWorkflowStage, [string, string]> = {
@@ -390,7 +395,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
           <td className={`plan-workflow__material${selected && editing.identity_state === "identified" ? " is-editing" : ""}`}>{selected && editing.identity_state === "identified" ? (bomLoading || bomError || !bomSource
             ? <span className="plan-workflow__blocked">{bomLoading ? (zh ? "读取BOM…" : "BOM 조회 중…") : (zh ? "需重新查询BOM" : "BOM 재조회 필요")}</span>
             : <PlanBomPrimaryInput source={bomSource} catalog={data.catalog.materials} quantity={editing.planned_quantity}
-              value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} ko={!zh} />) : <button type="button" className="plan-workflow__material-cell" disabled={!data.can_edit || mutate.isPending} title={snapshot?.inputs.map(input => input.material_name).join(" + ")} onClick={() => { if (rowToEdit) leave(() => edit(rowToEdit)); }}>{snapshot?.inputs.map(input => input.material_code).join(" + ") || (zh ? "确认用料" : "투입 자재 확인")}</button>}</td>
+              value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} ko={!zh} />) : <button type="button" className="plan-workflow__material-cell" disabled={!data.can_edit || mutate.isPending} title={snapshot?.inputs.map(input => input.material_code).join(" + ")} onClick={() => { if (rowToEdit) leave(() => edit(rowToEdit)); }}>{materialSummary}</button>}</td>
           <td className="plan-workflow__task"><span className={group.blockers.length || (selected && dirty) || stage === "review" ? "plan-workflow__blocked" : "plan-workflow__approved"} title={currentTask}>{currentTask}</span></td>
           <td className="plan-workflow__action"><div className="plan-workflow__row-actions">{selected ? <button className="btn btn-primary" form="plan-material-draft" disabled={!canSave}>{zh ? "保存" : "저장"}</button>
             : stage === "materials" || stage === "plan" && rowToEdit?.identity_state !== "identified" ? <button type="button" className="btn btn-primary" disabled={!data.can_edit || busy || !rowToEdit} onClick={() => rowToEdit && leave(() => edit(rowToEdit))}>{stage === "plan" ? (zh ? "核对计划" : "계획 확인") : (zh ? "确认原料" : "원료 확정")}</button>
