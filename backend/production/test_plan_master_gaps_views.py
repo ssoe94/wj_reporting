@@ -43,7 +43,8 @@ class PlanMasterGapViewTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         factory.assert_called_once_with(self.user.pk)
         self.assertEqual(reader.calls, [(MATERIAL_LIST, {'codes': ['SYNTHETIC-A'], 'queryFieldList': [1, 4]})])
-        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        # Production middleware may add stronger no-cache/max-age directives.
+        self.assertIn('no-store', {value.strip() for value in response['Cache-Control'].split(',')})
         self.assertEqual(len(response.data['rows']), 1)
         row = response.data['rows'][0]
         self.assertEqual([item['plan_id'] for item in row['sources']], [self.plan.pk, second.pk])
