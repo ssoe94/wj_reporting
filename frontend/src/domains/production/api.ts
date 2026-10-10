@@ -106,6 +106,8 @@ export type ProductionPlanDatesResponse = {
 
 export type ProductionPlanRecord = {
   id?: number;
+  plan_date?: string;
+  date?: string;
   work_uid?: string | null;
   work_version?: number;
   machine_name: string | null;

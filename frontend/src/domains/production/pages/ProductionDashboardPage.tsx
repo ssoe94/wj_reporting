@@ -1,6 +1,6 @@
 import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { injectionFleetMatrixQueryOptions } from "@/domains/mes/injection-matrix-query";
 import {
   getInjectionProductionMatrix,
@@ -24,11 +24,11 @@ import {
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
   type ProductionMesReportStatsResponse,
-  type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
   type ProductionStatusResponse,
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
+import { buildMachiningProgressPreview, getPlanDisplayName, type MachiningProgressPreview } from "@/domains/production/machining-progress";
 import { InjectionMachineBoard } from "@/domains/production/components/InjectionMachineBoard";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
@@ -64,34 +64,6 @@ type ProductionBriefContext = {
   topMachines: Array<{ machine: string; output: number }>;
   lowOutputMachines: Array<{ machine: string; output: number }>;
   latestUpdatedAt: string | null;
-};
-
-type MachiningProgressPreview = {
-  plannedQty: number;
-  actualQty: number;
-  partCount: number;
-  progressRate: number;
-  completedCount: number;
-  inProgressCount: number;
-  pendingCount: number;
-  rows: Array<{
-    key: string;
-    label: string;
-    plannedQty: number;
-    actualQty: number;
-    gapQty: number;
-    progressRate: number;
-    completedCount: number;
-    inProgressCount: number;
-    pendingCount: number;
-    mesQty: number;
-    manualOpenQty: number;
-    matchedManualQty: number;
-    defectQty: number;
-    status: MachiningProvisionRow["status"] | "legacy";
-    provisionRow?: MachiningProvisionRow;
-    segments: RealtimeProgressSegment[];
-  }>;
 };
 
 type KpiDetailKey = "injection" | "unplanned" | "machining" | "machines";
@@ -1933,18 +1905,6 @@ function buildMachineActivitySummary(
   };
 }
 
-function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
-  return records
-    .map((record, index) => ({ record, index }))
-    .sort((left, right) => {
-      const leftSequence = Number(left.record.sequence ?? left.index);
-      const rightSequence = Number(right.record.sequence ?? right.index);
-      if (leftSequence !== rightSequence) return leftSequence - rightSequence;
-      return left.index - right.index;
-    })
-    .map(({ record }) => record);
-}
-
 function normalizeDashboardPartNo(value: string | null | undefined) {
   return String(value ?? "").replace(/\s+/g, "").toUpperCase();
 }
@@ -2186,7 +2146,9 @@ function getDisplaySegments(segments: RealtimeProgressSegment[]) {
 function sumPlannedQuantity(summary: ProductionPlanSummaryResponse | undefined, bucket: "injection" | "machining", date: string) {
   const dailyTotal = summary?.[bucket].daily_totals.find((item) => item.date === date);
   if (dailyTotal) return Number(dailyTotal.plan_qty ?? 0);
-  return (summary?.[bucket]?.records ?? []).reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0);
+  return (summary?.[bucket]?.records ?? [])
+    .filter((record) => (record.plan_date || record.date || summary?.plan_date) === date)
+    .reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0);
 }
 
 function buildProductionBriefContext(
@@ -2231,7 +2193,7 @@ function buildProductionBriefContext(
     .map((row) => ({ machine: getLocalizedMachineLabel(row.label, language), output: row.estimatedQty }));
   const injectionPlanQty = realtimeSummary.plannedQty || sumPlannedQuantity(planSummary, "injection", businessDate);
   const actualInjectionOutput = realtimeSummary.estimatedQty;
-  const machiningPlanQty = Number(machiningProvision?.summary?.total_planned ?? sumPlannedQuantity(planSummary, "machining", businessDate));
+  const machiningPlanQty = sumPlannedQuantity(planSummary, "machining", businessDate);
   const actualMachiningOutput = Number(machiningProvision?.summary?.effective_actual_qty ?? machiningStats?.summary?.total_mes ?? 0);
   const activeMachineCount = machineOutputs.filter((item) => item.output > 0).length;
   const runningMachineCount = realtimeSummary.rows.filter((row) => row.isRunning).length;
@@ -2256,308 +2218,6 @@ function buildProductionBriefContext(
     topMachines: sortedActiveMachines.slice(0, 4).map(({ machine, output }) => ({ machine, output })),
     lowOutputMachines: sortedActiveMachines.slice(-4).map(({ machine, output }) => ({ machine, output })),
     latestUpdatedAt: latestTime?.toISOString() ?? null,
-  };
-}
-
-function buildMachiningProgressPreview(
-  planSummary: ProductionPlanSummaryResponse | undefined,
-  machiningStats: ProductionMesReportStatsResponse | undefined,
-  machiningProvision?: MachiningProvisionResponse,
-): MachiningProgressPreview {
-  if (machiningProvision) {
-    const provisionGroups = new Map<string, {
-      key: string;
-      label: string;
-      plannedQty: number;
-      actualQty: number;
-      mesQty: number;
-      manualOpenQty: number;
-      matchedManualQty: number;
-      defectQty: number;
-      provisionRows: MachiningProvisionRow[];
-      segments: RealtimeProgressSegment[];
-    }>();
-
-    machiningProvision.rows.forEach((row, index) => {
-      const plannedQty = Number(row.planned_qty ?? 0);
-      const actualQty = Number(row.effective_actual_qty ?? 0);
-      const progressRate = plannedQty > 0 ? (actualQty / plannedQty) * 100 : actualQty > 0 ? 100 : 0;
-      const segmentStatus: RealtimeProgressSegmentStatus = plannedQty > 0 && actualQty >= plannedQty
-        ? "completed"
-        : actualQty > 0
-          ? "in_progress"
-          : "pending";
-      const segment: RealtimeProgressSegment = {
-        key: `${row.plan_id ?? (row.plan_identity_hash || index)}-${row.part_no}`,
-        sequence: Number(row.sequence ?? index + 1),
-        partNo: row.part_no || "-",
-        modelName: row.model_name || "-",
-        lotNo: row.lot_no || "-",
-        productFamilyCode: null,
-        productFamilyName: null,
-        isFinishedProduct: false,
-        plannedQty,
-        cavity: 1,
-        requiredShots: plannedQty,
-        allocatedShots: actualQty,
-        estimatedQty: actualQty,
-        progressRate,
-        status: segmentStatus,
-      };
-      const groupKey = row.equipment_key || row.equipment_label || row.machine_name || `unknown-${index}`;
-      const group = provisionGroups.get(groupKey) ?? {
-        key: groupKey,
-        label: row.equipment_label || row.machine_name || row.equipment_key || "-",
-        plannedQty: 0,
-        actualQty: 0,
-        mesQty: 0,
-        manualOpenQty: 0,
-        matchedManualQty: 0,
-        defectQty: 0,
-        provisionRows: [],
-        segments: [],
-      };
-      group.plannedQty += plannedQty;
-      group.actualQty += actualQty;
-      group.mesQty += Number(row.mes_qty ?? 0);
-      group.manualOpenQty += Number(row.manual_open_qty ?? 0);
-      group.matchedManualQty += Number(row.matched_manual_qty ?? 0);
-      group.defectQty += Number(row.defect_qty ?? 0);
-      group.provisionRows.push(row);
-      group.segments.push(segment);
-      provisionGroups.set(groupKey, group);
-    });
-
-    const rows = [...provisionGroups.values()]
-      .map((group) => {
-        const completedCount = group.segments.filter((segment) => segment.status === "completed").length;
-        const inProgressCount = group.segments.filter((segment) => segment.status === "in_progress").length;
-        const pendingCount = group.segments.filter((segment) => segment.status === "pending").length;
-        const provisionRow = [...group.provisionRows].sort((left, right) => {
-          const leftActual = Number(left.effective_actual_qty ?? 0);
-          const leftPlan = Number(left.planned_qty ?? 0);
-          const rightActual = Number(right.effective_actual_qty ?? 0);
-          const rightPlan = Number(right.planned_qty ?? 0);
-          const leftDone = leftPlan > 0 && leftActual >= leftPlan;
-          const rightDone = rightPlan > 0 && rightActual >= rightPlan;
-          if (leftDone !== rightDone) return leftDone ? 1 : -1;
-          return Number(left.sequence ?? 0) - Number(right.sequence ?? 0);
-        }).find((item) => item.plan_id) ?? group.provisionRows.find((item) => item.plan_id);
-        return {
-          key: group.key,
-          label: group.label,
-          plannedQty: group.plannedQty,
-          actualQty: group.actualQty,
-          gapQty: group.actualQty - group.plannedQty,
-          progressRate: group.plannedQty > 0 ? (group.actualQty / group.plannedQty) * 100 : group.actualQty > 0 ? 100 : 0,
-          completedCount,
-          inProgressCount,
-          pendingCount,
-          mesQty: group.mesQty,
-          manualOpenQty: group.manualOpenQty,
-          matchedManualQty: group.matchedManualQty,
-          defectQty: group.defectQty,
-          status: group.provisionRows.some((item) => item.status === "manual_mismatch")
-            ? "manual_mismatch"
-            : group.provisionRows.some((item) => item.status === "manual_open")
-              ? "manual_open"
-              : group.provisionRows.some((item) => item.status === "manual_partial")
-                ? "manual_partial"
-                : group.provisionRows.some((item) => item.status === "manual_matched")
-                  ? "manual_matched"
-                  : group.provisionRows.some((item) => item.status === "mes_reported")
-                    ? "mes_reported"
-                    : group.provisionRows[0]?.status ?? "needs_review",
-          provisionRow,
-          segments: group.segments,
-        };
-      })
-      .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
-
-    return {
-      plannedQty: Number(machiningProvision.summary.total_planned ?? 0),
-      actualQty: Number(machiningProvision.summary.effective_actual_qty ?? 0),
-      partCount: rows.reduce((sum, row) => sum + row.segments.length, 0),
-      progressRate: Number(machiningProvision.summary.achievement_rate ?? 0),
-      completedCount: rows.reduce((sum, row) => sum + row.completedCount, 0),
-      inProgressCount: rows.reduce((sum, row) => sum + row.inProgressCount, 0),
-      pendingCount: rows.reduce((sum, row) => sum + row.pendingCount, 0),
-      rows,
-    };
-  }
-
-  const planMap = new Map<string, {
-    label: string;
-    plannedQty: number;
-    records: ProductionPlanRecord[];
-  }>();
-  const plannedParts = new Set<string>();
-
-  for (const record of planSummary?.machining?.records ?? []) {
-    const key = record.machine_name || "unknown";
-    const current = planMap.get(key) ?? {
-      label: record.machine_name || "-",
-      plannedQty: 0,
-      records: [],
-    };
-    current.plannedQty += Number(record.planned_quantity ?? 0);
-    current.records.push(record);
-    planMap.set(key, current);
-
-    const partNo = normalizeDashboardPartNo(record.part_no);
-    if (partNo) {
-      plannedParts.add(partNo);
-    }
-  }
-
-  const mesQtyByPart = new Map<string, number>();
-  const mesRowsByPart = new Map<string, ProductionMesReportStatsResponse["rows"]>();
-
-  for (const row of machiningStats?.rows ?? []) {
-    const partNo = normalizeDashboardPartNo(row.part_no);
-    const mesQty = Number(row.mes_qty ?? 0);
-    if (!partNo || mesQty <= 0) continue;
-
-    mesQtyByPart.set(partNo, (mesQtyByPart.get(partNo) ?? 0) + mesQty);
-    mesRowsByPart.set(partNo, [...(mesRowsByPart.get(partNo) ?? []), row]);
-  }
-
-  const rows = [...planMap.entries()]
-    .sort((left, right) => left[1].label.localeCompare(right[1].label, "ko-KR", { numeric: true, sensitivity: "base" }))
-    .map(([key, plan]) => ({
-      key,
-      label: plan.label,
-      plannedQty: plan.plannedQty,
-      actualQty: 0,
-      gapQty: 0,
-      progressRate: 0,
-      completedCount: 0,
-      inProgressCount: 0,
-      pendingCount: 0,
-      segments: getOrderedPlanRecords(plan.records).map((record, index) => {
-        const segmentPlannedQty = Number(record.planned_quantity ?? 0);
-        const partNo = normalizeDashboardPartNo(record.part_no);
-        const availableQty = partNo ? (mesQtyByPart.get(partNo) ?? 0) : 0;
-        const estimatedQty = Math.min(segmentPlannedQty, Math.max(0, availableQty));
-
-        if (partNo) {
-          mesQtyByPart.set(partNo, Math.max(0, availableQty - estimatedQty));
-        }
-
-        const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
-        const status: RealtimeProgressSegmentStatus = estimatedQty >= segmentPlannedQty && segmentPlannedQty > 0
-          ? "completed"
-          : estimatedQty > 0
-            ? "in_progress"
-            : "pending";
-        return {
-          key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
-          sequence: index + 1,
-          partNo: record.part_no || record.model_name || record.part_spec || "-",
-          modelName: record.model_name || record.part_spec || "-",
-          lotNo: record.lot_no || "-",
-          productFamilyCode: record.product_family_code || null,
-          productFamilyName: record.product_family_name || null,
-          isFinishedProduct: Boolean(record.is_finished_product),
-          plannedQty: segmentPlannedQty,
-          cavity: Math.max(1, Number(record.cavity ?? 1) || 1),
-          requiredShots: segmentPlannedQty,
-          allocatedShots: estimatedQty,
-          estimatedQty,
-          progressRate,
-          status,
-        };
-      }),
-    }))
-    .map((row) => {
-      const actualQty = row.segments.reduce((sum, segment) => sum + segment.estimatedQty, 0);
-      const completedCount = row.segments.filter((segment) => segment.status === "completed").length;
-      const inProgressCount = row.segments.filter((segment) => segment.status === "in_progress").length;
-      const pendingCount = row.segments.filter((segment) => segment.status === "pending").length;
-      const extraPartKeys = new Set<string>();
-      const extraQty = getOrderedPlanRecords(planMap.get(row.key)?.records ?? []).reduce((sum, record) => {
-        const partNo = normalizeDashboardPartNo(record.part_no);
-        if (partNo && !extraPartKeys.has(partNo)) {
-          const extra = mesQtyByPart.get(partNo) ?? 0;
-          mesQtyByPart.set(partNo, 0);
-          extraPartKeys.add(partNo);
-          return sum + extra;
-        }
-        return sum;
-      }, 0);
-      const totalActualQty = actualQty + extraQty;
-      return {
-        ...row,
-        actualQty: totalActualQty,
-        gapQty: totalActualQty - row.plannedQty,
-        progressRate: row.plannedQty > 0 ? (totalActualQty / row.plannedQty) * 100 : 0,
-        completedCount,
-        inProgressCount,
-        pendingCount,
-        mesQty: totalActualQty,
-        manualOpenQty: 0,
-        matchedManualQty: 0,
-        defectQty: 0,
-        status: "legacy" as const,
-      };
-    })
-    .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
-
-  const mesOnlyRows = [...mesRowsByPart.entries()]
-    .filter(([partNo]) => !plannedParts.has(partNo))
-    .map(([partNo, mesRows]) => {
-      const mesQty = mesRows.reduce((sum, row) => sum + Number(row.mes_qty ?? 0), 0);
-      const firstRow = mesRows[0];
-      const segment: RealtimeProgressSegment = {
-        key: `mes-only-${partNo}`,
-        sequence: 1,
-        partNo: firstRow?.part_no || partNo || "-",
-        modelName: firstRow?.model_name || "-",
-        lotNo: "-",
-        productFamilyCode: null,
-        productFamilyName: null,
-        isFinishedProduct: false,
-        plannedQty: 0,
-        cavity: 1,
-        requiredShots: 0,
-        allocatedShots: mesQty,
-        estimatedQty: mesQty,
-        progressRate: 100,
-        status: "completed" as const,
-      };
-      return {
-        key: `mes-only-${partNo}`,
-        label: firstRow?.equipment_label || firstRow?.equipment_name || firstRow?.equipment_key || "-",
-        plannedQty: 0,
-        actualQty: mesQty,
-        gapQty: mesQty,
-        progressRate: 100,
-        completedCount: 1,
-        inProgressCount: 0,
-        pendingCount: 0,
-        mesQty,
-        manualOpenQty: 0,
-        matchedManualQty: 0,
-        defectQty: 0,
-        status: "legacy" as const,
-        segments: [segment],
-      };
-    });
-
-  const allRows = [...rows, ...mesOnlyRows]
-    .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
-  const plannedQty = allRows.reduce((sum, row) => sum + row.plannedQty, 0);
-  const actualQty = allRows.reduce((sum, row) => sum + row.actualQty, 0);
-
-  return {
-    plannedQty,
-    actualQty,
-    partCount: allRows.reduce((sum, row) => sum + row.segments.length, 0),
-    progressRate: plannedQty > 0 ? (actualQty / plannedQty) * 100 : 0,
-    completedCount: allRows.reduce((sum, row) => sum + row.completedCount, 0),
-    inProgressCount: allRows.reduce((sum, row) => sum + row.inProgressCount, 0),
-    pendingCount: allRows.reduce((sum, row) => sum + row.pendingCount, 0),
-    rows: allRows,
   };
 }
 
@@ -2641,6 +2301,7 @@ export function ProductionDashboardPage() {
   const previousBusinessDate = addBusinessDateDays(businessDate, -1);
   const nextBusinessDate = addBusinessDateDays(businessDate, 1);
   const secondNextBusinessDate = addBusinessDateDays(businessDate, 2);
+  const planPreviewEndDate = addBusinessDateDays(businessDate, 6);
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", businessDate],
     queryFn: () => getProductionPlanSummary(businessDate),
@@ -2652,6 +2313,16 @@ export function ProductionDashboardPage() {
   const secondNextPlanSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", secondNextBusinessDate],
     queryFn: () => getProductionPlanSummary(secondNextBusinessDate),
+  });
+  const laterPlanSummaryQueries = useQueries({
+    queries: [3, 4, 5, 6].map((offset) => {
+      const date = addBusinessDateDays(businessDate, offset);
+      return {
+        queryKey: ["production-plan-summary", date],
+        queryFn: () => getProductionPlanSummary(date),
+        retry: false,
+      };
+    }),
   });
   const productionStatusQuery = useQuery({
     queryKey: ["production-status", businessDate],
@@ -2675,8 +2346,8 @@ export function ProductionDashboardPage() {
     queryFn: () => getProductionMesReportStats(businessDate, "machining"),
   });
   const machiningProvisionQuery = useQuery({
-    queryKey: ["production", "machining-provision", businessDate],
-    queryFn: () => getMachiningProvision(businessDate, 3),
+    queryKey: ["production", "machining-provision", businessDate, 7],
+    queryFn: () => getMachiningProvision(businessDate, 7),
     refetchInterval: liveDataRefetchInterval,
     retry: false,
   });
@@ -2928,8 +2599,8 @@ export function ProductionDashboardPage() {
     selectedActivityRow && !selectedActivityRow.hasPlan && selectedActivityRow.equipmentState === "unplanned_running",
   );
   const machiningProgress = useMemo(
-    () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
-    [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
+    () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data, businessDate),
+    [businessDate, machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
   // The top-level status fields describe the local tier; `workers[]` lists every tier.
 
@@ -3319,7 +2990,7 @@ export function ProductionDashboardPage() {
           className="production-part-segment__fill"
           style={{ width: `${Math.max(0, Math.min(100, segment.progressRate))}%` }}
         />
-        {share > 0.18 ? <em>{segment.partNo}</em> : null}
+        {share > 0.18 ? <em>{getPlanDisplayName(segment.partNo, segment.modelName)}</em> : null}
       </span>
     );
   }
@@ -3423,7 +3094,7 @@ export function ProductionDashboardPage() {
             <div className="production-progress-hover-card__job" key={segment.key}>
               <span>
                 <i>{segment.sequence}</i>
-                {segment.partNo}
+                {getPlanDisplayName(segment.partNo, segment.modelName)}
               </span>
               <span>{formatNumber(segment.estimatedQty)} / {formatNumber(segment.plannedQty)}</span>
               <span>{getProgressText(segment.progressRate)}</span>
@@ -3554,7 +3225,7 @@ export function ProductionDashboardPage() {
         completedCount: row.completedCount,
         inProgressCount: row.inProgressCount,
         pendingCount: row.pendingCount,
-        currentPart: currentSegment?.partNo,
+        currentPart: currentSegment ? getPlanDisplayName(currentSegment.partNo, currentSegment.modelName) : undefined,
         shotCount: row.shotCount,
         recentShots: row.recentShots,
         avgCavity: row.avgCavity,
@@ -3588,7 +3259,7 @@ export function ProductionDashboardPage() {
                 </button>
               ) : null}
             </div>
-            <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : `${copy.effectiveQty} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
+            <span>{currentSegment ? `${copy.currentPart} ${getPlanDisplayName(currentSegment.partNo, currentSegment.modelName)}` : `${copy.effectiveQty} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
           </div>
           <div className="production-progress-row__state">
             <span>{progressText}</span>
@@ -3619,7 +3290,7 @@ export function ProductionDashboardPage() {
             completedCount: row.completedCount,
             inProgressCount: row.inProgressCount,
             pendingCount: row.pendingCount,
-            currentPart: currentSegment?.partNo,
+            currentPart: currentSegment ? getPlanDisplayName(currentSegment.partNo, currentSegment.modelName) : undefined,
             mesQty: row.mesQty,
             manualOpenQty: row.manualOpenQty,
             matchedManualQty: row.matchedManualQty,
@@ -3638,6 +3309,62 @@ export function ProductionDashboardPage() {
           {renderOverrunChip(row.gapQty, row.plannedQty)}
         </div>
       </article>
+    );
+  }
+
+  function renderUpcomingPlans(planType: "injection" | "machining") {
+    const queries = [nextPlanSummaryQuery, secondNextPlanSummaryQuery, ...laterPlanSummaryQueries];
+    const dates = queries.flatMap((query) => {
+      const summary = query.data;
+      if (!summary || summary.plan_date <= businessDate || summary.plan_date > planPreviewEndDate) return [];
+      const records = summary[planType].records
+        .filter((record) => Number(record.planned_quantity) > 0
+          && (record.plan_date || record.date || summary.plan_date) === summary.plan_date)
+        .sort((left, right) => String(left.machine_name ?? "").localeCompare(String(right.machine_name ?? ""), language, { numeric: true })
+          || Number(left.sequence ?? 0) - Number(right.sequence ?? 0));
+      return records.length ? [{ date: summary.plan_date, records }] : [];
+    }).sort((left, right) => left.date.localeCompare(right.date));
+    const pending = queries.some((query) => query.isPending);
+    const failed = queries.some((query) => query.isError);
+    if (!dates.length && !pending && !failed) return null;
+    return (
+      <details className="machine-board__more production-upcoming-plans">
+        <summary>{language === "ko" ? "이후 날짜 계획" : "后续日期计划"} · {nextBusinessDate} ~ {planPreviewEndDate}</summary>
+        {pending ? <p role="status">{copy.loading}</p> : null}
+        {failed ? <p className="notice notice--neutral" role="alert">{language === "ko" ? "일부 날짜의 계획을 불러오지 못했습니다." : "部分日期计划加载失败。"}</p> : null}
+        {dates.map(({ date, records }) => (
+          <section className="production-upcoming-plans__date" key={date} aria-label={`${date} ${copy.planDate}`}>
+            <h4>{date} · {language === "ko" ? "목표" : "目标"} {formatNumber(records.reduce((sum, record) => sum + Number(record.planned_quantity), 0))}</h4>
+            <div className="machine-board__table-wrap">
+              <table className="production-upcoming-plans__table">
+                <thead><tr>
+                  <th>{language === "ko" ? "설비" : "设备"}</th>
+                  <th>{language === "ko" ? "품목" : "物料"}</th>
+                  <th>LOT</th>
+                  <th>{language === "ko" ? "계획" : "计划数量"}</th>
+                  {planType === "machining" ? <><th>{copy.advanceQty}</th><th>{copy.manualReport}</th></> : null}
+                </tr></thead>
+                <tbody>{records.map((record, index) => {
+                  const name = getPlanDisplayName(record.part_no, record.model_name, record.part_spec);
+                  const provisionRow = planType === "machining"
+                    ? machiningProvisionQuery.data?.rows.find((row) => row.plan_date === date && row.plan_id === record.id)
+                    : undefined;
+                  return <tr key={record.id ?? index}>
+                    <td>{getLocalizedMachineLabel(record.machine_name || "-", language)}</td>
+                    <td><strong>{name}</strong>{record.model_name && record.model_name !== name ? <small>{record.model_name}</small> : null}</td>
+                    <td>{record.lot_no || "-"}</td>
+                    <td className="production-upcoming-plans__quantity">{formatNumber(record.planned_quantity)}</td>
+                    {planType === "machining" ? <>
+                      <td className="production-upcoming-plans__quantity">{provisionRow ? formatNumber(provisionRow.effective_actual_qty) : "—"}</td>
+                      <td>{provisionRow?.plan_id ? <button className="production-progress-detail-button" onClick={() => openMachiningManualReport(provisionRow)} type="button" aria-label={`${date} ${name} ${copy.manualReport}`}>{copy.manualReport}</button> : null}</td>
+                    </> : null}
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+      </details>
     );
   }
 
@@ -4272,6 +3999,7 @@ export function ProductionDashboardPage() {
             confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
+            upcomingPlans={{ injection: renderUpcomingPlans("injection"), machining: renderUpcomingPlans("machining") }}
             machiningRows={machiningProgress.rows.length ? machiningProgress.rows.map(renderMachiningPreviewRow) : <div className="notice notice--neutral">{copy.noProgressRows}</div>}
             machiningSummary={(
             <div className="production-progress-visual-summary">
@@ -4592,7 +4320,7 @@ export function ProductionDashboardPage() {
                     <p className="panel-card__eyebrow">Machining</p>
                     <h3 className="panel__title">{copy.manualReportTitle}</h3>
                     <p className="production-progress-modal__meta">
-                      {getLocalizedMachineLabel(selectedMachiningRow.equipment_label, language)} · {selectedMachiningRow.part_no} · {copy.planned} {formatNumber(selectedMachiningRow.planned_qty)} · {copy.effectiveQty} {formatNumber(selectedMachiningRow.effective_actual_qty)}
+                      {getLocalizedMachineLabel(selectedMachiningRow.equipment_label, language)} · {getPlanDisplayName(selectedMachiningRow.part_no, selectedMachiningRow.model_name)} · {copy.planDate} {selectedMachiningRow.plan_date} · {copy.planned} {formatNumber(selectedMachiningRow.planned_qty)} · {copy.effectiveQty} {formatNumber(selectedMachiningRow.effective_actual_qty)}
                     </p>
                   </div>
                   <button className="button button--ghost" onClick={() => setSelectedMachiningRow(null)} type="button">
