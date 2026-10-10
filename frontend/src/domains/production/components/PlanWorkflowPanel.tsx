@@ -6,10 +6,10 @@ import type { PlanType } from "../api";
 import "./plan-workflow.css";
 import { materialRequirement } from "../plan-workflow-form";
 import { canRecheckPlanRequest, canReleasePlanSendAttempt, canSendPlanRequest, PLAN_CREATE_BATCH_LIMIT, planRequestState, safeMesId,
-  type PlanServiceResult } from "../plan-workflow-service";
+  planWorkflowStage, planConfirmationTime, type PlanWorkflowStage, type PlanServiceResult } from "../plan-workflow-service";
 import { recheckPlanRequest, sendPlanSelection } from "../plan-workflow-service-api";
 
-type Props = { date: string; language: AppLanguage };
+type Props = { date: string; language: AppLanguage; openRequest?: number };
 type EditorProps = Props & { onDirtyChange: (dirty: boolean) => void; onPendingChange: (pending: boolean) => void;
   sendAttempts: Set<string> };
 type InputDraft = { key: string; numerator: string; denominator: string; material_version: string };
@@ -19,16 +19,21 @@ const fieldLabels: Record<string, [string, string]> = { bom_version: ["BOM/배�
   process_code: ["MES 공정 코드", "MES工序编号"], process_num: ["공정 순번", "工序序号"],
   route_code: ["공정경로 코드", "工艺路线编号"], output_unit_name: ["제품 단위명", "产品单位名称"],
   output_unit_id: ["제품 단위 ID", "产品单位ID"], output_version: ["제품 물료 버전 (있는 경우)", "产品物料版本（如有）"] };
+const queueLabels: Record<PlanWorkflowStage, [string, string]> = {
+  plan: ["계획 · 徐佳", "计划 · 徐佳"], materials: ["원료 · 韦凯", "原料 · 韦凯"],
+  issue: ["생성 · 徐佳", "创建 · 徐佳"], review: ["결과 확인", "结果核对"], created: ["생성됨", "已创建"],
+};
 
-export function PlanWorkflowPanel({ date, language }: Props) {
+export function PlanWorkflowPanel({ date, language, openRequest = 0 }: Props) {
   const [open, setOpen] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
+  useEffect(() => { if (openRequest > 0) setOpen(true); }, [openRequest]);
   // Ambiguous sends remain fenced when this panel is collapsed or its scope changes.
   const sendAttempts = useRef(new Set<string>());
-  return <section className="panel plan-workflow">
-    <div className="plan-workflow__heading"><div><h3 className="panel__title">{language === "ko" ? "원료 확인 · MES 工单 준비" : "原料确认 · MES工单准备"}</h3>
+  return <section className="panel plan-workflow" id="plan-mes-workflow">
+    <div className="plan-workflow__heading"><div><h3 className="panel__title">{language === "ko" ? "생산계획 → 원료 확정 → MES 작업지시" : "生产计划 → 原料确认 → MES工单"}</h3>
       </div>
       <button type="button" className="btn btn-outline" disabled={saving} onClick={() => { if (saving) return; if (open && draftDirty) setClosing(true); else setOpen(!open); }} aria-expanded={open}>{open ? (language === "ko" ? "접기" : "收起") : (language === "ko" ? "준비 검토" : "审核准备")}</button></div>
     {closing && <div className="plan-workflow__discard" role="alert"><span>{language === "ko" ? "미저장 초안이 있습니다." : "有未保存的草稿。"}</span>
@@ -42,6 +47,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   const zh = language === "zh";
   const label = (code: string) => workflowLabels[code]?.[zh ? 1 : 0] || (zh ? "请负责人确认后继续" : "담당자 확인 후 진행하세요");
   const [dayUid, setDayUid] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<PlanWorkflowStage | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   // Parent plan navigation remains independent from the scope of an open draft.
@@ -93,7 +99,9 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   }, [data, query.dataUpdatedAt, query.isFetchedAfterMount, query.isError, query.isFetching, servicePending, sendAttempts]);
   const mutate = useMutation({ mutationFn: (payload: Record<string, unknown>) => changePlanWorkflow(scope, payload),
     onSuccess: async (result, payload) => {
-      setMessage(payload.action === "recheck"
+      setMessage(payload.action === "approve"
+        ? (zh ? "原料确认已保存，请营业复核并准备MES工单。尚未发送MES。" : "원료 확정을 저장했습니다. 영업에서 검토 후 MES 생성 준비를 진행하세요. 아직 MES에 전송하지 않았습니다.")
+        : payload.action === "recheck"
         ? (result.state === "confirmed"
           ? (zh ? "工单创建快照已核验；生产报工和入库数量仍需另查。" : "工单 생성 스냅샷을 확인했습니다. 생산보고·입고량은 별도 조회가 필요합니다.")
           : (zh ? "创建结果仍未核实，禁止重发。请检查MES连接、权限和完整快照。" : "생성 결과가 아직 미검증입니다. 재전송하지 말고 MES 연결·권한·전체 스냅샷을 확인하세요."))
@@ -115,11 +123,11 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     const request = data.requests.find(row => row.uid === uid && row.work_order_code === group.work_order_code);
     return canSendPlanRequest(data, group, request, sendAttempts);
   })) : [];
-  async function createSelected() {
-    if (!data || serviceInFlight.current || serviceLocked || !selectedEligible.length
-      || selectedEligible.length !== selectedRequests.length || selectedEligible.length > PLAN_CREATE_BATCH_LIMIT) return;
+  async function createRequests(uids: string[]) {
+    if (!data || serviceInFlight.current || serviceLocked || !uids.length || uids.length > PLAN_CREATE_BATCH_LIMIT
+      || !uids.every(uid => data.preview.some(group => canSendPlanRequest(data, group,
+        data.requests.find(row => row.uid === uid && row.work_order_code === group.work_order_code), sendAttempts)))) return;
     serviceInFlight.current = true;
-    const uids = [...selectedEligible];
     setServicePending(true); setServiceNotice(""); setServiceProgress({ completed: 0, total: uids.length });
     try {
       const outcome = await sendPlanSelection(scope, uids, {
@@ -219,11 +227,6 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     setMessage(zh ? "已载入最新计划，请核对数量、原料与配比后确认。" : "최신 계획을 불러왔습니다. 수량·원료·배합을 확인한 뒤 승인하세요.");
     } finally { setReviewing(false); }
   }
-  function primaryMaterial() {
-    return <select aria-label={zh ? "MES原料／单位" : "MES 원료 / 단위"} form="plan-material-draft" required value={inputs[0].key}
-      onChange={e => { changed(); const option = data?.catalog.materials.find(row => row.key === e.target.value); setInputs([{ ...inputs[0], key: e.target.value, material_version: option?.material_version || "" }, ...inputs.slice(1)]); }}>
-      <option value="">{zh ? "选择原料" : "원료 선택"}</option>{data?.catalog.materials.map(row => <option key={row.key} disabled={!row.selectable} value={row.key}>{row.material_code} · {row.material_name} · {row.unit_name}{!row.selectable ? (zh ? " · ID冲突" : " · ID 충돌") : ""}</option>)}</select>;
-  }
   function openGroup(key: string, isOpen: boolean) { leave(() => { clearDraft(); setExpanded(isOpen ? null : key); }); }
   const currentDefaultRow = data?.rows.find(row => row.uid === defaultTarget?.uid);
   const canSaveDefault = data?.can_edit && data.can_manage_defaults && defaultConfirmed && defaultReason.trim()
@@ -244,6 +247,13 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {rows.map(row => <option key={row.uid} value={row.uid}>{row.plan_date} · {row.planned_quantity.replace(/\.0+$/, "")} · {row.approval ? (zh ? "已确认" : "확인됨") : (zh ? "待确认" : "미확인")}</option>)}
     </select>;
   }
+  function materialSelect(input: InputDraft, index: number) {
+    return <select form="plan-material-draft" aria-label={zh ? "MES物料／单位" : "MES 자재 / 단위"} required value={input.key}
+      onChange={e => { changed(); const next = [...inputs]; const selected = data?.catalog.materials.find(row => row.key === e.target.value);
+        next[index] = { ...input, key: e.target.value, material_version: selected?.material_version || "" }; setInputs(next); }}>
+      <option value="">{zh ? "选择物料" : "자재 선택"}</option>{data?.catalog.materials.map(row => <option disabled={!row.selectable} key={row.key} value={row.key}>{row.material_code} · {row.material_name} · {row.unit_name}</option>)}
+    </select>;
+  }
   function materialForm(rows: WorkflowRow[]) {
     if (!data || !editing) return null;
     return <form id="plan-material-draft" className="plan-workflow__editor" onSubmit={e => { e.preventDefault(); if (canSave) submit(editing.identity_state !== "identified"
@@ -252,31 +262,45 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       {editing.identity_state !== "identified" ? <div className="plan-workflow__identity-line">
         {dayPicker(rows, editing, true)}<label>{zh ? "任务标识" : "작업 동일성"}<select aria-label={zh ? "任务标识" : "작업 동일성"} value={previous} onChange={e => { changed(); setPrevious(e.target.value); }}><option value="">{zh ? "独立新任务" : "독립 새 작업"}</option>{editing.candidate_details.map(candidate => <option key={candidate.uid} value={candidate.uid}>{candidate.snapshot.plan_date} · {candidate.snapshot.machine_name} · {candidate.snapshot.planned_quantity} · {zh ? "顺序" : "순서"} {candidate.snapshot.sequence}</option>)}</select></label>
       </div> : <>
+        {rows.length > 1 && <div className="plan-workflow__material-heading">{dayPicker(rows, editing, true)}</div>}
+        {!editing.approval && <p className="plan-workflow__source">{editing.previous_approval ? (zh ? "上一版本清单 · 请重新确认" : "이전 버전 목록 · 재확인 필요") : editing.recommendation ? (zh ? "默认清单 · 待确认" : "기본 목록 · 확정 전") : (zh ? "暂无用料清单 · 需管理员连接BOM" : "자재목록 없음 · 관리자 BOM 연결 필요")}</p>}
         {!completeConnection && <span className="plan-workflow__blocked">{zh ? "连接信息不完整，请管理员补充。" : "연결정보 부족 · 관리자 등록 필요"}</span>}
-        {inputs.map((input, index) => <div className="plan-workflow__input-row" key={index}>
-          {index === 0 ? dayPicker(rows, editing, true) : <select aria-label={zh ? "MES原料／单位" : "MES 원료 / 단위"} required value={input.key} onChange={e => { changed(); const next = [...inputs]; const selected = data.catalog.materials.find(row => row.key === e.target.value); next[index] = { ...input, key: e.target.value, material_version: selected?.material_version || "" }; setInputs(next); }}><option value="">{zh ? "选择原料" : "원료 선택"}</option>{data.catalog.materials.map(row => <option disabled={!row.selectable} key={row.key} value={row.key}>{row.material_code} · {row.material_name} · {row.unit_name}</option>)}</select>}
+        {inputs.map((input, index) => <div className={`plan-workflow__input-row${index === 0 ? " is-primary" : ""}`} key={index}>
+          {index > 0 && <label>{zh ? `用料 ${index + 1}` : `투입 자재 ${index + 1}`}{materialSelect(input, index)}</label>}
           <div className="plan-workflow__ratio"><span>{zh ? "配比" : "배합"}</span>{(["numerator", "denominator"] as const).map(field => <Fragment key={field}>{field === "denominator" && <span>/</span>}<input aria-label={field === "numerator" ? (zh ? "原料配比" : "원료 배합량") : (zh ? "对应产品数" : "기준 제품수")} required value={input[field]} inputMode="decimal" onChange={e => { changed(); const next = [...inputs]; next[index] = { ...input, [field]: e.target.value }; setInputs(next); }} /><span>{field === "numerator" ? data.catalog.materials.find(row => row.key === input.key)?.unit_name : values.output_unit_name}</span></Fragment>)}</div>
           <span className="plan-workflow__requirement">{zh ? "所需" : "필요"} {materialRequirement(editing.planned_quantity, input.numerator, input.denominator) ?? "—"} {data.catalog.materials.find(row => row.key === input.key)?.unit_name}</span>
           {index > 0 && <button type="button" onClick={() => { changed(); setInputs(inputs.filter((_, i) => i !== index)); }}>{zh ? "移除" : "제거"}</button>}
-          {index === 0 && <button type="button" disabled={inputs.length >= 20} onClick={() => { changed(); setInputs([...inputs, { key: "", numerator: "", denominator: "", material_version: "" }]); }}>{zh ? "+ 原料" : "+ 원료"}</button>}
+          {index === 0 && <button type="button" disabled={inputs.length >= 20} onClick={() => { changed(); setInputs([...inputs, { key: "", numerator: "", denominator: "", material_version: "" }]); }}>{zh ? "+ 用料" : "+ 투입 자재"}</button>}
         </div>)}
       </>}
       <div className="plan-workflow__confirmation"><input aria-label={zh ? "确认理由／依据" : "확인 사유 / 근거"} placeholder={zh ? "确认依据" : "확인 근거"} required maxLength={500} value={reason} onChange={e => { setDirty(true); setReason(e.target.value); }} />
       <label className="plan-workflow__check"><input type="checkbox" checked={confirmed} onChange={e => { setDirty(true); setConfirmed(e.target.checked); }} />{zh ? "计划·原料确认" : "계획·원료 확인"}</label>
-      <button className="btn btn-primary" disabled={!canSave}>{zh ? "保存" : "저장"}</button><button type="button" onClick={() => leave(clearDraft)}>{zh ? "取消" : "취소"}</button></div>
+      <button type="button" onClick={() => leave(clearDraft)}>{zh ? "取消" : "취소"}</button></div>
     </form>;
   }
   function compactDetail(group: WorkflowGroup, rows: WorkflowRow[], selected: boolean) {
     if (selected) return materialForm(rows);
     const row = rows.find(row => row.uid === dayUid) || rows[0];
     if (!row) return <span>{zh ? "扩大日期范围以确认。" : "조회 기간을 넓혀 확인하세요."}</span>;
-    return <div className="plan-workflow__read-line">{dayPicker(rows, row, false)}
+    return <><div className="plan-workflow__basic">{row.part_spec?.trim() && row.part_spec !== "-" && <span>SPEC: {row.part_spec}</span>}{row.model_name?.trim() && row.model_name !== "-" && <span>MODEL: {row.model_name}</span>}{row.lot_no?.trim() && row.lot_no !== "-" && <span>LOT: {row.lot_no}</span>}</div><div className="plan-workflow__read-line">{rows.length > 1 && dayPicker(rows, row, false)}
       <span className="plan-workflow__material-summary">{row.approval?.snapshot.inputs.map(input => <span key={`${input.material_id}:${input.unit_id}`}>{input.material_name} · {zh ? "配比" : "배합"} {input.numerator}/{input.denominator} · {zh ? "所需" : "필요"} {materialRequirement(row.planned_quantity, input.numerator, input.denominator) ?? "—"} {input.unit_name}</span>)}{!row.approval && label(group.blockers[0] || "material_confirmation")}</span>
-      {row.approval?.actor_name && <span className="plan-workflow__actor" title={row.approval.actor_name}>{row.approval.actor_name}</span>}
+      {row.approval && <span className="plan-workflow__actor">{zh ? "实际确认" : "실제 확인"}: {row.approval.actor_name || "—"}<small><time dateTime={row.approval.approved_at}>{planConfirmationTime(row.approval.approved_at)}</time></small></span>}
       <button type="button" disabled={!data?.can_edit || mutate.isPending} onClick={() => leave(() => edit(row))}>{zh ? "编辑" : "편집"}</button>
       {rows.length < group.members.length && <span title={zh ? "扩大日期范围可确认其余日期" : "조회 기간을 넓히면 다른 날짜 확인 가능"}>+{group.members.length - rows.length}{zh ? "日" : "일"}</span>}
-    </div>;
+    </div></>;
   }
+  const workflowItems = (data?.preview || []).map(group => {
+    const rows = group.members.map(uid => data?.rows.find(row => row.uid === uid)).filter((row): row is WorkflowRow => !!row);
+    const requests = data?.requests.filter(row => row.work_order_code === group.work_order_code) || [];
+    const request = requests.find(row => row.can_send === true) || requests.find(row => row.state !== "superseded") || requests[0];
+    const serviceResult = request && !["created", "already_exists", "confirmed"].includes(request.state)
+      && (!canReleasePlanSendAttempt(request) || sendAttempts.has(request.uid)) ? serviceResults[request.uid] : undefined;
+    const mesId = safeMesId(serviceResult?.mes_id) || safeMesId(request?.mes_id) || safeMesId(group.mes_id);
+    const requestState = serviceResult?.state || planRequestState(request);
+    return { group, rows, request, mesId, requestState, stage: planWorkflowStage(group, rows, requestState, mesId) };
+  });
+  const visibleItems = workflowItems.filter(item => stageFilter === "all" || item.stage === stageFilter
+    || (editing && item.group.members.includes(editing.uid)));
   return <div className="plan-workflow__body">
     {dateChanged && <div className="plan-workflow__discard" role={dateReviewRequired ? "alert" : "status"} data-workflow-date-review>
       <span>{busy
@@ -290,11 +314,8 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       <label>{zh ? "工艺" : "공정"}<select aria-label={zh ? "工艺" : "공정"} value={type} onChange={e => { const next = e.target.value as PlanType; leave(() => { clearDraft(); setExpanded(null); setType(next); }); }}><option value="injection">{zh ? "注塑 · 连续生产" : "사출 · 연속생산"}</option><option value="machining">{zh ? "加工 · 按日期" : "가공 · 날짜별"}</option></select></label>
       <label>{zh ? "开始日" : "시작일"}<input type="date" value={start} readOnly /></label>
       <label>{zh ? "结束日" : "종료일"}<input type="date" value={end} min={start} onChange={e => { const next = e.target.value; leave(() => { clearDraft(); setExpanded(null); setEnd(next); }); }} /></label>
-      <span className="plan-workflow__off">{data?.write_enabled === true
-        ? (zh ? "MES创建可用 · 仅手动发送" : "MES 생성 사용 가능 · 수동 전송")
-        : (zh ? "MES创建OFF · 仍可准备及确认原料" : "MES 생성 OFF · 준비·원료 확인 사용 가능")}</span>
+      {data?.write_enabled === false && <span className="plan-workflow__off" role="status">{zh ? "MES创建OFF · 可确认原料" : "MES 생성 OFF · 원료 확인 가능"}</span>}
       <button type="button" onClick={() => query.refetch()}>{zh ? "刷新" : "새로고침"}</button>
-      <details className="plan-workflow__policy"><summary>{zh ? "生产规则" : "생산 규칙"}</summary><p>{zh ? "08:00～次日08:00；同设备、产品、设置及原料确认的注塑计划连续合并。生产中每2小时检验政策维持；本阶段不自动生成检验、不自动下达／开工／关闭。" : "08:00~익일 08:00. 같은 호기·제품·셋업·원료가 확인된 사출만 연속 묶음. 생산 중 2시간 검사 유지. 이번 단계 검사 자동 생성·下达·开工·마감은 실행하지 않습니다."}</p></details>
     </div>
     {pendingChange && <div className="plan-workflow__discard" role="alert"><span>{zh ? "有未保存的草稿。是否放弃？" : "미저장 초안이 있습니다. 버리고 이동할까요?"}</span>
       <button type="button" onClick={() => { const next = pendingChange; setPendingChange(null); next(); }}>{zh ? "放弃草稿并继续" : "초안 버리고 이동"}</button><button type="button" onClick={() => setPendingChange(null)}>{zh ? "继续编辑" : "계속 편집"}</button></div>}
@@ -303,52 +324,64 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
     {message && <p role="status" className="plan-workflow__message">{message}</p>}
     {serviceNotice && <p role="status" className="plan-workflow__message">{serviceNotice}</p>}
     {needsReview && <button type="button" disabled={query.isFetching || mutate.isPending} onClick={reviewLatest}>{zh ? "核对最新计划" : "최신 계획 확인"}</button>}
-    {data && <><div className="plan-workflow__send-actions">
+    {data && <><div className="plan-workflow__queue" role="group" aria-label={zh ? "按待办筛选" : "할 일별 보기"}>
+      {(["all", "plan", "materials", "issue", "review", "created"] as const).filter(stage => stage === "all" || workflowItems.some(item => item.stage === stage)).map(stage => <button type="button" key={stage} data-stage={stage} aria-pressed={stageFilter === stage}
+        onClick={() => leave(() => { clearDraft(); setExpanded(null); setStageFilter(stage); setSelectedRequests([]); })}>
+        {stage === "all" ? (zh ? "全部" : "전체") : queueLabels[stage][zh ? 1 : 0]} · {stage === "all" ? workflowItems.length : workflowItems.filter(item => item.stage === stage).length}
+      </button>)}
+    </div><div className="plan-workflow__send-actions">
       <span>{zh ? `已选 ${selectedRequests.length}／${PLAN_CREATE_BATCH_LIMIT}` : `선택 ${selectedRequests.length} / ${PLAN_CREATE_BATCH_LIMIT}`}</span>
       {serviceProgress && <span role="status" aria-live="polite">{zh ? `已处理 ${serviceProgress.completed}／${serviceProgress.total}` : `처리 ${serviceProgress.completed} / ${serviceProgress.total}`}</span>}
       <button type="button" className="btn btn-primary" disabled={serviceLocked || !selectedEligible.length || selectedEligible.length !== selectedRequests.length}
-        onClick={createSelected}>{servicePending ? (zh ? "正在核对结果…" : "결과 확인 중…") : (zh ? "选择工单 MES 创建" : "선택 工单 MES 생성")}</button>
+        onClick={() => createRequests([...selectedEligible])}>{servicePending ? (zh ? "正在核对结果…" : "결과 확인 중…") : (zh ? "选择工单 MES 创建" : "선택 工单 MES 생성")}</button>
       <button type="button" disabled={busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>{zh ? "清除选择" : "선택 해제"}</button>
       {(dirty || editing || defaultTarget) && <span>{zh ? "请先保存或取消原料草稿。" : "원료 초안을 먼저 저장하거나 취소하세요."}</span>}
-    </div><div className="plan-workflow__table-wrap"><table className="plan-workflow__orders"><caption className="plan-workflow__caption">{zh ? "每行一个工单 · 原料在表内确认" : "工单별 한 행 · 표 안에서 원료 확인"}</caption><colgroup><col className="pw-select"/><col className="pw-product"/><col className="pw-machine"/><col className="pw-period"/><col className="pw-quantity"/><col className="pw-material"/><col className="pw-status"/><col className="pw-actions"/></colgroup><thead><tr>{(zh ? ["选择", "产品／工单", "设备", "期间 08→08", "计划量", "使用原料", "确认状态", "操作"] : ["선택", "품번 / 工单", "호기", "기간 08→08", "계획수량", "사용 원료", "확인상태", "동작"]).map(v => <th scope="col" key={v}>{v}</th>)}</tr></thead><tbody>
-      {data.preview.map(group => {
-        const rows = group.members.map(uid => data.rows.find(row => row.uid === uid)).filter((row): row is WorkflowRow => !!row);
+    </div><div className="plan-workflow__table-wrap"><table className="plan-workflow__orders"><caption className="plan-workflow__caption">{zh ? "每行一个工单 · 用料在表内确认" : "工单별 한 행 · 표 안에서 투입 자재 확인"}</caption><colgroup><col className="pw-select"/><col className="pw-product"/><col className="pw-machine"/><col className="pw-period"/><col className="pw-quantity"/><col className="pw-material"/><col className="pw-status"/><col className="pw-actions"/></colgroup><thead><tr>{(zh ? ["选择", "产品／工单", "设备", "期间 08→08", "计划量", "用料清单", "当前待办", "操作"] : ["선택", "품번 / 工单", "호기", "기간 08→08", "계획수량", "투입 자재·원료", "현재 할 일", "동작"]).map(v => <th scope="col" key={v}>{v}</th>)}</tr></thead><tbody>
+      {visibleItems.map(({ group, rows, request, mesId, requestState, stage }) => {
         const selected = editing && group.members.includes(editing.uid);
         const snapshot = rows[0]?.approval?.snapshot;
-        const requests = data.requests.filter(row => row.work_order_code === group.work_order_code);
-        const request = requests.find(row => row.can_send === true) || requests.find(row => row.state !== "superseded") || requests[0];
-        const serviceResult = request && !["created", "already_exists", "confirmed"].includes(request.state)
-          && (!canReleasePlanSendAttempt(request) || sendAttempts.has(request.uid)) ? serviceResults[request.uid] : undefined;
-        const mesId = safeMesId(serviceResult?.mes_id) || safeMesId(request?.mes_id) || safeMesId(group.mes_id);
-        const requestState = serviceResult?.state || planRequestState(request);
-        const creationUnresolved = !!requestState && ["checking", "sending", "uncertain", "readback_pending", "review", "failed", "blocked"].includes(requestState);
         const eligible = canSendPlanRequest(data, group, request, sendAttempts);
         const isOpen = expanded === group.key || !!selected;
+        const taskLabels: Record<PlanWorkflowStage, [string, string]> = {
+          plan: ["계획 확인 필요", "待核对计划"], materials: ["원료 확인 필요", "待确认原料"],
+          issue: request?.can_send === true ? (data.write_enabled ? ["생성 가능", "可创建"] : ["생성 대기", "等待创建"]) : ["생성 준비", "准备创建"],
+          review: ["결과 확인 필요", "待核对结果"], created: ["생성 완료", "已创建"],
+        };
+        const currentTask = selected && dirty ? (zh ? "草稿未确认" : "초안 미확정")
+          : group.blockers.length ? label(group.blockers[0])
+          : requestState && !["disabled", "prepared"].includes(requestState) ? label(requestState)
+          : taskLabels[stage][zh ? 1 : 0];
+        const rowToEdit = rows.find(row => row.uid === dayUid) || rows[0];
+        const toggleLabel = `${group.part_no} ${zh ? "详细内容" : "상세 내용"}`;
         return <Fragment key={group.key}><tr className={isOpen ? "plan-workflow__order is-open" : "plan-workflow__order"} data-group-key={group.key}>
           <td><input type="checkbox" aria-label={zh ? `选择 ${group.part_no} ${group.machine_name} ${group.planned_start.slice(0, 10)}` : `선택 ${group.part_no} ${group.machine_name} ${group.planned_start.slice(0, 10)}`}
             checked={!!request && selectedRequests.includes(request.uid)} disabled={serviceLocked || !eligible || (!selectedRequests.includes(request?.uid || "") && selectedRequests.length >= PLAN_CREATE_BATCH_LIMIT)}
             onChange={e => { if (!request || !eligible || serviceLocked) return; setSelectedRequests(prior => e.target.checked
               ? (prior.includes(request.uid) || prior.length >= PLAN_CREATE_BATCH_LIMIT ? prior : [...prior, request.uid]) : prior.filter(uid => uid !== request.uid)); }} /></td>
-          <th scope="row"><strong>{group.part_no || (zh ? "品号待确认" : "품번 확인 필요")}</strong><small className={mesId ? "" : "plan-workflow__preparing"}>{mesId ? `MES #${mesId}` : creationUnresolved
-            ? (zh ? "MES创建状态待核对" : "MES 생성 여부 확인 필요") : (zh ? "准备中 · 尚未创建MES工单" : "준비중 · MES 생성 전")}</small></th>
-          <td className="plan-workflow__machine">{group.machine_name}</td><td><time dateTime={group.planned_start}>{group.planned_start.slice(0, 10)}</time><br/><time dateTime={group.planned_end}>~ {group.planned_end.slice(0, 10)}</time></td>
+          <th scope="row" className="plan-workflow__product"><div className="plan-workflow__product-line"><button type="button" className="plan-workflow__expand" aria-label={toggleLabel} title={mesId ? `MES #${mesId}` : toggleLabel} aria-description={mesId ? `MES #${mesId}` : undefined} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{isOpen ? "▾" : "▸"}</button><strong title={group.part_no}>{group.part_no || (zh ? "品号待确认" : "품번 확인 필요")}</strong><span className="plan-workflow__mobile-machine">{group.machine_name}</span></div>
+            <span className="plan-workflow__mobile-summary">{group.planned_start.slice(5, 10)}→{group.planned_end.slice(5, 10)} · {group.quantity.replace(/\.0+$/, "")}</span>
+          </th>
+          <td className="plan-workflow__machine">{group.machine_name}</td><td className="plan-workflow__period" title={`${group.planned_start} → ${group.planned_end}`}><time dateTime={group.planned_start}>{group.planned_start.slice(5, 10)}</time> → <time dateTime={group.planned_end}>{group.planned_end.slice(5, 10)}</time></td>
           <td className="plan-workflow__quantity">{group.quantity.replace(/\.0+$/, "")}</td>
-          <td>{selected && editing.identity_state === "identified" ? primaryMaterial() : <button type="button" className="plan-workflow__material-cell" disabled={!data.can_edit || mutate.isPending} title={snapshot?.inputs.map(input => input.material_name).join(" + ")} onClick={() => { const row = rows.find(row => row.uid === dayUid) || rows[0]; if (row) leave(() => edit(row)); }}>{snapshot?.inputs.map(input => input.material_code).join(" + ") || (zh ? "选择原料" : "원료 선택")}</button>}</td>
-          <td><span className={group.blockers.length || (selected && dirty) ? "plan-workflow__blocked" : "plan-workflow__approved"}>{selected && dirty ? (zh ? "草稿未确认" : "초안 미확정") : group.blockers.length ? (zh ? "待确认" : "확인 대기") : (zh ? "原料已确认" : "원료 확인됨")}</span><small>{selected && dirty ? (zh ? "未保存 · 请确认" : "미저장 · 확인 필요") : requestState && !["disabled", "prepared"].includes(requestState) ? label(requestState) : group.blockers.length ? label(group.blockers[0]) : request ? (zh ? "准备已保存" : "준비 저장됨") : label(group.operation)}</small>
-            {!(selected && dirty) && !!group.blockers.length && requestState && !["disabled", "prepared"].includes(requestState)
-              && <small className="plan-workflow__blocked">{label(group.blockers[0])}</small>}</td>
-          <td><div className="plan-workflow__row-actions"><button type="button" aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{isOpen ? (zh ? "收起" : "접기") : (zh ? "原料" : "원료")}</button><button type="button" disabled={!data.can_edit || !!group.blockers.length || group.operation === "unchanged" || !!editing || !!defaultTarget || busy} onClick={() => submit({ action: "prepare", keys: [group.key] })}>{zh ? "准备" : "준비"}</button>
-            {canRecheckPlanRequest(request) && <button type="button" disabled={serviceLocked} onClick={() => request && recheck(request.uid)}>{zh ? "复查MES" : "MES 재조회"}</button>}</div></td>
+          <td className={`plan-workflow__material${selected && editing.identity_state === "identified" ? " is-editing" : ""}`}>{selected && editing.identity_state === "identified" ? materialSelect(inputs[0], 0) : <button type="button" className="plan-workflow__material-cell" disabled={!data.can_edit || mutate.isPending} title={snapshot?.inputs.map(input => input.material_name).join(" + ")} onClick={() => { if (rowToEdit) leave(() => edit(rowToEdit)); }}>{snapshot?.inputs.map(input => input.material_code).join(" + ") || (zh ? "确认用料" : "투입 자재 확인")}</button>}</td>
+          <td className="plan-workflow__task"><span className={group.blockers.length || (selected && dirty) || stage === "review" ? "plan-workflow__blocked" : "plan-workflow__approved"} title={currentTask}>{currentTask}</span></td>
+          <td className="plan-workflow__action"><div className="plan-workflow__row-actions">{selected ? <button className="btn btn-primary" form="plan-material-draft" disabled={!canSave}>{zh ? "保存" : "저장"}</button>
+            : stage === "materials" || stage === "plan" && rowToEdit?.identity_state !== "identified" ? <button type="button" className="btn btn-primary" disabled={!data.can_edit || busy || !rowToEdit} onClick={() => rowToEdit && leave(() => edit(rowToEdit))}>{stage === "plan" ? (zh ? "核对计划" : "계획 확인") : (zh ? "确认原料" : "원료 확정")}</button>
+            : stage === "issue" ? (request?.can_send === true && data.write_enabled !== true ? <span className="plan-workflow__mobile-status" title={currentTask}>{["disabled", "prepared"].includes(requestState || "") ? (zh ? "准备已保存" : "준비 저장됨") : currentTask}</span> : <button type="button" className="btn btn-primary" disabled={serviceLocked || !data.can_edit || (request?.can_send === true ? !eligible : !!group.blockers.length || group.operation === "unchanged")}
+              onClick={() => request?.can_send === true ? createRequests([request.uid]) : submit({ action: "prepare", keys: [group.key] })}>{request?.can_send === true ? (zh ? "创建MES" : "MES 생성") : (zh ? "准备工单" : "생성 준비")}</button>)
+            : canRecheckPlanRequest(request) ? <button type="button" className="btn btn-primary" disabled={serviceLocked} onClick={() => request && recheck(request.uid)}>{zh ? "复查MES" : "MES 재조회"}</button>
+            : <button type="button" disabled={busy} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{stage === "plan" ? (zh ? "核对计划" : "계획 확인") : (zh ? "查看" : "상세 확인")}</button>}</div></td>
         </tr>
-        {isOpen && <tr className="plan-workflow__detail-row"><td colSpan={8}><div id={`group-${group.key}`} className="plan-workflow__detail">{compactDetail(group, rows, !!selected)}</div></td></tr>}
+        {isOpen && <tr className="plan-workflow__detail-row"><td colSpan={8}><div id={`group-${group.key}`} className="plan-workflow__detail">{!selected && <div className="plan-workflow__detail-status"><span>{currentTask}</span>{requestState && !["disabled", "prepared"].includes(requestState) && !!group.blockers.length && <span>{label(requestState)}</span>}{mesId && <span>MES #{mesId}</span>}</div>}{compactDetail(group, rows, !!selected)}</div></td></tr>}
         </Fragment>;
       })}
-      {!data.preview.length && <tr><td colSpan={8}>{zh ? "所选范围没有计划。" : "선택 기간의 계획이 없습니다."}</td></tr>}
+      {!visibleItems.length && <tr><td colSpan={8}>{!data.preview.length ? (zh ? "所选范围没有计划。" : "선택 기간의 계획이 없습니다.") : (zh ? "此待办暂无项目。" : "이 단계에 해당하는 항목이 없습니다.")}</td></tr>}
     </tbody></table></div>
-    {data.can_manage_defaults && editing && <details className="plan-workflow__diagnostics"><summary>{zh ? "管理员连接／默认原料" : "관리자 연결 / 기본원료"}</summary>
-      <div className="plan-workflow__fields">{fields.map(field => <label key={field}>{fieldLabels[field][zh ? 1 : 0]}<input form="plan-material-draft" value={values[field] || ""} onChange={e => { changed(); setValues({ ...values, [field]: e.target.value }); }} /></label>)}
+    {data.can_manage_defaults && <details className="plan-workflow__diagnostics"><summary>{zh ? "管理员设置" : "관리자 설정"}</summary>
+      <details className="plan-workflow__policy"><summary>{zh ? "生产规则" : "생산 규칙"}</summary><p>{zh ? "08:00～次日08:00；同设备、产品、设置及原料确认的注塑计划连续合并。生产中每2小时检验政策维持；本阶段不自动生成检验、不自动下达／开工／关闭。" : "08:00~익일 08:00. 같은 호기·제품·셋업·원료가 확인된 사출만 연속 묶음. 생산 중 2시간 검사 유지. 이번 단계 검사 자동 생성·下达·开工·마감은 실행하지 않습니다."}</p></details>
+      {editing && <><div className="plan-workflow__fields">{fields.map(field => <label key={field}>{fieldLabels[field][zh ? 1 : 0]}<input form="plan-material-draft" value={values[field] || ""} onChange={e => { changed(); setValues({ ...values, [field]: e.target.value }); }} /></label>)}
         {inputs.map((input, index) => <label key={index}>{zh ? "物料版本（如有）" : "물료 버전 (있는 경우)"} · {data.catalog.materials.find(row => row.key === input.key)?.material_code}<input form="plan-material-draft" value={input.material_version} onChange={e => { changed(); const next = [...inputs]; next[index] = { ...input, material_version: e.target.value }; setInputs(next); }} /></label>)}</div>
-      {editing.approval && <button type="button" onClick={() => leave(() => { const row = editing; clearDraft(); setDefaultTarget(row); setDefaultReason(""); setDefaultConfirmed(false); })}>{zh ? "修改默认原料" : "기본원료 변경"}</button>}
+      {editing.approval && <button type="button" onClick={() => leave(() => { const row = editing; clearDraft(); setDefaultTarget(row); setDefaultReason(""); setDefaultConfirmed(false); })}>{zh ? "修改默认原料" : "기본원료 변경"}</button>}</>}
     </details>}
     {defaultForm}
     {data.can_manage_defaults && !!data.requests.length && <details className="plan-workflow__requests"><summary>{zh ? "管理员记录" : "관리자 기록"} ({data.requests.length})</summary>{data.requests.map(row => <div key={row.uid}><span>{zh ? "本地准备编号" : "로컬 준비번호"}: <strong>{row.work_order_code}</strong></span><span>{label(planRequestState(row) || row.state)}</span>{safeMesId(row.mes_id) && <span>MES #{row.mes_id}</span>}{row.blockers.map(code => <span key={code}>{label(code)}</span>)}{canRecheckPlanRequest(row) && <button type="button" disabled={serviceLocked} onClick={() => recheck(row.uid)}>{zh ? "复查MES" : "MES 재조회"}</button>}</div>)}</details>}

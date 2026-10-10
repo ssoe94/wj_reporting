@@ -837,6 +837,7 @@ export function ProductionPlansPage() {
   const [dragTarget, setDragTarget] = useState<PlanType | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
+  const [workflowOpenRequest, setWorkflowOpenRequest] = useState(0);
   const [uploadChangeReport, setUploadChangeReport] = useState<UploadChangeReport | null>(null);
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -2320,6 +2321,8 @@ export function ProductionPlansPage() {
       {uploadStatus ? (
         <div className={`notice ${uploadStatus.tone === "success" ? "notice--success" : "notice--warning"}`}>
           {uploadStatus.message}
+          {uploadStatus.tone === "success" && !isViewingLocalSample && <a href="#plan-mes-workflow" className="button button--ghost"
+            onClick={() => setWorkflowOpenRequest(value => value + 1)}>{language === "ko" ? "자재·원료 확인으로 이동" : "前往用料确认"}</a>}
         </div>
       ) : null}
 
@@ -2348,7 +2351,7 @@ export function ProductionPlansPage() {
         )}
       </div>
 
-      {!isViewingLocalSample && <PlanWorkflowPanel date={selectedDate} language={language} />}
+      {!isViewingLocalSample && <PlanWorkflowPanel date={selectedDate} language={language} openRequest={workflowOpenRequest} />}
 
       <section className="panel">
         <div className="plan-table-header plan-table-header--compact">
