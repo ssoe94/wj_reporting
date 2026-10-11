@@ -93,6 +93,29 @@ elif preview:
         approved = approval_data(plan)
         approved['resource_code'] = f'SYNTHETIC-IMM{index:02}'
         approve_materials(plan, approved, user)
+    # Optional local UI review data; keep the original six-row fixture intact.
+    review_fixture = '--review-fixture' in sys.argv
+    if review_fixture:
+        from django.db import transaction
+        from production.models import PlanWorkIdentity, PlanWorkRevision
+        from production.plan_workflow import snapshot, digest, lock_type
+        identity_plan = new_plan(day=14, quantity=400, part='ABJ76773801', machine='1200T-17',
+            lot_no='6K1M05SF', model_name='SYNTHETIC CURRENT MODEL',
+            part_spec='SYNTHETIC CURRENT SPEC', actor=user)
+        historical = {**snapshot(identity_plan), 'plan_date': '2026-04-10',
+            'planned_quantity': '1736', 'lot_no': 'SYNTHETIC-APRIL-LOT',
+            'model_name': 'SYNTHETIC APRIL MODEL', 'part_spec': 'SYNTHETIC APRIL SPEC'}
+        with transaction.atomic():
+            lock_type('injection')
+            candidate = PlanWorkIdentity.objects.create(plan_type='injection', active=False)
+            PlanWorkRevision.objects.create(work=candidate, version=1, snapshot=historical,
+                fingerprint=digest(historical), change='removed', actor=user,
+                reason='SYNTHETIC inactive historical identity for local UI review')
+            PlanWorkIdentity.objects.filter(uid=identity_plan.work_uid).update(
+                resolution='confirmation', candidates=[str(candidate.uid)])
+        approved_plan = new_plan(day=14, quantity=1692, part='SYNTHETIC-APPROVED-3INPUT',
+            machine='850T-9', lot_no='SYNTHETIC-BOM-LOT', model_name='SYNTHETIC APPROVED MODEL',
+            part_spec='SYNTHETIC APPROVED SPEC', actor=user)
     synthetic_parts = frozenset(ProductionPlan.objects.values_list('part_no', flat=True))
     synthetic_material_ids = {part: 17000000000010000 + index for index, part in enumerate(sorted(synthetic_parts))}
 
@@ -137,6 +160,34 @@ elif preview:
     with patch('requests.sessions.Session.request', side_effect=AssertionError('MES network forbidden in synthetic preview')), \
             patch('production.plan_bom.BomReader', SyntheticBomReader), \
             patch('production.plan_master_gaps.BomReader', SyntheticBomReader):
+        if review_fixture:
+            import json
+            from rest_framework.test import APIClient
+            from production.plan_bom import read_bom
+            source = read_bom(approved_plan.part_no, user.pk)
+            api = APIClient()
+            api.force_authenticate(user)
+            result = api.post('/api/production/plan-workflow/', {
+                'start': '2026-10-14', 'end': '2026-10-14', 'plan_type': 'injection',
+                'action': 'approve', 'plan_id': approved_plan.pk,
+                'uid': str(approved_plan.work_uid), 'version': approved_plan.work_version,
+                'bom_hash': source['hash'], 'bom_version': source['version'],
+                'inputs': [{'source_row_id': row['source_row_id'],
+                    'material_code': 'RESIN' if row['replaceable'] else row['material_code']}
+                    for row in source['inputs']],
+                'resource_code': 'SYNTHETIC-850T9', 'mold_code': '',
+                'reason': 'SYNTHETIC complete three-input approval for local UI review'}, format='json')
+            if result.status_code != 201:
+                raise RuntimeError(f'Synthetic BOM approval failed: {result.status_code} {result.data}')
+            output = ROOT / 'output' / 'plan-review-fixture'
+            output.mkdir(parents=True, exist_ok=True)
+            (output / 'seed.json').write_text(json.dumps({'synthetic': True, 'date': '2026-10-14',
+                'identity_plan': {'id': identity_plan.pk, 'uid': str(identity_plan.work_uid),
+                    'snapshot': snapshot(identity_plan)},
+                'inactive_candidate': {'uid': str(candidate.uid), 'active': False, 'snapshot': historical},
+                'approved_plan': {'id': approved_plan.pk, 'uid': str(approved_plan.work_uid),
+                    'snapshot': snapshot(approved_plan), 'approval': result.data}}, ensure_ascii=False,
+                indent=2, default=str) + '\n')
         call_command('runserver', f'127.0.0.1:{preview_port}', use_reloader=False)
 else:
     from django.test.runner import DiscoverRunner

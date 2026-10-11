@@ -5,11 +5,13 @@ export type MaterialOption = { key: string; material_id: string; material_code: 
   material_version: string; unit_id: string; unit_name: string; selectable: boolean };
 export type MaterialInput = MaterialOption & { source_row_id?: string; numerator: string; denominator: string; required_quantity: string };
 export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[]; bom_source?: PlanBomSource };
+export type PlanCandidate = { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number;
+  planned_quantity: string; part_no?: string; lot_no?: string; model_name?: string; part_spec?: string } };
 export type WorkflowRow = { id: number; uid: string; version: number; plan_date: string; machine_name: string;
   part_no: string; planned_quantity: string; default_version: number; identity_state: string; candidates: string[];
   lot_no?: string; model_name?: string; part_spec?: string;
   quantity_valid?: boolean;
-  candidate_details: { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number; planned_quantity: string } }[];
+  candidate_details: PlanCandidate[];
   approval: { id: number; snapshot: MaterialSnapshot; approved_at: string; actor_name?: string } | null;
   previous_approval: { snapshot: MaterialSnapshot } | null;
   recommendation: { version: number; snapshot: MaterialSnapshot } | null };
