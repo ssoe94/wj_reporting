@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from uuid import UUID
 from collections.abc import Mapping
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Min, Prefetch
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,7 +22,7 @@ from .plan_service_transport import (writes_enabled, PlanMesServiceTransport, di
                                     recheck_service_creation, READBACK_STATES)
 
 
-def request_summary(row, current_keys):
+def request_summary(row, current_keys, *, is_current):
     event = row.audit_events[0] if getattr(row, 'audit_events', []) else None
     evidence = event.evidence if event else {}
     latest = {key: evidence[key] for key in ('outcome', 'mes_id', 'blockers', 'verified_scope') if key in evidence}
@@ -30,11 +30,11 @@ def request_summary(row, current_keys):
         'operation': row.operation, 'state': row.state, 'blockers': row.blockers,
         'intent': row.intent, 'contract': row.contract, 'attempt': row.attempt,
         'mes_id': row.work_order.mes_id or evidence.get('mes_id', ''), 'last_result': latest,
-        'can_send': (row.operation == 'create' and row.state in ('disabled', 'prepared', 'failed')
+        'can_send': (is_current and row.operation == 'create' and row.state in ('disabled', 'prepared', 'failed')
             and row.attempt == 0 and not row.blockers and not row.work_order.mes_id
             and row.contract.get('authentication') == 'service_app'
             and current_keys.get(row.work_order.code) == digest(row.intent)),
-        'can_recheck': row.operation == 'create' and row.state in READBACK_STATES}
+        'can_recheck': is_current and row.operation == 'create' and row.state in READBACK_STATES}
 
 
 def selected_request(uid, start, end, plan_type):
@@ -123,14 +123,18 @@ class PlanWorkflowView(APIView):
         groups = preview(start, end, plan_type, context)
         current_keys = {group['work_order_code']: group['key'] for group in groups
             if group['work_order_code'] and not group['blockers']}
+        requests, current_requests = [], {}
+        for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order')\
+                .prefetch_related(Prefetch('events', queryset=PlanMesRequestEvent.objects.order_by('-id'),
+                    to_attr='audit_events')).annotate(_first_event=Min('events__id'))\
+                .order_by('-created_at', '-_first_event', '-uid')[:100]:
+            is_current = current_requests.setdefault(row.work_order_id, row.pk) == row.pk
+            requests.append(request_summary(row, current_keys, is_current=is_current))
         return Response({'write_enabled': writes_enabled(), 'rows': [serialize_row(row, context) for row in context.rows],
             'catalog': material_catalog(), 'preview': groups,
             'can_edit': request.user.is_active and user_can_edit_plan(request.user, plan_type),
             'can_manage_defaults': request.user.is_active and request.user.is_superuser,
-            'requests': [request_summary(row, current_keys)
-                for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order')
-                    .prefetch_related(Prefetch('events', queryset=PlanMesRequestEvent.objects.order_by('-id'),
-                        to_attr='audit_events')).order_by('-created_at')[:100]]})
+            'requests': requests})
 
     def post(self, request):
         start, end, plan_type = scope(request.data)

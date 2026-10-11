@@ -23,6 +23,8 @@ from .plan_workflow import WorkflowConflict, digest, lock_type, snapshot
 from .plan_workflow_contract import CREATE_PATH, build_contract
 from .plan_workflow_transport import ORIGINS, ROUTE_BASE, PlanTransportError
 from .permissions import user_can_edit_plan
+from .plan_request_recovery import (latest_request, payload_was_attempted,
+    has_other_unresolved_attempt, observed_identity, known_quality_rejection)
 
 LIST_PATH = '/med/open/v2/work_order/base/_list'
 BASE_PATH = '/med/open/v2/work_order/base/_detail'
@@ -84,6 +86,7 @@ def _body(response, *, exact_code_lookup=False, create_response=False):
         if (create_response and type(body.get('code')) is int and body['code'] == 0
                 and body.get('subCode') == 'MED-DOMAIN/IMPORT_CREATE_ERROR'
                 and type(body.get('needCheck')) is int and body['needCheck'] == 0
+                and body.get('fieldPermission') is None
                 and isinstance(errors, list) and 1 <= len(errors) <= 500
                 and all(value == '投料质量状态输入不合法' for value in errors)):
             raise PlanTransportError('input_quality_state_invalid')
@@ -199,6 +202,10 @@ class PlanMesServiceTransport:
 def _current(req):
     if req.operation != 'create' or req.blockers or req.work_order.mes_id:
         raise WorkflowConflict('Request cannot be created.')
+    if latest_request(req.work_order).pk != req.pk or has_other_unresolved_attempt(req):
+        raise WorkflowConflict('Only the latest resolved request may be prepared for creation.')
+    if payload_was_attempted(req.work_order, req.contract):
+        raise WorkflowConflict('This provider payload was already attempted.')
     if digest(req.work_order.approved_snapshot) != digest(req.intent):
         raise WorkflowConflict('Stale work order snapshot.')
     for uid, version in req.intent['versions'].items():
@@ -260,6 +267,8 @@ def _finish(req, transport, state, *, mes_id_value='', blockers=None, base=None,
     with transaction.atomic():
         lock_type(req.work_order.plan_type)
         current = PlanMesRequest.objects.select_for_update().select_related('work_order').get(pk=req.pk)
+        if latest_request(current.work_order).pk != current.pk:
+            return public_result(current)
         reservation_id = getattr(req, '_reservation_id', None)
         if reservation_id is not None:
             checking = current.events.filter(state='checking', evidence__create_reserved=False).order_by('-id').first()
@@ -270,6 +279,18 @@ def _finish(req, transport, state, *, mes_id_value='', blockers=None, base=None,
         # A late failed lookup must not erase a concurrently recorded success.
         if current.state in ('created', 'already_exists'):
             return public_result(current)
+        if state == 'rejected':
+            # A delayed absence must never erase an ID already observed by
+            # another read, including a review outcome with no order.mes_id.
+            if current.state == 'review' or observed_identity(current.work_order):
+                return public_result(current)
+            if known_quality_rejection(current):
+                blockers = ['input_quality_state_invalid']
+                evidence.update(outcome='provider_validation_rejected_and_code_absent',
+                    blockers=blockers, exact_code_absent=True)
+            else:
+                state = 'uncertain'
+                evidence['outcome'] = state
         if state in ('created', 'already_exists'):
             order = current.work_order
             if order.mes_id and order.mes_id != mes_id_value:
@@ -350,7 +371,7 @@ def _feeding_matches(intent, payload, actual):
 def _observe(req, transport, *, existed=False, known_id=None):
     found = known_id or transport.find_by_code(req.work_order.code)
     if found is None:
-        return _finish(req, transport, 'uncertain' if req.attempt else 'failed',
+        return _finish(req, transport, 'rejected' if req.attempt else 'failed',
             blockers=['code_not_observed_recheck_required'])
     base = transport.read_base(req.work_order.code, found)
     payload = req.contract['payload']
@@ -451,6 +472,8 @@ def recheck_service_creation(request_uid, transport):
     # Pin state, attempt and lookup generation in one DB snapshot before IO.
     req = PlanMesRequest.objects.select_related('work_order').annotate(
         _reservation_id=Subquery(checking)).get(uid=request_uid)
+    if latest_request(req.work_order).pk != req.pk:
+        raise WorkflowConflict('Only the latest request can be rechecked.')
     if req.operation != 'create' or req.state not in READBACK_STATES:
         raise WorkflowConflict('Only unresolved creation requests can be rechecked.')
     if req.contract.get('authentication') != 'service_app':

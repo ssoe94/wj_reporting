@@ -348,7 +348,7 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         self.assertEqual(event.evidence['blockers'], result['blockers'])
         self.assertNotIn('SYNTHETIC-PRIVATE', json.dumps(event.evidence))
         self.assertNotIn(APP_TOKEN, json.dumps(event.evidence))
-        self.assertEqual(self.recheck()['state'], 'uncertain')
+        self.assertEqual(self.recheck()['state'], 'rejected')
         event.refresh_from_db()
         self.assertEqual(event.evidence['blockers'], ['input_quality_state_invalid'])
         calls_before = len(self.calls)
@@ -363,6 +363,7 @@ class PlanServiceDispatchTests(PlanServiceFixture, TransactionTestCase):
         known = {'code': 0, 'subCode': 'MED-DOMAIN/IMPORT_CREATE_ERROR', 'needCheck': 0,
             'data': ['投料质量状态输入不合法']}
         for changes in ({'code': False}, {'code': '0'}, {'needCheck': False},
+                {'fieldPermission': {'noAccess': ['inputQcState']}},
                 {'needCheck': 1}, {'subCode': 'OTHER'}, {'data': []},
                 {'data': ['投料质量状态输入不合法', 'SYNTHETIC-PRIVATE']},
                 {'data': ['投料质量状态输入不合法 token=SYNTHETIC-PRIVATE']},

@@ -82,7 +82,7 @@ export function parsePlanSendResult(value: unknown, requested: readonly string[]
     const code = row?.work_order_code ?? row?.code ?? (row?.state === "blocked" ? "" : undefined);
     if (!row || !requestUid(row.uid) || !expected.has(row.uid) || seen.has(row.uid)
       || typeof code !== "string" || code.length > 160
-      || !["created", "already_exists", "uncertain", "readback_pending", "review", "failed", "blocked", "checking", "sending"].includes(row.state)
+      || !["created", "already_exists", "uncertain", "readback_pending", "review", "failed", "rejected", "blocked", "checking", "sending"].includes(row.state)
       || !Array.isArray(row.blockers) || row.blockers.some((code: unknown) => typeof code !== "string" || !/^[a-z][a-z0-9_]{0,79}$/.test(code))
       || (row.mes_id !== null && row.mes_id !== undefined && row.mes_id !== "" && !safeMesId(row.mes_id))) throw Error("Invalid plan send response");
     seen.add(row.uid);
