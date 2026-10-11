@@ -6,6 +6,7 @@ contracts also verify feeding controls; creation remains separate from full
 output/BOM linkage and production totals.
 """
 import hmac
+import json
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -20,7 +21,6 @@ from .mes_execution_contract import encode_exact_json, parse_json_exact, mes_id
 from .models import PlanMesRequest, PlanMesRequestEvent, PlanMaterialApproval, ProductionPlan, PlanWorkRevision
 from .plan_workflow import WorkflowConflict, digest, lock_type, snapshot
 from .plan_workflow_contract import CREATE_PATH, build_contract
-from .plan_input_quality import input_quality_states, normalized_feeding_control
 from .plan_workflow_transport import ORIGINS, ROUTE_BASE, PlanTransportError
 from .permissions import user_can_edit_plan
 
@@ -340,7 +340,7 @@ def _feeding_matches(intent, payload, actual):
                 return False
             states = control['inputQcState']
             if (not isinstance(states, list) or any(type(x['code']) is not int for x in states)
-                    or sorted(x['code'] for x in states) != input_quality_states(wanted['inputQcState'])):
+                    or sorted(x['code'] for x in states) != json.loads(wanted['inputQcState'])):
                 return False
         return not remaining
     except (KeyError, TypeError, ValueError, InvalidOperation, PlanTransportError):
@@ -401,12 +401,10 @@ def dispatch_service_create(request_uid, transport):
                 for row in approved], transport.actor_id)
             fields = ('source_row_id', 'material_id', 'material_code', 'material_version',
                       'unit_id', 'unit_name', 'numerator', 'denominator', 'feeding_control')
-            def canonical(row):
-                return {**{key: row[key] for key in fields},
-                        'feeding_control': normalized_feeding_control(row['feeding_control'])}
-            if ([canonical(row) for row in resolved] != [canonical(row) for row in approved]):
+            if ([{key: row[key] for key in fields} for row in resolved]
+                    != [{key: row[key] for key in fields} for row in approved]):
                 raise WorkflowConflict('mes_bom_replacement_changed')
-        except (PlanTransportError, WorkflowConflict, ValidationError, ValueError):
+        except (PlanTransportError, WorkflowConflict, ValidationError):
             return _finish(req, transport, 'failed', blockers=['mes_bom_changed_or_unavailable'])
     try:
         req = _claim(req.uid, transport.actor_id, creation=True, reservation_id=req._reservation_id)

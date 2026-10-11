@@ -8,7 +8,6 @@ from datetime import datetime
 from decimal import Decimal
 
 from .mes_execution_contract import encode_exact_json
-from .plan_input_quality import normalized_feeding_control
 from .plan_workflow_contract import CREATE_PATH, UPDATE_PATH
 
 INITIAL_STATUS = 1  # CREATED; dispatch/start are separate later operations.
@@ -29,11 +28,6 @@ def build_contract(order, intent):
             'code': order.code, 'plannedAmount': intent['quantity'], 'planFinishTime': end}]}}, [
                 'task_quantity_propagation_and_allowed_state_review']
     setup = intent['setup']
-    try:
-        controls = [normalized_feeding_control(row['feeding_control'])
-                    if 'feeding_control' in row else None for row in setup['inputs']]
-    except (KeyError, TypeError, ValueError):
-        return {}, ['input_quality_state_review_required']
     department = PRODUCTION_DEPARTMENTS.get(intent['plan_type'])
     if department is None:
         return {}, ['production_department_required']
@@ -49,8 +43,8 @@ def build_contract(order, intent):
             'subInputAmountNumerator': row['numerator'], 'subInputAmountDenominator': row['denominator'],
             'specificProcessInput': 1, 'inputProcessNum': setup['process_num'],
             'splitSopControlInput': 0, 'lossRate': '0',
-            **({'inputMaterialControlOpenCOs': [controls[index]]}
-               if controls[index] is not None else {})} for index, row in enumerate(setup['inputs'])],
+            **({'inputMaterialControlOpenCOs': [row['feeding_control']]}
+               if 'feeding_control' in row else {})} for index, row in enumerate(setup['inputs'])],
         'outputMaterialOpenCOs': [{'lineSeq': '0', 'mainFlag': 1, 'materialCode': intent['part_no'],
             'plannedAmount': intent['quantity'], 'unitName': setup['output_unit_name'],
             **({'version': setup['output_version']} if setup['output_version'] else {}),

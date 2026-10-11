@@ -126,7 +126,7 @@ class PlanBomTests(SimpleTestCase):
         self.assertNotIn('bomFeedingControls', source['inputs'][0])
         self.assertEqual([row['feeding_control'] for row in source['inputs']], [
             {'lineSeq': '10', 'inputAmountNumerator': numerator, 'feedFlag': mandatory,
-             'backFlush': 1, 'inputQcState': [1, 2], 'limit': 1}
+             'backFlush': 1, 'inputQcState': '[1,2]', 'limit': 1}
             for numerator, mandatory in [('3', 0), ('1', 0), ('0.429', 1)]])
 
     def test_only_third_resin_changes_and_whole_fixed_rows_ratios_and_source_remain(self):
