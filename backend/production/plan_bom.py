@@ -168,7 +168,7 @@ def _simple_controls(row):
             'inputAmountNumerator': _decimal(control['inputAmountNumerator'], True),
             'feedFlag': _enum(control['inputMaterialControl'], (0, 1)),
             'backFlush': _enum(control['backFlush'], (0, 1)),
-            'inputQcState': json.dumps(sorted(_enum(item, (1, 2, 3, 4)) for item in states), separators=(',', ':')),
+            'inputQcState': sorted(_enum(item, (1, 2, 3, 4)) for item in states),
             'limit': 1}
 
 

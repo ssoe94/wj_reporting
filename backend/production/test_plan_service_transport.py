@@ -4,6 +4,7 @@ The fixtures exercise actual material approval and persisted preparation. No
 MES credentials, OAuth sessions, production settings or network are used.
 """
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import date
 import json
 from threading import Barrier
@@ -42,6 +43,17 @@ def synthetic_response(value, *, status=200):
 
 
 class PlanServiceAppIsolationTests(SimpleTestCase):
+    def test_input_quality_states_normalize_legacy_strings_without_coercing_invalid_values(self):
+        from .plan_input_quality import input_quality_states
+        for value in ([2, 1], '[1,2]', '[2, 1]'):
+            before = deepcopy(value)
+            self.assertEqual(input_quality_states(value), [1, 2])
+            self.assertEqual(value, before)
+        for value in ([], [1, 1], [True, 2], [1.0, 2], ['1', '2'], [0], [5],
+                      '[true,2]', '1,2', 'null', '{}', '"[1,2]"', None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                input_quality_states(value)
+
     def test_shared_service_app_never_uses_an_environment_user_token_cached_user_or_user_code(self):
         from inventory import mes
         values = {mes.APP_TOKEN_CACHE_KEY: APP_TOKEN,
@@ -1184,6 +1196,44 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
                 'singleFeedMaterialAmount': None, 'inputSopControlId': None, 'inputSopControlDTO': None}]
             } for index, row in enumerate(req.intent['setup']['inputs'])]
 
+    def test_legacy_approval_string_builds_array_without_rewriting_the_approval(self):
+        from .plan_service_contract import build_contract
+        from .plan_workflow import digest
+        legacy = deepcopy(self.req.intent)
+        for rows in (legacy['setup']['inputs'], legacy['setup']['bom_source']['inputs']):
+            for row in rows:
+                row['feeding_control']['inputQcState'] = '[1,2]'
+        legacy['setup_fingerprint'] = digest(legacy['setup'])
+        self.approval.snapshot = deepcopy(legacy['setup'])
+        self.approval.fingerprint = digest(self.approval.snapshot)
+        self.approval.save(update_fields=['snapshot', 'fingerprint'])
+        self.req.intent = legacy
+        self.req.work_order.approved_snapshot = deepcopy(legacy)
+        self.req.work_order.setup_fingerprint = legacy['setup_fingerprint']
+        self.req.work_order.save(update_fields=['approved_snapshot', 'setup_fingerprint'])
+        contract, blockers = build_contract(self.req.work_order, legacy)
+        self.assertEqual(blockers, [])
+        self.req.contract = contract
+        self.req.save(update_fields=['intent', 'contract'])
+        payload = parse_json_exact(encode_exact_json(contract['payload']))
+        self.assertEqual(payload['inputMaterialOpenV2COs'][0]['inputMaterialControlOpenCOs'][0]['inputQcState'], [1, 2])
+        old_contract = deepcopy(contract)
+        for row in old_contract['payload']['inputMaterialOpenV2COs']:
+            row['inputMaterialControlOpenCOs'][0]['inputQcState'] = '[1,2]'
+        self.assertNotEqual(digest(old_contract), digest(contract))
+        original = deepcopy(self.approval.snapshot)
+        self.assertEqual(self.send_bom()['state'], 'created')
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.snapshot, original)
+        self.assertEqual(self.req.intent, legacy)
+
+    def test_invalid_legacy_quality_snapshot_blocks_contract_preparation(self):
+        from .plan_service_contract import build_contract
+        invalid = deepcopy(self.req.intent)
+        invalid['setup']['inputs'][0]['feeding_control']['inputQcState'] = '[true,2]'
+        self.assertEqual(build_contract(self.req.work_order, invalid),
+                         ({}, ['input_quality_state_review_required']))
+
     def send_bom(self, *, validation_error=None, resolved_transform=None):
         from .plan_bom import resolve_inputs, validate_source
 
@@ -1293,7 +1343,7 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
              ('40', 'RESIN', '0.429', '1', 'KG')])
         self.assertEqual([row['inputMaterialControlOpenCOs'] for row in payload['inputMaterialOpenV2COs']], [
             [{'lineSeq': '10', 'inputAmountNumerator': numerator, 'feedFlag': mandatory,
-              'backFlush': 1, 'inputQcState': '[1,2]', 'limit': 1}]
+              'backFlush': 1, 'inputQcState': [1, 2], 'limit': 1}]
             for numerator, mandatory in [('3', 0), ('1', 0), ('0.429', 1)]])
         self.req.refresh_from_db()
         self.assertEqual((self.req.state, self.req.attempt, self.req.actor_id), ('created', 1, self.user.pk))
