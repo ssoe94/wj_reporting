@@ -68,7 +68,7 @@ test('selected creation requires explicit writer, edit and request permissions w
     assert.equal(service.canSendPlanRequest(data, group, { ...request, ...patch }, attempted), false);
   }
   for (const state of ['checking', 'sending', 'uncertain', 'readback_pending', 'review', 'confirmed',
-    'created', 'already_exists', 'superseded']) {
+    'created', 'already_exists', 'superseded', 'rejected']) {
     assert.equal(service.canSendPlanRequest(data, group, { ...request, state }, attempted), false, state);
   }
 });
@@ -238,6 +238,8 @@ test('readback parser binds safe results to exactly the requested UID and reject
   assert.equal(service.parsePlanRecheckResult({ ...valid, state: 'already_exists' }, UID).state, 'already_exists');
   assert.deepEqual(service.parsePlanRecheckResult({ ...valid, state: 'uncertain', mes_id: '', blockers: ['readback_required'] }, UID),
     { uid: UID, code: 'WJ-SYNTHETIC-READBACK', state: 'uncertain', mes_id: null, blockers: ['readback_required'] });
+  assert.deepEqual(service.parsePlanRecheckResult({ ...valid, state: 'rejected', mes_id: '', blockers: ['input_quality_state_invalid'] }, UID),
+    { uid: UID, code: 'WJ-SYNTHETIC-READBACK', state: 'rejected', mes_id: null, blockers: ['input_quality_state_invalid'] });
   for (const value of [null, [], {}, { ...valid, uid: undefined }, { ...valid, uid: OTHER_UID },
     { ...valid, uid: Number('17000000000000001') }, { ...valid, state: 'finished' },
     { ...valid, mes_id: Number(MES_ID) }, { ...valid, blockers: undefined },

@@ -6,6 +6,7 @@ from that verified material assignment. No per-product server allowlist is used.
 """
 from datetime import datetime
 from decimal import Decimal
+import json
 
 from .mes_execution_contract import encode_exact_json
 from .plan_workflow_contract import CREATE_PATH, UPDATE_PATH
@@ -18,6 +19,19 @@ PLANNING_DEPARTMENT = '002'  # 营业
 PLANNING_USER = '2299'  # 徐佳; not the WJ user who presses Send.
 
 
+def approved_quality_states(value):
+    """Read immutable approval expectations, including older JSON strings."""
+    try:
+        states = json.loads(value) if isinstance(value, str) else None
+        if (not isinstance(states, list) or not states
+                or any(type(state) is not int or state not in (1, 2, 3, 4) for state in states)
+                or len(set(states)) != len(states)):
+            return None
+        return sorted(states)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_contract(order, intent):
     if Decimal(intent['quantity']) <= 0:
         return {}, ['positive_plan_quantity_required']
@@ -28,6 +42,13 @@ def build_contract(order, intent):
             'code': order.code, 'plannedAmount': intent['quantity'], 'planFinishTime': end}]}}, [
                 'task_quantity_propagation_and_allowed_state_review']
     setup = intent['setup']
+    controlled = [row for row in setup['inputs'] if 'feeding_control' in row]
+    # Trial WJ-IT-QC-20261011-003 preserved [1,2] when omitted. Do not
+    # generalize that observation to other approved quality combinations.
+    if any(not isinstance(row['feeding_control'], dict)
+            or approved_quality_states(row['feeding_control'].get('inputQcState')) != [1, 2]
+            for row in controlled):
+        return {}, ['input_quality_default_unverified']
     department = PRODUCTION_DEPARTMENTS.get(intent['plan_type'])
     if department is None:
         return {}, ['production_department_required']
@@ -43,7 +64,8 @@ def build_contract(order, intent):
             'subInputAmountNumerator': row['numerator'], 'subInputAmountDenominator': row['denominator'],
             'specificProcessInput': 1, 'inputProcessNum': setup['process_num'],
             'splitSopControlInput': 0, 'lossRate': '0',
-            **({'inputMaterialControlOpenCOs': [row['feeding_control']]}
+            **({'inputMaterialControlOpenCOs': [{key: value for key, value in row['feeding_control'].items()
+                                               if key != 'inputQcState'}]}
                if 'feeding_control' in row else {})} for index, row in enumerate(setup['inputs'])],
         'outputMaterialOpenCOs': [{'lineSeq': '0', 'mainFlag': 1, 'materialCode': intent['part_no'],
             'plannedAmount': intent['quantity'], 'unitName': setup['output_unit_name'],
@@ -54,4 +76,5 @@ def build_contract(order, intent):
                                'reportFlag': REPORT_FLAG}]}
     encode_exact_json(payload)
     return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686655055663528',
+            **({'input_quality_source': 'material_definition'} if controlled else {}),
             'authentication': 'service_app', 'readback_scope': 'base_creation'}, []

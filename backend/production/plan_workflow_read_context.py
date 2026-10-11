@@ -2,7 +2,7 @@
 from collections import defaultdict
 
 from django.db import connection
-from django.db.models import F, Q
+from django.db.models import F, Q, Min
 
 from .models import (ProductionPlan, ProductionExecution, PlanWorkIdentity,
                      PlanWorkRevision, PlanMaterialApproval, PlanMaterialDefault,
@@ -138,8 +138,9 @@ def order_read_context(plan_type):
     if orders:
         scope = PlanWorkOrder.objects.filter(plan_type=plan_type).values('uid')
         for request in PlanMesRequest.objects.filter(work_order_id__in=scope,
-                state__in=['checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed', 'disabled']).order_by('-created_at'):
-            if request.state == 'disabled':
+                state__in=['checking', 'sending', 'uncertain', 'readback_pending', 'review', 'failed', 'disabled', 'rejected']).annotate(
+                    _first_event=Min('events__id')).order_by('-created_at', '-_first_event', '-uid'):
+            if request.state in ('disabled', 'rejected'):
                 disabled.setdefault(request.work_order_id, request)
             elif request.state != 'failed' or request.attempt > 0:
                 unresolved.add(request.work_order_id)

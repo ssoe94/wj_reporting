@@ -141,7 +141,7 @@ elif preview:
 else:
     from django.test.runner import DiscoverRunner
     labels = ['production.test_plan_master_gaps', 'production.test_plan_master_gaps_views',
-        'production.test_plan_bom', 'production.test_plan_bom_views', 'production.test_plan_service_transport', 'production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials', 'production.test_plan_workflow', 'production.test_plan_workflow_read_context', 'production.test_plan_workflow_performance', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
+        'production.test_plan_bom', 'production.test_plan_bom_views', 'production.test_plan_service_transport', 'production.test_plan_service_recovery', 'production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials', 'production.test_plan_workflow', 'production.test_plan_workflow_read_context', 'production.test_plan_workflow_performance', 'production.test_plan_workflow_transport', 'production.test_mes_execution_contract',
         'production.test_plan_workflow_concurrency', 'production.test_mes_delivery', 'production.test_mes_task_actions', 'injection.tests']
     if '--diagnostic' in sys.argv:
         labels = ['production.test_mes_create_diagnostic', 'production.test_mes_create_diagnostic_views', 'production.test_plan_workflow_credentials']
