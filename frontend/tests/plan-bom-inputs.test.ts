@@ -144,3 +144,27 @@ test('fixed materials render each name once, including when the name is the code
   const absent = renderToStaticMarkup(createElement(PlanBomPrimaryInput, props({ source: null })));
   assert.ok(absent.includes('BOM 확인 필요') && !absent.includes('<select'));
 });
+
+test('only trusted raw per-piece ratios are editable and exact daily totals follow the draft without changing the BOM', () => {
+  const rawSource = { ...source, inputs: source.inputs.map((row, index) => index === 0 ? { ...row, category_code: 'CAT-011' } : row) };
+  const original = initialPlanBomInputs(rawSource);
+  let changed: PlanBomInputSelection[] | undefined;
+  const tree = PlanBomInputs(props({ source: rawSource, value: original, onChange: value => { changed = value; } }));
+  const editors = nodes(tree).filter(node => node.type === 'input');
+  assert.equal(editors.length, 1); assert.match(editors[0].props['aria-label'], /RESIN-A/);
+  editors[0].props.onChange({ target: { value: '0.4312500001' } });
+  assert.deepEqual(changed, [{ ...original[0], numerator: '0.4312500001' }, ...original.slice(1)]);
+  assert.equal(rawSource.inputs[0].numerator, '0.429');
+  assert.equal(isPlanBomSelectionValid(rawSource, catalog, changed), true);
+  const markup = html({ source: rawSource, value: changed });
+  assert.ok(markup.includes('필요량 828.000000192 KG'));
+  assert.ok(markup.includes('필요량 5760 EA') && markup.includes('필요량 1920 EA'));
+  for (const value of ['', '0', '-1', '1e-3', '0.12345678901', '0.42900000000']) {
+    const invalid = [{ ...original[0], numerator: value }, ...original.slice(1)];
+    assert.equal(isPlanBomSelectionValid(rawSource, catalog, invalid), false, value);
+  }
+  assert.equal(isPlanBomSelectionValid(rawSource, catalog, [original[0], { ...original[1], numerator: '3' }, original[2]]), false);
+  const perTwo = { ...rawSource, inputs: [{ ...rawSource.inputs[0], denominator: '2' }] };
+  assert.ok(!html({ source: perTwo, value: initialPlanBomInputs(perTwo) }).includes('<input'));
+  assert.equal(isPlanBomSelectionValid(perTwo, catalog, [{ ...initialPlanBomInputs(perTwo)[0], numerator: '0.5' }]), false);
+});

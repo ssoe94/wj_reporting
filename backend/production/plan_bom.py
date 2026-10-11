@@ -7,6 +7,7 @@ from copy import deepcopy
 from decimal import Decimal
 import hashlib
 import json
+import re
 
 from rest_framework.exceptions import ValidationError
 
@@ -281,7 +282,7 @@ def read_bom(part_no, actor_id, *, reader=None):
 
 
 def resolve_inputs(source, submitted_inputs, actor_id, *, reader=None):
-    """Apply code-only overrides to trusted read_bom output, never client ratios."""
+    """Apply raw-material code/per-piece ratio overrides to a trusted full BOM."""
     if type(actor_id) is not int or actor_id < 1:
         _fail('actor')
     original = _object(source).get('inputs')
@@ -290,15 +291,24 @@ def resolve_inputs(source, submitted_inputs, actor_id, *, reader=None):
     if not isinstance(submitted_inputs, list) or len(submitted_inputs) != len(original):
         _fail('input_set')
     indexed = {row['source_row_id']: row for row in original}
-    submitted, changes = {}, set()
+    submitted, changes, numerators = {}, set(), {}
     for item in submitted_inputs:
         item = _object(item)
-        if set(item) != {'source_row_id', 'material_code'} or type(item.get('source_row_id')) is not str:
+        if (set(item) not in ({'source_row_id', 'material_code'}, {'source_row_id', 'material_code', 'numerator'})
+                or type(item.get('source_row_id')) is not str):
             _fail('input_fields')
         row_id, code = _id(item['source_row_id']), _text(item['material_code'])
         if row_id not in indexed or row_id in submitted:
             _fail('input_set')
         row = indexed[row_id]
+        if 'numerator' in item:
+            if (row['replaceable'] is not True or row['category_code'] != RAW_CATEGORY
+                    or Decimal(_decimal(row['denominator'], True)) != 1):
+                _fail('fixed_ratio_changed')
+            value = item['numerator']
+            if not isinstance(value, str) or not re.fullmatch(r'(0|[1-9][0-9]*)(\.[0-9]+)?', value):
+                _fail('ratio')
+            numerators[row_id] = _decimal(value, True)
         if code != row['material_code']:
             if row['replaceable'] is not True or row['category_code'] != RAW_CATEGORY:
                 _fail('fixed_input_changed')
@@ -317,6 +327,9 @@ def resolve_inputs(source, submitted_inputs, actor_id, *, reader=None):
             materials[code] = (material, base, identity)
     result = deepcopy(original)
     for row in result:
+        if row['source_row_id'] in numerators:
+            row['numerator'] = numerators[row['source_row_id']]
+            row['feeding_control']['inputAmountNumerator'] = row['numerator']
         code = submitted[row['source_row_id']]
         if code == row['material_code']:
             continue

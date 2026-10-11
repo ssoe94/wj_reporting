@@ -57,7 +57,7 @@ class PlanBomViewTests(TestCase):
         self.assertEqual(saved['route_code'], 'SYNTHETIC-ROUTE')
         self.assertEqual(saved['output_version'], '')
         self.assertEqual([row['material_code'] for row in saved['inputs']], ['HARDWARE-A', 'HARDWARE-B', 'RESIN'])
-        self.assertEqual([row['required_quantity'] for row in saved['inputs']], ['5760.0', '1920.0', '823.6800'])
+        self.assertEqual([row['required_quantity'] for row in saved['inputs']], ['5760', '1920', '823.68'])
         # The real prepare path consumes the full approved source and all rows.
         groups = self.client.get(self.url, self.scope).data['preview']
         result = self.client.post(self.url, {**self.scope, 'action': 'prepare', 'keys': [groups[0]['key']]}, format='json')
@@ -75,6 +75,22 @@ class PlanBomViewTests(TestCase):
             with self.subTest(changes=changes):
                 self.assertEqual(self.post(self.approval(**changes)).status_code, status)
         self.assertFalse(PlanMaterialApproval.objects.exists())
+
+    def test_raw_ratio_http_approval_and_prepare_keep_original_bom_and_exact_daily_requirement(self):
+        body = self.approval()
+        body['inputs'][2]['numerator'] = '0.4312500001'
+        result = self.post(body)
+        self.assertEqual(result.status_code, 201, result.data)
+        saved = PlanMaterialApproval.objects.get().snapshot
+        self.assertEqual(saved['bom_source'], self.source)
+        self.assertEqual(saved['inputs'][2]['required_quantity'], '828.000000192')
+        self.assertEqual([row['numerator'] for row in saved['inputs']], ['3', '1', '0.4312500001'])
+        group = self.client.get(self.url, self.scope).data['preview'][0]
+        response = self.client.post(self.url, {**self.scope, 'action': 'prepare', 'keys': [group['key']]}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        raw = PlanMesRequest.objects.get().contract['payload']['inputMaterialOpenV2COs'][2]
+        self.assertEqual(raw['subInputAmountNumerator'], '0.4312500001')
+        self.assertEqual(raw['inputMaterialControlOpenCOs'][0]['inputAmountNumerator'], '0.4312500001')
 
     def test_plan_change_during_provider_read_cannot_approve_new_version(self):
         def read(*args):
