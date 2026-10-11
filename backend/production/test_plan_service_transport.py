@@ -4,6 +4,7 @@ The fixtures exercise actual material approval and persisted preparation. No
 MES credentials, OAuth sessions, production settings or network are used.
 """
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import date
 import json
 from threading import Barrier
@@ -1138,6 +1139,27 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
         self.source = read_bom(PART, self.user.pk, reader=self.reader)
         self.approve_complete_bom()
 
+    def quality_master_rows(self):
+        from .test_plan_bom import enum
+        return [{'baseInfo': {'code': row['material_code'], 'id': int(row['material_id']),
+                    'enableFlag': enum(1)},
+                'feedInfo': {'materialId': int(row['material_id']), 'qcStatus': [enum(1), enum(2)]}}
+                for row in self.req.intent['setup']['inputs']]
+
+    def sender(self, url, **kwargs):
+        from .plan_bom import MATERIAL_LIST
+        if url.endswith(MATERIAL_LIST):
+            self.req.refresh_from_db()
+            self.assertEqual((self.req.state, self.req.attempt), ('checking', 0))
+            self.assertFalse(connection.in_atomic_block)
+            self.assertEqual(parse_json_exact(kwargs['data']), {
+                'codes': [row['material_code'] for row in self.req.intent['setup']['inputs']],
+                'queryFieldList': [1, 10]})
+            if not self.scripts.get(MATERIAL_LIST):
+                self.scripts[MATERIAL_LIST] = [synthetic_response({
+                    'code': 200, 'data': self.quality_master_rows()})]
+        return super().sender(url, **kwargs)
+
     def approve_complete_bom(self, numerator=None):
         from .plan_bom import read_bom, resolve_inputs
         from .test_plan_bom import PART, submitted
@@ -1286,7 +1308,7 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
         self.validate_call.assert_called_once_with(self.source, self.other.pk)
         self.assertEqual(self.resolve_call.call_args.args[2], self.other.pk)
         self.assertIn((MATERIAL_LIST, {'codes': ['RESIN'], 'queryFieldList': [1, 4]}), self.reader.calls)
-        self.assertEqual(self.paths(), [LIST_PATH, CREATE_PATH, LIST_PATH, BASE_PATH, INPUT_PATH, BASE_PATH])
+        self.assertEqual(self.paths(), [LIST_PATH, MATERIAL_LIST, CREATE_PATH, LIST_PATH, BASE_PATH, INPUT_PATH, BASE_PATH])
         payload = next(call['payload'] for call in self.calls if call['path'] == CREATE_PATH)
         self.assertEqual([(row['seq'], row['materialCode'], row['subInputAmountNumerator'],
             row['subInputAmountDenominator'], row['unitName']) for row in payload['inputMaterialOpenV2COs']],
@@ -1294,7 +1316,7 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
              ('40', 'RESIN', '0.429', '1', 'KG')])
         self.assertEqual([row['inputMaterialControlOpenCOs'] for row in payload['inputMaterialOpenV2COs']], [
             [{'lineSeq': '10', 'inputAmountNumerator': numerator, 'feedFlag': mandatory,
-              'backFlush': 1, 'inputQcState': '[1,2]', 'limit': 1}]
+              'backFlush': 1, 'limit': 1}]
             for numerator, mandatory in [('3', 0), ('1', 0), ('0.429', 1)]])
         self.req.refresh_from_db()
         self.assertEqual((self.req.state, self.req.attempt, self.req.actor_id), ('created', 1, self.user.pk))
@@ -1303,6 +1325,104 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
         self.validate_call.assert_not_called()
         self.resolve_call.assert_not_called()
         self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_quality_omission_changes_wire_digest_without_mutating_approved_expectations(self):
+        from .plan_service_contract import build_contract
+        from .plan_workflow import digest
+        before = deepcopy(self.req.intent)
+        approval_before = deepcopy(self.approval.snapshot)
+        contract, blockers = build_contract(self.req.work_order, self.req.intent)
+        self.assertEqual(blockers, [])
+        self.assertEqual(contract['input_quality_source'], 'material_definition')
+        self.assertEqual(self.req.intent, before)
+        legacy = deepcopy(contract)
+        legacy.pop('input_quality_source')
+        for sent, source in zip(legacy['payload']['inputMaterialOpenV2COs'], before['setup']['inputs']):
+            self.assertNotIn('inputQcState', sent['inputMaterialControlOpenCOs'][0])
+            self.assertEqual(source['feeding_control']['inputQcState'], '[1,2]')
+            sent['inputMaterialControlOpenCOs'][0]['inputQcState'] = '[1,2]'
+        self.assertNotEqual(digest(contract['payload']), digest(legacy['payload']))
+        self.approval.refresh_from_db()
+        self.assertEqual(self.approval.snapshot, approval_before)
+        self.assert_no_transport()
+
+    def test_unsupported_or_malformed_approved_quality_never_builds_omission_contract(self):
+        from .plan_service_contract import build_contract
+        for value in ('[1,3]', '[]', '[1,true]', '[1,2,2]', '[1,"2"]', '{}', 'invalid', [1, 2], None):
+            intent = deepcopy(self.req.intent)
+            intent['setup']['inputs'][0]['feeding_control']['inputQcState'] = value
+            with self.subTest(value=value):
+                self.assertEqual(build_contract(self.req.work_order, intent),
+                    ({}, ['input_quality_default_unverified']))
+        intent['setup']['inputs'][0]['feeding_control'].pop('inputQcState')
+        self.assertEqual(build_contract(self.req.work_order, intent), ({}, ['input_quality_default_unverified']))
+        self.assert_no_transport()
+
+    def test_changed_incomplete_or_inexact_material_defaults_stop_before_import_reservation(self):
+        from .plan_bom import MATERIAL_LIST
+        from .plan_service_transport import LIST_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        from .test_plan_bom import enum
+        for change in ('missing', 'duplicate', 'wrong_code', 'wrong_id', 'wrong_feed_id',
+                       'disabled', 'enabled_bool', 'qc_wrong', 'qc_missing', 'qc_empty',
+                       'qc_duplicate', 'qc_bool', 'qc_string', 'feed_missing', 'null_data'):
+            rows = self.quality_master_rows()
+            base, feed = rows[0]['baseInfo'], rows[0]['feedInfo']
+            if change == 'missing': rows.pop()
+            if change == 'duplicate': rows[1] = deepcopy(rows[0])
+            if change == 'wrong_code': base['code'] = 'SYNTHETIC-WRONG'
+            if change == 'wrong_id': base['id'] = 99
+            if change == 'wrong_feed_id': feed['materialId'] = 99
+            if change == 'disabled': base['enableFlag'] = enum(0)
+            if change == 'enabled_bool': base['enableFlag'] = enum(True)
+            if change == 'qc_wrong': feed['qcStatus'] = [enum(1), enum(3)]
+            if change == 'qc_missing': feed.pop('qcStatus')
+            if change == 'qc_empty': feed['qcStatus'] = []
+            if change == 'qc_duplicate': feed['qcStatus'] = [enum(1), enum(2), enum(2)]
+            if change == 'qc_bool': feed['qcStatus'] = [enum(True), enum(2)]
+            if change == 'qc_string': feed['qcStatus'] = '[1,2]'
+            if change == 'feed_missing': rows[0].pop('feedInfo')
+            if change == 'null_data': rows = None
+            self.scripts[MATERIAL_LIST] = [synthetic_response({'code': 200, 'data': rows})]
+            with self.subTest(change=change):
+                result = self.send_bom()
+                self.assertEqual((result['state'], result['blockers']),
+                    ('failed', ['input_quality_default_unverified']))
+                self.req.refresh_from_db()
+                self.assertEqual(self.req.attempt, 0)
+                self.assertFalse(self.req.events.filter(state='sending').exists())
+                self.assertEqual(self.paths()[-2:], [LIST_PATH, MATERIAL_LIST])
+                self.assertNotIn(CREATE_PATH, self.paths())
+
+    def test_material_default_permission_failure_never_reserves_or_imports(self):
+        from .plan_bom import MATERIAL_LIST
+        from .plan_workflow_contract import CREATE_PATH
+        self.scripts[MATERIAL_LIST] = [synthetic_response({'code': 3500060}, status=403)]
+        result = self.send_bom()
+        self.assertEqual((result['state'], result['blockers']), ('failed', ['input_quality_default_unverified']))
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.attempt, 0)
+        self.assertFalse(self.req.events.filter(state='sending').exists())
+        self.assertNotIn(CREATE_PATH, self.paths())
+
+    def test_legacy_explicit_quality_contract_recheck_keeps_approved_qc_comparison(self):
+        from .plan_bom import MATERIAL_LIST
+        from .plan_service_transport import INPUT_PATH
+        from .plan_workflow_contract import CREATE_PATH
+        from .test_plan_bom import enum
+        self.req.contract.pop('input_quality_source')
+        for row in self.req.contract['payload']['inputMaterialOpenV2COs']:
+            row['inputMaterialControlOpenCOs'][0]['inputQcState'] = '[1,2]'
+        self.req.state, self.req.attempt = 'uncertain', 1
+        self.req.save(update_fields=['contract', 'state', 'attempt'])
+        self.created_codes.add(self.req.work_order.code)
+        rows = self.input_rows()
+        rows[0]['bomFeedingControls'][0]['inputQcState'] = [enum(1), enum(3)]
+        self.scripts[INPUT_PATH] = [synthetic_response({'code': 200, 'data': rows})]
+        self.assertEqual(self.recheck()['state'], 'review')
+        self.assertEqual(self.recheck()['state'], 'created')
+        self.assertNotIn(CREATE_PATH, self.paths())
+        self.assertNotIn(MATERIAL_LIST, self.paths())
 
     def test_raw_ratio_is_reapplied_to_fresh_bom_and_control_before_one_create(self):
         from .test_plan_bom import PART
@@ -1362,6 +1482,7 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
             'seq', 'unit_id', 'unit_name', 'row_ratio', 'process', 'unspecified_process',
             'missing_controls', 'empty_controls', 'multiple_controls', 'line_seq', 'control_ratio',
             'control_denominator', 'mandatory_bool', 'backflush_bool', 'qc', 'qc_duplicate',
+            'qc_missing', 'qc_empty', 'qc_bool',
             'bound', 'feed_type', 'upper_bound', 'single_feed', 'sop_id', 'sop_control')
         for index, change in enumerate(changes):
             rows = self.input_rows()
@@ -1387,6 +1508,9 @@ class PlanServiceBomRevalidationTests(PlanServiceFixture, TransactionTestCase):
             if change == 'backflush_bool': control['backFlush'] = True
             if change == 'qc': control['inputQcState'] = [enum(1), enum(3)]
             if change == 'qc_duplicate': control['inputQcState'] = [enum(1), enum(2), enum(2)]
+            if change == 'qc_missing': control.pop('inputQcState')
+            if change == 'qc_empty': control['inputQcState'] = []
+            if change == 'qc_bool': control['inputQcState'] = [enum(True), enum(2)]
             if change == 'bound': control['inputBoundType'] = enum(2)
             if change == 'feed_type': control['feedType'] = enum(1)
             if change == 'upper_bound': control['inputUpperLimit'] = '100'

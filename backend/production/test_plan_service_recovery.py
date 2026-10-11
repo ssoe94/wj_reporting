@@ -9,7 +9,7 @@ from django.test import TransactionTestCase, override_settings
 
 from .models import PlanMaterialApproval, PlanMesRequest, PlanMesRequestEvent, PlanWorkOrder
 from .plan_request_recovery import latest_request
-from .plan_service_transport import BASE_PATH, LIST_PATH, _finish
+from .plan_service_transport import BASE_PATH, LIST_PATH, _claim, _finish
 from .plan_workflow import WorkflowConflict, preview
 from .plan_workflow_contract import CREATE_PATH, build_contract
 from .plan_workflow_read_context import order_read_context
@@ -121,14 +121,80 @@ class PlanServiceRecoveryTests(PlanServiceFixture, TransactionTestCase):
             [original.contract['payload'], current.contract['payload']])
         before = (list(PlanMesRequest.objects.values()), list(PlanMesRequestEvent.objects.values()),
                   list(PlanWorkOrder.objects.values()), len(self.calls))
-        for state, found in (('created', '17000000000000008'), ('rejected', '')):
-            _finish(original, self.service(), state, mes_id_value=found)
+        _finish(original, self.service(), 'rejected')
         with self.assertRaises(WorkflowConflict):
             self.recheck(original)
         with self.assertRaises(WorkflowConflict):
             self.dispatch(original)
         self.assertEqual((list(PlanMesRequest.objects.values()), list(PlanMesRequestEvent.objects.values()),
                           list(PlanWorkOrder.objects.values()), len(self.calls)), before)
+
+    def test_old_positive_result_after_reprepare_is_retained_and_blocks_successor_import(self):
+        original = self.reject_known()
+        with self.contract_variant(wire=True):
+            current = self.prepare()
+            successor_before = PlanMesRequest.objects.filter(pk=current.pk).values().get()
+            order_before = PlanWorkOrder.objects.filter(pk=current.work_order_id).values().get()
+            calls_before = len(self.calls)
+            result = _finish(original, self.service(), 'created', mes_id_value=WORK_ID)
+            self.assertEqual((result['state'], result['mes_id']), ('review', WORK_ID))
+            event = original.events.order_by('-id').first()
+            self.assertEqual((event.state, event.evidence['outcome'], event.evidence['mes_id']),
+                ('review', 'earlier_request_identity_observed', WORK_ID))
+            self.assertEqual(PlanMesRequest.objects.filter(pk=current.pk).values().get(), successor_before)
+            self.assertEqual(PlanWorkOrder.objects.filter(pk=current.work_order_id).values().get(), order_before)
+            with self.assertRaises(WorkflowConflict):
+                self.dispatch(current)
+        current.refresh_from_db()
+        self.assertEqual((current.state, current.attempt), ('disabled', 0))
+        self.assertEqual(len(self.calls), calls_before)
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)  # Only the original failed import.
+
+    def test_found_identity_survives_detail_failure_and_later_absence(self):
+        self.fail_known()
+        self.existing_rows[self.req.work_order.code] = [
+            {'workOrderCode': self.req.work_order.code, 'workOrderId': int(WORK_ID)}]
+        self.scripts[BASE_PATH] = [synthetic_response({}, status=403)]
+        sender = self.sender
+
+        def detail_after_identity_commit(url, **kwargs):
+            if url.endswith(BASE_PATH):
+                self.req.refresh_from_db()
+                event = self.req.events.order_by('-id').first()
+                self.assertEqual((self.req.state, event.evidence['mes_id']), ('review', WORK_ID))
+            return sender(url, **kwargs)
+
+        result = self.recheck(transport=self.service(sender=detail_after_identity_commit))
+        self.assertEqual((result['state'], result['mes_id'], result['blockers']),
+            ('review', WORK_ID, ['permission_required']))
+        before = list(self.req.events.values())
+        self.scripts[LIST_PATH] = [synthetic_response(MISSING_ORDER)]
+        result = self.recheck()
+        self.assertEqual((result['state'], result['mes_id']), ('review', WORK_ID))
+        self.assertEqual(list(self.req.events.values()), before)
+        self.assertFalse(self.req.events.filter(state='rejected').exists())
+        with self.contract_variant(wire=True):
+            self.assert_prepare_blocked('readback_required')
+        self.assertEqual(self.paths().count(CREATE_PATH), 1)
+
+    def test_stale_reservation_positive_identity_blocks_current_generation_on_same_uid(self):
+        first = _claim(self.req.uid, self.user.pk)
+        _finish(first, self.service(), 'failed', blockers=['SYNTHETIC lookup failure'])
+        current = _claim(self.req.uid, self.other.pk)
+        self.assertNotEqual(first._reservation_id, current._reservation_id)
+        result = _finish(first, self.service(), 'created', mes_id_value=WORK_ID)
+        self.assertEqual((result['state'], result['mes_id'], result['attempt']), ('review', WORK_ID, 0))
+        event = self.req.events.order_by('-id').first()
+        self.assertEqual(event.evidence['outcome'], 'earlier_request_identity_observed')
+        self.req.work_order.refresh_from_db()
+        self.assertEqual(self.req.work_order.mes_id, '')
+        with self.assertRaises(WorkflowConflict):
+            _claim(self.req.uid, self.other.pk, creation=True, reservation_id=current._reservation_id)
+        result = _finish(current, self.service(), 'failed',
+            blockers=['current_approval_or_plan_required'])
+        self.assertEqual((result['state'], result['mes_id']), ('review', WORK_ID))
+        self.assertEqual(self.req.events.order_by('-id').first().pk, event.pk)
+        self.assert_no_transport()
 
     def test_metadata_reapproval_and_a_b_a_rollback_cannot_reuse_attempted_payload(self):
         original = self.reject_known()

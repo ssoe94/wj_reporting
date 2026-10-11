@@ -1,5 +1,12 @@
 # M2 import: explicit feeding quality states rejected
 
+Historical report of the 07:37 failure and initial diagnostic change. The later
+authorized `WJ-IT-QC-20261011-003` omission trial succeeded at 09:18 and established
+the current [input quality contract](../mes-plan-input-qc-contract.md).
+The sections below preserve the earlier findings; the 1,692-unit request still
+requires correlated rejection evidence, a newly prepared contract and approval
+before another creation. M2 remains incomplete.
+
 ## Actual result
 
 On 2026-10-11 at 07:37:50 Asia/Shanghai, the authorized WJ screen action

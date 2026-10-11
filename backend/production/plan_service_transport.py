@@ -6,7 +6,6 @@ contracts also verify feeding controls; creation remains separate from full
 output/BOM linkage and production totals.
 """
 import hmac
-import json
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -21,6 +20,7 @@ from .mes_execution_contract import encode_exact_json, parse_json_exact, mes_id
 from .models import PlanMesRequest, PlanMesRequestEvent, PlanMaterialApproval, ProductionPlan, PlanWorkRevision
 from .plan_workflow import WorkflowConflict, digest, lock_type, snapshot
 from .plan_workflow_contract import CREATE_PATH, build_contract
+from .plan_service_contract import approved_quality_states
 from .plan_workflow_transport import ORIGINS, ROUTE_BASE, PlanTransportError
 from .permissions import user_can_edit_plan
 from .plan_request_recovery import (latest_request, payload_was_attempted,
@@ -198,9 +198,34 @@ class PlanMesServiceTransport:
         return self._post(INPUT_PATH, {'workOrderCode': code,
             'workOrderId': mes_id(work_order_id), 'warehouseFlag': False}).get('data')
 
+    def verify_input_quality_defaults(self, intent):
+        """Omission is allowed only while each selected material keeps the approval."""
+        sources = [row for row in intent['setup']['inputs'] if 'feeding_control' in row]
+        expected = {row['material_code']: row for row in sources}
+        if not 1 <= len(sources) <= 20 or len(expected) != len(sources):
+            raise PlanTransportError('input_quality_default_unverified')
+        rows = self._post('/material/open/v2/material/_list_by_codes',
+            {'codes': list(expected), 'queryFieldList': [1, 10]}, write=False).get('data')
+        try:
+            if not isinstance(rows, list) or len(rows) != len(expected):
+                raise ValueError()
+            for row in rows:
+                base, feed = row['baseInfo'], row['feedInfo']
+                source = expected.pop(base['code'])
+                states = feed['qcStatus']
+                wanted = approved_quality_states(source['feeding_control'].get('inputQcState'))
+                if (not isinstance(states, list) or any(type(item['code']) is not int for item in states)
+                        or sorted(item['code'] for item in states) != wanted or wanted != [1, 2]
+                        or _identifier(base['id']) != source['material_id']
+                        or _identifier(feed['materialId']) != source['material_id']
+                        or type(base['enableFlag']['code']) is not int or base['enableFlag']['code'] != 1):
+                    raise ValueError()
+        except (KeyError, TypeError, ValueError, PlanTransportError):
+            raise PlanTransportError('input_quality_default_unverified') from None
+
 
 def _current(req):
-    if req.operation != 'create' or req.blockers or req.work_order.mes_id:
+    if req.operation != 'create' or req.blockers or observed_identity(req.work_order):
         raise WorkflowConflict('Request cannot be created.')
     if latest_request(req.work_order).pk != req.pk or has_other_unresolved_attempt(req):
         raise WorkflowConflict('Only the latest resolved request may be prepared for creation.')
@@ -267,22 +292,32 @@ def _finish(req, transport, state, *, mes_id_value='', blockers=None, base=None,
     with transaction.atomic():
         lock_type(req.work_order.plan_type)
         current = PlanMesRequest.objects.select_for_update().select_related('work_order').get(pk=req.pk)
-        if latest_request(current.work_order).pk != current.pk:
-            return public_result(current)
+        stale = latest_request(current.work_order).pk != current.pk
         reservation_id = getattr(req, '_reservation_id', None)
         if reservation_id is not None:
             checking = current.events.filter(state='checking', evidence__create_reserved=False).order_by('-id').first()
-            if checking is None or checking.pk != reservation_id:
-                return public_result(current)
-        if req.attempt == 0 and current.attempt == 1:
+            stale = stale or checking is None or checking.pk != reservation_id
+        stale = stale or req.attempt == 0 and current.attempt == 1
+        if stale:
+            # A stale result cannot finish the successor, but a discovered ID
+            # must survive and block its write reservation. Never discard it.
+            if mes_id_value:
+                if current.state not in ('created', 'already_exists'):
+                    current.state = 'review'
+                    current.save(update_fields=['state', 'updated_at'])
+                evidence.update(outcome='earlier_request_identity_observed',
+                    blockers=['existing_code_snapshot_mismatch'])
+                PlanMesRequestEvent.objects.create(request=current, state='review', evidence=evidence)
             return public_result(current)
         # A late failed lookup must not erase a concurrently recorded success.
         if current.state in ('created', 'already_exists'):
             return public_result(current)
+        if not mes_id_value and observed_identity(current.work_order):
+            return public_result(current)
         if state == 'rejected':
             # A delayed absence must never erase an ID already observed by
             # another read, including a review outcome with no order.mes_id.
-            if current.state == 'review' or observed_identity(current.work_order):
+            if current.state == 'review':
                 return public_result(current)
             if known_quality_rejection(current):
                 blockers = ['input_quality_state_invalid']
@@ -360,8 +395,9 @@ def _feeding_matches(intent, payload, actual):
                         'inputSopControlId', 'inputSopControlDTO'))):
                 return False
             states = control['inputQcState']
+            approved_states = approved_quality_states(source['feeding_control'].get('inputQcState'))
             if (not isinstance(states, list) or any(type(x['code']) is not int for x in states)
-                    or sorted(x['code'] for x in states) != json.loads(wanted['inputQcState'])):
+                    or approved_states is None or sorted(x['code'] for x in states) != approved_states):
                 return False
         return not remaining
     except (KeyError, TypeError, ValueError, InvalidOperation, PlanTransportError):
@@ -373,6 +409,16 @@ def _observe(req, transport, *, existed=False, known_id=None):
     if found is None:
         return _finish(req, transport, 'rejected' if req.attempt else 'failed',
             blockers=['code_not_observed_recheck_required'])
+    # Persist positive identity before any fallible detail IO. A crash, detail
+    # error or delayed absent response cannot turn this into a safe-to-retry miss.
+    _finish(req, transport, 'review', mes_id_value=found, blockers=['existing_code_readback_pending'])
+    try:
+        return _observe_found(req, transport, found, existed=existed)
+    except PlanTransportError as error:
+        return _finish(req, transport, 'review', mes_id_value=found, blockers=[error.code])
+
+
+def _observe_found(req, transport, found, *, existed):
     base = transport.read_base(req.work_order.code, found)
     payload = req.contract['payload']
     status = base.get('status')
@@ -427,6 +473,11 @@ def dispatch_service_create(request_uid, transport):
                 raise WorkflowConflict('mes_bom_replacement_changed')
         except (PlanTransportError, WorkflowConflict, ValidationError):
             return _finish(req, transport, 'failed', blockers=['mes_bom_changed_or_unavailable'])
+    if req.contract.get('input_quality_source') == 'material_definition':
+        try:
+            transport.verify_input_quality_defaults(req.intent)
+        except PlanTransportError:
+            return _finish(req, transport, 'failed', blockers=['input_quality_default_unverified'])
     try:
         req = _claim(req.uid, transport.actor_id, creation=True, reservation_id=req._reservation_id)
     except WorkflowConflict:
