@@ -57,6 +57,7 @@ const copy = {
     title: 'Excel에서 가져오기',
     description: '월별 품질 Excel을 선택하면 기존 보고와 비교하고 신규 사진만 이 PC에서 전송합니다. 2026년 9월 기존 보고는 K열 처리결과를 갱신합니다.',
     drop: '.xlsx 파일을 놓거나 클릭해 선택하세요',
+    dropReady: '여기에 놓으면 Excel 가져오기를 시작합니다',
     fileHelp: '최대 80MB · 같은 내용은 건너뛰고 사진은 행당 최대 5장 저장합니다.',
     scanning: 'Excel을 기기에서 분석 중',
     comparing: '기존 보고서와 비교 중',
@@ -121,6 +122,7 @@ const copy = {
     title: '从 Excel 导入',
     description: '选择月度品质 Excel 后，将与已有报告比较，仅由此电脑传输新增图片。2026年9月已有报告的处理结果将按 K 列更新。',
     drop: '拖入或点击选择 .xlsx 文件',
+    dropReady: '松开文件即可开始导入 Excel',
     fileHelp: '最大 80MB · 跳过相同内容，每行最多保存 5 张图片。',
     scanning: '正在本机分析 Excel',
     comparing: '正在与已有报告比较',
@@ -301,6 +303,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
   const c = copy[lang === 'zh' ? 'zh' : 'ko'];
   const canUpload = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepthRef = useRef(0);
   const failedRowsSectionRef = useRef<HTMLDivElement | null>(null);
   const resultSectionRef = useRef<HTMLElement | null>(null);
   const resultGenerationRef = useRef(0);
@@ -319,6 +322,26 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [correctionInFlight, setCorrectionInFlight] = useState(false);
   const uploading = phase !== 'idle';
+
+  useEffect(() => {
+    const resetDragging = () => {
+      dragDepthRef.current = 0;
+      setDragging(false);
+    };
+    const cancelDragging = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') resetDragging();
+    };
+    window.addEventListener('drop', resetDragging);
+    window.addEventListener('dragend', resetDragging);
+    window.addEventListener('blur', resetDragging);
+    window.addEventListener('keydown', cancelDragging);
+    return () => {
+      window.removeEventListener('drop', resetDragging);
+      window.removeEventListener('dragend', resetDragging);
+      window.removeEventListener('blur', resetDragging);
+      window.removeEventListener('keydown', cancelDragging);
+    };
+  }, []);
 
   useEffect(() => {
     const restored = loadQualityImportWorkflow();
@@ -804,23 +827,40 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
               }
               fileInputRef.current?.click();
             }}
-            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+              dragDepthRef.current += 1;
+              setDragging(canUpload && !uploading && !correctionInFlight);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              const acceptsFiles = canUpload && !uploading && !correctionInFlight
+                && Array.from(event.dataTransfer.types).includes('Files');
+              event.dataTransfer.dropEffect = acceptsFiles ? 'copy' : 'none';
+              setDragging(acceptsFiles);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              // Child enter/leave events bubble too; keep the whole target active.
+              dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+              if (dragDepthRef.current === 0) setDragging(false);
+            }}
             onDrop={(event) => {
               event.preventDefault();
+              dragDepthRef.current = 0;
               setDragging(false);
               if (!uploading && !correctionInFlight) {
                 selectFile(event.dataTransfer.files?.[0] || null);
               }
             }}
-            className={`mt-4 flex w-full items-center gap-3 rounded-xl border-2 border-dashed px-4 py-3.5 text-left transition disabled:cursor-not-allowed disabled:opacity-70 ${dragging ? 'border-cyan-500 bg-cyan-100/70' : 'border-cyan-200 bg-white/80 hover:border-cyan-400 hover:bg-white'}`}
+            className={`mt-4 flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3.5 text-left disabled:cursor-not-allowed disabled:opacity-70 ${dragging ? 'border-solid border-blue-600 bg-blue-50 ring-4 ring-blue-200' : 'border-dashed border-cyan-200 bg-white/80 hover:border-cyan-400 hover:bg-white'}`}
           >
-            <span className="rounded-full bg-cyan-50 p-2.5 text-cyan-700">
+            <span className={`rounded-full p-2.5 ${dragging ? 'bg-blue-600 text-white' : 'bg-cyan-50 text-cyan-700'}`}>
               {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
             </span>
             <span className="min-w-0 flex-1">
-              <strong className="block truncate text-sm text-slate-900">{file?.name || pendingWorkflow?.filename || c.drop}</strong>
+              <strong className="block break-words text-sm text-slate-900">{dragging ? c.dropReady : file?.name || pendingWorkflow?.filename || c.drop}</strong>
               <span className="mt-1 block text-xs text-slate-500">
                 {file ? `${formatBytes(file.size)} · ${c.fileHelp}` : c.fileHelp}
               </span>
