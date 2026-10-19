@@ -1965,12 +1965,16 @@ class ProductionMesReportStatsView(APIView):
         for plan in plans:
             equipment_key = normalize_equipment_key(plan_type, plan.machine_name)
             part_no = normalize_part_no(plan.part_no)
-            if not part_no or (plan_type != 'machining' and not equipment_key):
+            if plan_type != 'machining' and not equipment_key:
                 continue
-            key = stats_key(equipment_key, part_no)
+            # A model-only Excel plan still contributes to its daily target.
+            # Keep its identity separate from MES material matching: an empty
+            # part number is not evidence that a MES report belongs to it.
+            key = stats_key(equipment_key, part_no) if part_no else ('model_plan', equipment_key, plan.id)
             group = plan_groups.setdefault(key, {
                 'equipment_key': equipment_key,
                 'machine_name': plan.machine_name,
+                'plan_id': plan.id,
                 'part_no': part_no,
                 'model_name': plan.model_name or '',
                 'planned_qty': 0,
@@ -1986,6 +1990,8 @@ class ProductionMesReportStatsView(APIView):
             key=lambda item: (
                 equipment_sort_order(plan_type, (plan_groups.get(item) or mes_groups.get(item) or {}).get('equipment_key') or ''),
                 (plan_groups.get(item) or mes_groups.get(item) or {}).get('part_no') or '',
+                (plan_groups.get(item) or {}).get('model_name') or '',
+                (plan_groups.get(item) or {}).get('plan_id') or 0,
             ),
         )
 

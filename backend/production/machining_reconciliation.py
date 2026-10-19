@@ -353,10 +353,11 @@ def build_machining_provision_payload(business_date: Any, days: int = 3) -> dict
         planned_qty = safe_int(plan.planned_quantity)
         direct_mes_qty = 0
         remaining_mes_qty = max(0, safe_int(mes_qty_by_part.get(part_no)) - consumed_mes_qty_by_part[part_no])
-        if remaining_mes_qty > 0:
+        if part_no and remaining_mes_qty > 0:
             # MES reports do not identify a plan row. Keep the full quantity on
             # the earliest matching plan: exceeding its target is not evidence
             # that another line or a later plan has already been produced.
+            # Blank material codes cannot identify a model-only plan.
             direct_mes_qty = remaining_mes_qty
             consumed_mes_qty_by_part[part_no] += direct_mes_qty
 

@@ -17,6 +17,7 @@ from .plan_workflow_read_context import (PlanWorkflowReadContext, group_executio
 from .models import (ProductionPlan, ProductionExecution, PlanWorkflowLock, PlanWorkIdentity, PlanWorkRevision,
                      PlanMaterialApproval, PlanMaterialDefault, PlanWorkOrder,
                      PlanMesRequest, PlanMesRequestEvent)
+from .plan_request_recovery import latest_request, payload_was_attempted
 
 FIELDS = ('plan_date', 'plan_type', 'machine_name', 'part_no', 'lot_no', 'model_name',
           'part_spec', 'product_family_code', 'product_family_name', 'is_finished_product',
@@ -282,10 +283,16 @@ def approve_materials(plan, data, actor):
     setup['output_unit_id'] = exact_id(data.get('output_unit_id'))
     setup['inputs'] = sorted(inputs, key=lambda row: row['material_id'])
     setup['source_refreshed_at'] = catalog['refreshed_at']
+    return save_material_approval(plan, setup, actor, data.get('reason'))
+
+
+def save_material_approval(plan, setup, actor, reason):
+    """Persist an already validated complete input snapshot using the existing audit."""
+    work = PlanWorkIdentity.objects.get(uid=plan.work_uid)
     setup['quantity'] = decimal_text(str(plan.planned_quantity))
     setup['uid'], setup['version'] = str(plan.work_uid), plan.work_version
     revision = work.revisions.get(version=plan.work_version)
-    reason = text(data.get('reason'), 500)
+    reason = text(reason, 500)
     previous = revision.approvals.order_by('-id').first()
     if (previous and previous.fingerprint == digest(setup)
             and previous.actor_id == actor.pk and previous.reason == reason):
@@ -370,12 +377,14 @@ def preview(start, end, plan_type, context=None):
         if not row['quantity_valid']: blockers.append('plan_quantity_review')
         if row['identity_state'] != 'identified': blockers.append('identity_confirmation')
         if not approval: blockers.append('material_confirmation')
-        if plan_type == 'injection' and counts[(plan.machine_name, str(plan.plan_date))] > 1:
-            blockers.append('multiple_rows_setup_review')
         setup_hash = digest(setup) if setup else ''
         # Unknown mold/setup is valid for one day, not evidence of continuity.
+        # Multiple rows on either boundary day must stay separate orders, but
+        # an identified row with its own current approval can be prepared.
         same = (plan_type == 'injection' and current and setup and setup.get('mold_code')
             and not blockers and not current['blockers']
+            and counts[(plan.machine_name, str(plan.plan_date))] == 1
+            and counts[(current['machine_name'], current['last_date'])] == 1
             and current['machine_name'] == plan.machine_name and current['part_no'] == plan.part_no
             and current['lot_no'] == (plan.lot_no or '') and current['setup_fingerprint'] == setup_hash
             and date.fromisoformat(current['last_date']) + timedelta(days=1) == plan.plan_date)
@@ -447,6 +456,12 @@ def preview(start, end, plan_type, context=None):
                         pending = pending_disabled.get(order.uid)
                         if pending and (digest(pending.contract) != digest(contract) or pending.blockers != blockers):
                             group['operation'] = 'prepare'
+                pending = pending_disabled.get(order.uid)
+                if pending and pending.state == 'rejected' and not order.mes_id:
+                    from .plan_workflow_contract import build_contract
+                    contract, _ = build_contract(order, _intent(group))
+                    if payload_was_attempted(order, contract):
+                        group['blockers'].append('same_payload_already_attempted')
         if ('plan_quantity_review' not in group['blockers']
                 and Decimal(group['quantity']) < sum(execution.values(), Decimal('0'))):
             group['blockers'].append('below_existing_execution_review')
@@ -482,9 +497,6 @@ def prepare(start, end, plan_type, keys, actor, *, contract_builder=None):
         intent = _intent(group)
         if group['work_order_code']:
             order = PlanWorkOrder.objects.get(code=group['work_order_code'])
-            order.version += 1
-            order.members, order.approved_snapshot = group['members'], intent
-            order.save(update_fields=['version', 'members', 'approved_snapshot'])
         else:
             order_uid = uuid.uuid4()
             order = PlanWorkOrder.objects.create(uid=order_uid, code='WJ-' + order_uid.hex,
@@ -492,7 +504,19 @@ def prepare(start, end, plan_type, keys, actor, *, contract_builder=None):
                 approved_snapshot=intent)
         from .plan_workflow_contract import build_contract
         contract, blockers = (contract_builder or build_contract)(order, intent)
-        request, created = PlanMesRequest.objects.get_or_create(dedupe_key=digest({'code': order.code, 'intent': intent, 'contract': contract, 'blockers': blockers}),
+        if not order.mes_id and payload_was_attempted(order, contract):
+            results.append({'key': key, 'state': 'blocked', 'blockers': ['same_payload_already_attempted']})
+            continue
+        request_key = digest({'code': order.code, 'intent': intent, 'contract': contract, 'blockers': blockers})
+        previous = order.requests.filter(dedupe_key=request_key).first()
+        if previous and latest_request(order).pk != previous.pk:
+            results.append({'key': key, 'state': 'blocked', 'blockers': ['superseded_request_requires_new_contract']})
+            continue
+        if group['work_order_code']:
+            order.version += 1
+            order.members, order.approved_snapshot = group['members'], intent
+            order.save(update_fields=['version', 'members', 'approved_snapshot'])
+        request, created = PlanMesRequest.objects.get_or_create(dedupe_key=request_key,
             defaults={'work_order': order, 'operation': 'update' if order.mes_id else 'create', 'intent': intent,
                       'contract': contract, 'blockers': blockers, 'actor': actor, 'state': 'disabled'})
         if created:

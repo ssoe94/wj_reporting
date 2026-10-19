@@ -613,8 +613,16 @@ export function buildRealtimeProgressSummary(
     cavityWeightedQty: number;
     records: ProductionPlanRecord[];
   }>();
+  const planRecords = planSummary?.injection?.records ?? [];
+  const dailyPlanRecords = planRecords.filter((record) => {
+    // Existing single-day API responses have undated records. A combined
+    // workbook response may include future dates, which are separate targets.
+    const planDate = record.plan_date || record.date || planSummary?.plan_date;
+    return !businessDate || !planDate || planDate === businessDate;
+  });
+  const hasOtherDatePlans = dailyPlanRecords.length !== planRecords.length;
 
-  for (const record of planSummary?.injection?.records ?? []) {
+  for (const record of dailyPlanRecords) {
     const machineNumber = getMachineNumberFromName(record.machine_name);
     const key = machineNumber ?? (record.machine_name || "unknown");
     const plannedQty = Number(record.planned_quantity ?? 0);
@@ -648,7 +656,13 @@ export function buildRealtimeProgressSummary(
   }
 
   if (productionStatus?.injection?.length) {
-    return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap, transitionAnalysis);
+    const futureOnlyMachineKeys = new Set(planRecords
+      .map((record) => getMachineNumberFromName(record.machine_name) ?? (record.machine_name || "unknown"))
+      .filter((key) => !planMap.has(key)));
+    const dailyStatusRows = productionStatus.injection.filter((row) => !futureOnlyMachineKeys.has(
+      getMachineNumberFromName(row.machine_name) ?? (row.machine_name || "unknown"),
+    ));
+    return buildStatusBackedProgressSummary(dailyStatusRows, planMap, shotMap, transitionAnalysis, hasOtherDatePlans);
   }
 
   const rowKeys = new Set([
@@ -790,6 +804,7 @@ function buildStatusBackedProgressSummary(
   }>,
   shotMap: Map<string, MachineShotStats>,
   transitionAnalysis?: InjectionTransitionAnalysis,
+  useDailyPlanTargets = false,
 ): RealtimeProgressSummary {
   const providedStatusKeys = new Set(statusRows.map((statusRow) => (
     getMachineNumberFromName(statusRow.machine_name) ?? (statusRow.machine_name || "unknown")
@@ -816,7 +831,7 @@ function buildStatusBackedProgressSummary(
     const plan = planMap.get(key);
     const shots = shotMap.get(key);
     const orderedRecords = getOrderedPlanRecords(plan?.records ?? []);
-    const plannedQty = Number(statusRow.total_planned ?? 0);
+    const plannedQty = useDailyPlanTargets && plan ? plan.plannedQty : Number(statusRow.total_planned ?? 0);
     const statusEstimatedQty = Number(statusRow.total_actual ?? 0);
     const shotCount = shots?.shotCount ?? 0;
     const useMesShotActual = Boolean(shots);

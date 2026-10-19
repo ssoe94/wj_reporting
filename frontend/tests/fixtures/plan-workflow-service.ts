@@ -27,3 +27,15 @@ export function serviceWorkflowFixture(states = ['disabled', 'disabled']): Workf
       last_result: { outcome: state, verified_scope: 'base_creation' }, can_send: ['disabled', 'prepared'].includes(state),
       can_recheck: ['sending', 'uncertain', 'readback_pending', 'review', 'failed'].includes(state) })) };
 }
+
+/** Fresh read-only BOM response, intentionally separate from the historical approval. */
+export function serviceBomFixture(planId = 1) {
+  return {
+    id: `SYN-BOM-${planId}`, part_no: `SYN-PART-${planId}`, version: 'A', material_id: `SYN-PRODUCT-${planId}`, hash: `SYN-HASH-${planId}-A`,
+    setup: { bom_version: 'A', process_code: 'SYN-INJ', process_num: '1', route_code: 'SYN-ROUTE',
+      output_unit_name: '个', output_unit_id: '12345678901234569', output_version: '' },
+    inputs: [{ source_row_id: `SYN-ROW-${planId}-RAW`, seq: '1', material_id: '12345678901234567', material_code: 'SYN-ABS',
+      material_name: 'SYNTHETIC ABS', material_version: '', unit_id: '12345678901234568', unit_name: 'kg',
+      numerator: '0.02', denominator: '1', category_code: 'CAT-011', category_name: 'Raw material', replaceable: true }],
+  };
+}

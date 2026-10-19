@@ -1,13 +1,17 @@
 import { http } from "@/shared/api/http";
 import type { PlanType } from "./api";
+import type { PlanBomSource } from "./components/PlanBomInputs";
 export type MaterialOption = { key: string; material_id: string; material_code: string; material_name: string;
   material_version: string; unit_id: string; unit_name: string; selectable: boolean };
-export type MaterialInput = MaterialOption & { numerator: string; denominator: string; required_quantity: string };
-export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[] };
+export type MaterialInput = MaterialOption & { source_row_id?: string; numerator: string; denominator: string; required_quantity: string };
+export type MaterialSnapshot = Record<string, unknown> & { inputs: MaterialInput[]; bom_source?: PlanBomSource };
+export type PlanCandidate = { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number;
+  planned_quantity: string; part_no?: string; lot_no?: string; model_name?: string; part_spec?: string } };
 export type WorkflowRow = { id: number; uid: string; version: number; plan_date: string; machine_name: string;
   part_no: string; planned_quantity: string; default_version: number; identity_state: string; candidates: string[];
+  lot_no?: string; model_name?: string; part_spec?: string;
   quantity_valid?: boolean;
-  candidate_details: { uid: string; snapshot: { plan_date: string; machine_name: string; sequence: number; planned_quantity: string } }[];
+  candidate_details: PlanCandidate[];
   approval: { id: number; snapshot: MaterialSnapshot; approved_at: string; actor_name?: string } | null;
   previous_approval: { snapshot: MaterialSnapshot } | null;
   recommendation: { version: number; snapshot: MaterialSnapshot } | null };
@@ -23,6 +27,9 @@ export type WorkflowData = { write_enabled: boolean; can_edit: boolean; can_mana
 export type WorkflowScope = { start: string; end: string; plan_type: PlanType };
 export async function getPlanWorkflow(scope: WorkflowScope) {
   return (await http.get<WorkflowData>("/production/plan-workflow/", { params: scope })).data;
+}
+export async function getPlanBom(scope: WorkflowScope, planId: number): Promise<PlanBomSource> {
+  return (await http.get<PlanBomSource>("/production/plan-workflow/", { params: { ...scope, action: "bom", plan_id: planId } })).data;
 }
 export async function changePlanWorkflow(scope: WorkflowScope, data: Record<string, unknown>) {
   return (await http.post("/production/plan-workflow/", { ...scope, ...data })).data;
@@ -49,6 +56,12 @@ export const workflowLabels: Record<string, [string, string]> = {
   superseded: ["새 버전으로 대체", "已被新版本替代"],
   confirmed: ["조회 검증됨", "已核验"],
   uncertain: ["결과 불확실 · 재조회", "结果不确定 · 需复查"],
+  rejected: ["MES 검증 거절 · 수정 후 재준비", "MES校验拒绝 · 修改后重新准备"],
+  input_quality_state_invalid: ["투입 품질상태 값 오류", "投料质量状态输入不合法"],
+  input_quality_default_unverified: ["물료 기본 품질상태와 승인값 확인 필요", "需核对物料默认质量状态与确认值"],
+  existing_code_readback_pending: ["MES 번호 발견 · 상세 확인 필요", "已找到工单 · 需核对明细"],
+  same_payload_already_attempted: ["이미 전송한 내용 · 수정 필요", "内容已发送 · 请先修改"],
+  superseded_request_requires_new_contract: ["이전 준비안 재사용 불가 · 수정 필요", "不能复用旧准备方案 · 请先修改"],
   readback_pending: ["재조회 대기", "待复查"],
   sending: ["결과 확인 중", "正在确认结果"],
   checking: ["생성 전 조회 중 · 재전송 금지", "创建前查询中 · 禁止重发"],

@@ -109,6 +109,33 @@ class MachiningOverrunTests(TestCase):
         self.assertEqual(payload["summary"]["advance_qty"], 0)
         self.assert_conserved_mes(payload, 556)
 
+    def test_blank_mes_material_does_not_credit_model_only_plan(self):
+        self.part_no = ""
+        plan = self.create_plan(quantity=400)
+        plan.model_name = "汽车外部行李箱"
+        plan.save(update_fields=["model_name"])
+        record = self.create_mes_report(quantity=17)
+        record.material_name = plan.model_name
+        record.save(update_fields=["material_name"])
+
+        payload = build_machining_provision_payload(self.business_date, days=1)
+
+        self.assertEqual(len(payload["rows"]), 2)
+        plan_row = next(row for row in payload["rows"] if row["plan_id"] == plan.id)
+        self.assertEqual(plan_row["part_no"], "")
+        self.assertEqual(plan_row["model_name"], plan.model_name)
+        self.assertEqual(plan_row["planned_qty"], 400)
+        self.assertEqual(plan_row["direct_mes_qty"], 0)
+        self.assertEqual(plan_row["mes_qty"], 0)
+        self.assertEqual(plan_row["effective_actual_qty"], 0)
+        unplanned_row = next(row for row in payload["rows"] if row["status"] == "unplanned_mes")
+        self.assertIsNone(unplanned_row["plan_id"])
+        self.assertEqual(unplanned_row["part_no"], "")
+        self.assertEqual(unplanned_row["mes_qty"], 17)
+        self.assertEqual(unplanned_row["effective_actual_qty"], 17)
+        self.assertEqual(payload["summary"]["total_planned"], 400)
+        self.assert_conserved_mes(payload, 17)
+
     def test_matched_manual_quantity_is_counted_once_with_uncapped_remaining_mes(self):
         plan = self.create_plan(quantity=535)
         self.create_plan(quantity=107, machine="B LINE")

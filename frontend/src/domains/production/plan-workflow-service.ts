@@ -1,4 +1,39 @@
-import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowScope } from "./plan-workflow-api";
+import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowRow, WorkflowScope } from "./plan-workflow-api";
+
+export type PlanWorkflowStage = "plan" | "materials" | "issue" | "review" | "created";
+/** Business queue only; never grants permissions or substitutes for send eligibility. */
+export function planWorkflowStage(group: WorkflowGroup, rows: WorkflowRow[], state: string | null,
+  mesId: string | null): PlanWorkflowStage {
+  if (group.blockers.some(code => ["identity_confirmation", "plan_quantity_review", "work_target_changed_review"].includes(code))
+    || rows.some(row => row.identity_state !== "identified" || row.quantity_valid === false)) return "plan";
+  if (group.blockers.includes("material_confirmation") || rows.some(row => !row.approval)) return "materials";
+  if (!rows.length || group.blockers.some(code => code !== "mes_observation_incomplete")
+    || (state && ["checking", "sending", "uncertain", "readback_pending", "review", "failed", "blocked"].includes(state))) return "review";
+  if (mesId && state && ["created", "already_exists", "confirmed"].includes(state)) return "created";
+  if (mesId || group.blockers.length) return "review";
+  return "issue";
+}
+
+export function planConfirmationTime(value: string): string {
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime())) return "—";
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(time);
+}
+
+/** The exclusive 08:00 finish belongs to the following day, not a second plan day. */
+export function planDateLabel(group: Pick<WorkflowGroup, "planned_start" | "planned_end">, zh: boolean): string {
+  const start = planConfirmationTime(group.planned_start).slice(0, 10);
+  const finish = new Date(group.planned_end);
+  if (start === "—" || !Number.isFinite(finish.getTime())) return "—";
+  const last = planConfirmationTime(new Date(finish.getTime() - 86_400_000).toISOString()).slice(0, 10);
+  const short = (date: string) => date.slice(5).replace("-", "/");
+  return `${short(start)}${start === last ? "" : `–${short(last)}`} ${zh ? "计划" : "계획"}`;
+}
+
+export function planPeriodTitle(group: Pick<WorkflowGroup, "planned_start" | "planned_end">): string {
+  return `${planConfirmationTime(group.planned_start)} → ${planConfirmationTime(group.planned_end)} (Asia/Shanghai)`;
+}
 
 export const PLAN_CREATE_BATCH_LIMIT = 50;
 export const PLAN_CREATE_REQUEST_LIMIT = 3;
@@ -47,7 +82,7 @@ export function parsePlanSendResult(value: unknown, requested: readonly string[]
     const code = row?.work_order_code ?? row?.code ?? (row?.state === "blocked" ? "" : undefined);
     if (!row || !requestUid(row.uid) || !expected.has(row.uid) || seen.has(row.uid)
       || typeof code !== "string" || code.length > 160
-      || !["created", "already_exists", "uncertain", "readback_pending", "review", "failed", "blocked", "checking", "sending"].includes(row.state)
+      || !["created", "already_exists", "uncertain", "readback_pending", "review", "failed", "rejected", "blocked", "checking", "sending"].includes(row.state)
       || !Array.isArray(row.blockers) || row.blockers.some((code: unknown) => typeof code !== "string" || !/^[a-z][a-z0-9_]{0,79}$/.test(code))
       || (row.mes_id !== null && row.mes_id !== undefined && row.mes_id !== "" && !safeMesId(row.mes_id))) throw Error("Invalid plan send response");
     seen.add(row.uid);

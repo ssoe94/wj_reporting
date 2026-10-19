@@ -103,7 +103,7 @@ test("business-day rollover retains the last observed shot without carrying yest
     ],
     actual_production_matrix: { "4": [3, 0] },
   };
-  const row = buildRealtimeProgressSummary(planSummary([nextPlan]), rolloverMatrix, undefined, nextDate)
+  const row = buildRealtimeProgressSummary({ ...planSummary([nextPlan]), plan_date: nextDate }, rolloverMatrix, undefined, nextDate)
     .rows.find((item) => item.key === "4");
   assert.ok(row);
   assert.equal(row.shotCount, 0);
@@ -134,4 +134,104 @@ test("morning shot gaps require observed capacity throughout the gap", () => {
   const incomplete = buildRealtimeProgressSummary(planSummary([oldPlan]), gapMatrix, undefined, businessDate)
     .rows.find((item) => item.key === "4");
   assert.equal(incomplete?.morningShotGapCount, 0);
+});
+
+const dailyTargetDate = "2026-10-08";
+const datedPlans: Array<ProductionPlanRecord & { date?: string; plan_date?: string }> = [
+  { ...oldPlan, id: 10, date: dailyTargetDate, part_no: "ABJ76756112", planned_quantity: 535 },
+  { ...newPlan, id: 11, date: dailyTargetDate, part_no: null, model_name: "汽车外部行李箱", planned_quantity: 400 },
+  ...["2026-10-09", "2026-10-10", "2026-10-12"].map((date, index) => ({
+    ...newPlan, id: 12 + index, date, part_no: null, model_name: "汽车外部行李箱", planned_quantity: 480,
+  })),
+  { ...newPlan, id: 15, plan_date: "2026-10-09", machine_name: "1400T-5", planned_quantity: 480 },
+];
+
+test("the selected day uses its Excel targets and retains a model-only plan", () => {
+  const result = buildRealtimeProgressSummary(planSummary(datedPlans), undefined, undefined, dailyTargetDate);
+  assert.equal(result.plannedQty, 935);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].partCount, 2);
+  assert.deepEqual(result.rows[0].segments.map((segment) => segment.plannedQty), [535, 400]);
+  assert.equal(result.rows[0].segments[1].partNo, "汽车外部行李箱");
+  assert.equal(result.rows[0].segments[1].modelName, "汽车外部行李箱");
+  assert.equal(result.rows[0].lastShotAt, null);
+  assert.equal(result.rows[0].recentCycleTimeSec, null);
+});
+
+test("mixed-day status targets cannot restore future plans to the daily denominator", () => {
+  const status: ProductionStatusResponse = {
+    injection: [
+      { machine_name: "1400T-4", total_planned: 2375, total_actual: 556, progress: 23.4, parts: [] },
+      { machine_name: "1400T-5", total_planned: 480, total_actual: 7, progress: 1.5, parts: [] },
+    ],
+    machining: [],
+  };
+  const datedMatrix: InjectionProductionMatrix = {
+    ...matrix(556),
+    timestamp: "2026-10-08T18:30:00+08:00",
+    time_slots: [{ hour_offset: 10, time: "2026-10-08T18:30:00+08:00", label: "18:30", interval_minutes: 2 }],
+    machines: [
+      ...matrix(0).machines,
+      { machine_number: 5, machine_name: "5호기", tonnage: "1400T", display_name: "5호기" },
+    ],
+    actual_production_matrix: { "4": [556], "5": [7] },
+  };
+  const result = buildRealtimeProgressSummary(planSummary(datedPlans), datedMatrix, status, dailyTargetDate);
+  assert.equal(result.plannedQty, 935);
+  assert.equal(result.shotCount, 563);
+  assert.equal(result.estimatedQty, 556);
+  assert.equal(result.unplannedShotCount, 7);
+  const current = result.rows.find((row) => row.key === "4");
+  assert.ok(current);
+  assert.deepEqual(current.segments.map((segment) => segment.allocatedShots), [556, 0]);
+  assert.equal(current.lastShotAt, "2026-10-08T10:30:00.000Z");
+  assert.equal(current.recentShots, 556);
+  assert.equal(current.isRunning, true);
+  const future = result.rows.find((row) => row.key === "5");
+  assert.ok(future);
+  assert.equal(future.hasPlan, false);
+  assert.equal(future.plannedQty, 0);
+});
+
+test("the next date gets only its model target and its own machine plans", () => {
+  const result = buildRealtimeProgressSummary(planSummary(datedPlans), undefined, undefined, "2026-10-09");
+  assert.equal(result.plannedQty, 960);
+  assert.deepEqual(result.rows.map((row) => row.plannedQty), [480, 480]);
+  assert.deepEqual(result.rows[0].segments.map((segment) => segment.partNo), ["汽车外部行李箱"]);
+});
+
+test("daily filtering retains canonical allocations for the selected plan IDs", () => {
+  const status: ProductionStatusResponse = {
+    injection: [{
+      machine_name: "1400T-4", total_planned: 2375, total_actual: 1036, progress: 43.6,
+      parts: datedPlans.filter((plan) => plan.machine_name === "1400T-4").map((plan) => ({
+        plan_id: plan.id, part_no: plan.part_no ?? null, model_name: plan.model_name ?? null,
+        planned_quantity: plan.planned_quantity,
+        actual_quantity: plan.id === 10 ? 556 : plan.id === 12 ? 480 : 0,
+        allocated_shots: plan.id === 10 ? 556 : plan.id === 12 ? 480 : 0,
+        progress: 0,
+      })),
+    }],
+    machining: [],
+  };
+  const result = buildRealtimeProgressSummary(planSummary(datedPlans), undefined, status, dailyTargetDate);
+  assert.equal(result.plannedQty, 935);
+  assert.equal(result.estimatedQty, 556);
+  assert.deepEqual(result.rows[0].segments.map((segment) => segment.planId), [10, 11]);
+  assert.deepEqual(result.rows[0].segments.map((segment) => segment.allocatedShots), [556, 0]);
+  assert.deepEqual(result.rows[0].segments.map((segment) => segment.estimatedQty), [556, 0]);
+});
+
+test("omitting the business date preserves the existing combined-plan fallback", () => {
+  const result = buildRealtimeProgressSummary(planSummary(datedPlans), undefined);
+  assert.equal(result.plannedQty, 2855);
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.partCount, 6);
+});
+
+test("undated records inherit their response date instead of another selected day", () => {
+  const futureSummary = { ...planSummary([oldPlan]), plan_date: "2026-09-15" };
+  const result = buildRealtimeProgressSummary(futureSummary, undefined, undefined, businessDate);
+  assert.equal(result.plannedQty, 0);
+  assert.equal(result.rows.length, 0);
 });

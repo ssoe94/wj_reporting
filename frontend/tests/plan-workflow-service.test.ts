@@ -1,12 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as service from '../src/domains/production/plan-workflow-service.ts';
+import { serviceWorkflowFixture } from './fixtures/plan-workflow-service.ts';
 import type { WorkflowData, WorkflowGroup, WorkflowRequest, WorkflowScope } from '../src/domains/production/plan-workflow-api.ts';
 
 const UID = '00000000-0000-4000-8000-000000000001';
 const OTHER_UID = '00000000-0000-4000-8000-000000000002';
 const MES_ID = '17000000000000001';
 const SCOPE: WorkflowScope = { start: '2026-10-08', end: '2026-10-10', plan_type: 'injection' };
+test('business date labels exclude the next-day finish and preserve actual multi-day periods across month boundaries', () => {
+  const single = { planned_start: '2026-10-12T08:00:00+08:00', planned_end: '2026-10-13T08:00:00+08:00' };
+  assert.equal(service.planDateLabel(single, false), '10/12 계획');
+  assert.equal(service.planDateLabel(single, true), '10/12 计划');
+  const continuous = { planned_start: '2026-12-31T00:00:00Z', planned_end: '2027-01-03T00:00:00Z' };
+  assert.equal(service.planDateLabel(continuous, false), '12/31–01/02 계획');
+  assert.equal(service.planPeriodTitle(continuous), '2026-12-31 08:00 → 2027-01-03 08:00 (Asia/Shanghai)');
+});
+test('queue never treats an old MES ID as completion after plan or material changes', () => {
+  const data = serviceWorkflowFixture(['created']); const group = data.preview[0];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'created');
+  group.blockers = ['mes_observation_incomplete'];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'created');
+  group.blockers = [];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'uncertain', MES_ID), 'review');
+  assert.equal(service.planWorkflowStage(group, data.rows, null, MES_ID), 'review');
+  assert.equal(service.planWorkflowStage(group, data.rows, null, null), 'issue');
+  group.blockers = ['material_confirmation']; data.rows[0].approval = null;
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'materials');
+  group.blockers = ['plan_quantity_review'];
+  assert.equal(service.planWorkflowStage(group, data.rows, 'created', MES_ID), 'plan');
+  assert.equal(service.planConfirmationTime('2026-10-09T23:00:00Z'), '2026-10-10 07:00');
+});
 function uid(index: number) { return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`; }
 
 function fixture() {
@@ -44,7 +68,7 @@ test('selected creation requires explicit writer, edit and request permissions w
     assert.equal(service.canSendPlanRequest(data, group, { ...request, ...patch }, attempted), false);
   }
   for (const state of ['checking', 'sending', 'uncertain', 'readback_pending', 'review', 'confirmed',
-    'created', 'already_exists', 'superseded']) {
+    'created', 'already_exists', 'superseded', 'rejected']) {
     assert.equal(service.canSendPlanRequest(data, group, { ...request, state }, attempted), false, state);
   }
 });
@@ -214,6 +238,8 @@ test('readback parser binds safe results to exactly the requested UID and reject
   assert.equal(service.parsePlanRecheckResult({ ...valid, state: 'already_exists' }, UID).state, 'already_exists');
   assert.deepEqual(service.parsePlanRecheckResult({ ...valid, state: 'uncertain', mes_id: '', blockers: ['readback_required'] }, UID),
     { uid: UID, code: 'WJ-SYNTHETIC-READBACK', state: 'uncertain', mes_id: null, blockers: ['readback_required'] });
+  assert.deepEqual(service.parsePlanRecheckResult({ ...valid, state: 'rejected', mes_id: '', blockers: ['input_quality_state_invalid'] }, UID),
+    { uid: UID, code: 'WJ-SYNTHETIC-READBACK', state: 'rejected', mes_id: null, blockers: ['input_quality_state_invalid'] });
   for (const value of [null, [], {}, { ...valid, uid: undefined }, { ...valid, uid: OTHER_UID },
     { ...valid, uid: Number('17000000000000001') }, { ...valid, state: 'finished' },
     { ...valid, mes_id: Number(MES_ID) }, { ...valid, blockers: undefined },

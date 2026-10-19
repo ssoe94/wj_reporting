@@ -2,23 +2,27 @@ from datetime import date, timedelta
 from uuid import UUID
 from collections.abc import Mapping
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Min, Prefetch
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import ProductionPlan, PlanMesRequest, PlanMesRequestEvent, PlanMaterialDefault
+from .models import ProductionPlan, PlanMesRequest, PlanMesRequestEvent, PlanMaterialDefault, PlanWorkIdentity
 from .permissions import user_can_edit_plan, user_can_view_plan
-from .plan_workflow import (lock_type, serialize_row, material_catalog, approve_materials,
+from .plan_workflow import (lock_type, serialize_row, material_catalog,
                             resolve_identity, preview, prepare, text, WorkflowConflict)
 from .plan_workflow import digest
+from .plan_workflow import (save_material_approval, decimal_text, optional_text)
+from decimal import Decimal, localcontext
+from .plan_bom import read_bom, resolve_inputs
+from .plan_workflow_transport import PlanTransportError
 from .plan_workflow_read_context import PlanWorkflowReadContext
 from .plan_service_transport import (writes_enabled, PlanMesServiceTransport, dispatch_service_batch,
                                     recheck_service_creation, READBACK_STATES)
 
 
-def request_summary(row, current_keys):
+def request_summary(row, current_keys, *, is_current):
     event = row.audit_events[0] if getattr(row, 'audit_events', []) else None
     evidence = event.evidence if event else {}
     latest = {key: evidence[key] for key in ('outcome', 'mes_id', 'blockers', 'verified_scope') if key in evidence}
@@ -26,11 +30,11 @@ def request_summary(row, current_keys):
         'operation': row.operation, 'state': row.state, 'blockers': row.blockers,
         'intent': row.intent, 'contract': row.contract, 'attempt': row.attempt,
         'mes_id': row.work_order.mes_id or evidence.get('mes_id', ''), 'last_result': latest,
-        'can_send': (row.operation == 'create' and row.state in ('disabled', 'prepared', 'failed')
+        'can_send': (is_current and row.operation == 'create' and row.state in ('disabled', 'prepared', 'failed')
             and row.attempt == 0 and not row.blockers and not row.work_order.mes_id
             and row.contract.get('authentication') == 'service_app'
             and current_keys.get(row.work_order.code) == digest(row.intent)),
-        'can_recheck': row.operation == 'create' and row.state in READBACK_STATES}
+        'can_recheck': is_current and row.operation == 'create' and row.state in READBACK_STATES}
 
 
 def selected_request(uid, start, end, plan_type):
@@ -62,6 +66,30 @@ def scope(data):
     return start, end, plan_type
 
 
+def selected_plan(plan_id, start, end, plan_type):
+    try:
+        if isinstance(plan_id, bool): raise ValueError()
+        plan = ProductionPlan.objects.get(pk=int(plan_id), plan_type=plan_type,
+                                          plan_date__range=(start, end))
+        if str(plan.pk) != str(plan_id): raise ValueError()
+        return plan
+    except (ValueError, TypeError, ProductionPlan.DoesNotExist):
+        raise ValidationError('Invalid plan.') from None
+
+
+def plan_version_matches(plan, data):
+    if (type(data.get('version')) is not int or data['version'] != plan.work_version
+            or data.get('uid') != str(plan.work_uid)):
+        raise WorkflowConflict()
+
+
+def bom_for_plan(plan, actor_id):
+    source = read_bom(plan.part_no, actor_id)
+    if source['setup']['process_code'] != {'injection': 'ZS', 'machining': 'JG'}[plan.plan_type]:
+        raise ValidationError('mes_bom_process_mismatch')
+    return source
+
+
 class PlanWorkflowView(APIView):
     permission_classes = [IsAuthenticated]
     http_method_names = ['get', 'post', 'options']
@@ -74,23 +102,59 @@ class PlanWorkflowView(APIView):
     def get(self, request):
         start, end, plan_type = scope(request.query_params)
         if not user_can_view_plan(request.user, plan_type): raise PermissionDenied()
+        if request.query_params.get('action') == 'master_gaps':
+            if not request.user.is_active: raise PermissionDenied()
+            if plan_type != 'injection':
+                raise ValidationError('mes_master_injection_spec_only')
+            from .plan_master_gaps import read_master_gaps
+            plans = ProductionPlan.objects.filter(plan_type=plan_type, plan_date__range=(start, end))\
+                .order_by('part_no', 'plan_date', 'machine_name', 'id')
+            try:
+                return Response(read_master_gaps(plans, request.user.pk))
+            except PlanTransportError as error:
+                return Response({'detail': error.code}, status=502)
+        if request.query_params.get('action') == 'bom':
+            plan = selected_plan(request.query_params.get('plan_id'), start, end, plan_type)
+            try:
+                return Response(bom_for_plan(plan, request.user.pk))
+            except PlanTransportError as error:
+                return Response({'detail': error.code}, status=502)
         context = PlanWorkflowReadContext(start, end, plan_type)
         groups = preview(start, end, plan_type, context)
         current_keys = {group['work_order_code']: group['key'] for group in groups
             if group['work_order_code'] and not group['blockers']}
+        requests, current_requests = [], {}
+        for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order')\
+                .prefetch_related(Prefetch('events', queryset=PlanMesRequestEvent.objects.order_by('-id'),
+                    to_attr='audit_events')).annotate(_first_event=Min('events__id'))\
+                .order_by('-created_at', '-_first_event', '-uid')[:100]:
+            is_current = current_requests.setdefault(row.work_order_id, row.pk) == row.pk
+            requests.append(request_summary(row, current_keys, is_current=is_current))
         return Response({'write_enabled': writes_enabled(), 'rows': [serialize_row(row, context) for row in context.rows],
             'catalog': material_catalog(), 'preview': groups,
             'can_edit': request.user.is_active and user_can_edit_plan(request.user, plan_type),
             'can_manage_defaults': request.user.is_active and request.user.is_superuser,
-            'requests': [request_summary(row, current_keys)
-                for row in PlanMesRequest.objects.filter(work_order__plan_type=plan_type).select_related('work_order')
-                    .prefetch_related(Prefetch('events', queryset=PlanMesRequestEvent.objects.order_by('-id'),
-                        to_attr='audit_events')).order_by('-created_at')[:100]]})
+            'requests': requests})
 
     def post(self, request):
         start, end, plan_type = scope(request.data)
         if not request.user.is_active or not user_can_edit_plan(request.user, plan_type): raise PermissionDenied()
         action = request.data.get('action')
+        bom_source = bom_inputs = bom_plan = None
+        if action == 'approve':
+            # Provider IO must finish before acquiring the plan mutation lock.
+            bom_plan = selected_plan(request.data.get('plan_id'), start, end, plan_type)
+            plan_version_matches(bom_plan, request.data)
+            if not isinstance(request.data.get('bom_hash'), str):
+                raise ValidationError('mes_bom_confirmation_required')
+            try:
+                bom_source = bom_for_plan(bom_plan, request.user.pk)
+                if (request.data['bom_hash'] != bom_source['hash']
+                        or request.data.get('bom_version') != bom_source['version']):
+                    raise WorkflowConflict('mes_bom_changed')
+                bom_inputs = resolve_inputs(bom_source, request.data.get('inputs'), request.user.pk)
+            except PlanTransportError as error:
+                return Response({'detail': error.code}, status=502)
         if action == 'prepare':
             return Response({'write_enabled': writes_enabled(), 'results': prepare(start, end, plan_type,
                 request.data.get('keys'), request.user)})
@@ -119,7 +183,23 @@ class PlanWorkflowView(APIView):
             if action == 'resolve_identity':
                 return Response(resolve_identity(plan, request.data, request.user))
             if action == 'approve':
-                approval = approve_materials(plan, request.data, request.user)
+                plan_version_matches(plan, request.data)
+                if (plan.part_no != bom_plan.part_no or not PlanWorkIdentity.objects.filter(
+                        uid=plan.work_uid, resolution='identified', active=True).exists()):
+                    raise WorkflowConflict()
+                inputs = []
+                for item in bom_inputs:
+                    with localcontext() as ctx:
+                        ctx.prec = 100
+                        required = Decimal(str(plan.planned_quantity)) * Decimal(item['numerator']) / Decimal(item['denominator'])
+                        # Float-backed integer plan quantities may carry a trailing
+                        # .0; discard insignificant zeros, never significant digits.
+                        required_text = format(required.normalize(), 'f')
+                    inputs.append({**item, 'required_quantity': decimal_text(required_text)})
+                setup = {**bom_source['setup'], 'inputs': inputs, 'bom_source': bom_source,
+                    'resource_code': text(request.data.get('resource_code')),
+                    'mold_code': optional_text(request.data.get('mold_code'))}
+                approval = save_material_approval(plan, setup, request.user, request.data.get('reason'))
                 return Response({'approval_id': approval.pk, 'snapshot': approval.snapshot}, status=201)
             if action == 'save_default':
                 # Separate explicit superuser operation; approval never updates defaults.

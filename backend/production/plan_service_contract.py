@@ -1,17 +1,35 @@
 """Factory import from the approved plan/material snapshot.
 
-Import fields: official Blacklake HW document 1686645473258363. Inline materials
-use useBomFlag=0 by the factory's selected policy; tenant precedence still needs
-the separately approved live trial. No per-product server allowlist is used.
+Import fields: official Blacklake MED document 1686655055663528. Inline materials
+use useBomFlag=0 to preserve the approved inputs. BOM version linkage is separate
+from that verified material assignment. No per-product server allowlist is used.
 """
 from datetime import datetime
 from decimal import Decimal
+import json
 
 from .mes_execution_contract import encode_exact_json
 from .plan_workflow_contract import CREATE_PATH, UPDATE_PATH
 
 INITIAL_STATUS = 1  # CREATED; dispatch/start are separate later operations.
 REPORT_FLAG = 1
+PRODUCTION_DEPARTMENTS = {'injection': 'ZS', 'machining': 'JG'}
+# WJ's planning owner, confirmed against existing orders and by the operator.
+PLANNING_DEPARTMENT = '002'  # 营业
+PLANNING_USER = '2299'  # 徐佳; not the WJ user who presses Send.
+
+
+def approved_quality_states(value):
+    """Read immutable approval expectations, including older JSON strings."""
+    try:
+        states = json.loads(value) if isinstance(value, str) else None
+        if (not isinstance(states, list) or not states
+                or any(type(state) is not int or state not in (1, 2, 3, 4) for state in states)
+                or len(set(states)) != len(states)):
+            return None
+        return sorted(states)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_contract(order, intent):
@@ -24,16 +42,31 @@ def build_contract(order, intent):
             'code': order.code, 'plannedAmount': intent['quantity'], 'planFinishTime': end}]}}, [
                 'task_quantity_propagation_and_allowed_state_review']
     setup = intent['setup']
+    controlled = [row for row in setup['inputs'] if 'feeding_control' in row]
+    # Trial WJ-IT-QC-20261011-003 preserved [1,2] when omitted. Do not
+    # generalize that observation to other approved quality combinations.
+    if any(not isinstance(row['feeding_control'], dict)
+            or approved_quality_states(row['feeding_control'].get('inputQcState')) != [1, 2]
+            for row in controlled):
+        return {}, ['input_quality_default_unverified']
+    department = PRODUCTION_DEPARTMENTS.get(intent['plan_type'])
+    if department is None:
+        return {}, ['production_department_required']
     payload = {'code': order.code, 'externalOrderCode': order.code, 'identifier': order.code,
+        'productionDepartmentCode': department, 'planningDepartmentCode': PLANNING_DEPARTMENT,
+        'planningUserCode': PLANNING_USER,
         'planStartTime': start, 'planFinishTime': end, 'resourceCode': setup['resource_code'],
         'enableSop': 0, 'specifiedMaterial': 1, 'useBomFlag': 0, 'useProcessRouteFlag': 1,
         'status': INITIAL_STATUS,
-        'inputMaterialOpenV2COs': [{'seq': str(index + 1), 'materialCode': row['material_code'],
+        'inputMaterialOpenV2COs': [{'seq': str(row.get('seq', index + 1)), 'materialCode': row['material_code'],
             **({'version': row['material_version']} if row['material_version'] else {}),
             'unitName': row['unit_name'],
             'subInputAmountNumerator': row['numerator'], 'subInputAmountDenominator': row['denominator'],
             'specificProcessInput': 1, 'inputProcessNum': setup['process_num'],
-            'splitSopControlInput': 0, 'lossRate': '0'} for index, row in enumerate(setup['inputs'])],
+            'splitSopControlInput': 0, 'lossRate': '0',
+            **({'inputMaterialControlOpenCOs': [{key: value for key, value in row['feeding_control'].items()
+                                               if key != 'inputQcState'}]}
+               if 'feeding_control' in row else {})} for index, row in enumerate(setup['inputs'])],
         'outputMaterialOpenCOs': [{'lineSeq': '0', 'mainFlag': 1, 'materialCode': intent['part_no'],
             'plannedAmount': intent['quantity'], 'unitName': setup['output_unit_name'],
             **({'version': setup['output_version']} if setup['output_version'] else {}),
@@ -42,5 +75,6 @@ def build_contract(order, intent):
         'processPlanOpenCOs': [{'code': setup['process_code'], 'processNum': setup['process_num'],
                                'reportFlag': REPORT_FLAG}]}
     encode_exact_json(payload)
-    return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686645473258363',
+    return {'path': CREATE_PATH, 'payload': payload, 'document_id': '1686655055663528',
+            **({'input_quality_source': 'material_definition'} if controlled else {}),
             'authentication': 'service_app', 'readback_scope': 'base_creation'}, []
