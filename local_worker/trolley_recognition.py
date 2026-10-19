@@ -49,7 +49,7 @@ def analyze(job,client,llm,worker_name):
     if type(photo_id) is not int or photo_id!=job.get('input_payload',{}).get('photo_id'):
         raise ValueError('Invalid photo scope.')
     response=client.session.get(f'{client.api_base_url}/lgent/worker/photos/{photo_id}/',params={'job_id':job['id']},
-        headers={'X-AI-WORKER-NAME':worker_name,'X-AI-CLAIM-TIMESTAMP':str(job['claimed_at'])},timeout=30)
+        headers={'X-AI-WORKER-NAME':worker_name,'X-AI-CLAIM-TIMESTAMP':str(job['claimed_at'])},timeout=30,allow_redirects=False)
     response.raise_for_status();data_url=response.json().get('photoData','')
     if not data_url.startswith('data:image/jpeg;base64,'):raise ValueError('Missing JPEG photo.')
     raw=base64.b64decode(data_url.split(',',1)[1],validate=True)

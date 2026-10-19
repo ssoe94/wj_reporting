@@ -18,6 +18,7 @@ class RecognitionTests(unittest.TestCase):
   self.assertEqual(self.client.session.get.call_args.args[0],'https://wj.invalid/api/lgent/worker/photos/7/')
   self.assertEqual(self.client.session.get.call_args.kwargs['headers']['X-AI-WORKER-NAME'],'mac-lgent')
   self.assertNotIn('token',str(result).lower())
+  self.assertFalse(self.client.session.get.call_args.kwargs['allow_redirects'])
  def test_photo_digest_mismatch_never_reaches_ai(self):
   self.job['input_payload']['sha256']='wrong'
   with patch.object(handler,'read_primary') as ai:
