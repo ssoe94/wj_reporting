@@ -272,6 +272,12 @@ class LgentTests(TestCase):
             completed=worker.post(f'/api/ai/jobs/{job["id"]}/complete/',{**payload,'prompt_version':service.PROMPT,'model_name':'Qwen3.8-27B-4bit','result_payload':{'primary_id':'TT0940306','uncertain':False,'local_evidence':[{'id':'TT0940306','confidence':1}]}},format='json',**headers)
         self.assertEqual(completed.status_code,200);value.refresh_from_db();self.assertEqual(value.status,'recognized');write.assert_not_called()
 
+    def test_generic_worker_cannot_accidentally_claim_trolley_jobs(self):
+        value=self.photo('pending');service.analyze(self.user,[value.pk])
+        worker=APIClient()
+        claim=worker.post('/api/ai/jobs/claim/',{'worker_name':'generic','worker_version':'production-ai-worker-v2','available_model_ids':['qwen38'],'limit':1},format='json',HTTP_X_AI_WORKER_TOKEN='isolated-worker-token')
+        self.assertEqual(claim.status_code,200);self.assertEqual(claim.data['jobs'],[])
+
     def test_worker_fail_records_retryable_photo_error(self):
         value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db();job=value.job
         job.status='running';job.claimed_by='test-lgent';job.claimed_at=timezone.now();job.save()

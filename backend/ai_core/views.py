@@ -885,7 +885,6 @@ class AiWorkerClaimView(APIView):
             AiJob.JOB_TYPE_QUALITY_IMAGE,
             AiJob.JOB_TYPE_DEEP_ANALYSIS,
             AiJob.JOB_TYPE_QUALITY_TRANSLATION,
-            AiJob.JOB_TYPE_LGENT_PHOTO,
         ]
         # Production and deep analysis jobs are routed purely by scope.model_id.
         production_job_types = [
