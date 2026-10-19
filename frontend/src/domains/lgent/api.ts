@@ -5,7 +5,7 @@ export const connectLg=async(userId:string,password:string)=>api.post('/lgent/lo
 export const disconnectLg=async()=>api.post('/lgent/logout/',{});
 export const setThreshold=async(staleDays:number)=>api.post('/lgent/settings/',{staleDays});
 type SyncReply={discovered:number;remaining:number;cursor:string|null;errors:number};
-export async function syncFleet(progress:(done:number,total:number)=>void){let cursor:string|null=null;let count=0;do{const result:{data:SyncReply}=await api.post<SyncReply>('/lgent/sync/',cursor?{cursor}:{},{timeout:45000});cursor=result.data.cursor;count=result.data.discovered;progress(count-result.data.remaining,count);}while(cursor);return count;}
+export async function syncFleet(progress:(done:number,total:number)=>void){let cursor:string|null=null;let count=0,errors=0;do{const result:{data:SyncReply}=await api.post<SyncReply>('/lgent/sync/',cursor?{cursor}:{},{timeout:45000});cursor=result.data.cursor;count=result.data.discovered;errors+=result.data.errors;progress(count-result.data.remaining,count);}while(cursor);return {count,errors};}
 export const lookupCart=async(trolleyId:string)=>(await api.post('/lgent/lookup/',{trolleyId})).data;
 export const cartImage=async(id:string)=>(await api.get<{photoData:string|null}>(`/lgent/carts/${encodeURIComponent(id)}/photo/`)).data.photoData;
 export const photoImage=async(id:number)=>(await api.get<{photoData:string|null}>(`/lgent/photos/${id}/image/`)).data.photoData;
