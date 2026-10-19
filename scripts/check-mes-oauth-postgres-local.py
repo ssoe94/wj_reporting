@@ -17,6 +17,8 @@ from mes_oauth_test_database import FIXTURE_MARKER, FIXTURE_MARKER_CONTENT
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POSTGRES_BIN = Path('/opt/homebrew/bin')
+# Keep the full regression suite bounded while allowing slower hosted runners.
+TEST_TIMEOUT_SECONDS = 600
 
 
 def postgres_tools(directory):
@@ -106,11 +108,15 @@ def main(argv=None):
             command = [sys.executable, ROOT / 'scripts/check-mes-oauth.py',
                        '--postgres-test-socket=' + str(socket), *arguments.test_labels]
             print('+', ' '.join(str(argument) for argument in command), flush=True)
-            process = subprocess.run([str(argument) for argument in command], cwd=ROOT,
-                                     env=environment, timeout=300, stdout=log,
-                                     stderr=subprocess.STDOUT)
-            result = process.returncode
-        print((fixture / 'test.log').read_text(encoding='utf-8'), end='', flush=True)
+            try:
+                process = subprocess.run([str(argument) for argument in command], cwd=ROOT,
+                                         env=environment, timeout=TEST_TIMEOUT_SECONDS,
+                                         stdout=log, stderr=subprocess.STDOUT)
+                result = process.returncode
+            finally:
+                # A timeout must retain progress in CI as well as on disk.
+                log.flush()
+                print((fixture / 'test.log').read_text(encoding='utf-8'), end='', flush=True)
     finally:
         # Only the new fixture above is considered. Stop failure remains failure.
         if (data / 'postmaster.pid').exists():
