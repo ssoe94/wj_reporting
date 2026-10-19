@@ -1,3 +1,4 @@
+import {canAccessLgent,isLgentRoute} from '../domains/auth/lgent-access';
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useQueryClient } from '@tanstack/react-query';
@@ -368,6 +369,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     inspectionAccess?.sessionId === identity?.sessionId ? inspectionAccess?.value ?? null : null);
   const canAccessRoute = (route: string): boolean => {
     if (!user) return false;
+    if (isLgentRoute(route)) return canAccessLgent(user);
     if (isHrRoute(route)) return canAccessHr(user);
     if (isInspectionBetaRoute(route)) return canAccessInspection;
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);

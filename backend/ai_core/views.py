@@ -1041,7 +1041,13 @@ class AiWorkerJobTransitionView(APIView):
         job.status = AiJob.STATUS_COMPLETED
         worker_result = serializer.validated_data['result_payload']
         from quality.action_result_translation import accept_translation, is_translation_job
-        if is_translation_job(job):
+        if job.job_type == AiJob.JOB_TYPE_LGENT_PHOTO:
+            from lgent.service import accept_result
+            try:
+                job.result_payload = accept_result(job,worker_result,serializer.validated_data.get('prompt_version'))
+            except ValueError as error:
+                raise ValidationError({'result_payload':str(error)})
+        elif is_translation_job(job):
             job.result_payload = accept_translation(
                 job, worker_result,
                 prompt_version=serializer.validated_data.get('prompt_version'),
@@ -1090,7 +1096,10 @@ class AiWorkerJobTransitionView(APIView):
         job.status = AiJob.STATUS_FAILED
         job.error_message = serializer.validated_data['error_message']
         from quality.action_result_translation import is_translation_job, record_translation_failure
-        if is_translation_job(job):
+        if job.job_type == AiJob.JOB_TYPE_LGENT_PHOTO:
+            from lgent.service import record_failure
+            record_failure(job)
+        elif is_translation_job(job):
             record_translation_failure(job)
         job.model_name = display_model_name(serializer.validated_data.get('model_name'))
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''

@@ -1,0 +1,2 @@
+export function isLgentRoute(route:string){const path=route.split(/[?#]/,1)[0];return path==='/sales/trolleys'||path.startsWith('/sales/trolleys/');}
+export function canAccessLgent(user:{is_active?:boolean;is_staff?:boolean;is_superuser?:boolean;can_view_sales?:boolean;permissions?:{can_view_sales?:boolean}}|null|undefined){return !!user&&user.is_active!==false&&!!(user.is_staff||user.is_superuser||user.permissions?.can_view_sales);}

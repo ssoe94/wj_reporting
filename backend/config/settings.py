@@ -96,6 +96,7 @@ INSTALLED_APPS = [
     'quality',
     'production',
     'ai_core',
+    'lgent',
     'analytics',
     'mes_oauth',
 ]

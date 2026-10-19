@@ -172,6 +172,7 @@ class AiJobClaimSerializer(serializers.Serializer):
             AiJob.JOB_TYPE_QUALITY_IMAGE,
             AiJob.JOB_TYPE_DEEP_ANALYSIS,
             AiJob.JOB_TYPE_QUALITY_TRANSLATION,
+            AiJob.JOB_TYPE_LGENT_PHOTO,
         ]),
         # Translation jobs are server-created and worker-only.
         required=False,
