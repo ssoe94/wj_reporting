@@ -9,6 +9,7 @@ This command:
 """
 
 from django.core.management.base import BaseCommand, CommandError
+from django.core.management import call_command
 from django.utils import timezone
 from django.db import transaction
 from datetime import datetime, timedelta
@@ -121,6 +122,23 @@ class Command(BaseCommand):
         return len(snapshots_to_create)
 
     def handle(self, *args, **options):
+        # Render runs this command directly, independently of Celery.
+        snapshot_error = None
+        try:
+            self._handle_snapshot(*args, **options)
+        except Exception as exc:
+            snapshot_error = exc
+        if not options['skip_fetch'] and not options['date']:
+            try:
+                call_command('sync_movement_history', stdout=self.stdout, stderr=self.stderr)
+            except Exception:
+                if snapshot_error is None:
+                    raise
+                logger.error('Movement history also requires retry; prior published data preserved')
+        if snapshot_error is not None:
+            raise snapshot_error
+
+    def _handle_snapshot(self, *args, **options):
         try:
             # 환경 변수 로깅
             import os

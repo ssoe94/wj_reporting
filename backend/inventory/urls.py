@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .movement_history import finished_goods_history, finished_goods_history_detail
 from .raw_material_views import (
     RawMaterialOverviewView,
     RawMaterialStockDetailView,
@@ -33,7 +34,9 @@ urlpatterns = [
     path('raw-materials/details/', RawMaterialStockDetailView.as_view(), name='raw_material_stock_details'),
     path('raw-materials/sync/', RawMaterialSyncView.as_view(), name='raw_material_sync'),
     path('finished-goods/transactions/', finished_goods_transactions_view, name='finished_goods_transactions'),
+    path('finished-goods/history/', finished_goods_history, name='finished_goods_history'),
     
+    path('finished-goods/history/<int:group_id>/', finished_goods_history_detail, name='finished_goods_history_detail'),
     # 통합 품목 관리 API
     path('unified-parts/', views.unified_parts_api, name='unified_parts_api'),
     path('unified-parts/<str:part_no>/', views.unified_parts_detail_api, name='unified_parts_detail'),

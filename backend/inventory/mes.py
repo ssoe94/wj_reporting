@@ -201,7 +201,7 @@ def call_inventory_list(page:int=1, size:int=200, **filters):
                 time.sleep(2)  # 2초 대기 후 재시도
 
 
-def call_inventory_change_log(page: int = 1, size: int = 200, **filters):
+def call_inventory_change_log(page: int = 1, size: int = 200, *, request_timeout=120, max_attempts=3, **filters):
     """
     MES 재고 변동 기록(Change Log) API 호출
     """
@@ -213,13 +213,13 @@ def call_inventory_change_log(page: int = 1, size: int = 200, **filters):
         **filters,
     }
 
-    for attempt in range(3):
+    for attempt in range(max_attempts):
         try:
-            resp = requests.post(url, json=body, timeout=120)
+            resp = requests.post(url, json=body, timeout=request_timeout)
             if resp.status_code == 401:
                 token = get_access_token(force_refresh=True)
                 url = f"{MES_BASE_URL}{INVENTORY_CHANGE_LOG_ENDPOINT}?access_token={token}"
-                resp = requests.post(url, json=body, timeout=120)
+                resp = requests.post(url, json=body, timeout=request_timeout)
 
             resp.raise_for_status()
             response_data = resp.json()
@@ -238,7 +238,7 @@ def call_inventory_change_log(page: int = 1, size: int = 200, **filters):
             return response_data.get('data') or response_data
         except Exception as e:
             safe_error = _safe_exception_message(e)
-            if attempt == 2:
+            if attempt == max_attempts - 1:
                 print(
                     f'MES inventory change log error (page {page}):',
                     resp.status_code if 'resp' in locals() else 'No response',
