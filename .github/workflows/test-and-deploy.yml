@@ -168,6 +168,7 @@ jobs:
         run: |
           python scripts/check-lgent.py --migration-check
           python scripts/check-lgent.py
+          python scripts/check-lgent-postgres-local.py --postgres-bin="$(pg_config --bindir)" --fixture-name=pg-lg
 
       - name: Run local AI worker tests
         if: steps.scope.outputs.backend_required != 'false'

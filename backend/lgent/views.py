@@ -113,8 +113,11 @@ class ReconcileView(LgentView):
 class RemoveView(LgentView):
     edit_action=True
     def post(self,request,pk):
+        snapshot=get_object_or_404(LgentPhoto,user=request.user,pk=pk,archived_at__isnull=True)
         with transaction.atomic():
+            if snapshot.job_id:AiJob.objects.select_for_update().filter(pk=snapshot.job_id).first()
             value=get_object_or_404(LgentPhoto.objects.select_for_update(),user=request.user,pk=pk,archived_at__isnull=True)
+            if value.job_id!=snapshot.job_id:raise client.LgError('분석 작업이 변경됐습니다. 다시 조회하세요.','photo_conflict',409)
             if value.status=='saving':raise client.LgError('저장 중인 사진은 처리 후 제외하세요.','busy',409)
             if value.job_id:AiJob.objects.filter(pk=value.job_id,status__in=('pending','claimed','running')).update(status='cancelled')
             value.archived_at=timezone.now();value.save(update_fields=['archived_at','updated_at'])

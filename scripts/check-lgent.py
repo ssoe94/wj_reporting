@@ -1,6 +1,10 @@
 """Isolated LGENT checks. Never loads project .env or a production database."""
 from pathlib import Path
 import sys,types,tempfile
+from mes_oauth_test_database import mes_oauth_test_database,POSTGRES_SOCKET_OPTION
+root=Path(__file__).resolve().parents[1]
+database=mes_oauth_test_database(sys.argv[1:],root)
+sys.argv=[sys.argv[0]]+[arg for arg in sys.argv[1:] if not arg.startswith(POSTGRES_SOCKET_OPTION)]
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'backend'))
 import decouple
 decouple.config=decouple.Config(decouple.RepositoryEmpty())
@@ -10,7 +14,7 @@ preview='--preview' in sys.argv
 settings.configure(SECRET_KEY='isolated-lgent-check-secret',
  INSTALLED_APPS=['django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','rest_framework','django_filters',
                  'injection','assembly','sales','overview','inventory','quality','production','ai_core','analytics','lgent'],
- DATABASES={'default':{'ENGINE':'django.db.backends.sqlite3','NAME':str(Path(media.name)/'preview.sqlite3') if preview else ':memory:'}},DEBUG=preview,DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
+ DATABASES={'default':{'ENGINE':'django.db.backends.sqlite3','NAME':str(Path(media.name)/'preview.sqlite3')} if preview else database},DEBUG=preview,DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',
  USE_TZ=True,TIME_ZONE='Asia/Shanghai',ROOT_URLCONF='isolated_lgent_urls',ALLOWED_HOSTS=['testserver','localhost','127.0.0.1'],
  PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],MIDDLEWARE=[],MEDIA_ROOT=media.name,
  LGENT_ALLOW_LOCAL_MEDIA=True,LGENT_FORCE_LOCAL_MEDIA=True,CLOUDINARY_STORAGE={'CLOUD_NAME':'test','API_KEY':'test','API_SECRET':'test'},AI_WORKER_TOKEN='isolated-worker-token',

@@ -206,6 +206,14 @@ class LgentTests(TestCase):
         write.assert_not_called();self.assertFalse(result['verified'])
         self.cart.refresh_from_db();self.assertEqual(self.cart.save_attempt_id,'attempt')
 
+    def test_cache_reader_cannot_erase_a_concurrent_write_lease(self):
+        stale=LgentCart.objects.get(pk=self.cart.pk)
+        LgentCart.objects.filter(pk=self.cart.pk).update(save_attempt_id='durable-current-attempt',save_started_at=timezone.now())
+        with patch.object(LgentCart.objects,'get_or_create',return_value=(stale,False)):
+            service.remember(copy.deepcopy(ROW))
+        self.cart.refresh_from_db();self.assertEqual(self.cart.save_attempt_id,'durable-current-attempt')
+        self.assertIsNotNone(self.cart.save_started_at)
+
     def test_cart_level_durable_lease_blocks_another_photo(self):
         value=self.photo();self.cart.save_attempt_id='another-attempt';self.cart.save()
         with patch('lgent.client.request') as write:
@@ -292,3 +300,59 @@ class LgentTests(TestCase):
 
 from django.db import transaction
 transaction_for_test=transaction.atomic
+
+from unittest import skipUnless
+from django.db import connection,connections
+from django.test import TransactionTestCase
+import threading,time
+
+
+@skipUnless(connection.vendor=='postgresql','PostgreSQL row-lock acceptance only')
+class LgentPostgresLockTests(TransactionTestCase):
+    def test_manual_match_and_archive_follow_worker_lock_order(self):
+        user=get_user_model().objects.create_user(username='pg-operator',is_staff=True)
+        LgentProfile.objects.create(user=user,encrypted_token=encrypt_token('synthetic-token'),lg_user_id='pg',current_company='LGENT',expires_at=timezone.now()+dt.timedelta(hours=1))
+        service.remember(copy.deepcopy(ROW))
+        for action in ('match','archive'):
+            with self.subTest(action=action):
+                job=AiJob.objects.create(job_type=service.PHOTO_JOB,created_by=user,status='running')
+                value=LgentPhoto.objects.create(user=user,job=job,filename=action+'.jpg',sha256=action,storage_key='synthetic',byte_size=1,status='queued',trolley_id=ROW['trolley_id'])
+                started=threading.Event();state={}
+                def operator():
+                    try:
+                        with connections['default'].cursor() as cursor:
+                            cursor.execute('SELECT pg_backend_pid()');state['pid']=cursor.fetchone()[0]
+                        started.set()
+                        actor=get_user_model().objects.get(pk=user.pk)
+                        if action=='match':
+                            photo=LgentPhoto.objects.get(pk=value.pk)
+                            service.match(actor,photo,ROW['trolley_id'],True)
+                        else:
+                            api=APIClient();api.force_authenticate(actor)
+                            response=api.post(f'/api/lgent/photos/{value.pk}/remove/',{},format='json')
+                            if response.status_code!=200:raise AssertionError(response.status_code)
+                    except BaseException as error:state['error']=error
+                    finally:connections.close_all()
+                thread=threading.Thread(target=operator,daemon=True)
+                with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',return_value=b''):
+                    try:
+                        with transaction.atomic():
+                            AiJob.objects.select_for_update().get(pk=job.pk)
+                            thread.start();self.assertTrue(started.wait(3))
+                            deadline=time.monotonic()+5;waiting=False
+                            while time.monotonic()<deadline:
+                                with connection.cursor() as cursor:
+                                    cursor.execute('SELECT pg_stat_clear_snapshot()')
+                                    cursor.execute('SELECT wait_event_type FROM pg_stat_activity WHERE pid=%s',[state['pid']])
+                                    row=cursor.fetchone()
+                                if row and row[0]=='Lock':waiting=True;break
+                                if 'error' in state:raise state['error']
+                                time.sleep(.01)
+                            self.assertTrue(waiting,'Operator should wait on the worker-owned job lock')
+                            # A Photo-first path would already hold this row and
+                            # deadlock once the worker tries to finish its job.
+                            LgentPhoto.objects.select_for_update(nowait=True).get(pk=value.pk)
+                    finally:
+                        thread.join(5)
+                    self.assertFalse(thread.is_alive())
+                    if 'error' in state:raise state['error']

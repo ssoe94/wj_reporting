@@ -65,7 +65,9 @@ def remember(row):
     cart.baseline={key:value for key,value in row.items() if key!='file_stream_bytes'}
     cart.supplier_code='TT094'
     cart.grade=str(row.get('last_grade') or '')[:8];cart.lg_modified_at=client.modified_at(row)
-    cart.photo_file_at=client.photo_file_at(row.get('pic_url') or '');cart.checked_at=timezone.now();cart.save()
+    cart.photo_file_at=client.photo_file_at(row.get('pic_url') or '');cart.checked_at=timezone.now()
+    # Cache readers must never write back an older external-write lease.
+    cart.save(update_fields=['baseline','supplier_code','grade','lg_modified_at','photo_file_at','checked_at','verified_save_at','photo_sha256','updated_at'])
     return cart
 
 
@@ -241,6 +243,8 @@ def match(user,value,trolley_id,confirmed):
         raise client.LgError('저장을 시도한 사진은 먼저 LG에서 다시 조회하세요.','already_submitted',409)
     _,token=connection(user);row=client.info(token,trolley_id);remember(row);raw=client.photo(token,row)
     with transaction.atomic():
+        # Worker completion/failure locks AiJob before its photo.
+        if value.job_id:AiJob.objects.select_for_update().filter(pk=value.job_id).first()
         live=LgentPhoto.objects.select_for_update().get(pk=value.pk,user=user)
         if live.status in ('saving','saved','accepted','uncertain') or live.updated_at!=value.updated_at:
             raise client.LgError('사진 처리 상태가 변경됐습니다. 다시 조회하세요.','photo_conflict',409)
