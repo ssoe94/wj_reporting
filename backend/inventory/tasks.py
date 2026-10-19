@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 @shared_task
 def daily_inventory_automation():
     """매일 08:00 자동 실행되는 재고 자동화 작업"""
+    history_failed = False
+    try:
+        call_command("sync_movement_history")
+    except Exception:
+        history_failed = True
+        logger.error("Daily movement history collection failed; previous published days preserved")
     try:
         logger.info("일일 재고 자동화 작업 시작")
         
@@ -49,6 +55,8 @@ def daily_inventory_automation():
         logger.info("30일 이전 데이터 정리 완료")
         
         logger.info("일일 재고 자동화 작업 완료")
+        if history_failed:
+            raise RuntimeError("Daily movement history requires retry")
         return "success"
         
     except Exception as e:

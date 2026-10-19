@@ -50,6 +50,7 @@ const Eco2Page = lazy(() => import('./pages/eco2'));
 const AnalysisPage = lazy(() => import('./pages/analysis'));
 const AssemblyPage = lazy(() => import('./pages/assembly'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const MovementHistoryPage = lazy(() => import('./pages/sales/MovementHistory'));
 const InventoryStatusPage = lazy(() => import('./pages/sales/InventoryStatus'));
 const DailyReportPage = lazy(() => import('./pages/sales/DailyReport'));
 const UserApproval = lazy(() => import('./pages/admin/UserApproval'));
@@ -205,6 +206,7 @@ function useNavItems() {
         icon: Truck,
         children: [
           { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
+          { to: "/sales/movement-history", label: t('nav_movement_history'), icon: ClipboardList },
           { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
           { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
         ],
@@ -288,6 +290,7 @@ function useNavItems() {
     icon: Truck,
     children: [
       { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
+      { to: "/sales/movement-history", label: t('nav_movement_history'), icon: ClipboardList },
       { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
       { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
     ],
@@ -516,6 +519,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
+  else if (pathname.startsWith('/sales/movement-history')) breadcrumbLabel = t('nav_movement_history');
   else if (pathname.startsWith('/sales/raw-materials')) breadcrumbLabel = t('nav_raw_material_management');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
   else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco_management');
@@ -887,6 +891,7 @@ function AppContent() {
             <Route path="/sales/inventory" element={<Navigate to="/sales/inventory-status" replace />} />
             {/* Inventory status */}
             <Route path="/sales/daily-report" element={<PrivateRoute><PageTransition><DailyReportPage /></PageTransition></PrivateRoute>} />
+            <Route path="/sales/movement-history" element={<PrivateRoute><PageTransition><MovementHistoryPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales/inventory-status" element={<PrivateRoute><PageTransition><InventoryStatusPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales/raw-materials" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><RawMaterialManagementPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />

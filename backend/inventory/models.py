@@ -373,3 +373,41 @@ class FinishedGoodsTransaction(models.Model):
 
     def __str__(self):
         return f"{self.material_code} ({self.snapshot})"
+
+
+class MovementHistoryDay(models.Model):
+    """Published closed business day; independent of inventory snapshot retention."""
+    business_date = models.DateField(unique=True)
+    version = models.PositiveIntegerField(default=0)
+    checked_at = models.DateTimeField(null=True)
+
+
+class MovementHistoryRevision(models.Model):
+    """Immutable complete source capture. Corrections append a new revision."""
+    day = models.ForeignKey(MovementHistoryDay, on_delete=models.PROTECT, related_name='revisions')
+    version = models.PositiveIntegerField()
+    fingerprint = models.CharField(max_length=64)
+    collected_at = models.DateTimeField()
+    source = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['day', 'version'], name='movement_day_version_uniq')]
+
+
+class MovementHistoryGroup(models.Model):
+    revision = models.ForeignKey(MovementHistoryRevision, on_delete=models.PROTECT, related_name='groups')
+    material_code = models.CharField(max_length=200, db_index=True)
+    material_name = models.TextField(blank=True)
+    specification = models.TextField(blank=True)
+    warehouse_name = models.CharField(max_length=200)
+    unit = models.CharField(max_length=100, blank=True)
+    # Decimal strings preserve source precision on PostgreSQL and SQLite alike.
+    amounts = models.JSONField(default=dict)
+    inbound_count = models.PositiveIntegerField(default=0)
+    outbound_count = models.PositiveIntegerField(default=0)
+    identifier_count = models.PositiveIntegerField(default=0)
+    missing_identifier_count = models.PositiveIntegerField(default=0)
+    identifiers = models.JSONField(default=list)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['revision', 'material_code', 'warehouse_name', 'unit'], name='movement_group_uniq')]
