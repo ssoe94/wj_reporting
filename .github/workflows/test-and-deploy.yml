@@ -163,6 +163,12 @@ jobs:
           python scripts/check-inspection-postgres-local.py \
             --postgres-bin="$postgres_bin" --fixture-name=pg-ins
 
+      - name: Validate isolated LGENT contracts and additive schema
+        if: steps.scope.outputs.backend_required != 'false'
+        run: |
+          python scripts/check-lgent.py --migration-check
+          python scripts/check-lgent.py
+
       - name: Run local AI worker tests
         if: steps.scope.outputs.backend_required != 'false'
         run: >-
@@ -174,6 +180,7 @@ jobs:
           local_worker.test_claude_bridge
           local_worker.test_chatgpt_bridge
           local_worker.test_worker_launcher
+          local_worker.test_trolley_recognition
 
   deploy-main:
     name: Deploy production from main

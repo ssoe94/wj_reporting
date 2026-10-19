@@ -3,6 +3,7 @@ from django.db import models
 
 
 class AiJob(models.Model):
+    JOB_TYPE_LGENT_PHOTO = 'lgent_trolley_photo'
     JOB_TYPE_PRODUCTION_DAILY = 'production_daily_analysis'
     JOB_TYPE_PRODUCTION_MACHINE = 'production_machine_analysis'
     JOB_TYPE_QUALITY_IMAGE = 'quality_image_analysis'
@@ -10,6 +11,7 @@ class AiJob(models.Model):
     JOB_TYPE_QUALITY_TRANSLATION = 'quality_action_result_translation'
 
     JOB_TYPE_CHOICES = [
+        (JOB_TYPE_LGENT_PHOTO, 'LGENT Trolley Photo Recognition'),
         (JOB_TYPE_PRODUCTION_DAILY, 'Production Daily Analysis'),
         (JOB_TYPE_PRODUCTION_MACHINE, 'Production Machine Analysis'),
         (JOB_TYPE_QUALITY_IMAGE, 'Quality Image Analysis'),
