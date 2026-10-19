@@ -4,6 +4,8 @@ import sys
 import types
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+import decouple
+decouple.config = decouple.Config(decouple.RepositoryEmpty())
 from django.conf import settings
 
 settings.configure(

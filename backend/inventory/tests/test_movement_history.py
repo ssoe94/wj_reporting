@@ -177,16 +177,7 @@ class MovementHistoryTests(TestCase):
         self.assertEqual(MovementHistoryRevision.objects.count(), 0)
 
     def test_daily_hook_preserves_existing_snapshot_work_on_history_failure(self):
-        import sys
-        import types
-        from unittest.mock import Mock
-        # Isolate task orchestration from MES configuration and credentials.
-        stubs = {
-            'inventory.services.finished_goods': types.SimpleNamespace(capture_finished_goods_transactions=Mock()),
-            'inventory.services.raw_material_sync': types.SimpleNamespace(run_raw_material_sync=Mock(return_value=(True, {'status':'completed'}))),
-        }
-        with patch.dict(sys.modules, stubs), patch('celery.shared_task', side_effect=lambda function: function):
-            from inventory import tasks
+        from inventory import tasks
         with patch.object(tasks, 'call_command') as command, patch.object(tasks, 'create_daily_summary'), patch.object(tasks, 'cleanup_old_snapshots'), patch.object(tasks, 'run_raw_material_sync', return_value=(True, {'status':'completed'})) as raw:
             command.side_effect = [RuntimeError('unavailable'), None]
             with self.assertRaisesRegex(RuntimeError, 'history requires retry'):
@@ -195,11 +186,7 @@ class MovementHistoryTests(TestCase):
             raw.assert_called_once()
 
     def test_render_daily_command_collects_history_even_if_inventory_fails(self):
-        import sys
-        import types
-        from unittest.mock import Mock
-        with patch.dict(sys.modules, {'inventory.services.raw_material_sync': types.SimpleNamespace(run_raw_material_sync=Mock())}):
-            from inventory.management.commands.daily_snapshot_auto import Command
+        from inventory.management.commands.daily_snapshot_auto import Command
         with patch.object(Command, '_handle_snapshot', side_effect=CommandError('snapshot failed')), patch('inventory.management.commands.daily_snapshot_auto.call_command') as collect:
             with self.assertRaisesRegex(CommandError, 'snapshot failed'):
                 Command().handle(date=None, skip_fetch=False)
