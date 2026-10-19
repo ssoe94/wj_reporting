@@ -26,8 +26,8 @@ def local_evidence(raw):
     data=json.loads(result.stdout);found=[]
     for kind in ('barcodes','texts'):
         for row in data.get(kind,[]):
-            value=re.sub(r'[\s-]','',str(row.get('text',''))).upper()
-            for cart_id in re.findall(r'(?<![A-Z0-9])(?:TT\d{7,12}|WJ\d{3,8})(?![A-Z0-9])',value):
+            value=re.sub(r'\s','',str(row.get('text',''))).upper()
+            for cart_id in re.findall(r'(?<![A-Z0-9])(?:TT\d{7,12}|WJ-?\d{3,8})(?![A-Z0-9])',value):
                 x=float(row.get('x',0));area=float(row.get('width',0))*float(row.get('height',0))
                 found.append({'id':cart_id,'confidence':float(row.get('confidence',0)),'x':x,'score':(1-abs(x-.5))*area,'kind':kind})
     return found

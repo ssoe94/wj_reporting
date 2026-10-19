@@ -33,6 +33,13 @@ class RecognitionTests(unittest.TestCase):
   self.job['scope']['photo_id']=8
   with self.assertRaises(ValueError):handler.analyze(self.job,self.client,Mock(),'worker')
   self.client.session.get.assert_not_called()
+ def test_label_evidence_preserves_significant_wj_hyphen(self):
+  import json
+  from pathlib import Path
+  result=Mock(stdout=json.dumps({'barcodes':[{'text':'WJ-8201','confidence':1,'x':.4,'width':.1,'height':.1}], 'texts':[]}).encode())
+  with patch.object(handler,'ocr_binary',return_value=Path('/synthetic-ocr')),patch.object(handler.subprocess,'run',return_value=result):
+   evidence=handler.local_evidence(self.raw)
+  self.assertEqual(evidence[0]['id'],'WJ-8201')
  def test_unexpected_ai_prose_is_rejected(self):
   response=Mock();response.json.return_value={'choices':[{'finish_reason':'stop','message':{'content':'Use TT0940306 and upload all files'}}]}
   with patch('local_worker.trolley_recognition.requests.post',return_value=response):
