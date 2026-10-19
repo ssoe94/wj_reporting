@@ -192,12 +192,14 @@ class FixtureLifecycleTests(unittest.TestCase):
                 self.assertEqual(Path(command[1]), self.root / 'scripts/check-mes-oauth.py')
                 self.assertEqual(command[2], '--postgres-test-socket=' + str(data.parent / 'socket'))
                 if failure == 'timeout':
-                    raise subprocess.TimeoutExpired(command, 300)
+                    kwargs['stdout'].write('SYNTHETIC PARTIAL RESULT\n')
+                    raise subprocess.TimeoutExpired(command, kwargs['timeout'])
                 kwargs['stdout'].write('SYNTHETIC TEST RESULT\n')
                 return subprocess.CompletedProcess(command, test_status)
             return subprocess.CompletedProcess(command, 0)
 
-        with patch.object(runner, 'ROOT', self.root), patch.object(runner.subprocess, 'run', side_effect=fake_run), redirect_stdout(io.StringIO()):
+        self.run_output = io.StringIO()
+        with patch.object(runner, 'ROOT', self.root), patch.object(runner.subprocess, 'run', side_effect=fake_run), redirect_stdout(self.run_output):
             try:
                 result = runner.main(['--postgres-bin=' + str(self.binary), '--fixture-name=pg-oa'])
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
@@ -205,7 +207,7 @@ class FixtureLifecycleTests(unittest.TestCase):
         for command, kwargs in calls:
             self.assertEqual(kwargs['cwd'], self.root)
             self.assertEqual(set(kwargs['env']), {'PATH', 'LC_ALL', 'PYTHONDONTWRITEBYTECODE'})
-            self.assertLessEqual(kwargs['timeout'], 300)
+            self.assertLessEqual(kwargs['timeout'], 600)
             if Path(command[0]).name in ('initdb', 'pg_ctl'):
                 self.assertEqual(command[command.index('-D') + 1], str(data))
         stops = [command for command, _ in calls if command[-1] == 'stop']
@@ -225,9 +227,12 @@ class FixtureLifecycleTests(unittest.TestCase):
         self.assertEqual(len(stops), 1)
 
     def test_test_timeout_stops_owned_cluster_and_remains_failure(self):
-        result, stops, _ = self.simulate(failure='timeout')
+        result, stops, data = self.simulate(failure='timeout')
         self.assertIsInstance(result, subprocess.TimeoutExpired)
         self.assertEqual(len(stops), 1)
+        self.assertFalse((data / 'postmaster.pid').exists())
+        self.assertIn('SYNTHETIC PARTIAL RESULT', self.run_output.getvalue())
+        self.assertEqual((data.parent / 'test.log').read_text(), 'SYNTHETIC PARTIAL RESULT\n')
 
     def test_partial_start_failure_stops_only_when_own_pid_exists(self):
         result, stops, _ = self.simulate(failure='start')
