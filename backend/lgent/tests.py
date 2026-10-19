@@ -292,6 +292,40 @@ class LgentTests(TestCase):
         worker=APIClient();response=worker.post(f'/api/ai/jobs/{job.pk}/fail/',{'worker_name':'test-lgent','claim_timestamp':job.claimed_at.isoformat(),'error_message':'TimeoutError'},format='json',HTTP_X_AI_WORKER_TOKEN='isolated-worker-token')
         self.assertEqual(response.status_code,200);value.refresh_from_db();self.assertEqual(value.status,'error')
 
+    def test_correct_saved_number_preserves_original_write_history(self):
+        for status in ('saved','accepted'):
+            with self.subTest(status=status):
+                value=self.photo(status,suffix=status);value.save_attempt_id='attempt-'+status;value.saved_at=timezone.now();value.save()
+                event=LgentSaveEvent.objects.create(user=self.user,photo=value,trolley_id=value.trolley_id,
+                    attempt_id=value.save_attempt_id,outcome=status)
+                target=dict(ROW,trolley_id='TT0940223')
+                with patch('lgent.client.info',return_value=target),patch('lgent.client.photo',return_value=b''),patch('lgent.client.request') as write:
+                    response=self.api.post(f'/api/lgent/photos/{value.pk}/match/',{'trolleyId':'TT0940223','confirmed':True},format='json')
+                self.assertEqual(response.status_code,200);write.assert_not_called()
+                value.refresh_from_db();event.refresh_from_db()
+                self.assertEqual(value.trolley_id,'TT0940223');self.assertEqual(value.status,'ready')
+                self.assertEqual(value.save_attempt_id,'');self.assertIsNone(value.saved_at)
+                self.assertEqual(event.trolley_id,ROW['trolley_id']);self.assertEqual(event.outcome,status)
+
+    def test_submitted_number_correction_cannot_clear_unresolved_write(self):
+        value=self.photo('uncertain');value.save_attempt_id='pending-attempt';value.save()
+        self.cart.save_attempt_id=value.save_attempt_id;self.cart.save()
+        for status in ('saving','uncertain','accepted','saved'):
+            value.status=status;value.save()
+            with patch('lgent.client.info',return_value=dict(ROW,trolley_id='TT0940223')),patch('lgent.client.photo',return_value=b''),patch('lgent.client.request') as write:
+                response=self.api.post(f'/api/lgent/photos/{value.pk}/match/',{'trolleyId':'TT0940223','confirmed':True},format='json')
+            self.assertEqual(response.status_code,409);write.assert_not_called()
+            value.refresh_from_db();self.cart.refresh_from_db()
+            self.assertEqual(value.trolley_id,ROW['trolley_id']);self.assertEqual(value.save_attempt_id,'pending-attempt')
+            self.assertEqual(self.cart.save_attempt_id,'pending-attempt')
+
+    def test_saved_number_correction_requires_new_number_and_confirmation(self):
+        value=self.photo('saved')
+        for number,confirmed in ((ROW['trolley_id'],True),('TT0940223',False)):
+            with patch('lgent.client.info') as info:
+                response=self.api.post(f'/api/lgent/photos/{value.pk}/match/',{'trolleyId':number,'confirmed':confirmed},format='json')
+            self.assertIn(response.status_code,(400,409));info.assert_not_called()
+
     def test_manual_match_cancels_outstanding_ai_job(self):
         value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db();job=value.job
         with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',return_value=b''):

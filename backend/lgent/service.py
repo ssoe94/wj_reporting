@@ -239,15 +239,27 @@ def accept_result(job,result,prompt_version):
 
 def match(user,value,trolley_id,confirmed):
     if confirmed is not True:raise client.LgError('사진과 번호가 맞는지 확인하세요.','confirmation_required',400)
-    if value.status in ('saving','saved','accepted','uncertain'):
+    if value.status in ('saving','uncertain'):
         raise client.LgError('저장을 시도한 사진은 먼저 LG에서 다시 조회하세요.','already_submitted',409)
+    correcting=value.status in ('saved','accepted')
+    if correcting and trolley_id==value.trolley_id:
+        raise client.LgError('이미 저장한 번호입니다. 다른 번호로 수정하거나 LG 결과를 재조회하세요.','same_saved_number',409)
     _,token=connection(user);row=client.info(token,trolley_id);remember(row);raw=client.photo(token,row)
     with transaction.atomic():
         # Worker completion/failure locks AiJob before its photo.
         if value.job_id:AiJob.objects.select_for_update().filter(pk=value.job_id).first()
         live=LgentPhoto.objects.select_for_update().get(pk=value.pk,user=user)
-        if live.status in ('saving','saved','accepted','uncertain') or live.updated_at!=value.updated_at:
+        if live.status in ('saving','uncertain') or live.updated_at!=value.updated_at:
             raise client.LgError('사진 처리 상태가 변경됐습니다. 다시 조회하세요.','photo_conflict',409)
+        if correcting:
+            # Keep the original external write under its original trolley in
+            # SaveEvent. A correction prepares a new target; it never undoes or
+            # repeats the previous LG write, nor releases an unresolved lease.
+            old_cart=LgentCart.objects.select_for_update().get(trolley_id=live.trolley_id)
+            if old_cart.save_attempt_id or not live.save_events.filter(attempt_id=live.save_attempt_id,
+                    trolley_id=live.trolley_id,outcome__in=('saved','accepted')).exists():
+                raise client.LgError('이전 LG 저장 결과를 먼저 확인하세요.','already_submitted',409)
+            live.save_attempt_id='';live.saved_at=None
         if live.job_id and live.job.status in ('pending','claimed','running'):
             AiJob.objects.filter(pk=live.job_id).update(status='cancelled')
             live.job=None
