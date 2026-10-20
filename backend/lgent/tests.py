@@ -13,7 +13,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from ai_core.models import AiJob
-from . import service,client,media
+from . import service,client,media,mirror
 from .models import LgentProfile,LgentCart,LgentPhoto,LgentSaveEvent
 from .security import encrypt_token,decrypt_token
 
@@ -168,12 +168,12 @@ class LgentTests(TestCase):
         self.assertEqual(response.status_code,204)
         self.assertEqual(response['Cache-Control'],'private, no-store')
 
-    def test_cached_gallery_requires_current_lg_connection(self):
+    def test_mirrored_gallery_remains_available_to_wj_viewer_after_lg_expiry(self):
         with patch('lgent.client.photo',return_value=self.raw):service.cart_image(self.user,'TT0940306',True)
         self.profile.expires_at=timezone.now()-dt.timedelta(seconds=1);self.profile.save()
         with patch('lgent.client.photo') as photo:
             response=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
-        self.assertEqual(response.status_code,409);photo.assert_not_called()
+        self.assertEqual(response.status_code,200);photo.assert_not_called()
 
     def test_gallery_failure_is_not_cached_as_missing_photo(self):
         with patch('lgent.client.photo',side_effect=client.LgError('upstream timed out')):
@@ -190,6 +190,81 @@ class LgentTests(TestCase):
         self.cart.verified_save_at=timezone.now();self.cart.photo_sha256='old-digest';self.cart.save_attempt_id='in-flight';self.cart.save()
         with patch('lgent.client.photo',return_value=self.raw):service.cart_image(self.user,'TT0940306',True)
         self.cart.refresh_from_db();self.assertIsNotNone(self.cart.verified_save_at);self.assertEqual(self.cart.save_attempt_id,'in-flight')
+
+    def test_mirror_copies_source_once_and_keeps_original_bytes(self):
+        with patch('lgent.client.photo',return_value=self.raw) as lg:
+            raw,error=mirror.copy(self.cart,'token');self.assertIsNone(error);self.assertEqual(raw,self.raw)
+            self.assertTrue(mirror.current(self.cart));self.assertEqual(media.read_mirror(self.cart.mirror_key),self.raw)
+            self.assertFalse(mirror.pending().exists())
+            mirror.copy(self.cart,'token');lg.assert_called_once()
+            self.cart=service.remember(dict(ROW,pic_url='/files/new-source.jpg'))
+            self.assertFalse(mirror.current(self.cart));self.assertTrue(mirror.pending().exists())
+            mirror.copy(self.cart,'token');self.assertEqual(lg.call_count,2)
+
+    def test_mirror_failure_preserves_metadata_and_next_cursor_continues(self):
+        from django.core import signing
+        second=service.remember(dict(ROW,trolley_id='TT0940307'))
+        cursor=signing.dumps({'user':self.user.pk,'start':timezone.now().isoformat(),'offset':30,'phase':'photos','after':''},salt='lgent-sync')
+        with patch('lgent.client.photo',return_value=self.raw),patch('lgent.media.put_mirror',side_effect=client.LgError('private failure')):
+            first=service.sync(self.user,cursor)
+        self.assertEqual(first['mirrorErrors'],1);self.assertEqual(first['remaining'],1)
+        self.cart.refresh_from_db();self.assertTrue(self.cart.mirror_error);self.assertEqual(self.cart.baseline,ROW)
+        with patch('lgent.client.photo',return_value=self.raw):last=service.sync(self.user,first['cursor'])
+        self.assertIsNone(last['cursor']);second.refresh_from_db();self.assertTrue(mirror.current(second))
+
+    def test_mirror_cannot_attach_old_source_or_overwrite_write_lease(self):
+        def changed(*args):
+            LgentCart.objects.filter(pk=self.cart.pk).update(baseline=dict(ROW,pic_url='/changed.jpg'))
+            return f'lgent/lg-mirror/TT094/TT0940306/{self.digest}.jpg'
+        with patch('lgent.client.photo',return_value=self.raw),patch('lgent.media.put_mirror',side_effect=changed):
+            _,error=mirror.copy(self.cart,'token')
+        self.assertEqual(error.code,'mirror_source_changed');self.cart.refresh_from_db();self.assertFalse(self.cart.mirror_key)
+        self.cart.save_attempt_id='business-write';self.cart.save()
+        with patch('lgent.client.photo') as lg:_,error=mirror.copy(self.cart,'token')
+        self.assertEqual(error.code,'mirror_pending');lg.assert_not_called()
+
+    def test_cloud_mirror_is_authenticated_and_time_limited_with_fixed_thumbnail(self):
+        from urllib.parse import urlsplit,parse_qs
+        with override_settings(LGENT_FORCE_LOCAL_MEDIA=False,CLOUDINARY_STORAGE={'CLOUD_NAME':'synthetic','API_KEY':'synthetic-key','API_SECRET':'never-output-this-secret'}):
+            public_id=f'lgent/lg-mirror/TT094/TT0940306/{self.digest}'
+            with patch('cloudinary.uploader.upload',return_value={'public_id':public_id}) as put:
+                key=media.put_mirror(self.raw,'TT0940306',self.digest)
+            self.assertEqual(put.call_args.kwargs['type'],'authenticated');self.assertFalse(put.call_args.kwargs['overwrite'])
+            self.assertEqual(put.call_args.args[0].getvalue(),self.raw)
+            urls=media.mirror_urls(key);query=parse_qs(urlsplit(urls['thumbnailUrl']).query)
+            self.assertEqual(query['type'],['authenticated']);self.assertEqual(query['transformation'],[media.THUMB_TRANSFORMATION])
+            self.assertLessEqual(urls['imageExpiresAt']-int(time.time()),3600);self.assertGreaterEqual(urls['imageExpiresAt']-int(time.time()),2695)
+            self.assertNotIn('never-output-this-secret',urls['thumbnailUrl'])
+            self.assertNotIn('transformation',parse_qs(urlsplit(urls['imageUrl']).query))
+
+    def test_png_mirror_round_trip_preserves_original_format(self):
+        out=io.BytesIO();Image.new('RGB',(20,30),'red').save(out,'PNG');raw=out.getvalue()
+        key=media.put_mirror(raw,'TT0940306',hashlib.sha256(raw).hexdigest())
+        self.assertTrue(key.endswith('.png'));self.assertEqual(media.read_mirror(key),raw)
+
+    def test_verified_save_and_reconcile_reuse_uploaded_asset_without_mirror_write(self):
+        value=self.photo()
+        with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',side_effect=[b'',self.raw]),patch('lgent.client.request',return_value={'typeCode':True}),patch('lgent.media.put_mirror') as put:
+            result=service.save_one(self.user,value.pk)
+        self.assertEqual(result['status'],'saved');put.assert_not_called();self.cart.refresh_from_db()
+        self.assertEqual(self.cart.mirror_key,value.storage_key);self.assertEqual(self.cart.mirror_sha256,value.sha256)
+        value.status='uncertain';value.save()
+        with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',return_value=self.raw),patch('lgent.media.put_mirror') as put:
+            self.assertTrue(service.reconcile(self.user,value.pk)['verified'])
+        put.assert_not_called()
+
+    def test_live_preflight_never_trusts_mirror_bytes(self):
+        value=self.photo()
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',return_value=b'upstream changed'),patch('lgent.media.read_mirror') as cached,patch('lgent.client.request') as write:
+            with self.assertRaises(client.LgError) as error:service.save_one(self.user,value.pk)
+        self.assertEqual(error.exception.code,'lg_conflict');cached.assert_not_called();write.assert_not_called()
+
+    def test_mirror_download_uses_bounded_timeout(self):
+        response=Mock(status_code=200);response.iter_content.return_value=[self.raw]
+        with patch('lgent.client.requests.get',return_value=response) as get,patch('lgent.client.time.monotonic',side_effect=[0,15]):
+            with self.assertRaises(client.LgError) as error:client.photo('token',ROW,timeout=(3,8),max_seconds=14)
+        self.assertEqual(error.exception.code,'mirror_timeout');self.assertEqual(get.call_args.kwargs['timeout'],(3,8));response.close.assert_called_once()
 
     def test_foreign_cached_metadata_is_revalidated_before_read(self):
         self.cart.baseline=dict(ROW,supplier_id='OTHER');self.cart.save()
@@ -331,7 +406,9 @@ class LgentTests(TestCase):
         with self.assertRaises(client.LgError):service.sync(self.other,result['cursor'])
         with patch('lgent.client.info',return_value=copy.deepcopy(ROW)):
             final=service.sync(self.user,result['cursor'])
-        self.assertEqual(final['remaining'],0);self.assertIsNone(final['cursor'])
+        self.assertEqual(final['remaining'],0);self.assertIsNotNone(final['cursor'])
+        with patch('lgent.client.photo',return_value=self.raw):final=service.sync(self.user,final['cursor'])
+        self.assertEqual(final['phase'],'photos');self.assertIsNone(final['cursor'])
 
     def test_foreign_supplier_recognition_is_review_and_removed_from_fleet(self):
         value=self.photo('recognized')
@@ -429,6 +506,23 @@ import threading,time
 
 @skipUnless(connection.vendor=='postgresql','PostgreSQL row-lock acceptance only')
 class LgentPostgresLockTests(TransactionTestCase):
+    def test_mirror_claim_is_nonblocking_across_connections_and_released(self):
+        started=threading.Event();release=threading.Event();state={}
+        def collector():
+            try:
+                with mirror.claim('TT0940306') as acquired:
+                    state['acquired']=acquired;started.set();release.wait(5)
+            except BaseException as error:state['error']=error;started.set()
+            finally:connections.close_all()
+        thread=threading.Thread(target=collector,daemon=True);thread.start()
+        try:
+            self.assertTrue(started.wait(3));self.assertTrue(state.get('acquired'))
+            with mirror.claim('TT0940306') as acquired:self.assertFalse(acquired)
+        finally:release.set();thread.join(5)
+        self.assertFalse(thread.is_alive())
+        if 'error' in state:raise state['error']
+        with mirror.claim('TT0940306') as acquired:self.assertTrue(acquired)
+
     def test_manual_match_and_archive_follow_worker_lock_order(self):
         user=get_user_model().objects.create_user(username='pg-operator',is_staff=True)
         LgentProfile.objects.create(user=user,encrypted_token=encrypt_token('synthetic-token'),lg_user_id='pg',current_company='LGENT',expires_at=timezone.now()+dt.timedelta(hours=1))

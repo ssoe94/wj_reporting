@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import json
 import re
+import time
 from urllib.parse import quote,urlsplit
 import requests
 from django.utils import timezone
@@ -70,7 +71,8 @@ def info(token,trolley_id):
     return row
 
 
-def photo(token,row):
+def photo(token,row,*,timeout=(5,18),max_seconds=None):
+    deadline=time.monotonic()+max_seconds if max_seconds else None
     encoded=row.get('file_stream_bytes')
     if isinstance(encoded,str) and encoded and len(encoded)<=7*1024*1024:
         try:
@@ -78,6 +80,7 @@ def photo(token,row):
             if raw.startswith(b'\xff\xd8\xff') or raw.startswith(b'\x89PNG\r\n\x1a\n'):return raw
         except ValueError:pass
     path=row.get('pic_url') or ''
+    if not isinstance(path,str) or len(path)>4096:raise LgError('등록 사진 주소 형식을 확인할 수 없습니다.')
     parsed=urlsplit(path)
     if parsed.netloc and (parsed.hostname not in ('dx-view.lg.com.cn','156.147.197.20') or parsed.port not in (None,8000)):
         raise LgError('등록 사진 주소를 확인할 수 없습니다.')
@@ -86,10 +89,11 @@ def photo(token,row):
         raise LgError('등록 사진 주소 형식이 올바르지 않습니다.')
     try:
         response=requests.get(BASE+quote(parsed.path,safe='/%:@-_.~'),headers={'Authorization':'Bearer '+token},
-                              timeout=(5,18),allow_redirects=False,stream=True)
+                              timeout=timeout,allow_redirects=False,stream=True)
         if response.status_code!=200:raise LgError('LG 사진을 읽지 못했습니다.')
         data=bytearray()
         for block in response.iter_content(65536):
+            if deadline and time.monotonic()>deadline:raise LgError('LG 사진 복제 시간이 초과됐습니다.','mirror_timeout',504)
             data.extend(block)
             if len(data)>5*1024*1024:raise LgError('LG 사진 크기가 너무 큽니다.')
         raw=bytes(data)

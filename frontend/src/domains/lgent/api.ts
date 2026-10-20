@@ -4,8 +4,8 @@ export const getWorkspace=async(signal?:AbortSignal)=> (await api.get<Workspace>
 export const connectLg=async(userId:string,password:string)=>api.post('/lgent/login/',{userId,password},{timeout:120000});
 export const disconnectLg=async()=>api.post('/lgent/logout/',{});
 export const setThreshold=async(staleDays:number)=>api.post('/lgent/settings/',{staleDays});
-type SyncReply={discovered:number;remaining:number;cursor:string|null;errors:number};
-export async function syncFleet(progress:(done:number,total:number)=>void){let cursor:string|null=null;let count=0,errors=0;do{const result:{data:SyncReply}=await api.post<SyncReply>('/lgent/sync/',cursor?{cursor}:{},{timeout:45000});cursor=result.data.cursor;count=result.data.discovered;errors+=result.data.errors;progress(count-result.data.remaining,count);}while(cursor);return {count,errors};}
+type SyncReply={discovered:number;remaining:number;cursor:string|null;errors:number;mirrorErrors?:number;phase?:string};
+export async function syncFleet(progress:(done:number,total:number,phase?:string)=>void){let cursor:string|null=null;let count=0,errors=0,mirrorErrors=0;do{const result:{data:SyncReply}=await api.post<SyncReply>('/lgent/sync/',cursor?{cursor}:{},{timeout:45000});cursor=result.data.cursor;count=result.data.discovered;errors+=result.data.errors;mirrorErrors+=result.data.mirrorErrors||0;progress(count-result.data.remaining,count,result.data.phase);}while(cursor);return {count,errors,mirrorErrors};}
 export const lookupCart=async(trolleyId:string)=>(await api.post('/lgent/lookup/',{trolleyId})).data;
 async function image(path:string,signal?:AbortSignal,full=false,version?:string){
  const response=await api.get<Blob>(path,{signal,responseType:'blob',params:{...(full?{}:{size:'thumbnail'}),v:version}});
