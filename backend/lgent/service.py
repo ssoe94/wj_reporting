@@ -54,7 +54,7 @@ def login(user,user_id,password):
     record=profile(user,True)
     record.encrypted_token=encrypt_token(token);record.lg_user_id=str(info.get('userId') or user_id.strip())[:160]
     record.lg_user_name=str(info.get('userName') or '')[:160];record.current_company=company
-    record.menu_permission=permission;record.expires_at=timezone.now()+dt.timedelta(hours=1);record.save()
+    record.menu_permission=permission;record.expires_at=client.session_expiry(token);record.save()
     return {'connected':True}
 
 

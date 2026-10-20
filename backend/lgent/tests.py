@@ -3,6 +3,7 @@ import copy
 import datetime as dt
 import hashlib
 import io
+import json
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +85,24 @@ class LgentTests(TestCase):
         self.assertNotIn('token',response.content.decode());self.assertNotIn('password',response.content.decode())
         payload=upstream.call_args_list[0].kwargs['payload'];self.assertEqual(payload['UserId'],'id');self.assertEqual(payload['UserPassword'],'secret-password')
         self.profile.refresh_from_db();self.assertEqual(decrypt_token(self.profile.encrypted_token),'new-token')
+
+    def test_lg_session_follows_token_exp_with_cap_and_fallback(self):
+        def jwt(exp):
+            body=base64.urlsafe_b64encode(json.dumps({'exp':exp}).encode()).decode().rstrip('=')
+            return 'eyJhbGciOiJIUzI1NiJ9.'+body+'.signature'
+        now=timezone.now();stamp=int(now.timestamp())
+        self.assertEqual(client.session_expiry('opaque-token',now),now+dt.timedelta(hours=1))
+        self.assertEqual(client.session_expiry(jwt(stamp-60),now),now+dt.timedelta(hours=1))
+        self.assertEqual(client.session_expiry(jwt('bad'),now),now+dt.timedelta(hours=1))
+        three=client.session_expiry(jwt(stamp+3*3600),now)
+        self.assertLess(abs((three-(now+dt.timedelta(hours=3)-dt.timedelta(minutes=2))).total_seconds()),1)
+        self.assertEqual(client.session_expiry(jwt(stamp+48*3600),now),now+dt.timedelta(hours=8))
+        responses=[{'token':jwt(stamp+3*3600),'user_info':{'userId':'id','userName':'Name'}},'LGENT',
+                   [{'orgCode':'ENT'}],[{'supplier_code':'TT094'}],'RX']
+        with patch('lgent.client.request',side_effect=responses):
+            self.assertEqual(self.api.post('/api/lgent/login/',{'userId':'id','password':'pw'},format='json').status_code,200)
+        self.profile.refresh_from_db()
+        self.assertGreater(self.profile.expires_at,timezone.now()+dt.timedelta(hours=2,minutes=50))
 
     def test_foreign_org_login_fails_without_saving_token(self):
         with patch('lgent.client.request',side_effect=[{'token':'new-token','user_info':{}},'LGENT',[{'orgCode':'OTHER'}]]):
