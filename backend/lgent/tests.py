@@ -551,6 +551,16 @@ class LgentTests(TestCase):
         with patch('lgent.mirror.copy_batch',return_value=(self.cart.trolley_id,1,0)):final=service.sync(self.user,final['photoCursor'])
         self.assertEqual(final['phase'],'photos');self.assertIsNone(final['cursor'])
 
+    def test_workspace_omits_unchanged_fleet_for_matching_version(self):
+        first=self.api.get('/api/lgent/workspace/').data
+        self.assertTrue(first['fleet']);version=first['fleetVersion']
+        same=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertIsNone(same['fleet']);self.assertEqual(same['fleetVersion'],version);self.assertIn('queue',same)
+        self.assertTrue(self.api.get('/api/lgent/workspace/',{'fleet':'stale'}).data['fleet'])
+        self.cart.grade='A';self.cart.save()
+        changed=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertTrue(changed['fleet']);self.assertNotEqual(changed['fleetVersion'],version)
+
     def test_foreign_supplier_recognition_is_review_and_removed_from_fleet(self):
         value=self.photo('recognized')
         with patch('lgent.client.info',side_effect=client.LgError('foreign','foreign_supplier',403)):

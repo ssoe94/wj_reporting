@@ -26,7 +26,7 @@ class LgentView(APIView):
 
 
 class WorkspaceView(LgentView):
-    def get(self,request):return Response(service.workspace(request.user))
+    def get(self,request):return Response(service.workspace(request.user,request.query_params.get('fleet')))
 
 
 class ShipmentsView(LgentView):
