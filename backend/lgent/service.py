@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from ai_core.models import AiJob
-from . import client,media
+from . import client,media,mirror
 from .models import LgentProfile,LgentCart,LgentPhoto,LgentSaveEvent
 from .security import encrypt_token,decrypt_token,can_edit
 
@@ -77,11 +77,13 @@ def public_cart(cart,stale_days=30):
     elif cart.photo_file_at:stamp,source=cart.photo_file_at,'photo_file'
     else:stamp,source=None,'unknown'
     days=max(0,(timezone.now()-stamp).days) if stamp else None
-    return {'trolleyId':cart.trolley_id,'grade':cart.grade,'displayAt':stamp.astimezone(client.TZ).isoformat() if stamp else '',
+    result={'trolleyId':cart.trolley_id,'grade':cart.grade,'displayAt':stamp.astimezone(client.TZ).isoformat() if stamp else '',
             'dateSource':source,'ageDays':days,'alert':'unknown' if days is None else 'stale' if days>=stale_days else 'fresh',
             'hasPhoto':bool(cart.baseline.get('pic_url')),'photoKnown':cart.baseline.get('supplier_id')=='TT094',
             'photoVersion':cart_photo_version(cart),'lastHistoryAt':cart.last_history_at,
             'checkedAt':cart.checked_at.isoformat() if cart.checked_at else ''}
+    if mirror.current(cart):result.update(media.mirror_urls(cart.mirror_key))
+    return result
 
 
 def public_photo(value):
@@ -120,11 +122,20 @@ def sync(user,cursor=None):
         try:
             data=signing.loads(cursor,salt='lgent-sync',max_age=1800)
             if data['user']!=user.pk:raise ValueError()
-            cutoff=dt.datetime.fromisoformat(data['start']);offset=int(data['offset'])
+            cutoff=dt.datetime.fromisoformat(data['start']);offset=int(data['offset']);phase=data.get('phase','metadata');after=data.get('after','')
             if not 0<=offset<=30:raise ValueError()
+            if phase not in ('metadata','photos') or not isinstance(after,str) or len(after)>64:raise ValueError()
         except (ValueError,KeyError,signing.BadSignature):raise client.LgError('동기화를 처음부터 다시 실행하세요.','invalid_cursor',400)
     else:
-        cutoff=timezone.now();offset=0
+        cutoff=timezone.now();offset=0;phase='metadata';after=''
+    if phase=='photos':
+        targets=mirror.pending().filter(trolley_id__gt=after).order_by('trolley_id')
+        carts=list(targets[:5]);last,processed,errors=mirror.copy_batch(carts,token)
+        last=last or after
+        remaining=mirror.pending().filter(trolley_id__gt=last).count()
+        return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':processed,
+            'remaining':remaining,'errors':0,'mirrorErrors':errors,'phase':'photos',
+            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':last},salt='lgent-sync') if remaining else None}
     if offset<30:
         end=cutoff.astimezone(client.TZ).date()
         days=[(end-dt.timedelta(days=i)).isoformat() for i in range(offset,min(offset+3,30))]
@@ -158,8 +169,10 @@ def sync(user,cursor=None):
             # cannot make the cursor loop forever. Its business data is untouched.
             cart.checked_at=timezone.now();cart.save(update_fields=['checked_at','supplier_code','updated_at'])
     remaining=LgentCart.objects.filter(supplier_code='TT094').filter(Q(checked_at__isnull=True)|Q(checked_at__lt=cutoff)).count()
+    photos=mirror.pending().count() if not remaining else 0
     return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':len(targets),'remaining':remaining,'errors':errors,
-            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync') if remaining else None}
+            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync') if remaining else None,
+            'photoRemaining':photos,'photoCursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':''},salt='lgent-sync') if photos else None}
 
 
 def lookup(user,trolley_id):
@@ -179,8 +192,9 @@ def cart_thumbnail_key(cart):
 
 def cached_cart_version(user,trolley_id):
     # Local validation only: never perform an upstream read to answer a 304.
-    connection(user);client.code(trolley_id)
+    client.code(trolley_id)
     cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
+    if not cart or not mirror.current(cart):connection(user)
     row=cart.baseline if cart else {}
     if (row.get('supplier_id')=='TT094' and row.get('com_code') in ('LGENT','LGETA')
         and row.get('trolley_id')==trolley_id and row.get('org_code') and row.get('pic_url')):
@@ -189,8 +203,21 @@ def cached_cart_version(user,trolley_id):
 
 
 def cart_image(user,trolley_id,thumbnail=False):
-    _,token=connection(user);client.code(trolley_id)
+    client.code(trolley_id)
     cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
+    mirror_failed=False
+    if cart and mirror.current(cart):
+        key=cart_thumbnail_key(cart)
+        cached=cache.get(key) if thumbnail else None
+        if isinstance(cached,bytes):return cached,cart_photo_version(cart)
+        try:
+            raw=media.read_mirror(cart.mirror_key)
+            if thumbnail:raw=media.thumbnail(raw);cache.set(key,raw,900)
+            return raw,cart_photo_version(cart)
+        except client.LgError:
+            mirror_failed=True
+            LgentCart.objects.filter(pk=cart.pk,mirror_key=cart.mirror_key).update(mirror_error='비공개 복제 사진 조회 실패')
+    _,token=connection(user)
     # The workspace already holds supplier-verified LG metadata. Re-fetching
     # cart/info for every thumbnail doubles slow upstream reads and DB writes.
     row=cart.baseline if cart else {}
@@ -200,7 +227,12 @@ def cart_image(user,trolley_id,thumbnail=False):
     if thumbnail:
         cached=cache.get(key)
         if isinstance(cached,bytes):return cached,cart_photo_version(cart)
-    raw=client.photo(token,row)
+    raw,error=mirror.copy(cart,token,force=mirror_failed) if row.get('pic_url') else (b'',None)
+    if raw is None:
+        if error and error.code=='mirror_pending':raw=client.photo(token,row)
+        elif error:raise error
+        else:raw=media.read_mirror(cart.mirror_key)
+    key=cart_thumbnail_key(cart)
     digest=hashlib.sha256(raw).hexdigest() if raw else ''
     if cart.verified_save_at and cart.photo_sha256 and digest!=cart.photo_sha256:
         # LG can replace bytes at the same URL. Invalidate only the snapshot
@@ -365,7 +397,7 @@ def save_one(user,photo_id):
             photo_verified=hashlib.sha256(after_photo).hexdigest()==value.sha256
             cart=remember(after)
             if info_verified and photo_verified:
-                cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256;cart.save()
+                cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256;mirror.attach_upload(cart,value,after);cart.save()
     except client.LgError:pass
     value.status='saved' if info_verified and photo_verified else 'accepted' if accepted else 'uncertain'
     value.note='LG 저장·재조회 일치 확인' if value.status=='saved' else 'LG에서 사진과 저장 결과를 다시 확인하세요. 자동 재전송하지 않습니다.'
@@ -395,7 +427,7 @@ def reconcile(user,photo_id):
         if live.save_attempt_id!=value.save_attempt_id or (cart.save_attempt_id and cart.save_attempt_id!=value.save_attempt_id):
             raise client.LgError('다른 저장이 진행 중입니다. 다시 조회하세요.','photo_conflict',409)
         live.status='saved';live.saved_at=timezone.now();live.note='LG 결과 재조회·사진 일치 확인';live.save()
-        cart=remember(row);cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256
+        cart=remember(row);cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256;mirror.attach_upload(cart,live,row)
         cart.save_attempt_id='';cart.save_started_at=None;cart.save()
         LgentSaveEvent.objects.filter(attempt_id=value.save_attempt_id,photo=live).update(outcome='saved',info_verified=True,photo_verified=True)
     return {'id':value.pk,'status':'saved','verified':True}

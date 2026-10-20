@@ -26,6 +26,10 @@ django.setup()
 from django.urls import path,include
 urls=types.ModuleType('isolated_lgent_urls');urls.urlpatterns=[path('api/lgent/',include('lgent.urls')),path('api/ai/',include('ai_core.urls'))];sys.modules[urls.__name__]=urls
 from django.core.management import call_command
+if '--mirror-benchmark' in sys.argv:
+ from lgent_mirror_benchmark import run
+ run(root)
+ raise SystemExit(0)
 if '--migration-check' in sys.argv:
  call_command('makemigrations','lgent','ai_core',check=True,dry_run=True);raise SystemExit(0)
 if '--makemigrations' in sys.argv:
@@ -61,7 +65,7 @@ if preview:
   if code not in rows:raise client.LgError('SYNTHETIC not found','cart_not_found',404)
   return rows[code]
  client.info=fake_info
- client.photo=lambda token,row:images.get(row['trolley_id'],b'')
+ client.photo=lambda token,row,**kwargs:images.get(row['trolley_id'],b'')
  def blocked(*args,**kwargs):raise client.LgError('SYNTHETIC PREVIEW: external LG network disabled')
  client.request=blocked
  print('SYNTHETIC LGENT preview only. No production DB, no LG network.',flush=True)
