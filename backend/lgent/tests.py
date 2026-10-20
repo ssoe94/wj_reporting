@@ -302,7 +302,7 @@ class LgentTests(TestCase):
             self.assertEqual(put.call_args.args[0].getvalue(),self.raw)
             urls=media.mirror_urls(key);thumb=urlsplit(urls['thumbnailUrl'])
             self.assertEqual(thumb.hostname,'res.cloudinary.com');self.assertEqual(thumb.scheme,'https')
-            self.assertIn('/image/authenticated/s--',thumb.path);self.assertIn(media.THUMB_TRANSFORMATION,thumb.path)
+            self.assertIn('/image/authenticated/s--',thumb.path);self.assertIn('/'+media.THUMB_TRANSFORMATION+'/',thumb.path);self.assertNotIn('/t_',thumb.path)
             self.assertFalse(thumb.query);self.assertNotIn('imageExpiresAt',urls)
             self.assertNotIn('never-output-this-secret',str(urls))
             self.assertNotIn(media.THUMB_TRANSFORMATION,urls['imageUrl'])

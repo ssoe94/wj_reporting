@@ -135,7 +135,9 @@ def mirror_urls(key):
     public_id,extension=mirror_ref(key)
     if not configured():return {}
     def url(thumbnail=False):
-        options={'transformation':THUMB_TRANSFORMATION} if thumbnail else {}
+        # A string `transformation` is a NAMED transformation (t_...); pass the
+        # chain raw so Cloudinary applies w_420,c_limit,... instead of a 400.
+        options={'raw_transformation':THUMB_TRANSFORMATION} if thumbnail else {}
         return cloudinary.utils.cloudinary_url(public_id,type='authenticated',sign_url=True,
             format=extension,**options,**_cloud_options())[0]
     return {'thumbnailUrl':url(True),'imageUrl':url()}
