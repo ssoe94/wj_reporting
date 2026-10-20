@@ -105,3 +105,12 @@ class ShipmentTests(TestCase):
   self.assertNotIn('items',value['orders'][0]);self.assertNotIn('material',value['records'][0]);self.assertNotIn('creator',value['records'][0])
   self.assertLess(len(str(value)),5000)
   self.assertEqual(overview(self.user,PARAMS)['rows'][0]['trolleyId'],'TT0940367');self.assertEqual(mes.call_count,2)
+ @patch('lgent.shipments._mes')
+ def test_new_scans_after_read_snapshot_cannot_shift_the_plan_record_cohort(self,mes):
+  from django.utils import timezone
+  start=timezone.now()
+  mes.side_effect=[self.response([ORDER]),self.response([{**RECORD,'createTime':'2099-01-01T12:00:00+08:00'}])]
+  result=overview(self.user,PARAMS)
+  self.assertLessEqual(mes.call_args.args[0]['createdAtTill'],int(timezone.now().timestamp()*1000))
+  self.assertGreaterEqual(mes.call_args.args[0]['createdAtTill'],int(start.timestamp()*1000))
+  self.assertEqual(result['rows'][0]['recordCount'],0)

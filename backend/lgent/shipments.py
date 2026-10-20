@@ -105,6 +105,10 @@ def _source(start, end, mode):
     since = dt.datetime.combine(start, dt.time.min, TZ)
     until = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, TZ)
     deadline = monotonic() + 22
+    # Freeze the upper creation bound while paginating active loading records.
+    # New scans belong to the next refresh, rather than shifting page offsets.
+    snapshot = timezone.now()
+    snapshot_ms = int(snapshot.timestamp() * 1000)
     orders = []
     if mode == 'plan':
         orders = _pages({'planAtFrom': int(since.timestamp()*1000), 'planAtTill': int(until.timestamp()*1000)-1}, False, deadline)
@@ -114,13 +118,14 @@ def _source(start, end, mode):
         orders = [row for row in orders if (stamp := _stamp(row.get('planAt') or row.get('planTime'))) and since <= stamp < until]
         codes = sorted({_code(row) for row in orders if _code(row)})
         # No unbounded record scan. Empty plan cohort is a complete empty result.
-        records = _pages({'outboundOrderCodes': codes, 'bizType': [1]}, True, deadline) if codes else []
-        records = [row for row in records if str(row.get('outboundOrderCode') or '') in codes]
+        records = _pages({'outboundOrderCodes': codes, 'bizType': [1], 'createdAtTill': snapshot_ms}, True, deadline) if codes else []
+        records = [row for row in records if str(row.get('outboundOrderCode') or '') in codes
+                   and (stamp := _stamp(row.get('createTime'))) and stamp <= snapshot]
     else:
-        records = _pages({'createdAtFrom': int(since.timestamp()*1000), 'createdAtTill': int(until.timestamp()*1000)-1, 'bizType': [1]}, True, deadline)
+        records = _pages({'createdAtFrom': int(since.timestamp()*1000), 'createdAtTill': min(int(until.timestamp()*1000)-1, snapshot_ms), 'bizType': [1]}, True, deadline) if since <= snapshot else []
         records = [row for row in records if _company({'code': row.get('outboundOrderCode')})
-                   and (stamp := _stamp(row.get('createTime'))) and since <= stamp < until]
-    value = {'orders': orders, 'records': records, 'fetchedAt': timezone.now().isoformat()}
+                   and (stamp := _stamp(row.get('createTime'))) and since <= stamp < until and stamp <= snapshot]
+    value = {'orders': orders, 'records': records, 'fetchedAt': snapshot.isoformat()}
     cache.set(key, value, 60)
     return copy.deepcopy(value)
 
