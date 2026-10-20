@@ -296,10 +296,10 @@ def analyze(user,ids):
 
 def accept_result(job,result,prompt_version):
     if prompt_version!=PROMPT:raise ValueError('Unsupported trolley recognition prompt.')
-    primary=str(result.get('primary_id') or '').strip()
+    primary=str(result.get('primary_id') or '').strip().upper()
     evidence=result.get('local_evidence') or []
     if not isinstance(evidence,list) or len(evidence)>100:raise ValueError('Invalid local label evidence.')
-    valid=[item for item in evidence if isinstance(item,dict) and isinstance(item.get('id'),str) and client.ID.fullmatch(item['id'])
+    valid=[{**item,'id':item['id'].upper()} for item in evidence if isinstance(item,dict) and isinstance(item.get('id'),str) and client.ID.fullmatch(item['id'])
            and type(item.get('confidence')) in (int,float) and .8<=item['confidence']<=1]
     agreed=client.ID.fullmatch(primary) is not None and result.get('uncertain') is False and any(item['id']==primary for item in valid)
     known=set(LgentCart.objects.filter(supplier_code='TT094').values_list('trolley_id',flat=True))
@@ -309,7 +309,8 @@ def accept_result(job,result,prompt_version):
         agreed=agreed and primary in known
         recognized=sorted(set(recognized)&known)
         if primary not in known:
-            suggestions=recognition.candidates(primary,known) if client.ID.fullmatch(primary) else []
+            if len(recognized)==1:suggestions=recognized
+            elif not recognized:suggestions=recognition.candidates(primary,known) if client.ID.fullmatch(primary) else []
             recognized=suggestions
     value=LgentPhoto.objects.select_for_update().filter(job=job,pk=job.scope.get('photo_id'),user_id=job.created_by_id,archived_at__isnull=True).first()
     if not value:raise ValueError('The trolley photo no longer belongs to this job.')

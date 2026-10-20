@@ -407,6 +407,29 @@ class LgentTests(TestCase):
         self.assertEqual(value.status,'recognized');self.assertFalse(result['uncertain'])
         self.assertEqual(value.recognized_ids,['TT0940306'])
 
+    def test_recognition_unique_known_evidence_precedes_one_edit_candidate(self):
+        service.remember(dict(ROW,trolley_id='TT0940223'))
+        value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
+        evidence=[{'id':'TT0940223','confidence':.8},{'id':'TT0940223','confidence':1},
+                  {'id':'TT0940306','confidence':.79},{'id':'TT094O306','confidence':1}]
+        with patch('lgent.recognition.candidates') as fuzzy,patch('lgent.client.info') as info:
+            result=service.accept_result(value.job,{'primary_id':'TT094O306','uncertain':False,'local_evidence':evidence},service.PROMPT)
+            fuzzy.assert_not_called();info.assert_not_called()
+        value.refresh_from_db()
+        self.assertEqual(value.status,'review');self.assertTrue(result['uncertain'])
+        self.assertEqual(value.trolley_id,'TT094O306');self.assertEqual(value.recognized_ids,['TT0940223'])
+        self.assertIn('TT094O306 → TT0940223?',value.note)
+
+    def test_recognition_uppercases_primary_and_evidence_before_fleet_comparison(self):
+        value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
+        evidence=[{'id':'tt0940306','confidence':.8}]
+        result=service.accept_result(value.job,{'primary_id':'tt0940306','uncertain':False,'local_evidence':evidence},service.PROMPT)
+        value.refresh_from_db()
+        self.assertEqual(value.status,'recognized');self.assertFalse(result['uncertain'])
+        self.assertEqual(value.trolley_id,'TT0940306');self.assertEqual(value.recognized_ids,['TT0940306'])
+        self.assertEqual(result['primary_id'],'TT0940306');self.assertEqual(result['local_evidence'][0]['id'],'TT0940306')
+        self.assertEqual(evidence[0]['id'],'tt0940306')
+
     def test_recognition_one_edit_proposes_single_known_number_without_confirming(self):
         value,result=self.accept_number('TT094O306')
         self.assertEqual(value.status,'review');self.assertTrue(result['uncertain'])
