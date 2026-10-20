@@ -97,3 +97,11 @@ class ShipmentTests(TestCase):
   response=self.api.get('/api/lgent/shipments/',PARAMS)
   self.assertEqual(response.status_code,403);self.assertEqual(response.data['code'],'mes_permission_denied')
   self.assertNotIn('private',str(response.data))
+ @patch('lgent.shipments._mes')
+ def test_read_cache_omits_unneeded_large_material_and_operator_payloads(self,mes):
+  from .shipments import _source
+  mes.side_effect=[self.response([{**ORDER,'items':[{'notes':'x'*100000}]}]),self.response([{**RECORD,'material':{'notes':'x'*100000},'creator':{'name':'not-needed'}}])]
+  value=_source(dt.date(2026,10,20),dt.date(2026,10,22),'plan')
+  self.assertNotIn('items',value['orders'][0]);self.assertNotIn('material',value['records'][0]);self.assertNotIn('creator',value['records'][0])
+  self.assertLess(len(str(value)),5000)
+  self.assertEqual(overview(self.user,PARAMS)['rows'][0]['trolleyId'],'TT0940367');self.assertEqual(mes.call_count,2)

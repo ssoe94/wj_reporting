@@ -77,7 +77,15 @@ def _pages(filters, records, deadline):
             if not identity or identity in seen:
                 raise ValueError('MES duplicate/missing source identity')
             seen.add(identity)
-        rows.extend(batch)
+        # Keep only the modal contract, not large material/operator/custom-field
+        # trees. Even a maximum-size range remains a small cache entry.
+        fields = ('id', 'outboundOrderCode', 'qrCode', 'createTime', 'bizType', 'executeType') if records else (
+            'id', 'code', 'outboundOrderCode', 'customer', 'planAt', 'planTime', 'bizType', 'bizStatus', 'status', 'cancelled', 'canceled')
+        for row in batch:
+            slim = {key: row[key] for key in fields if key in row}
+            if isinstance(slim.get('customer'), dict):
+                slim['customer'] = {'code': slim['customer'].get('code')}
+            rows.append(slim)
         if expected is not None and len(rows) >= expected:
             if len(rows) != expected:
                 raise ValueError('MES inconsistent pagination')
