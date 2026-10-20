@@ -3,7 +3,6 @@ import hashlib
 import io
 import time
 import re
-from urllib.parse import urlencode
 from urllib3.util import Timeout
 from threading import BoundedSemaphore
 from pathlib import Path
@@ -104,7 +103,7 @@ def mirror_ref(key):
     return match.group(1),match.group(2)
 
 
-def put_mirror(raw,trolley_id,digest):
+def put_mirror(raw,trolley_id,digest,*,max_seconds=15):
     from .client import code
     code(trolley_id)
     if not raw or len(raw)>MIRROR_MAX_BYTES or hashlib.sha256(raw).hexdigest()!=digest:
@@ -120,7 +119,7 @@ def put_mirror(raw,trolley_id,digest):
     if configured():
         try:
             value=cloudinary.uploader.upload(io.BytesIO(raw),public_id=public_id,resource_type='image',
-                type='authenticated',overwrite=False,unique_filename=False,timeout=Timeout(total=15,connect=3,read=12),**_cloud_options())
+                type='authenticated',overwrite=False,unique_filename=False,timeout=Timeout(total=max_seconds,connect=min(3,max_seconds),read=min(12,max_seconds)),**_cloud_options())
             if value.get('public_id')!=public_id:raise ValueError()
         except Exception:raise LgError('사진 복제 저장이 지연되고 있습니다.','mirror_unavailable',503)
     else:
@@ -135,18 +134,12 @@ def put_mirror(raw,trolley_id,digest):
 def mirror_urls(key):
     public_id,extension=mirror_ref(key)
     if not configured():return {}
-    # Stable within a 15-minute bucket; remaining validity is 45–60 minutes.
-    stamp=int(time.time())//900*900;expires=stamp+3600
-    options=_cloud_options()
     def url(thumbnail=False):
-        params={'timestamp':stamp,'public_id':public_id,'format':extension,'type':'authenticated',
-                'expires_at':expires,'attachment':False}
-        if thumbnail:params['transformation']=THUMB_TRANSFORMATION
-        # REST supports transformation; the Python private_download_url helper
-        # currently omits it. Sign the complete, documented download parameters.
-        signed=cloudinary.utils.sign_request(params,options)
-        return cloudinary.utils.cloudinary_api_url('download',resource_type='image',**options)+'?'+urlencode(signed)
-    return {'thumbnailUrl':url(True),'imageUrl':url(),'imageExpiresAt':expires}
+        options={'transformation':THUMB_TRANSFORMATION} if thumbnail else {}
+        return cloudinary.utils.cloudinary_url(public_id,type='authenticated',sign_url=True,
+            format=extension,**options,**_cloud_options())[0]
+    return {'thumbnailUrl':url(True),'imageUrl':url()}
+
 
 
 def read_mirror(key):

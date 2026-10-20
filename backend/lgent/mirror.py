@@ -1,9 +1,11 @@
 """Display-only replica. Never supplies an LG write preflight or readback."""
 import hashlib
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor,wait
 import weakref
 from contextlib import contextmanager
-from django.db import connection
+from django.db import connection,connections,close_old_connections
 from django.db.models import F,Q,TextField
 from django.db.models.functions import Cast
 from django.db.models.fields.json import KeyTextTransform
@@ -45,7 +47,8 @@ def claim(trolley_id):
         finally:
             if acquired:lock.release()
 
-def copy(cart,token,force=False):
+def copy(cart,token,force=False,*,max_seconds=27):
+    deadline=time.monotonic()+max_seconds
     with claim(cart.trolley_id) as acquired:
         if not acquired:return None,client.LgError('사진 복제 중입니다. 잠시 후 다시 확인하세요.','mirror_pending',503)
         cart.refresh_from_db()
@@ -58,7 +61,10 @@ def copy(cart,token,force=False):
         try:
             raw=client.photo(token,row,timeout=(3,8),max_seconds=14)
             if not raw:raise client.LgError('LG 사진이 없습니다.','mirror_unavailable',502)
-            digest=hashlib.sha256(raw).hexdigest();key=media.put_mirror(raw,cart.trolley_id,digest)
+            digest=hashlib.sha256(raw).hexdigest()
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise client.LgError('사진 복제 시간이 초과됐습니다.','mirror_timeout',504)
+            key=media.put_mirror(raw,cart.trolley_id,digest,max_seconds=min(12,remaining))
             changed=LgentCart.objects.filter(pk=cart.pk,baseline=row,save_attempt_id='').update(
                 mirror_key=key,mirror_sha256=digest,mirror_source_url=source,mirrored_at=timezone.now(),mirror_error='')
             if changed:cart.refresh_from_db()
@@ -75,3 +81,29 @@ def attach_upload(cart,photo,row):
     media.mirror_ref(photo.storage_key)
     cart.mirror_key=photo.storage_key;cart.mirror_sha256=photo.sha256
     cart.mirror_source_url=str(row.get('pic_url') or '');cart.mirrored_at=timezone.now();cart.mirror_error=''
+
+
+def copy_batch(carts,token):
+    """At most five copies, bounded response wait; unfinished rows stay resumable."""
+    deadline=time.monotonic()+28
+    def worker(cart):
+        close_old_connections()
+        try:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:return None,client.LgError('사진 복제 시간 초과','mirror_timeout',504)
+            return copy(cart,token,max_seconds=min(27,remaining))
+        finally:connections.close_all()
+    pool=ThreadPoolExecutor(max_workers=5)
+    futures=[pool.submit(worker,cart) for cart in carts[:5]]
+    try:
+        wait(futures,timeout=max(0,deadline-time.monotonic()))
+        last='';processed=0;errors=0
+        for cart,future in zip(carts,futures):
+            # Never advance past an unfinished row. A later page can claim it
+            # again; the nonblocking per-cart claim prevents duplicate uploads.
+            if not future.done():break
+            processed+=1;last=cart.trolley_id
+            try:errors+=int(bool(future.result()[1]))
+            except Exception:errors+=1
+        return last,processed,errors
+    finally:pool.shutdown(wait=False,cancel_futures=True)

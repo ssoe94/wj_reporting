@@ -130,12 +130,11 @@ def sync(user,cursor=None):
         cutoff=timezone.now();offset=0;phase='metadata';after=''
     if phase=='photos':
         targets=mirror.pending().filter(trolley_id__gt=after).order_by('trolley_id')
-        cart=targets.first();error=None
-        if cart:_,error=mirror.copy(cart,token)
-        last=cart.trolley_id if cart else after
+        carts=list(targets[:5]);last,processed,errors=mirror.copy_batch(carts,token)
+        last=last or after
         remaining=mirror.pending().filter(trolley_id__gt=last).count()
-        return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':int(bool(cart)),
-            'remaining':remaining,'errors':0,'mirrorErrors':int(bool(error)),'phase':'photos',
+        return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':processed,
+            'remaining':remaining,'errors':0,'mirrorErrors':errors,'phase':'photos',
             'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':last},salt='lgent-sync') if remaining else None}
     if offset<30:
         end=cutoff.astimezone(client.TZ).date()
@@ -172,8 +171,8 @@ def sync(user,cursor=None):
     remaining=LgentCart.objects.filter(supplier_code='TT094').filter(Q(checked_at__isnull=True)|Q(checked_at__lt=cutoff)).count()
     photos=mirror.pending().count() if not remaining else 0
     return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':len(targets),'remaining':remaining,'errors':errors,
-            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync') if remaining else
-                signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':''},salt='lgent-sync') if photos else None}
+            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync') if remaining else None,
+            'photoRemaining':photos,'photoCursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':''},salt='lgent-sync') if photos else None}
 
 
 def lookup(user,trolley_id):
@@ -193,8 +192,9 @@ def cart_thumbnail_key(cart):
 
 def cached_cart_version(user,trolley_id):
     # Local validation only: never perform an upstream read to answer a 304.
-    connection(user);client.code(trolley_id)
+    client.code(trolley_id)
     cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
+    if not cart or not mirror.current(cart):connection(user)
     row=cart.baseline if cart else {}
     if (row.get('supplier_id')=='TT094' and row.get('com_code') in ('LGENT','LGETA')
         and row.get('trolley_id')==trolley_id and row.get('org_code') and row.get('pic_url')):
@@ -229,8 +229,9 @@ def cart_image(user,trolley_id,thumbnail=False):
         if isinstance(cached,bytes):return cached,cart_photo_version(cart)
     raw,error=mirror.copy(cart,token,force=mirror_failed) if row.get('pic_url') else (b'',None)
     if raw is None:
-        if error:raise error
-        raw=media.read_mirror(cart.mirror_key)
+        if error and error.code=='mirror_pending':raw=client.photo(token,row)
+        elif error:raise error
+        else:raw=media.read_mirror(cart.mirror_key)
     key=cart_thumbnail_key(cart)
     digest=hashlib.sha256(raw).hexdigest() if raw else ''
     if cart.verified_save_at and cart.photo_sha256 and digest!=cart.photo_sha256:
