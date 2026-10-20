@@ -581,6 +581,8 @@ class LgentTests(TestCase):
             with self.assertRaises(client.LgError):service.sync(self.user,days=bad)
         with patch('lgent.client.request',return_value=[]):
             self.assertEqual(self.api.post('/api/lgent/sync/',{'days':365},format='json').status_code,200)
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':1825},format='json').status_code,200)
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':2000},format='json').status_code,400)
             self.assertEqual(self.api.post('/api/lgent/sync/',{'days':7},format='json').status_code,400)
 
     def test_foreign_supplier_recognition_is_review_and_removed_from_fleet(self):
