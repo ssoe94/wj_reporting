@@ -25,12 +25,12 @@ export default function LgentTrolleyPage(){
  const fail=useCallback((exception:unknown)=>{const e=exception as {response?:{data?:{code?:string;detail?:string}}};const code=e.response?.data?.code;const text=code==='same_saved_number'?(lang==='ko'?'이미 저장한 번호입니다. 다른 번호를 입력하세요.':'此编号已保存，请输入其他编号。'):code==='already_submitted'?(lang==='ko'?'이전 LG 저장 결과를 먼저 재조회해 주세요.':'请先回读之前的 LG 保存结果。'):code==='lg_connection_required'?captions[lang].loginHint:code==='invalid_photo'?captions[lang].invalidPhoto:lang==='ko'&&e.response?.data?.detail?e.response.data.detail:captions[lang].loadError;setMessage(text);setError(true);},[lang]);
  const queryClient=useQueryClient(),session=getAuthSessionSnapshot().id;
  const workspaceKey=useMemo(()=>['lgent','workspace',session],[session]);
- const workspace=useQuery({queryKey:workspaceKey,queryFn:({signal})=>api.getWorkspace(signal),enabled:!!session,
+ const workspace=useQuery({queryKey:workspaceKey,queryFn:({signal})=>api.getWorkspace(signal,queryClient.getQueryData<Workspace>(workspaceKey)),enabled:!!session,
   staleTime:30_000,gcTime:30*60_000,retry:1,refetchIntervalInBackground:false,
   refetchInterval:query=>busy?false:query.state.data?.queue.some(p=>['queued','analyzing','recognized','saving'].includes(p.status))?5000:60_000});
  const data:Workspace|undefined=workspace.data;
  const canEdit=data?.capabilities?.canEdit??false;
- const refresh=useCallback(async()=>{await queryClient.cancelQueries({queryKey:workspaceKey,exact:true});return queryClient.fetchQuery({queryKey:workspaceKey,queryFn:({signal})=>api.getWorkspace(signal),staleTime:0});},[queryClient,workspaceKey]);
+ const refresh=useCallback(async()=>{await queryClient.cancelQueries({queryKey:workspaceKey,exact:true});return queryClient.fetchQuery({queryKey:workspaceKey,queryFn:({signal})=>api.getWorkspace(signal,queryClient.getQueryData<Workspace>(workspaceKey)),staleTime:0});},[queryClient,workspaceKey]);
  useEffect(()=>{if(!data)return;if(!thresholdDirty.current)setThreshold(data.settings.staleDays);const available=new Set(data.queue.filter(p=>p.status==='ready').map(p=>p.id));const additions=uniqueReadyPhotos(data.queue).filter(id=>!seen.current.has(id));for(const id of additions)seen.current.add(id);setSelected(previous=>[...new Set([...previous.filter(id=>available.has(id)),...additions])]);if(additions.length)setConfirmed(false);const ids=data.queue.filter(p=>p.status==='recognized').map(p=>p.id);if(ids.length&&data.connection.authenticated&&canEdit&&!busy&&!verifying.current){verifying.current=true;api.verifyPhotos(ids).then(refresh).catch(fail).finally(()=>{verifying.current=false;});}},[data,canEdit,busy,refresh,fail]);
  useEffect(()=>{folderRef.current?.setAttribute('webkitdirectory','');folderRef.current?.setAttribute('directory','');},[canEdit]);
  useEffect(()=>{if(preview&&!dialogRef.current?.open)dialogRef.current?.showModal();if(!preview&&dialogRef.current?.open)dialogRef.current.close();},[preview]);

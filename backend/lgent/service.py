@@ -1,6 +1,7 @@
 import base64
 import datetime as dt
 import hashlib
+import json
 import secrets
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
@@ -98,7 +99,7 @@ def public_photo(value):
             'jobStatus':value.job.status if value.job_id else ''}
 
 
-def workspace(user):
+def workspace(user,fleet_version=None):
     record=profile(user);connected=bool(record and record.expires_at and record.expires_at>timezone.now() and decrypt_token(record.encrypted_token))
     days=record.stale_days if record else 30
     photos=LgentPhoto.objects.filter(user=user,archived_at__isnull=True).select_related('job').order_by('-created_at')
@@ -108,9 +109,12 @@ def workspace(user):
     for candidate in AiJob.objects.filter(job_type='worker_heartbeat').order_by('-completed_at')[:20]:
         if candidate.claimed_by.endswith('-lgent') and 'qwen38' in candidate.result_payload.get('available_model_ids',[]):heartbeat=candidate;break
     online=bool(heartbeat and heartbeat.completed_at and (timezone.now()-heartbeat.completed_at).total_seconds()<180 and heartbeat.result_payload.get('llm_ready'))
+    fleet=[public_cart(cart,days) for cart in LgentCart.objects.filter(supplier_code='TT094').order_by('trolley_id')[:5000]]
+    # Polls repeat every minute; skip the (large) fleet when the client already holds this exact list.
+    version=hashlib.sha256(json.dumps(fleet,sort_keys=True,separators=(',',':')).encode()).hexdigest()[:32]
     return {'connection':{'authenticated':connected,'userName':record.lg_user_name if record else '',
                            'expiresAt':record.expires_at.isoformat() if record and record.expires_at else ''},
-            'company':{'name':'万佳','code':'TT094'},'fleet':[public_cart(cart,days) for cart in LgentCart.objects.filter(supplier_code='TT094').order_by('trolley_id')[:5000]],
+            'company':{'name':'万佳','code':'TT094'},'fleet':None if fleet_version==version else fleet,'fleetVersion':version,
             'queue':[public_photo(value) for value in active+completed],'settings':{'staleDays':days},
             'worker':{'state':'online' if online else 'offline','modelName':'Qwen 3.8 27B'},'capabilities':{'canEdit':can_edit(user)}}
 

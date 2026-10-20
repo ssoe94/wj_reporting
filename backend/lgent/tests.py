@@ -595,6 +595,16 @@ class LgentTests(TestCase):
         self.assertEqual(self.api.post('/api/lgent/settings/',{'staleDays':45},format='json').status_code,200)
         self.profile.refresh_from_db();self.assertEqual(self.profile.stale_days,45)
 
+    def test_workspace_omits_unchanged_fleet_for_matching_version(self):
+        first=self.api.get('/api/lgent/workspace/').data
+        self.assertTrue(first['fleet']);version=first['fleetVersion']
+        same=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertIsNone(same['fleet']);self.assertEqual(same['fleetVersion'],version);self.assertIn('queue',same)
+        self.assertTrue(self.api.get('/api/lgent/workspace/',{'fleet':'stale'}).data['fleet'])
+        self.cart.grade='A';self.cart.save()
+        changed=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertTrue(changed['fleet']);self.assertNotEqual(changed['fleetVersion'],version)
+
     def test_worker_image_requires_worker_token_and_current_lease(self):
         value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
         job=value.job;job.status='running';job.claimed_by='worker';job.claimed_at=timezone.now();job.save()

@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import type {Photo,Workspace} from './types';
-export const getWorkspace=async(signal?:AbortSignal)=> (await api.get<Workspace>('/lgent/workspace/',{signal})).data;
+// Send the fleet version we hold; the server omits an unchanged fleet and we reuse ours.
+export async function getWorkspace(signal?:AbortSignal,previous?:Workspace){const known=previous?.fleet&&previous.fleetVersion?previous.fleetVersion:undefined;const data=(await api.get<Workspace>('/lgent/workspace/',{signal,params:known?{fleet:known}:undefined})).data;return data.fleet?data:{...data,fleet:previous?.fleet||[]};}
 export const connectLg=async(userId:string,password:string)=>api.post('/lgent/login/',{userId,password},{timeout:120000});
 export const disconnectLg=async()=>api.post('/lgent/logout/',{});
 export const setThreshold=async(staleDays:number)=>api.post('/lgent/settings/',{staleDays});
