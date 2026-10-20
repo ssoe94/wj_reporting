@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {useLang} from '../../i18n';
 import {getAuthSessionSnapshot} from '../../domains/auth/auth-storage';
@@ -12,8 +12,9 @@ export default function PhotoImage({kind,id,version,enabled,paused=false,absent=
 }) {
   const ref=useRef<HTMLButtonElement>(null),[visible,setVisible]=useState(false),[opening,setOpening]=useState(false),[openFailed,setOpenFailed]=useState(false);
   const {lang}=useLang(),queryClient=useQueryClient(),session=getAuthSessionSnapshot().id;
+  const queryKey=useMemo(()=>['lgent','image',session,kind,id,version],[session,kind,id,version]);
   useEffect(()=>{if(!ref.current)return;const observer=new IntersectionObserver(entries=>setVisible(entries.some(e=>e.isIntersecting)),{rootMargin:'80px'});observer.observe(ref.current);return()=>observer.disconnect();},[]);
-  const query=useQuery({queryKey:['lgent','image',session,kind,id,version],
+  const query=useQuery({queryKey,
     enabled:!!session&&enabled&&!absent&&!paused&&visible,staleTime:300_000,gcTime:300_000,retry:false,
     queryFn:async({signal})=>{
       const request=loader.acquire(`${session}:${kind}:${id}:${version}`,async queueSignal=>
@@ -21,6 +22,9 @@ export default function PhotoImage({kind,id,version,enabled,paused=false,absent=
       signal.addEventListener('abort',request.release,{once:true});
       try{return await request.promise;}finally{signal.removeEventListener('abort',request.release);request.release();}
     }});
+  useEffect(()=>{
+    if(paused||!visible||!enabled||absent)void queryClient.cancelQueries({queryKey,exact:true});
+  },[paused,visible,enabled,absent,queryClient,queryKey]);
   async function view(){
     if(query.isError){void query.refetch();return;}
     if(!query.data||opening)return;
