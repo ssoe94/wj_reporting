@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {isImage,filesFromEntry,hasDuplicateCarts,sortCarts,uniqueReadyPhotos,suggestedTrolleyId} from '../src/domains/lgent/helpers.ts';
+import {isImage,filesFromEntry,hasDuplicateCarts,sortCarts,uniqueReadyPhotos,suggestedTrolleyId,forEachLimit,exclusive} from '../src/domains/lgent/helpers.ts';
 import {canAccessLgent,isLgentRoute} from '../src/domains/auth/lgent-access.ts';
 import type {Cart,Photo} from '../src/domains/lgent/types.ts';
 import type {DirectoryEntry} from '../src/domains/lgent/helpers.ts';
@@ -24,3 +24,19 @@ test('only a single server-proposed known ID is offered for manual review, never
  assert.equal(suggestedTrolleyId({...review,status:'recognized'},fleet),'');
  assert.equal(suggestedTrolleyId({...review,trolleyId:'TT0940306'},fleet),'');
 });
+
+test('uploads run three at a time while photo conversion stays serial',async()=>{
+  const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+  let active=0,peak=0,converting=0,convertPeak=0;const seen:number[]=[];const convert=exclusive();
+  await forEachLimit([1,2,3,4,5,6,7],3,async value=>{
+    active++;peak=Math.max(peak,active);
+    await convert(async()=>{converting++;convertPeak=Math.max(convertPeak,converting);await sleep(2);converting--;});
+    await sleep(5);if(value===4){active--;seen.push(value);return;}seen.push(value);active--;
+  });
+  assert.equal(peak,3);assert.equal(convertPeak,1);assert.deepEqual([...seen].sort(),[1,2,3,4,5,6,7]);
+  const order:string[]=[];const lock=exclusive();
+  await Promise.allSettled([lock(async()=>{order.push('a');throw new Error('x');}),lock(async()=>{order.push('b');})]);
+  assert.deepEqual(order,['a','b']);
+  await forEachLimit([],3,async()=>{throw new Error('never');});
+});
+

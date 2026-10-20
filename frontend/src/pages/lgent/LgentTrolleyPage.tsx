@@ -7,7 +7,7 @@ import ShipmentModal from './ShipmentModal';
 import {RefreshCw,FolderOpen,Images,X,Search,LogOut,Info,Truck,ChevronRight} from 'lucide-react';
 import {useLang} from '../../i18n';
 import * as api from '../../domains/lgent/api';
-import {filesFromDrop,hasDuplicateCarts,isImage,photoJpeg,sortCarts,uniqueReadyPhotos,suggestedTrolleyId} from '../../domains/lgent/helpers';
+import {exclusive,filesFromDrop,forEachLimit,hasDuplicateCarts,isImage,photoJpeg,sortCarts,uniqueReadyPhotos,suggestedTrolleyId} from '../../domains/lgent/helpers';
 import type {Cart,Photo,PhotoStatus,Workspace} from '../../domains/lgent/types';
 import './lgent-trolleys.css';
 
@@ -62,7 +62,9 @@ export default function LgentTrolleyPage(){
   // run() has released busy: replica reads never pause the gallery or writes.
   if(photos&&!copying.current)void copyPhotos(photos.cursor,photos.total);
  }
- async function addFiles(files:File[]){if(busy||pendingUploads.current||!canEdit)return;const images=files.filter(isImage);if(!images.length||images.length>500){setMessage(l.limit);setError(true);return;}pendingUploads.current=true;setConfirmed(false);await run(async()=>{const ids:number[]=[],errors:string[]=[];for(let i=0;i<images.length;i++){setProgress(`${i+1}/${images.length} · ${images[i].name}`);try{const photo=await api.uploadPhoto(await photoJpeg(images[i]),images[i].name);if(['pending','review','error'].includes(photo.status))ids.push(photo.id);}catch{errors.push(images[i].name);}}if(ids.length)await api.analyzePhotos(Array.from(new Set(ids)));if(errors.length){setMessage(`${l.invalidPhoto} ${errors.slice(0,5).join(', ')}`);setError(true);}});pendingUploads.current=false;}
+ async function addFiles(files:File[]){if(busy||pendingUploads.current||!canEdit)return;const images=files.filter(isImage);if(!images.length||images.length>500){setMessage(l.limit);setError(true);return;}pendingUploads.current=true;setConfirmed(false);await run(async()=>{const ids:number[]=[],errors:string[]=[];let done=0;const convert=exclusive();setProgress(`0/${images.length}`);
+  // Resize one photo at a time (phone memory) but keep up to three uploads in flight.
+  await forEachLimit(images,3,async image=>{try{const photo=await api.uploadPhoto(await convert(()=>photoJpeg(image)),image.name);if(['pending','review','error'].includes(photo.status))ids.push(photo.id);}catch{errors.push(image.name);}done++;setProgress(`${done}/${images.length} · ${image.name}`);});if(ids.length)await api.analyzePhotos(Array.from(new Set(ids)));if(errors.length){setMessage(`${l.invalidPhoto} ${errors.slice(0,5).join(', ')}`);setError(true);}});pendingUploads.current=false;}
  async function connect(event:FormEvent){event.preventDefault();const secret=password;setPassword('');await run(async()=>{await api.connectLg(userId,secret);});}
  function showManual(photo:Photo){setManual(photo.id);setManualId(suggestedTrolleyId(photo,data?.fleet||[])||photo.trolleyId);setManualConfirmed(false);setConfirmed(false);}
  const sourceLabel=(cart:Cart)=>cart.dateSource==='photo_file'?l.photoFile:cart.dateSource==='lg_modified'?l.modified:cart.dateSource==='verified_save'?l.verified:l.unknown;
