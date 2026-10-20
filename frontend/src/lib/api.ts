@@ -67,7 +67,7 @@ api.interceptors.response.use(
     }
     // 응답 헤더 검증 (디버깅용)
     const contentType = response.headers['content-type'];
-    if (contentType && !contentType.includes('application/json')) {
+    if (contentType && !contentType.includes('application/json') && response.config.responseType !== 'blob') {
       console.warn('[API Warning] Non-JSON response:', {
         url: response.config.url,
         contentType,

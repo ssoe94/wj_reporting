@@ -30,3 +30,10 @@ test('failures remain retryable and different sessions never share cached photog
   assert.equal(await loader.acquire('second:a',load).promise,'image-2');
   loader.clear();assert.equal(await loader.acquire('second:a',load).promise,'image-3');
 });
+test('a canceled response that completes late disposes its unclaimed object URL',async()=>{
+  const released:string[]=[];const loader=createImageLoader(1,0,300_000,url=>released.push(url));
+  let finish!:(value:string)=>void;
+  const request=loader.acquire('a',()=>new Promise<string>(resolve=>{finish=resolve;}));
+  const settled=Promise.allSettled([request.promise]);await tick();request.release();
+  finish('blob:aborted');await settled;await tick();assert.deepEqual(released,['blob:aborted']);
+});

@@ -7,8 +7,13 @@ export const setThreshold=async(staleDays:number)=>api.post('/lgent/settings/',{
 type SyncReply={discovered:number;remaining:number;cursor:string|null;errors:number};
 export async function syncFleet(progress:(done:number,total:number)=>void){let cursor:string|null=null;let count=0,errors=0;do{const result:{data:SyncReply}=await api.post<SyncReply>('/lgent/sync/',cursor?{cursor}:{},{timeout:45000});cursor=result.data.cursor;count=result.data.discovered;errors+=result.data.errors;progress(count-result.data.remaining,count);}while(cursor);return {count,errors};}
 export const lookupCart=async(trolleyId:string)=>(await api.post('/lgent/lookup/',{trolleyId})).data;
-export const cartImage=async(id:string,signal?:AbortSignal,full=false)=>(await api.get<{photoData:string|null}>(`/lgent/carts/${encodeURIComponent(id)}/photo/`,{signal,params:full?undefined:{size:'thumbnail'}})).data.photoData;
-export const photoImage=async(id:number,signal?:AbortSignal,full=false)=>(await api.get<{photoData:string|null}>(`/lgent/photos/${id}/image/`,{signal,params:full?undefined:{size:'thumbnail'}})).data.photoData;
+async function image(path:string,signal?:AbortSignal,full=false,version?:string){
+ const response=await api.get<Blob>(path,{signal,responseType:'blob',params:{...(full?{}:{size:'thumbnail'}),v:version}});
+ if(response.status===204||!response.data.size)return null;
+ return URL.createObjectURL(response.data);
+}
+export const cartImage=(id:string,signal?:AbortSignal,full=false,version?:string)=>image(`/lgent/carts/${encodeURIComponent(id)}/photo/`,signal,full,version);
+export const photoImage=(id:number,signal?:AbortSignal,full=false,version?:string)=>image(`/lgent/photos/${id}/image/`,signal,full,version);
 export async function uploadPhoto(file:Blob,filename:string){const data=new FormData();data.append('file',file,filename);return (await api.post<Photo>('/lgent/photos/',data,{headers:{'Content-Type':'multipart/form-data'}})).data;}
 export const analyzePhotos=async(ids:number[])=>api.post('/lgent/photos/analyze/',{ids});
 export async function verifyPhotos(ids:number[]){for(let i=0;i<ids.length;i+=1)await api.post('/lgent/photos/verify/',{ids:ids.slice(i,i+1)},{timeout:60000});}

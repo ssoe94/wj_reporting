@@ -1,5 +1,5 @@
 // Keep gallery reads from flooding the API and starving workspace/mutation reads.
-export function createImageLoader(limit = 2, maxEntries = 160, ttl = 5 * 60_000) {
+export function createImageLoader(limit = 2, maxEntries = 160, ttl = 5 * 60_000,dispose:(value:string)=>void=()=>{}) {
   type Entry = {key:string; load:(signal:AbortSignal)=>Promise<string|null>; controller:AbortController; users:number;
     promise:Promise<string|null>; resolve:(value:string|null)=>void; reject:(reason:unknown)=>void};
   const cache = new Map<string, {value:string|null; at:number}>();
@@ -12,6 +12,7 @@ export function createImageLoader(limit = 2, maxEntries = 160, ttl = 5 * 60_000)
       if (!entry.users || entry.controller.signal.aborted) continue;
       active++;
       Promise.resolve().then(()=>entry.load(entry.controller.signal)).then(value=>{
+        if(entry.controller.signal.aborted&&value)dispose(value);
         if (!entry.controller.signal.aborted) {
           cache.delete(entry.key);cache.set(entry.key,{value,at:Date.now()});
           while(cache.size>maxEntries)cache.delete(cache.keys().next().value!);
