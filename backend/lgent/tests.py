@@ -9,6 +9,7 @@ from PIL import Image
 from django.contrib.auth import get_user_model
 from django.test import TestCase,override_settings
 from django.utils import timezone
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from ai_core.models import AiJob
@@ -26,6 +27,7 @@ def jpeg():
 @override_settings(LGENT_FORCE_LOCAL_MEDIA=True,LGENT_ALLOW_LOCAL_MEDIA=True,AI_WORKER_TOKEN="isolated-worker-token",CLOUDINARY_STORAGE={"CLOUD_NAME":"test","API_KEY":"test","API_SECRET":"test"})
 class LgentTests(TestCase):
     def setUp(self):
+        cache.clear()
         directory=self.enterContext(tempfile.TemporaryDirectory(prefix="lgent-test-media-"))
         self.enterContext(override_settings(MEDIA_ROOT=directory))
         self.user=get_user_model().objects.create_user(username='operator',is_staff=True)
@@ -110,6 +112,62 @@ class LgentTests(TestCase):
         self.cart.verified_save_at=timezone.now();self.cart.save()
         after=service.remember(dict(ROW,pic_url='/different.jpg'))
         self.assertIsNone(after.verified_save_at)
+
+    def test_gallery_reuses_verified_metadata_and_small_thumbnail(self):
+        raw=io.BytesIO();Image.new('RGB',(1400,1800),'green').save(raw,'JPEG')
+        before=self.cart.updated_at
+        self.cart.verified_save_at=timezone.now();self.cart.save()
+        verified=self.cart.verified_save_at
+        with patch('lgent.client.info') as info,patch('lgent.client.photo',return_value=raw.getvalue()) as photo:
+            first=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+            second=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+        self.assertEqual(first.status_code,200);self.assertEqual(first.data,second.data)
+        info.assert_not_called();photo.assert_called_once()
+        small=base64.b64decode(first.data['photoData'].split(',',1)[1])
+        with Image.open(io.BytesIO(small)) as image:self.assertLessEqual(max(image.size),420)
+        self.cart.refresh_from_db();self.assertEqual(self.cart.verified_save_at,verified)
+        self.assertGreaterEqual(self.cart.updated_at,before)
+        with patch('lgent.client.photo',return_value=raw.getvalue()):
+            full=self.api.get('/api/lgent/carts/TT0940306/photo/')
+        self.assertEqual(base64.b64decode(full.data['photoData'].split(',',1)[1]),raw.getvalue())
+
+    def test_sync_invalidates_thumbnail_without_changing_photo_version(self):
+        version=service.public_cart(self.cart)['photoVersion']
+        with patch('lgent.client.photo',return_value=self.raw) as photo:
+            service.cart_image(self.user,'TT0940306',True)
+            self.cart=service.remember(copy.deepcopy(ROW))
+            self.assertEqual(service.public_cart(self.cart)['photoVersion'],version)
+            service.cart_image(self.user,'TT0940306',True)
+        self.assertEqual(photo.call_count,2)
+
+    def test_cached_gallery_requires_current_lg_connection(self):
+        with patch('lgent.client.photo',return_value=self.raw):service.cart_image(self.user,'TT0940306',True)
+        self.profile.expires_at=timezone.now()-dt.timedelta(seconds=1);self.profile.save()
+        with patch('lgent.client.photo') as photo:
+            response=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+        self.assertEqual(response.status_code,409);photo.assert_not_called()
+
+    def test_gallery_failure_is_not_cached_as_missing_photo(self):
+        with patch('lgent.client.photo',side_effect=client.LgError('upstream timed out')):
+            response=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+        self.assertEqual(response.status_code,502)
+        with patch('lgent.client.photo',return_value=self.raw) as photo:
+            response=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+        self.assertEqual(response.status_code,200);photo.assert_called_once()
+
+    def test_same_url_photo_replacement_invalidates_only_old_verified_snapshot(self):
+        self.cart.verified_save_at=timezone.now();self.cart.photo_sha256='old-digest';self.cart.save()
+        with patch('lgent.client.photo',return_value=self.raw):service.cart_image(self.user,'TT0940306',True)
+        self.cart.refresh_from_db();self.assertIsNone(self.cart.verified_save_at)
+        self.cart.verified_save_at=timezone.now();self.cart.photo_sha256='old-digest';self.cart.save_attempt_id='in-flight';self.cart.save()
+        with patch('lgent.client.photo',return_value=self.raw):service.cart_image(self.user,'TT0940306',True)
+        self.cart.refresh_from_db();self.assertIsNotNone(self.cart.verified_save_at);self.assertEqual(self.cart.save_attempt_id,'in-flight')
+
+    def test_foreign_cached_metadata_is_revalidated_before_read(self):
+        self.cart.baseline=dict(ROW,supplier_id='OTHER');self.cart.save()
+        with patch('lgent.client.info',side_effect=client.LgError('foreign','foreign_supplier',403)),patch('lgent.client.photo') as photo:
+            response=self.api.get('/api/lgent/carts/TT0940306/photo/?size=thumbnail')
+        self.assertEqual(response.status_code,403);photo.assert_not_called()
 
     def test_photo_normalizer_rejects_invalid_bytes(self):
         for raw in (b'not an image',b'\xff\xd8\xffbad\xff\xd9',b'x'*(media.MAX_BYTES+1)):
