@@ -54,7 +54,7 @@ class SettingsView(LgentView):
 
 
 class SyncView(LgentView):
-    def post(self,request):return Response(service.sync(request.user,request.data.get('cursor')))
+    def post(self,request):return Response(service.sync(request.user,request.data.get('cursor'),request.data.get('days')))
 
 
 class LookupView(LgentView):

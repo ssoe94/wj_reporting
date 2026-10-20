@@ -115,7 +115,10 @@ def workspace(user):
             'worker':{'state':'online' if online else 'offline','modelName':'Qwen 3.8 27B'},'capabilities':{'canEdit':can_edit(user)}}
 
 
-def sync(user,cursor=None):
+HISTORY_DAYS=(30,90,180,365)
+
+
+def sync(user,cursor=None,days=None):
     _,token=connection(user)
     if cursor:
         if not isinstance(cursor,str) or len(cursor)>2048:raise client.LgError('동기화를 처음부터 다시 실행하세요.','invalid_cursor',400)
@@ -123,10 +126,14 @@ def sync(user,cursor=None):
             data=signing.loads(cursor,salt='lgent-sync',max_age=1800)
             if data['user']!=user.pk:raise ValueError()
             cutoff=dt.datetime.fromisoformat(data['start']);offset=int(data['offset']);phase=data.get('phase','metadata');after=data.get('after','')
-            if not 0<=offset<=30:raise ValueError()
+            window=int(data.get('days',30))
+            if window not in HISTORY_DAYS or not 0<=offset<=window:raise ValueError()
             if phase not in ('metadata','photos') or not isinstance(after,str) or len(after)>64:raise ValueError()
         except (ValueError,KeyError,signing.BadSignature):raise client.LgError('동기화를 처음부터 다시 실행하세요.','invalid_cursor',400)
     else:
+        # One-off wider windows find carts that have not entered LG in the last month.
+        window=30 if days is None else days
+        if type(window) is not int or window not in HISTORY_DAYS:raise client.LgError('이력 범위를 확인하세요.','invalid_setting',400)
         cutoff=timezone.now();offset=0;phase='metadata';after=''
     if phase=='photos':
         targets=mirror.pending().filter(trolley_id__gt=after).order_by('trolley_id')
@@ -135,10 +142,10 @@ def sync(user,cursor=None):
         remaining=mirror.pending().filter(trolley_id__gt=last).count()
         return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':processed,
             'remaining':remaining,'errors':0,'mirrorErrors':errors,'phase':'photos',
-            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':last},salt='lgent-sync') if remaining else None}
-    if offset<30:
+            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':window,'days':window,'phase':'photos','after':last},salt='lgent-sync') if remaining else None}
+    if offset<window:
         end=cutoff.astimezone(client.TZ).date()
-        days=[(end-dt.timedelta(days=i)).isoformat() for i in range(offset,min(offset+3,30))]
+        days=[(end-dt.timedelta(days=i)).isoformat() for i in range(offset,min(offset+3,window))]
         def fetch(day):return day,client.rows(client.request('/cart/enter_history/LGETA/ENT/TT094/'+day,token))
         with ThreadPoolExecutor(max_workers=3) as pool:history=list(pool.map(fetch,days))
         for day,rows in history:
@@ -149,10 +156,10 @@ def sync(user,cursor=None):
                 cart,_=LgentCart.objects.get_or_create(trolley_id=code,defaults={'grade':str(row.get('grade_code') or '')[:8]})
                 stamp=day+' '+str(row.get('hms') or '')
                 if stamp>cart.last_history_at:cart.last_history_at=stamp;cart.save(update_fields=['last_history_at','updated_at'])
-        offset=min(offset+3,30)
+        offset=min(offset+3,window)
         remaining=LgentCart.objects.filter(supplier_code='TT094').filter(Q(checked_at__isnull=True)|Q(checked_at__lt=cutoff)).count()
         return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':0,'remaining':remaining,'errors':0,
-                'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync')}
+                'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset,'days':window},salt='lgent-sync')}
     targets=list(LgentCart.objects.filter(supplier_code='TT094').filter(Q(checked_at__isnull=True)|Q(checked_at__lt=cutoff)).order_by('checked_at','trolley_id')[:5])
     def fetch_info(cart):
         try:return client.info(token,cart.trolley_id),None
@@ -171,8 +178,8 @@ def sync(user,cursor=None):
     remaining=LgentCart.objects.filter(supplier_code='TT094').filter(Q(checked_at__isnull=True)|Q(checked_at__lt=cutoff)).count()
     photos=mirror.pending().count() if not remaining else 0
     return {'discovered':LgentCart.objects.filter(supplier_code='TT094').count(),'processed':len(targets),'remaining':remaining,'errors':errors,
-            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset},salt='lgent-sync') if remaining else None,
-            'photoRemaining':photos,'photoCursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':30,'phase':'photos','after':''},salt='lgent-sync') if photos else None}
+            'cursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':offset,'days':window},salt='lgent-sync') if remaining else None,
+            'photoRemaining':photos,'photoCursor':signing.dumps({'user':user.pk,'start':cutoff.isoformat(),'offset':window,'days':window,'phase':'photos','after':''},salt='lgent-sync') if photos else None}
 
 
 def lookup(user,trolley_id):

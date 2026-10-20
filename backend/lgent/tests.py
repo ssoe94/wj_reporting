@@ -551,6 +551,19 @@ class LgentTests(TestCase):
         with patch('lgent.mirror.copy_batch',return_value=(self.cart.trolley_id,1,0)):final=service.sync(self.user,final['photoCursor'])
         self.assertEqual(final['phase'],'photos');self.assertIsNone(final['cursor'])
 
+    def test_sync_history_window_is_selectable_and_bounded(self):
+        with patch('lgent.client.request',return_value=[]) as lg:
+            result=service.sync(self.user,days=90)
+            for _ in range(29):result=service.sync(self.user,result['cursor'])
+            self.assertEqual(lg.call_count,90)
+            days={call.args[0].rsplit('/',1)[-1] for call in lg.call_args_list}
+            self.assertEqual(len(days),90)
+        for bad in (31,0,'365',400,True):
+            with self.assertRaises(client.LgError):service.sync(self.user,days=bad)
+        with patch('lgent.client.request',return_value=[]):
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':365},format='json').status_code,200)
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':7},format='json').status_code,400)
+
     def test_foreign_supplier_recognition_is_review_and_removed_from_fleet(self):
         value=self.photo('recognized')
         with patch('lgent.client.info',side_effect=client.LgError('foreign','foreign_supplier',403)):
