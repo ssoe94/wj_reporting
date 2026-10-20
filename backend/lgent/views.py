@@ -1,6 +1,7 @@
 import hashlib
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.response import Response
@@ -55,7 +56,9 @@ class LookupView(LgentView):
 
 
 class CartPhotoView(LgentView):
-    def get(self,request,trolley_id):return Response(service.cart_image(request.user,trolley_id,thumbnail=request.query_params.get('size')=='thumbnail'))
+    def get(self,request,trolley_id):
+        raw,version=service.cart_image(request.user,trolley_id,thumbnail=request.query_params.get('size')=='thumbnail')
+        return image_response(request,raw,version)
 
 
 class PhotoUploadView(LgentView):
@@ -71,7 +74,20 @@ class PhotoImageView(LgentView):
         value=get_object_or_404(LgentPhoto,user=request.user,pk=pk,archived_at__isnull=True)
         raw=media.read(value.storage_key)
         if request.query_params.get('size')=='thumbnail':raw=media.thumbnail(raw)
-        return Response(service.data_image(raw))
+        return image_response(request,raw,value.sha256)
+
+
+def image_response(request,raw,version):
+    if not raw:
+        response=HttpResponse(status=204);response['Cache-Control']='private, no-store';return response
+    etag='"'+hashlib.sha256(raw).hexdigest()+'"'
+    matches=[part.strip().removeprefix('W/') for part in request.headers.get('If-None-Match','').split(',')]
+    response=HttpResponse(status=304) if etag in matches or '*' in matches else HttpResponse(raw,content_type='image/png' if raw.startswith(b'\x89PNG') else 'image/jpeg')
+    response['ETag']=etag
+    response['Cache-Control']='private, max-age=86400' if request.query_params.get('v')==version else 'private, no-cache'
+    response['Vary']='Authorization, Cookie'
+    response['X-Content-Type-Options']='nosniff'
+    return response
 
 
 class AnalyzeView(LgentView):

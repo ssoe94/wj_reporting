@@ -32,7 +32,7 @@ services:
     env: python
     rootDir: backend
     buildCommand: bash build.sh
-    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload
+    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload --worker-class gthread --workers ${WEB_CONCURRENCY:-1} --threads 8 --timeout 60
     envVarGroup: shared-secrets
 
   # Daily Inventory Snapshot Cron Job

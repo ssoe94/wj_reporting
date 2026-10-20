@@ -60,7 +60,6 @@ def login(user,user_id,password):
 
 def remember(row):
     cart,_=LgentCart.objects.get_or_create(trolley_id=row['trolley_id'])
-    cache.delete(cart_thumbnail_key(cart))
     if cart.baseline.get('pic_url')!=row.get('pic_url'):
         cart.verified_save_at=None;cart.photo_sha256=''
     cart.baseline={key:value for key,value in row.items() if key!='file_stream_bytes'}
@@ -93,6 +92,7 @@ def public_photo(value):
         elif value.job.status=='cancelled':status='review'
     return {'id':value.pk,'filename':value.filename,'trolleyId':value.trolley_id,'status':status,
             'note':value.note,'grade':value.grade,'recognizedIds':value.recognized_ids,
+            'photoVersion':value.sha256,
             'jobStatus':value.job.status if value.job_id else ''}
 
 
@@ -188,7 +188,7 @@ def cart_image(user,trolley_id,thumbnail=False):
     key=cart_thumbnail_key(cart)
     if thumbnail:
         cached=cache.get(key)
-        if isinstance(cached,bytes):return data_image(cached)
+        if isinstance(cached,bytes):return cached,cart_photo_version(cart)
     raw=client.photo(token,row)
     digest=hashlib.sha256(raw).hexdigest() if raw else ''
     if cart.verified_save_at and cart.photo_sha256 and digest!=cart.photo_sha256:
@@ -203,7 +203,7 @@ def cart_image(user,trolley_id,thumbnail=False):
     # stay untouched. Image reads never acquire or erase write leases.
     if thumbnail:
         raw=media.thumbnail(raw);cache.set(key,raw,900)
-    return data_image(raw)
+    return raw,cart_photo_version(cart)
 
 
 def data_image(raw):
