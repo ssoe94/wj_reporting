@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {shanghaiDate,shiftDate,shipmentDate,photoStatus,validShipmentRange,filterShipments} from '../src/domains/lgent/shipments.ts';
+import type {ShipmentRow} from '../src/domains/lgent/types.ts';
+const row:ShipmentRow={id:'1',orderCode:'LGENT',identifier:'TT0940367',trolleyId:'TT0940367',plannedAt:'2026-10-20T12:00:00+08:00',recordedAt:'2026-10-19T13:00:00+08:00',status:'in_execution',recordCount:1,cart:{trolleyId:'TT0940367',grade:'B',displayAt:'2026-08-12',dateSource:'photo_file',ageDays:69,alert:'stale',hasPhoto:true,photoVersion:'v'}};
+test('shipment calendars use Shanghai midnight, not 08:00 production cutoff',()=>{assert.equal(shanghaiDate(new Date('2026-10-19T17:00:00Z')),'2026-10-20');assert.equal(shiftDate('2026-10-31',1),'2026-11-01');assert.equal(shiftDate('2026-03-01',-1),'2026-02-28');});
+test('plan and history date rails use their actual distinct dates',()=>{assert.equal(shipmentDate(row,'plan'),'2026-10-20');assert.equal(shipmentDate(row,'history'),'2026-10-19');assert.equal(filterShipments([row],'history','2026-10-20','all').length,0);});
+test('unassigned, missing photos, unknown dates, and stale are distinct',()=>{assert.equal(photoStatus(row),'stale');assert.equal(photoStatus({...row,cart:null}),'unassigned');assert.equal(photoStatus({...row,cart:{...row.cart!,hasPhoto:false}}),'no-photo');assert.equal(photoStatus({...row,cart:{...row.cart!,alert:'unknown',ageDays:null}}),'unknown');assert.equal(filterShipments([row,{...row,id:'2',cart:null}],'plan','','stale').length,1);});
+test('date bounds reject invalid and excessive ranges',()=>{assert.equal(validShipmentRange('2026-10-01','2026-10-31'),true);for(const [a,b] of [['2026-10-02','2026-10-01'],['2026-02-30','2026-03-02'],['2026-10-01','2026-11-01'],['','2026-10-01']])assert.equal(validShipmentRange(a,b),false);});

@@ -364,3 +364,37 @@ Checks: 42 HR frontend tests passed, including six added tests for role partitio
 This is local implementation and synthetic browser verification only. No backend, permissions, migrations, production data or deployment were changed. Existing real-file reconciliation, physical-device and production acceptance limits remain. No actionable hierarchy defect remains in the inspected states.
 
 final result: passed
+
+---
+
+# LGENT compact gallery / MES shipment modal
+
+final result: passed
+
+- Source visual truth: `/Users/macstudio_ted/.codex/generated_images/01a15357-e6e0-7d20-b937-40b804e3177e/exec-e985ad4f-158d-466d-bf3f-0800f9263297.png` (selected third direction, approved revised title/history tabs).
+- Browser-rendered implementation: `output/lgent-mes-overview/native-desktop-final.png`, `desktop-zh-native.png`, `mobile-zh-native.png`.
+- Same-state full-view comparison: `output/lgent-mes-overview/qa-native-comparison.jpg`; focused region: modal/table and top toolbar in the native captures, readable at original pixel size.
+- Reference 1586x992. Native Chrome capture 1587x1080, including 87px browser chrome; content 1587x993, normalized by <=1px for comparison. Narrow native capture 503x933 (content 503x846). IAB DOM breakpoint check 390x843 independently confirms no document overflow and a bounded 830px table inside a 355px horizontal scroller.
+- The IAB screenshot backend produced surplus canvas/clipping under its inherited 62% zoom. Those IAB images are not visual acceptance evidence. Native Chrome was used for visual acceptance instead.
+- State: read-only synthetic MES fixture; real supplied sample images, no production connectivity. Initial mock loader import failure was fixed before captures. Later console error was the deliberately induced MES 502; no unexplained final page errors observed.
+
+## Findings and comparison history
+
+1. [P2, fixed] Initial modal width overlapped the upload sidebar by approximately 100px. Reduced modal width and aligned it within the gallery. Post-fix native evidence shows the MES menu and upload panel remain visible beside the modal.
+2. [P2, fixed] Initial 570px dialog plus 62px rows hid most of the fifth row. Increased desktop height to 610px, reduced rows to 54px, retained internal scrolling and viewport-bounded height. Six fixture rows and the footer fit in the final desktop capture.
+3. No remaining actionable P0/P1/P2 visual findings. Intentional deviations: denser existing 14px working typography and a 19px title; actual MES state labels replace invented loading/departure states; no inert selection checkboxes; fixture counts and data differ from the generated image. Production outer navigation remains untouched.
+
+## Required fidelity surfaces
+
+- Typography: existing Korean/Chinese font stack, 14px working text, compact 12px supporting dates, clear bold cart IDs. Chinese headings and statuses checked.
+- Spacing/layout: 36px header/summary strip, merged search/lookup/filter/threshold controls, no duplicate wide lookup row. Desktop date rail becomes a horizontal date strip on narrow screens. Header/close/footer stay visible; only table content scrolls.
+- Colors/tokens: existing navy, pale blue borders/white surfaces retained. Amber stale rows and green recent badges remain semantic. All filter, grade, update, queue, saved, and modal status badges have a measured height of 24px.
+- Imagery: existing supplied trolley photos, contained gallery photos and real modal thumbnails. Standard Lucide icons reuse the installed product library. No handcrafted graphic replacements.
+- Copy: approved title and plan/history tabs in both languages; unassigned plans, unknown dates, no-photo and fetch failure states remain distinct. Record creation is explicitly distinguished from physical departure.
+
+## Interactions checked
+
+- Open/close modal, plan/history switch, date filter, stale-only (2 rows), unassigned-only (1 row), cart link closes modal and filters gallery.
+- Korean/Chinese switch, 390px DOM overflow bounds, 503px native narrow layout, all working badge heights 24px.
+- Deliberate MES failure: localized retry state, gallery remains mounted; date range validation and empty filters tested separately.
+- Source-contract, auth/read-only, date/pagination, ownership and transport-route tests pass on isolated SQLite/PostgreSQL. Production acceptance is separate from this design QA.

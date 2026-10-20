@@ -23,3 +23,5 @@ export const removePhoto=async(id:number)=>api.post(`/lgent/photos/${id}/remove/
 export async function savePhotos(ids:number[],progress:(done:number)=>void){const results:{id:number;status:string;message:string}[]=[];for(let i=0;i<ids.length;i+=1){const result=await api.post<{results:{id:number;status:string;message:string}[]}>('/lgent/photos/save/',{ids:ids.slice(i,i+1),confirmed:true},{skipAuthRefresh:true,timeout:120000});result.data.results.forEach(value=>results.push(value));progress(results.length);}return results;}
 
 export const reconcilePhoto=async(id:number)=>(await api.post<{verified:boolean}>(`/lgent/photos/${id}/reconcile/`,{},{timeout:60000})).data;
+
+export const getShipments=async(mode:import('./types').ShipmentMode,start:string,end:string,signal?:AbortSignal)=>(await api.get<import('./types').ShipmentOverview>('/lgent/shipments/',{params:{mode,start,end},signal,timeout:30000})).data;
