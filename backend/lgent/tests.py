@@ -395,6 +395,66 @@ class LgentTests(TestCase):
             self.assertEqual(service.verify(self.user,[value.pk])['verified'],1)
         value.refresh_from_db();self.assertEqual(value.status,'ready')
 
+    def accept_number(self,primary):
+        value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
+        with patch('lgent.client.photo') as photo,patch('lgent.client.info') as info:
+            result=service.accept_result(value.job,{'primary_id':primary,'uncertain':False,'local_evidence':[{'id':primary,'confidence':1}]},service.PROMPT)
+            photo.assert_not_called();info.assert_not_called()
+        value.refresh_from_db();return value,result
+
+    def test_recognition_exact_known_number_keeps_lg_verification_required(self):
+        value,result=self.accept_number('TT0940306')
+        self.assertEqual(value.status,'recognized');self.assertFalse(result['uncertain'])
+        self.assertEqual(value.recognized_ids,['TT0940306'])
+
+    def test_recognition_unique_known_evidence_precedes_one_edit_candidate(self):
+        service.remember(dict(ROW,trolley_id='TT0940223'))
+        value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
+        evidence=[{'id':'TT0940223','confidence':.8},{'id':'TT0940223','confidence':1},
+                  {'id':'TT0940306','confidence':.79},{'id':'TT094O306','confidence':1}]
+        with patch('lgent.recognition.candidates') as fuzzy,patch('lgent.client.info') as info:
+            result=service.accept_result(value.job,{'primary_id':'TT094O306','uncertain':False,'local_evidence':evidence},service.PROMPT)
+            fuzzy.assert_not_called();info.assert_not_called()
+        value.refresh_from_db()
+        self.assertEqual(value.status,'review');self.assertTrue(result['uncertain'])
+        self.assertEqual(value.trolley_id,'TT094O306');self.assertEqual(value.recognized_ids,['TT0940223'])
+        self.assertIn('TT094O306 → TT0940223?',value.note)
+
+    def test_recognition_uppercases_primary_and_evidence_before_fleet_comparison(self):
+        value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()
+        evidence=[{'id':'tt0940306','confidence':.8}]
+        result=service.accept_result(value.job,{'primary_id':'tt0940306','uncertain':False,'local_evidence':evidence},service.PROMPT)
+        value.refresh_from_db()
+        self.assertEqual(value.status,'recognized');self.assertFalse(result['uncertain'])
+        self.assertEqual(value.trolley_id,'TT0940306');self.assertEqual(value.recognized_ids,['TT0940306'])
+        self.assertEqual(result['primary_id'],'TT0940306');self.assertEqual(result['local_evidence'][0]['id'],'TT0940306')
+        self.assertEqual(evidence[0]['id'],'tt0940306')
+
+    def test_recognition_one_edit_proposes_single_known_number_without_confirming(self):
+        value,result=self.accept_number('TT094O306')
+        self.assertEqual(value.status,'review');self.assertTrue(result['uncertain'])
+        self.assertEqual(value.trolley_id,'TT094O306');self.assertEqual(value.recognized_ids,['TT0940306'])
+        self.assertIn('TT094O306 → TT0940306?',value.note)
+        from .recognition import candidates
+        self.assertEqual(candidates('TT094-0306',{'TT0940306'}),['TT0940306'])
+        self.assertEqual(candidates('TT094O3O6',{'TT0940306'}),[])
+
+    def test_recognition_ambiguous_edit_does_not_propose_a_number(self):
+        service.remember(dict(ROW,trolley_id='TT0940308'))
+        value,result=self.accept_number('TT0940307')
+        self.assertEqual(value.status,'review');self.assertTrue(result['uncertain']);self.assertEqual(value.recognized_ids,[])
+
+    def test_recognition_unknown_number_requires_manual_review(self):
+        service.remember(dict(ROW,trolley_id='OTHER-123')).supplier_code='OTHER'
+        LgentCart.objects.filter(trolley_id='OTHER-123').update(supplier_code='OTHER')
+        value,result=self.accept_number('OTHER-123')
+        self.assertEqual(value.status,'review');self.assertTrue(result['uncertain']);self.assertEqual(value.recognized_ids,[])
+
+    def test_recognition_empty_fleet_preserves_previous_evidence_flow(self):
+        LgentCart.objects.all().delete()
+        value,result=self.accept_number('TT0940306')
+        self.assertEqual(value.status,'recognized');self.assertFalse(result['uncertain'])
+
     def test_foreign_supplier_lookup_rejected_before_photo_read(self):
         with patch('lgent.client.request',return_value=[dict(ROW,supplier_id='OTHER')]):
             with self.assertRaises(client.LgError):client.info('token','TT0940306')

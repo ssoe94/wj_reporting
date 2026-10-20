@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from ai_core.models import AiJob
-from . import client,media,mirror
+from . import client,media,mirror,recognition
 from .models import LgentProfile,LgentCart,LgentPhoto,LgentSaveEvent
 from .security import encrypt_token,decrypt_token,can_edit
 
@@ -296,16 +296,30 @@ def analyze(user,ids):
 
 def accept_result(job,result,prompt_version):
     if prompt_version!=PROMPT:raise ValueError('Unsupported trolley recognition prompt.')
-    primary=str(result.get('primary_id') or '').strip()
+    primary=str(result.get('primary_id') or '').strip().upper()
     evidence=result.get('local_evidence') or []
     if not isinstance(evidence,list) or len(evidence)>100:raise ValueError('Invalid local label evidence.')
-    valid=[item for item in evidence if isinstance(item,dict) and isinstance(item.get('id'),str) and client.ID.fullmatch(item['id'])
+    valid=[{**item,'id':item['id'].upper()} for item in evidence if isinstance(item,dict) and isinstance(item.get('id'),str) and client.ID.fullmatch(item['id'])
            and type(item.get('confidence')) in (int,float) and .8<=item['confidence']<=1]
     agreed=client.ID.fullmatch(primary) is not None and result.get('uncertain') is False and any(item['id']==primary for item in valid)
+    known=set(LgentCart.objects.filter(supplier_code='TT094').values_list('trolley_id',flat=True))
+    recognized=sorted({item['id'] for item in valid})
+    suggestions=[]
+    if known:
+        agreed=agreed and primary in known
+        recognized=sorted(set(recognized)&known)
+        if primary not in known:
+            if len(recognized)==1:suggestions=recognized
+            elif not recognized:suggestions=recognition.candidates(primary,known) if client.ID.fullmatch(primary) else []
+            recognized=suggestions
     value=LgentPhoto.objects.select_for_update().filter(job=job,pk=job.scope.get('photo_id'),user_id=job.created_by_id,archived_at__isnull=True).first()
     if not value:raise ValueError('The trolley photo no longer belongs to this job.')
-    value.trolley_id=primary if client.ID.fullmatch(primary) else '';value.recognized_ids=sorted({item['id'] for item in valid})
-    value.status='recognized' if agreed else 'review';value.note='AI·QR 번호 일치. LG 소속 대조 대기' if agreed else '사진의 대차 번호를 직접 확인하세요.';value.save()
+    value.trolley_id=primary if client.ID.fullmatch(primary) else '';value.recognized_ids=recognized
+    value.status='recognized' if agreed else 'review'
+    value.note='AI·QR 번호 일치. LG 소속 대조 대기' if agreed else '사진의 대차 번호를 직접 확인하세요.'
+    if len(suggestions)==1:value.note=f'{primary} → {suggestions[0]}? 사진과 번호를 직접 확인하세요.'
+    elif known and primary not in known:value.note='알려진 万佳 목록에 없는 번호입니다. 직접 확인하세요.'
+    value.save()
     return {'primary_id':value.trolley_id,'local_evidence':valid,'uncertain':not agreed,'model_id':'qwen38'}
 
 
