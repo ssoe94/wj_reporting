@@ -30,6 +30,7 @@ try:
         MAX_LLM_TIMEOUT_SECONDS,
     )
     from .render_client import RenderClient, WORKER_VERSION
+    from .lgent_dispatch import Dispatcher as LgentDispatcher
 except ImportError:
     from job_handlers import (
         production_daily_analysis,
@@ -45,6 +46,7 @@ except ImportError:
         MAX_LLM_TIMEOUT_SECONDS,
     )
     from render_client import RenderClient, WORKER_VERSION
+    from lgent_dispatch import Dispatcher as LgentDispatcher
 
 
 HANDLERS = {
@@ -2356,13 +2358,20 @@ def main() -> int:
     heartbeat.run_cycle()
     if not args.once:
         heartbeat.start()
+    # LGENT trolley photos queued on Render are claimed by this always-on loop
+    # whenever the regular queue is idle, so no separate command has to run.
+    lgent = (
+        LgentDispatcher(client, llm, worker_name, generation_lock)
+        if use_llm and llm is not None and truthy(os.getenv("LGENT_TROLLEY_DISPATCH", "true"))
+        else None
+    )
     try:
         while True:
             monotonic_now = time.monotonic()
             should_enqueue_periodic = enqueue_periodic and monotonic_now >= next_periodic_check
             try:
                 run_report = RunOnceReport()
-                run_once(
+                processed = run_once(
                     client,
                     worker_name,
                     use_llm,
@@ -2379,6 +2388,11 @@ def main() -> int:
                 )
                 if run_report.messages:
                     state.set_error(run_report.summary())
+                if lgent is not None and not processed and not args.once:
+                    try:
+                        lgent.poll(QWEN38_MODEL_ID in (state.snapshot()["available_model_ids"] or []))
+                    except Exception as exc:
+                        print(f"lgent dispatch failed: {exc}", file=sys.stderr)
                 if args.once and run_report.had_failure:
                     return 1
             except Exception as exc:
