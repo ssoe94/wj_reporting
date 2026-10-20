@@ -119,7 +119,7 @@ def workspace(user,fleet_version=None):
             'worker':{'state':'online' if online else 'offline','modelName':'Qwen 3.8 27B'},'capabilities':{'canEdit':can_edit(user)}}
 
 
-HISTORY_DAYS=(30,90,180,365)
+HISTORY_DAYS=(30,90,180,365,730,1095,1825)
 
 
 def sync(user,cursor=None,days=None):
