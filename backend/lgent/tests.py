@@ -3,6 +3,7 @@ import copy
 import datetime as dt
 import hashlib
 import io
+import json
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +85,24 @@ class LgentTests(TestCase):
         self.assertNotIn('token',response.content.decode());self.assertNotIn('password',response.content.decode())
         payload=upstream.call_args_list[0].kwargs['payload'];self.assertEqual(payload['UserId'],'id');self.assertEqual(payload['UserPassword'],'secret-password')
         self.profile.refresh_from_db();self.assertEqual(decrypt_token(self.profile.encrypted_token),'new-token')
+
+    def test_lg_session_follows_token_exp_with_cap_and_fallback(self):
+        def jwt(exp):
+            body=base64.urlsafe_b64encode(json.dumps({'exp':exp}).encode()).decode().rstrip('=')
+            return 'eyJhbGciOiJIUzI1NiJ9.'+body+'.signature'
+        now=timezone.now();stamp=int(now.timestamp())
+        self.assertEqual(client.session_expiry('opaque-token',now),now+dt.timedelta(hours=1))
+        self.assertEqual(client.session_expiry(jwt(stamp-60),now),now+dt.timedelta(hours=1))
+        self.assertEqual(client.session_expiry(jwt('bad'),now),now+dt.timedelta(hours=1))
+        three=client.session_expiry(jwt(stamp+3*3600),now)
+        self.assertLess(abs((three-(now+dt.timedelta(hours=3)-dt.timedelta(minutes=2))).total_seconds()),1)
+        self.assertEqual(client.session_expiry(jwt(stamp+48*3600),now),now+dt.timedelta(hours=8))
+        responses=[{'token':jwt(stamp+3*3600),'user_info':{'userId':'id','userName':'Name'}},'LGENT',
+                   [{'orgCode':'ENT'}],[{'supplier_code':'TT094'}],'RX']
+        with patch('lgent.client.request',side_effect=responses):
+            self.assertEqual(self.api.post('/api/lgent/login/',{'userId':'id','password':'pw'},format='json').status_code,200)
+        self.profile.refresh_from_db()
+        self.assertGreater(self.profile.expires_at,timezone.now()+dt.timedelta(hours=2,minutes=50))
 
     def test_foreign_org_login_fails_without_saving_token(self):
         with patch('lgent.client.request',side_effect=[{'token':'new-token','user_info':{}},'LGENT',[{'orgCode':'OTHER'}]]):
@@ -551,6 +570,19 @@ class LgentTests(TestCase):
         with patch('lgent.mirror.copy_batch',return_value=(self.cart.trolley_id,1,0)):final=service.sync(self.user,final['photoCursor'])
         self.assertEqual(final['phase'],'photos');self.assertIsNone(final['cursor'])
 
+    def test_sync_history_window_is_selectable_and_bounded(self):
+        with patch('lgent.client.request',return_value=[]) as lg:
+            result=service.sync(self.user,days=90)
+            for _ in range(29):result=service.sync(self.user,result['cursor'])
+            self.assertEqual(lg.call_count,90)
+            days={call.args[0].rsplit('/',1)[-1] for call in lg.call_args_list}
+            self.assertEqual(len(days),90)
+        for bad in (31,0,'365',400,True):
+            with self.assertRaises(client.LgError):service.sync(self.user,days=bad)
+        with patch('lgent.client.request',return_value=[]):
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':365},format='json').status_code,200)
+            self.assertEqual(self.api.post('/api/lgent/sync/',{'days':7},format='json').status_code,400)
+
     def test_foreign_supplier_recognition_is_review_and_removed_from_fleet(self):
         value=self.photo('recognized')
         with patch('lgent.client.info',side_effect=client.LgError('foreign','foreign_supplier',403)):
@@ -562,6 +594,16 @@ class LgentTests(TestCase):
         self.assertEqual(self.api.post('/api/lgent/settings/',{'staleDays':0},format='json').status_code,400)
         self.assertEqual(self.api.post('/api/lgent/settings/',{'staleDays':45},format='json').status_code,200)
         self.profile.refresh_from_db();self.assertEqual(self.profile.stale_days,45)
+
+    def test_workspace_omits_unchanged_fleet_for_matching_version(self):
+        first=self.api.get('/api/lgent/workspace/').data
+        self.assertTrue(first['fleet']);version=first['fleetVersion']
+        same=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertIsNone(same['fleet']);self.assertEqual(same['fleetVersion'],version);self.assertIn('queue',same)
+        self.assertTrue(self.api.get('/api/lgent/workspace/',{'fleet':'stale'}).data['fleet'])
+        self.cart.grade='A';self.cart.save()
+        changed=self.api.get('/api/lgent/workspace/',{'fleet':version}).data
+        self.assertTrue(changed['fleet']);self.assertNotEqual(changed['fleetVersion'],version)
 
     def test_worker_image_requires_worker_token_and_current_lease(self):
         value=self.photo('pending');service.analyze(self.user,[value.pk]);value.refresh_from_db()

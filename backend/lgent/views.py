@@ -26,7 +26,7 @@ class LgentView(APIView):
 
 
 class WorkspaceView(LgentView):
-    def get(self,request):return Response(service.workspace(request.user))
+    def get(self,request):return Response(service.workspace(request.user,request.query_params.get('fleet')))
 
 
 class ShipmentsView(LgentView):
@@ -54,7 +54,7 @@ class SettingsView(LgentView):
 
 
 class SyncView(LgentView):
-    def post(self,request):return Response(service.sync(request.user,request.data.get('cursor')))
+    def post(self,request):return Response(service.sync(request.user,request.data.get('cursor'),request.data.get('days')))
 
 
 class LookupView(LgentView):

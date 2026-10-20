@@ -13,3 +13,16 @@ export function suggestedTrolleyId(photo:Photo,fleet:Cart[]){
  if(photo.status!=='review'||known.has(photo.trolleyId)||photo.recognizedIds?.length!==1)return '';
  const candidate=photo.recognizedIds[0];return known.has(candidate)?candidate:'';
 }
+
+// Run at most `limit` tasks at once; every item is processed even if some fail inside `fn`.
+export async function forEachLimit<T>(items:T[],limit:number,fn:(item:T,index:number)=>Promise<void>){
+ let next=0;
+ const lane=async()=>{while(next<items.length){const index=next++;await fn(items[index],index);}};
+ await Promise.all(Array.from({length:Math.max(1,Math.min(limit,items.length))},lane));
+}
+
+// One task at a time: canvas decoding of full-size phone photos is memory heavy.
+export function exclusive(){
+ let tail:Promise<unknown>=Promise.resolve();
+ return <T>(task:()=>Promise<T>)=>{const run=tail.then(task,task);tail=run.catch(()=>undefined);return run;};
+}

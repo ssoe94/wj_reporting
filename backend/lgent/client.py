@@ -38,6 +38,24 @@ def request(path,token='',payload=None):
     except ValueError:raise LgError('LG 응답 형식을 확인할 수 없습니다.')
 
 
+SESSION_FALLBACK=dt.timedelta(hours=1)
+SESSION_MAX=dt.timedelta(hours=8)
+
+
+def session_expiry(token,now=None):
+    """WJ keeps an LG token until the JWT `exp` it carries (capped), else one hour.
+    The claim is read only for scheduling; LG still rejects an invalid token and
+    a 401/403 clears the stored connection."""
+    now=now or timezone.now()
+    try:
+        part=token.split('.')[1];claims=json.loads(base64.urlsafe_b64decode(part+'='*(-len(part)%4)))
+        stamp=dt.datetime.fromtimestamp(int(claims['exp']),tz=dt.timezone.utc)-dt.timedelta(minutes=2)
+    except (IndexError,ValueError,KeyError,TypeError,OverflowError,OSError,AttributeError):
+        return now+SESSION_FALLBACK
+    if stamp<=now:return now+SESSION_FALLBACK
+    return min(stamp,now+SESSION_MAX)
+
+
 def rows(value):
     for _ in range(3):
         if isinstance(value,str):
