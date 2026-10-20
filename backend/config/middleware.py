@@ -44,7 +44,11 @@ class NoCacheAPIMiddleware:
         response = self.get_response(request)
         
         # Add no-cache headers to API responses
-        if request.path.startswith('/api/'):
+        if request.path.startswith('/api/') and not (
+            getattr(response, 'lgent_private_image', False)
+            and response.status_code in (200, 204, 304)
+            and response.get('Cache-Control', '').startswith('private,')
+        ):
             response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             response['Pragma'] = 'no-cache'
             response['Expires'] = '0'
