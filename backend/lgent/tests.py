@@ -4,6 +4,8 @@ import datetime as dt
 import hashlib
 import io
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch,Mock
 from PIL import Image
 from django.contrib.auth import get_user_model
@@ -24,7 +26,7 @@ def jpeg():
     out=io.BytesIO();Image.new('RGB',(32,40),'green').save(out,'JPEG');return out.getvalue()
 
 
-@override_settings(LGENT_FORCE_LOCAL_MEDIA=True,LGENT_ALLOW_LOCAL_MEDIA=True,AI_WORKER_TOKEN="isolated-worker-token",CLOUDINARY_STORAGE={"CLOUD_NAME":"test","API_KEY":"test","API_SECRET":"test"})
+@override_settings(MIDDLEWARE=["config.middleware.NoCacheAPIMiddleware"],LGENT_FORCE_LOCAL_MEDIA=True,LGENT_ALLOW_LOCAL_MEDIA=True,AI_WORKER_TOKEN="isolated-worker-token",CLOUDINARY_STORAGE={"CLOUD_NAME":"test","API_KEY":"test","API_SECRET":"test"})
 class LgentTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -160,6 +162,54 @@ class LgentTests(TestCase):
         response=self.api.get(f'/api/lgent/photos/{value.pk}/image/?v={value.sha256}')
         self.assertEqual(response.content,self.raw)
         self.assertEqual(response['Cache-Control'],'private, max-age=86400')
+
+    def test_current_version_304_does_not_read_upstream_or_thumbnail_cache(self):
+        version=service.cart_photo_version(self.cart)
+        url='/api/lgent/carts/TT0940306/photo/?size=thumbnail&v='+version
+        with patch('lgent.client.photo',return_value=self.raw):etag=self.api.get(url)['ETag']
+        cache.clear()
+        with patch('lgent.client.photo') as photo,patch('lgent.client.info') as info,patch('lgent.media.thumbnail') as thumb:
+            response=self.api.get(url,HTTP_IF_NONE_MATCH=etag)
+            self.assertEqual(response.status_code,304)
+            photo.assert_not_called();info.assert_not_called();thumb.assert_not_called()
+        with patch('lgent.client.photo',return_value=self.raw) as photo:
+            self.assertEqual(self.api.get(url.replace(version,'stale'),HTTP_IF_NONE_MATCH=etag).status_code,304)
+            photo.assert_called_once()
+        # A different rendition must not reuse the thumbnail validator.
+        with patch('lgent.client.photo',return_value=self.raw):
+            self.assertEqual(self.api.get(url.replace('size=thumbnail','size=original'),HTTP_IF_NONE_MATCH=etag).status_code,200)
+        self.profile.expires_at=timezone.now()-dt.timedelta(seconds=1);self.profile.save()
+        self.assertEqual(self.api.get(url,HTTP_IF_NONE_MATCH=etag).status_code,409)
+
+    def test_thumbnail_downsamples_jpeg_before_loading_pixels(self):
+        output=io.BytesIO()
+        with Image.new('RGB',(3200,2400),'green') as image:image.save(output,'JPEG')
+        transpose=media.ImageOps.exif_transpose;sizes=[]
+        def record(source):
+            sizes.append(source.size);return transpose(source)
+        with patch('lgent.media.ImageOps.exif_transpose',side_effect=record):result=media.thumbnail(output.getvalue())
+        self.assertLess(sizes[0][0],3200)
+        with Image.open(io.BytesIO(result)) as image:self.assertLessEqual(max(image.size),420)
+
+    def test_thumbnail_generation_has_two_process_local_slots(self):
+        guard=threading.Lock();two=threading.Event();release=threading.Event();active=0;peak=0
+        transpose=media.ImageOps.exif_transpose
+        def blocked(source):
+            nonlocal active,peak
+            with guard:
+                active+=1;peak=max(peak,active)
+                if active==2:two.set()
+            try:
+                if not release.wait(5):raise AssertionError('thumbnail test timed out')
+                return transpose(source)
+            finally:
+                with guard:active-=1
+        with patch('lgent.media.ImageOps.exif_transpose',side_effect=blocked),ThreadPoolExecutor(max_workers=4) as pool:
+            futures=[pool.submit(media.thumbnail,self.raw) for _ in range(4)]
+            try:self.assertTrue(two.wait(5));self.assertEqual(peak,2)
+            finally:release.set()
+            self.assertTrue(all(future.result() for future in futures))
+        self.assertEqual(peak,2)
 
     def test_missing_gallery_photo_is_an_empty_uncached_response(self):
         self.cart=service.remember(dict(ROW,pic_url=''))

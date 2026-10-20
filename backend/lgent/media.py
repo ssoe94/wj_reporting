@@ -5,6 +5,7 @@ import time
 import re
 from urllib.parse import urlencode
 from urllib3.util import Timeout
+from threading import BoundedSemaphore
 from pathlib import Path
 import cloudinary.uploader
 import cloudinary.utils
@@ -17,15 +18,19 @@ from .client import LgError
 MAX_BYTES=3*1024*1024
 MIRROR_MAX_BYTES=5*1024*1024
 THUMB_TRANSFORMATION='w_420,c_limit,q_auto,f_auto'
+_THUMBNAIL_SLOTS=BoundedSemaphore(2)
 
 def thumbnail(raw):
     if not raw:return raw
     try:
-        with Image.open(io.BytesIO(raw)) as source:
+        with _THUMBNAIL_SLOTS, Image.open(io.BytesIO(raw)) as source:
             if source.width*source.height>24_000_000:raise ValueError()
-            image=ImageOps.exif_transpose(source).convert('RGB');image.thumbnail((420,420))
-            output=io.BytesIO();image.save(output,format='JPEG',quality=75)
-            return output.getvalue()
+            # Ask JPEG's decoder to downsample before EXIF transpose loads pixels.
+            if source.format=='JPEG':source.draft('RGB',(840,840))
+            with ImageOps.exif_transpose(source).convert('RGB') as image:
+                image.thumbnail((420,420))
+                output=io.BytesIO();image.save(output,format='JPEG',quality=75)
+                return output.getvalue()
     except (ValueError,OSError,UnidentifiedImageError,Image.DecompressionBombError):
         raise LgError('사진 미리보기를 만들지 못했습니다.','image_unavailable',502)
 

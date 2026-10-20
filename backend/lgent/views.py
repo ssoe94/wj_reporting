@@ -57,6 +57,9 @@ class LookupView(LgentView):
 
 class CartPhotoView(LgentView):
     def get(self,request,trolley_id):
+        version=service.cached_cart_version(request.user,trolley_id)
+        if version and request.query_params.get('v')==version and etag_matches(request,version):
+            return image_response(request,b'cached',version,not_modified=True)
         raw,version=service.cart_image(request.user,trolley_id,thumbnail=request.query_params.get('size')=='thumbnail')
         return image_response(request,raw,version)
 
@@ -77,12 +80,22 @@ class PhotoImageView(LgentView):
         return image_response(request,raw,value.sha256)
 
 
-def image_response(request,raw,version):
-    if not raw:
-        response=HttpResponse(status=204);response['Cache-Control']='private, no-store';return response
-    etag='"'+hashlib.sha256(raw).hexdigest()+'"'
+def image_etag(request,version):
+    rendition='thumbnail-v2' if request.query_params.get('size')=='thumbnail' else 'original'
+    return '"'+hashlib.sha256((version+':'+rendition).encode()).hexdigest()+'"'
+
+
+def etag_matches(request,version):
     matches=[part.strip().removeprefix('W/') for part in request.headers.get('If-None-Match','').split(',')]
-    response=HttpResponse(status=304) if etag in matches or '*' in matches else HttpResponse(raw,content_type='image/png' if raw.startswith(b'\x89PNG') else 'image/jpeg')
+    return image_etag(request,version) in matches or '*' in matches
+
+
+def image_response(request,raw,version,not_modified=False):
+    if not raw:
+        response=HttpResponse(status=204);response['Cache-Control']='private, no-store';response.lgent_private_image=True;return response
+    etag=image_etag(request,version)
+    response=HttpResponse(status=304) if not_modified or etag_matches(request,version) else HttpResponse(raw,content_type='image/png' if raw.startswith(b'\x89PNG') else 'image/jpeg')
+    response.lgent_private_image=True
     response['ETag']=etag
     response['Cache-Control']='private, max-age=86400' if request.query_params.get('v')==version else 'private, no-cache'
     response['Vary']='Authorization, Cookie'

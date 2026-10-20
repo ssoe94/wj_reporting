@@ -191,6 +191,17 @@ def cart_thumbnail_key(cart):
     return 'lgent-thumb:'+cart.trolley_id+':'+cart_photo_version(cart)
 
 
+def cached_cart_version(user,trolley_id):
+    # Local validation only: never perform an upstream read to answer a 304.
+    connection(user);client.code(trolley_id)
+    cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
+    row=cart.baseline if cart else {}
+    if (row.get('supplier_id')=='TT094' and row.get('com_code') in ('LGENT','LGETA')
+        and row.get('trolley_id')==trolley_id and row.get('org_code') and row.get('pic_url')):
+        return cart_photo_version(cart)
+    return ''
+
+
 def cart_image(user,trolley_id,thumbnail=False):
     client.code(trolley_id)
     cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
