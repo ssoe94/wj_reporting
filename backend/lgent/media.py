@@ -4,6 +4,7 @@ import io
 import time
 import re
 from urllib.parse import urlencode
+from urllib3.util import Timeout
 from pathlib import Path
 import cloudinary.uploader
 import cloudinary.utils
@@ -114,7 +115,7 @@ def put_mirror(raw,trolley_id,digest):
     if configured():
         try:
             value=cloudinary.uploader.upload(io.BytesIO(raw),public_id=public_id,resource_type='image',
-                type='authenticated',overwrite=False,unique_filename=False,timeout=15,**_cloud_options())
+                type='authenticated',overwrite=False,unique_filename=False,timeout=Timeout(total=15,connect=3,read=12),**_cloud_options())
             if value.get('public_id')!=public_id:raise ValueError()
         except Exception:raise LgError('사진 복제 저장이 지연되고 있습니다.','mirror_unavailable',503)
     else:
@@ -159,5 +160,8 @@ def read_mirror(key):
             for block in response.iter_content(65536):
                 raw.extend(block)
                 if len(raw)>MIRROR_MAX_BYTES:raise LgError('복제 사진 크기를 확인할 수 없습니다.','mirror_unavailable',502)
-            return bytes(raw)
+            result=bytes(raw)
+            if not result.startswith((b'\xff\xd8\xff',b'\x89PNG\r\n\x1a\n')):
+                raise LgError('복제 사진 형식을 확인할 수 없습니다.','mirror_unavailable',502)
+            return result
     except requests.RequestException:raise LgError('복제 사진을 읽지 못했습니다.','mirror_unavailable',502)
