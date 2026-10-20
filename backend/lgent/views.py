@@ -29,6 +29,12 @@ class WorkspaceView(LgentView):
     def get(self,request):return Response(service.workspace(request.user))
 
 
+class ShipmentsView(LgentView):
+    def get(self,request):
+        from .shipments import overview
+        return Response(overview(request.user,request.query_params))
+
+
 class LoginView(LgentView):
     def post(self,request):return Response(service.login(request.user,request.data.get('userId'),request.data.get('password')))
 

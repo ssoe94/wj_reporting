@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 urlpatterns=[
+ path('shipments/',views.ShipmentsView.as_view()),
  path('workspace/',views.WorkspaceView.as_view()),path('login/',views.LoginView.as_view()),path('logout/',views.LogoutView.as_view()),
  path('settings/',views.SettingsView.as_view()),path('sync/',views.SyncView.as_view()),path('lookup/',views.LookupView.as_view()),
  path('carts/<str:trolley_id>/photo/',views.CartPhotoView.as_view()),path('photos/',views.PhotoUploadView.as_view()),

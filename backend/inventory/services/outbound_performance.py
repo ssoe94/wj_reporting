@@ -378,7 +378,7 @@ def _is_auth_expired_payload(payload: Mapping[str, Any]) -> bool:
     return mentions_token and mentions_expiry
 
 
-def _post_mes(body: Mapping[str, Any]) -> dict[str, Any]:
+def _post_mes(body: Mapping[str, Any], *, records: bool = False, timeout: float = 15) -> dict[str, Any]:
     try:
         token = get_access_token()
     except Exception as exc:
@@ -386,12 +386,14 @@ def _post_mes(body: Mapping[str, Any]) -> dict[str, Any]:
 
     response = None
     for refresh in (False, True):
+        endpoint = (f"{MES_ROUTE_BASE}/inventory/open/v1/outbound_order/_list_outbound_record"
+                    if records else OUTBOUND_ORDER_LIST_ENDPOINT)
         url = (
-            f"{MES_BASE_URL}{OUTBOUND_ORDER_LIST_ENDPOINT}"
+            f"{MES_BASE_URL}{endpoint}"
             f"?access_token={quote(str(token), safe='')}"
         )
         try:
-            response = requests.post(url, json=dict(body), timeout=(5, 15))
+            response = requests.post(url, json=dict(body), timeout=(5, timeout))
             if response.status_code == 401 and not refresh:
                 try:
                     token = get_access_token(force_refresh=True)
