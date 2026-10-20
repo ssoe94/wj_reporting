@@ -182,6 +182,7 @@ jobs:
           local_worker.test_chatgpt_bridge
           local_worker.test_worker_launcher
           local_worker.test_trolley_recognition
+          local_worker.test_lgent_dispatch
 
   deploy-main:
     name: Deploy production from main
