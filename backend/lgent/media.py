@@ -13,6 +13,17 @@ from .client import LgError
 
 MAX_BYTES=3*1024*1024
 
+def thumbnail(raw):
+    if not raw:return raw
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            if source.width*source.height>24_000_000:raise ValueError()
+            image=ImageOps.exif_transpose(source).convert('RGB');image.thumbnail((420,420))
+            output=io.BytesIO();image.save(output,format='JPEG',quality=75)
+            return output.getvalue()
+    except (ValueError,OSError,UnidentifiedImageError,Image.DecompressionBombError):
+        raise LgError('사진 미리보기를 만들지 못했습니다.','image_unavailable',502)
+
 def normalize(raw):
     if not raw or len(raw)>MAX_BYTES:raise LgError('사진은 3MB 이하로 준비하세요.','invalid_photo',400)
     try:

@@ -60,6 +60,7 @@ def login(user,user_id,password):
 
 def remember(row):
     cart,_=LgentCart.objects.get_or_create(trolley_id=row['trolley_id'])
+    cache.delete(cart_thumbnail_key(cart))
     if cart.baseline.get('pic_url')!=row.get('pic_url'):
         cart.verified_save_at=None;cart.photo_sha256=''
     cart.baseline={key:value for key,value in row.items() if key!='file_stream_bytes'}
@@ -80,7 +81,7 @@ def public_cart(cart,stale_days=30):
     return {'trolleyId':cart.trolley_id,'grade':cart.grade,'displayAt':stamp.astimezone(client.TZ).isoformat() if stamp else '',
             'dateSource':source,'ageDays':days,'alert':'unknown' if days is None else 'stale' if days>=stale_days else 'fresh',
             'hasPhoto':bool(cart.baseline.get('pic_url')),'photoKnown':cart.baseline.get('supplier_id')=='TT094',
-            'photoVersion':cart.photo_sha256 or cart.updated_at.isoformat(),'lastHistoryAt':cart.last_history_at,
+            'photoVersion':cart_photo_version(cart),'lastHistoryAt':cart.last_history_at,
             'checkedAt':cart.checked_at.isoformat() if cart.checked_at else ''}
 
 
@@ -166,14 +167,42 @@ def lookup(user,trolley_id):
     return {'cart':public_cart(cart,profile(user).stale_days)}
 
 
-def cart_image(user,trolley_id):
-    _,token=connection(user);row=client.info(token,trolley_id);cart=remember(row)
-    key='lgent-cart-photo:'+trolley_id+':'+client.fingerprint(row)
-    raw=cache.get(key)
-    if raw is None:raw=client.photo(token,row);cache.set(key,raw,120)
+def cart_photo_version(cart):
+    # Metadata polling must not invalidate every photograph. A verified save
+    # changes its digest even when LG reuses an image URL.
+    return hashlib.sha256((str(cart.baseline.get('pic_url') or '')+':'+cart.photo_sha256).encode()).hexdigest()
+
+
+def cart_thumbnail_key(cart):
+    return 'lgent-thumb:'+cart.trolley_id+':'+cart_photo_version(cart)
+
+
+def cart_image(user,trolley_id,thumbnail=False):
+    _,token=connection(user);client.code(trolley_id)
+    cart=LgentCart.objects.filter(trolley_id=trolley_id,supplier_code='TT094').first()
+    # The workspace already holds supplier-verified LG metadata. Re-fetching
+    # cart/info for every thumbnail doubles slow upstream reads and DB writes.
+    row=cart.baseline if cart else {}
+    if row.get('supplier_id')!='TT094' or row.get('com_code') not in ('LGENT','LGETA') or row.get('trolley_id')!=trolley_id or not row.get('org_code'):
+        row=client.info(token,trolley_id);cart=remember(row)
+    key=cart_thumbnail_key(cart)
+    if thumbnail:
+        cached=cache.get(key)
+        if isinstance(cached,bytes):return data_image(cached)
+    raw=client.photo(token,row)
     digest=hashlib.sha256(raw).hexdigest() if raw else ''
-    if cart.photo_sha256 and cart.photo_sha256!=digest:cart.verified_save_at=None
-    cart.photo_sha256=digest;cart.save(update_fields=['photo_sha256','verified_save_at','updated_at'])
+    if cart.verified_save_at and cart.photo_sha256 and digest!=cart.photo_sha256:
+        # LG can replace bytes at the same URL. Invalidate only the snapshot
+        # actually read, never a concurrent save's verification or active lease.
+        changed=LgentCart.objects.filter(pk=cart.pk,baseline=cart.baseline,
+            photo_sha256=cart.photo_sha256,verified_save_at=cart.verified_save_at,save_attempt_id='').update(
+                verified_save_at=None,photo_sha256='',updated_at=timezone.now())
+        if changed:
+            cart.verified_save_at=None;cart.photo_sha256='';key=cart_thumbnail_key(cart)
+    # Gallery cache is small; original bytes and their write-verification digest
+    # stay untouched. Image reads never acquire or erase write leases.
+    if thumbnail:
+        raw=media.thumbnail(raw);cache.set(key,raw,900)
     return data_image(raw)
 
 

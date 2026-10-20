@@ -55,7 +55,7 @@ class LookupView(LgentView):
 
 
 class CartPhotoView(LgentView):
-    def get(self,request,trolley_id):return Response(service.cart_image(request.user,trolley_id))
+    def get(self,request,trolley_id):return Response(service.cart_image(request.user,trolley_id,thumbnail=request.query_params.get('size')=='thumbnail'))
 
 
 class PhotoUploadView(LgentView):
@@ -69,7 +69,9 @@ class PhotoUploadView(LgentView):
 class PhotoImageView(LgentView):
     def get(self,request,pk):
         value=get_object_or_404(LgentPhoto,user=request.user,pk=pk,archived_at__isnull=True)
-        return Response(service.data_image(media.read(value.storage_key)))
+        raw=media.read(value.storage_key)
+        if request.query_params.get('size')=='thumbnail':raw=media.thumbnail(raw)
+        return Response(service.data_image(raw))
 
 
 class AnalyzeView(LgentView):
