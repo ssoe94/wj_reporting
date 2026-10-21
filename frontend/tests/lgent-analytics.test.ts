@@ -16,8 +16,8 @@ test('fleet rates exclude unconfirmed information; no-photo and unknown-date sta
  assert.equal(result.noPhoto,1);assert.equal(result.unknownDate,1);assert.equal(result.gradeRate,66.7);
  assert.equal(result.grades.reduce((total,[,count])=>total+count,0),3);
 });
-test('file-derived freshness remains separate from LG modification/save verification',()=>{
- const result=fleetMetrics([cart,{...cart,trolleyId:'2',dateSource:'verified_save'},{...cart,trolleyId:'3',dateSource:'lg_modified'},{...cart,trolleyId:'4',alert:'stale'}]);
+test('file-derived freshness remains separate from actual photo-change/save verification',()=>{
+ const result=fleetMetrics([cart,{...cart,trolleyId:'2',dateSource:'verified_save'},{...cart,trolleyId:'3',dateSource:'photo_changed'},{...cart,trolleyId:'4',alert:'stale'}]);
  assert.equal(result.fresh,3);assert.equal(result.estimatedFresh,1);assert.equal(result.verifiedFresh,2);assert.equal(result.stale,1);
 });
 test('plan readiness deduplicates trolleys across orders and ignores item counts',()=>{

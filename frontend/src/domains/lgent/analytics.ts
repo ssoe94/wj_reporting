@@ -12,7 +12,7 @@ export function fleetMetrics(fleet:Cart[]) {
  return {
   confirmed, total:confirmed.length, unconfirmed:fleet.length-confirmed.length,
   fresh:fresh.length, estimatedFresh:fresh.filter(cart=>cart.dateSource==='photo_file').length,
-  verifiedFresh:fresh.filter(cart=>cart.dateSource==='verified_save'||cart.dateSource==='lg_modified').length,
+  verifiedFresh:fresh.filter(cart=>cart.dateSource==='verified_save'||cart.dateSource==='photo_changed').length,
   stale:photos.filter(cart=>cart.alert==='stale').length,
   unknownDate:photos.filter(cart=>cart.alert==='unknown').length,
   noPhoto:confirmed.length-photos.length,

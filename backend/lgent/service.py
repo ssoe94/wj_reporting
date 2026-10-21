@@ -61,27 +61,34 @@ def login(user,user_id,password):
 
 def remember(row):
     cart,_=LgentCart.objects.get_or_create(trolley_id=row['trolley_id'])
-    if cart.baseline.get('pic_url')!=row.get('pic_url'):
+    known_photo=bool(cart.mirror_sha256 or cart.photo_sha256)
+    if not known_photo and cart.baseline.get('pic_url')!=row.get('pic_url'):
         cart.verified_save_at=None;cart.photo_sha256=''
     cart.baseline={key:value for key,value in row.items() if key!='file_stream_bytes'}
     cart.supplier_code='TT094'
     cart.grade=str(row.get('last_grade') or '')[:8];cart.lg_modified_at=client.modified_at(row)
-    cart.photo_file_at=client.photo_file_at(row.get('pic_url') or '');cart.checked_at=timezone.now()
+    # A metadata/URL change is a candidate, not proof of a new photograph.
+    # Keep the prior photo date until mirror.copy compares the actual bytes.
+    if not known_photo:cart.photo_file_at=client.photo_file_at(row.get('pic_url') or '')
+    cart.checked_at=timezone.now()
     # Cache readers must never write back an older external-write lease.
     cart.save(update_fields=['baseline','supplier_code','grade','lg_modified_at','photo_file_at','checked_at','verified_save_at','photo_sha256','updated_at'])
     return cart
 
 
 def public_cart(cart,stale_days=30):
-    if cart.lg_modified_at:stamp,source=cart.lg_modified_at,'lg_modified'
+    if cart.photo_changed_at:stamp,source=cart.photo_changed_at,'photo_changed'
     elif cart.verified_save_at:stamp,source=cart.verified_save_at,'verified_save'
     elif cart.photo_file_at:stamp,source=cart.photo_file_at,'photo_file'
     else:stamp,source=None,'unknown'
     days=max(0,(timezone.now()-stamp).days) if stamp else None
+    candidate=client.modified_at(cart.baseline) or client.photo_file_at(str(cart.baseline.get('pic_url') or ''))
     result={'trolleyId':cart.trolley_id,'grade':cart.grade,'displayAt':stamp.astimezone(client.TZ).isoformat() if stamp else '',
             'dateSource':source,'ageDays':days,'alert':'unknown' if days is None else 'stale' if days>=stale_days else 'fresh',
             'hasPhoto':bool(cart.baseline.get('pic_url')),'photoKnown':cart.baseline.get('supplier_id')=='TT094',
             'photoVersion':cart_photo_version(cart),'lastHistoryAt':cart.last_history_at,
+            'photoCheckPending':bool(cart.baseline.get('pic_url') and (cart.mirror_sha256 or cart.photo_sha256) and not mirror.current(cart)),
+            'photoCandidateAt':candidate.astimezone(client.TZ).isoformat() if candidate else '',
             'checkedAt':cart.checked_at.isoformat() if cart.checked_at else ''}
     if mirror.current(cart):result.update(media.mirror_urls(cart.mirror_key))
     return result
@@ -100,6 +107,7 @@ def public_photo(value):
 
 
 def workspace(user,fleet_version=None):
+    from .continuous import public_state
     record=profile(user);connected=bool(record and record.expires_at and record.expires_at>timezone.now() and decrypt_token(record.encrypted_token))
     days=record.stale_days if record else 30
     photos=LgentPhoto.objects.filter(user=user,archived_at__isnull=True).select_related('job').order_by('-created_at')
@@ -116,6 +124,7 @@ def workspace(user,fleet_version=None):
                            'expiresAt':record.expires_at.isoformat() if record and record.expires_at else ''},
             'company':{'name':'万佳','code':'TT094'},'fleet':None if fleet_version==version else fleet,'fleetVersion':version,
             'queue':[public_photo(value) for value in active+completed],'settings':{'staleDays':days},
+            'sync':{'enabled':bool(record and record.auto_sync_enabled),'state':public_state(record) if record else {}},
             'worker':{'state':'online' if online else 'offline','modelName':'Qwen 3.8 27B'},'capabilities':{'canEdit':can_edit(user)}}
 
 
@@ -422,7 +431,8 @@ def save_one(user,photo_id):
             photo_verified=hashlib.sha256(after_photo).hexdigest()==value.sha256
             cart=remember(after)
             if info_verified and photo_verified:
-                cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256;mirror.attach_upload(cart,value,after);cart.save()
+                mirror.attach_upload(cart,value,after,previous_sha256=hashlib.sha256(old_photo).hexdigest() if old_photo else '')
+                cart.photo_sha256=value.sha256;cart.save()
     except client.LgError:pass
     value.status='saved' if info_verified and photo_verified else 'accepted' if accepted else 'uncertain'
     value.note='LG 저장·재조회 일치 확인' if value.status=='saved' else 'LG에서 사진과 저장 결과를 다시 확인하세요. 자동 재전송하지 않습니다.'
@@ -452,7 +462,7 @@ def reconcile(user,photo_id):
         if live.save_attempt_id!=value.save_attempt_id or (cart.save_attempt_id and cart.save_attempt_id!=value.save_attempt_id):
             raise client.LgError('다른 저장이 진행 중입니다. 다시 조회하세요.','photo_conflict',409)
         live.status='saved';live.saved_at=timezone.now();live.note='LG 결과 재조회·사진 일치 확인';live.save()
-        cart=remember(row);cart.verified_save_at=timezone.now();cart.photo_sha256=value.sha256;mirror.attach_upload(cart,live,row)
+        cart=remember(row);mirror.attach_upload(cart,live,row,previous_sha256=live.previous_photo_sha256);cart.photo_sha256=value.sha256
         cart.save_attempt_id='';cart.save_started_at=None;cart.save()
         LgentSaveEvent.objects.filter(attempt_id=value.save_attempt_id,photo=live).update(outcome='saved',info_verified=True,photo_verified=True)
     return {'id':value.pk,'status':'saved','verified':True}

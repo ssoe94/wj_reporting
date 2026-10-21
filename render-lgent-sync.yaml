@@ -1,0 +1,46 @@
+# Standalone Blueprint for the additional read-only LG sync cron only.
+# Apply only after backend migration 0004 is deployed, in the existing workspace.
+# Existing frontend/backend services are referenced, never managed by this file.
+services:
+  - type: cron
+    name: lgent-photo-sync
+    runtime: python
+    region: oregon
+    plan: 0.5c-512mb
+    repo: https://github.com/ssoe94/wj_reporting
+    branch: main
+    rootDir: backend
+    autoDeployTrigger: checksPass
+    schedule: "*/5 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py sync_lgent --seconds 240
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: wj_reporting_backend
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: wj_reporting_backend
+          envVarKey: SECRET_KEY
+      - key: CLOUDINARY_CLOUD_NAME
+        fromService:
+          type: web
+          name: wj_reporting_backend
+          envVarKey: CLOUDINARY_CLOUD_NAME
+      - key: CLOUDINARY_API_KEY
+        fromService:
+          type: web
+          name: wj_reporting_backend
+          envVarKey: CLOUDINARY_API_KEY
+      - key: CLOUDINARY_API_SECRET
+        fromService:
+          type: web
+          name: wj_reporting_backend
+          envVarKey: CLOUDINARY_API_SECRET
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
