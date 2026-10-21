@@ -412,7 +412,7 @@ export default function UserApproval() {
         <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
-              <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)]">
+              <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-surface-muted)]">
                 <tr>
                   <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">사용자</th>
                   <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">부서</th>

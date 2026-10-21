@@ -67,7 +67,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
     <div
       className={`border rounded p-2 min-h-20 text-xs cursor-pointer transition-colors ${
         setups.length > 0
-          ? 'bg-[var(--wj-surface-solid)] border-[var(--wj-accent)] hover:bg-[var(--wj-accent-soft)] shadow-sm'
+          ? 'bg-[var(--wj-surface-solid)] border-[var(--wj-accent)] hover:bg-[var(--wj-surface-muted)] shadow-sm'
           : 'bg-[var(--wj-surface-solid)] border-[var(--wj-border)] hover:bg-[var(--wj-bg-strong)]'
       }`}
       onClick={handleClick}

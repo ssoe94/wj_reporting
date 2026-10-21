@@ -136,7 +136,7 @@ export default function RecordsTable() {
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-[var(--wj-accent-soft)] font-semibold">
+          <tfoot className="bg-[var(--wj-surface-muted)] font-semibold">
             <tr>
               <td className="px-2 py-1 text-center" colSpan={4}>{t('sum')}</td>
               <td className="px-2 py-1 text-center">{totalPlan}</td>

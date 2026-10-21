@@ -165,7 +165,7 @@
   text-align:center;
 }
 .inspection-board-machine:hover {
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
 }
 .inspection-board-machine:active {
   transform:translateY(1px);
@@ -349,7 +349,7 @@
 .inspection-board-scene-status>span {
   border-radius:8px;
   padding:6px 9px;
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   color:var(--wj-text);
   font-size:13px;
   font-weight:700;
@@ -405,7 +405,7 @@
   padding:3px 8px;
   border-radius:5px;
   color:var(--wj-muted);
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   font-size:11px;
 }
 .inspection-board-production-tone.is-stale {
@@ -476,7 +476,7 @@
   white-space:nowrap;
 }
 .inspection-board-record:hover {
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
 }
 .inspection-board-actions>div {
   display:flex;

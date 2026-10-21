@@ -23,7 +23,7 @@
 .qa-title>span {
   display:grid;
   place-items:center;
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   border:1px solid var(--wj-border);
   color:var(--wj-accent-strong);
   border-radius:12px;
@@ -272,7 +272,7 @@
 }
 
 .qa-badge {
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   border:1px solid var(--wj-border);
   border-radius:7px;
   padding:4px 7px;
@@ -335,7 +335,7 @@
   display:block;
   width:95px;
   height:3px;
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   margin-top:5px;
   border-radius:5px;
   overflow:hidden
@@ -344,7 +344,7 @@
 .qa-inline-bar i {
   display:block;
   height:100%;
-  background:var(--wj-accent-soft);
+  background:var(--wj-data-tint);
   max-width:100%
 }
 
@@ -583,7 +583,7 @@
 
 .qa-icon-button {
   border:0;
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   border-radius:8px;
   padding:7px;
   min-width:32px;
@@ -906,7 +906,7 @@
 .qa-machine-label {
   display:inline-flex;
   border-radius:6px;
-  background:var(--wj-accent-soft);
+  background:var(--wj-surface-muted);
   color:var(--wj-accent-strong);
   padding:3px 7px;
   margin-bottom:6px;

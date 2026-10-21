@@ -56,7 +56,7 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
         const { key, ...rest } = props as any;
         if ('isAddNew' in option) {
           return (
-            <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-accent-soft)] border-t border-[var(--wj-border)]">
+            <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-surface-muted)] border-t border-[var(--wj-border)]">
               <div className="flex items-center justify-center gap-2 text-[var(--wj-accent-strong)] font-medium py-2 text-sm">
                 <Plus className="h-3 w-3" />
                 <span>{`"${option.model_code}" ${t('add_new_model_prompt')}`}</span>

@@ -131,7 +131,7 @@
 }
 
 .analysis-unit {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   border-radius: 6px;
   font-size: 12px;
@@ -162,7 +162,7 @@
   display: inline-block;
   font-size: 12px;
   font-weight: 600;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   padding: 4px 7px;
   border-radius: 5px;
@@ -251,7 +251,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   border: 1px solid var(--wj-border);
   border-radius: 9px;
   padding: 13px 16px;
@@ -292,7 +292,7 @@
 }
 
 .analysis-table thead th {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-weight: 600;
   font-size: 12px;

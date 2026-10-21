@@ -514,7 +514,7 @@ const ProductionDashboardPage: FC = () => {
               value="+"
               label={stats.trendLabel}
               icon={<BarChart3 className="w-6 h-6 text-[var(--wj-accent-strong)]" />}
-              colorClass="bg-[var(--wj-accent-soft)]"
+              colorClass="bg-[var(--wj-surface-muted)]"
               delay={0.4}
             />
           </div>

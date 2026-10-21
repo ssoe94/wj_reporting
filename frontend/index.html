@@ -13,6 +13,7 @@
       (function(){
         var mode = 'light';
         var field = /^\/field(?:\/|$)/.test(location.pathname);
+        var injectionBoard = /^\/(?:boards\/injection|(?:next\/)?production\/injection-board)(?:\/|$)/.test(location.pathname);
         try {
           mode = localStorage.getItem('wj:appearance:v1') === 'dark' ? 'dark' : 'light';
           // Cosmetic hint only: valid solely for the same auth generation.
@@ -31,6 +32,10 @@
         if (field) {
           mode = 'light';
           document.documentElement.setAttribute('data-field-appearance', 'legacy');
+        }
+        if (injectionBoard) {
+          mode = 'light';
+          document.documentElement.setAttribute('data-injection-board-appearance', 'legacy');
         }
         document.documentElement.setAttribute('data-app-theme', mode);
         document.documentElement.style.colorScheme = mode;

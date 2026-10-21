@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { APP_THEME_STORAGE_KEY, isFieldAppearance, resolveAppTheme, parseAppTheme, readAppTheme, rememberAppTheme } from '../src/domains/appearance/theme.ts';
+import { APP_THEME_STORAGE_KEY, isFieldAppearance, isInjectionBoardAppearance, resolveAppTheme, parseAppTheme, readAppTheme, rememberAppTheme } from '../src/domains/appearance/theme.ts';
 
 test('only a valid dark preference enables dark; unset, corrupt and old lite values use light', () => {
   for (const value of [null, undefined, 'light', '1', 'night', '{}']) assert.equal(parseAppTheme(value), 'light');
@@ -39,4 +39,16 @@ test('field routes and recognized terminal accounts always use light without cha
   }
   assert.equal(resolveAppTheme('dark', true, false), 'light');
   assert.equal(resolveAppTheme('dark', false, false), 'dark');
+});
+
+
+test('injection board routes use legacy light while other boards keep the saved preference', () => {
+  for (const path of ['/boards/injection', '/boards/injection/', '/production/injection-board', '/production/injection-board/index.html', '/next/production/injection-board']) {
+    assert.equal(isInjectionBoardAppearance(path), true, path);
+    assert.equal(resolveAppTheme('dark', false, isInjectionBoardAppearance(path)), 'light');
+  }
+  for (const path of ['/boards/injection-history', '/production/injection-board-settings', '/boards/inspection', '/boards/overview', '/production/plan']) {
+    assert.equal(isInjectionBoardAppearance(path), false, path);
+    assert.equal(resolveAppTheme('dark', false, isInjectionBoardAppearance(path)), 'dark');
+  }
 });

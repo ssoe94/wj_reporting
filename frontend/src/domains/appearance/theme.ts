@@ -8,8 +8,12 @@ export function isFieldAppearance(pathname: string, fieldTerminal = false): bool
   return fieldTerminal || /^\/field(?:\/|$)/.test(pathname);
 }
 
-export function resolveAppTheme(preferred: AppTheme, liteMode: boolean, fieldAppearance: boolean): AppTheme {
-  return liteMode || fieldAppearance ? 'light' : preferred;
+export function isInjectionBoardAppearance(pathname: string): boolean {
+  return /^\/(?:boards\/injection|(?:next\/)?production\/injection-board)(?:\/|$)/.test(pathname);
+}
+
+export function resolveAppTheme(preferred: AppTheme, liteMode: boolean, legacyAppearance: boolean): AppTheme {
+  return liteMode || legacyAppearance ? 'light' : preferred;
 }
 
 type ThemeStorage = Pick<Storage, 'getItem' | 'setItem'>;

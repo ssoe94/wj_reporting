@@ -5,7 +5,7 @@
 .ct-history[open] > .ct-history__summary::after { content: "−"; }
 .ct-history__summary h3 { margin: 5px 0; font-size: 18px; }
 .ct-history__summary p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.ct-history__scope-label { flex-shrink: 0; max-width: 32%; overflow-wrap: anywhere; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 14px; font-weight: 650; }
+.ct-history__scope-label { flex-shrink: 0; max-width: 32%; overflow-wrap: anywhere; padding: 8px 12px; border-radius: 8px; background: var(--wj-surface-muted); font-size: 14px; font-weight: 650; }
 .ct-history__body { display: grid; gap: 16px; min-width: 0; border-top: 1px solid var(--surface-border); padding: 20px; }
 .ct-history__scope-row, .ct-history__range, .ct-history__range-form, .ct-history__part-search, .ct-history__quick-ranges, .ct-history__basis, .ct-history__part-context, .ct-history__table-heading, .ct-history__pagination { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ct-history__scope-row { align-items: flex-end; justify-content: space-between; }
@@ -45,13 +45,13 @@
 .ct-history th, .ct-history td { padding: 12px; border-bottom: 1px solid var(--surface-border); vertical-align: top; }
 .ct-history td { font-variant-numeric: tabular-nums; }
 .ct-history tbody tr:last-child td { border-bottom: 0; }
-.ct-history tbody tr:hover { background: var(--wj-accent-soft); }
+.ct-history tbody tr:hover { background: var(--wj-surface-muted); }
 .ct-history td:nth-child(-n+6) { white-space: nowrap; }
 .ct-history__value { font-weight: 650; }
 .ct-history__part-link { display: inline; padding: 0; border: 0; background: none; color: var(--accent-strong); font: inherit; font-weight: 650; text-align: left; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .ct-history__parts { display: grid; gap: 7px; min-width: 210px; }
 .ct-history__parts small { display: block; color: var(--muted); line-height: 1.5; }
-.ct-history__quality { display: inline-block; padding: 4px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--text); font-size: 13px; }
+.ct-history__quality { display: inline-block; padding: 4px 7px; border-radius: 5px; background: var(--wj-info-bg); color: var(--text); font-size: 13px; }
 .ct-history__quality--limited, .ct-history__quality--unavailable { background: var(--wj-warning-bg); color: var(--wj-warning); }
 .ct-history__quality--no_production { background: var(--bg); color: var(--muted); }
 .ct-history__saved { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }

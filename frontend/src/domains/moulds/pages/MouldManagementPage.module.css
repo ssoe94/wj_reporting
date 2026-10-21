@@ -43,7 +43,7 @@
   place-items: center;
   border: 1px solid var(--wj-border);
   border-radius: 12px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--mould-blue);
 }
 
@@ -492,7 +492,7 @@
   gap: 10px;
   padding: 0 10px;
   border-bottom: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .zone > header h3 {
@@ -565,7 +565,7 @@
 
 .occupiedCell {
   border-color: var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   cursor: pointer;
   text-shadow: 0 1px 1px rgba(0, 79, 81, 0.22);
@@ -573,7 +573,7 @@
 
 .occupiedCell:hover:not(:disabled) {
   border-color: var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .selectedCell {
@@ -820,7 +820,7 @@
   margin: 8px 12px 0;
   padding: 8px 10px;
   border-radius: 7px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-size: 0.68rem;
 }
@@ -1008,7 +1008,7 @@
   margin-top: 2px;
   padding: 3px 7px;
   border-radius: 999px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   font-size: 0.64rem;
   font-style: normal;
@@ -1330,7 +1330,7 @@
 .machineRow:hover:not(:disabled),
 .machineRow:focus-visible:not(:disabled) {
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   box-shadow: inset 3px 0 0 #4e9acb;
 }
 
@@ -1626,7 +1626,7 @@
   justify-content: space-between;
   padding: 0 6px 0 14px;
   border-bottom: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   font-size: 0.74rem;
   font-weight: 850;
@@ -1654,7 +1654,7 @@
 .drawerTopbar button:hover,
 .drawerTopbar button:focus-visible {
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
 }
 
@@ -2148,7 +2148,7 @@
 .statusListHeader > button:focus-visible {
   border-color: var(--wj-control-border);
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
 }
 
@@ -2205,7 +2205,7 @@
 .statusTable tbody tr:hover,
 .statusTable tbody tr:focus-visible {
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   box-shadow: inset 4px 0 0 #1982b4;
 }
 
@@ -2231,7 +2231,7 @@
   padding: 5px 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   font-size: 0.65rem;
   font-weight: 800;
@@ -3199,7 +3199,7 @@
 .verificationCandidates > button:focus-visible {
   border-color: var(--wj-control-border);
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .verificationCandidates > button span {
@@ -3263,7 +3263,7 @@
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
 }
 
@@ -3308,7 +3308,7 @@
 .secondaryVerificationAction:focus-visible {
   border-color: var(--wj-control-border);
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .primaryVerificationAction[data-selected="true"],
@@ -3653,7 +3653,7 @@
 
 .validationPlanned {
   color: var(--wj-muted);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .validationConflict {
@@ -3714,7 +3714,7 @@
 .verificationComparison article > button:focus-visible {
   border-color: var(--wj-control-border);
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .verificationAcknowledgement {
@@ -3914,7 +3914,7 @@
 .unmappedMouldButton:focus-visible {
   border-color: var(--wj-control-border);
   outline: 0;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .conflictGroup button span {
@@ -4012,7 +4012,7 @@
 .drawerQuickBadges > span {
   padding: 6px 9px;
   border-radius: 999px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   font-size: 0.72rem;
   font-weight: 850;
@@ -4336,7 +4336,7 @@
   .machineRow:hover,
   .machineRow:focus-visible {
     outline: 0;
-    background: var(--wj-accent-soft);
+    background: var(--wj-surface-muted);
     box-shadow: inset 3px 0 0 #72a9c9;
   }
 }
@@ -4451,7 +4451,7 @@
   padding: 3px;
   border: 1px solid var(--wj-border);
   border-radius: 10px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .machineViewToggle button {
@@ -4674,7 +4674,7 @@
   padding: 1px 6px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   font-size: 0.7rem;
   font-style: normal;
@@ -4777,7 +4777,7 @@
   padding: 4px 7px;
   border: 1px solid var(--wj-border);
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .machineRecommendationLine small {
@@ -4807,7 +4807,7 @@
   width: max-content;
   padding: 2px 5px;
   border-radius: 999px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   font-size: 0.58rem;
   font-style: normal;
@@ -5401,7 +5401,7 @@
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .languageSwitch button {
@@ -5461,7 +5461,7 @@
   padding: 3px;
   border: 1px solid var(--wj-border);
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .filterChips button {
@@ -5736,7 +5736,7 @@
   min-height: 0;
   padding: 8px;
   overflow: auto;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   scrollbar-color: #b8cdd9 transparent;
   scrollbar-width: thin;
 }
@@ -5999,7 +5999,7 @@
   min-width: 0;
   padding: 6px 9px;
   border-radius: 6px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-size: 0.8rem;
   font-weight: 750;

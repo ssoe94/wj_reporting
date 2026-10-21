@@ -4,7 +4,7 @@
 .hr-workbook-heading > div > span { display: block; margin-top: 3px; color: var(--hr-muted); font-size: 13px; }
 .hr-workbook-body { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--hr-border); }
 .hr-workbook-system-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 13px; margin-top: 11px; padding: 9px 11px; border: 1px solid var(--hr-border); border-radius: 6px; background: var(--wj-surface-solid); font-size: 14px; line-height: 1.5; }
-.hr-workbook-system-status.is-ready { background: var(--wj-accent-soft); }
+.hr-workbook-system-status.is-ready { background: var(--wj-success-bg); }
 .hr-workbook-system-status.is-error { border-color: var(--wj-danger-border); background: var(--wj-surface-solid); }
 .hr-workbook-system-status > small { color: var(--hr-muted); font-size: 12px; }
 .hr-workbook-system-status .hr-button { min-height: 38px; margin-left: auto; padding: 6px 9px; font-size: 13px; }
@@ -29,7 +29,7 @@
 .hr-workbook-import td:first-child { overflow-wrap: anywhere; }
 .hr-workbook-import tr.is-excluded { color: var(--hr-muted); background: var(--wj-surface-solid); }
 .hr-workbook-file-table { margin: 10px 0; }
-.hr-workbook-months { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 11px 0; padding: 8px 11px; border-radius: 6px; background: var(--hr-soft, var(--wj-accent-soft)); font-size: 14px; }
+.hr-workbook-months { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 11px 0; padding: 8px 11px; border-radius: 6px; background: var(--wj-surface-muted); font-size: 14px; }
 .hr-workbook-months > strong { margin-right: 3px; }
 .hr-workbook-policy { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
 .hr-workbook-policy .hr-field { min-width: 290px; max-width: 100%; margin: 0; }

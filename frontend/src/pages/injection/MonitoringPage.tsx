@@ -645,7 +645,7 @@ export default function InjectionMonitoringPage() {
               <div className="flex items-center gap-3">
                 {updateProgress.status === 'running' ? (
                   <span className="relative flex h-3 w-3">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--wj-accent-soft)] opacity-70 animate-ping"></span>
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--wj-info-bg)] opacity-70 animate-ping"></span>
                     <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--wj-accent-strong)]"></span>
                   </span>
                 ) : (

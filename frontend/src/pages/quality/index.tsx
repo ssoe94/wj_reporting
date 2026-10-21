@@ -90,7 +90,7 @@ export default function QualityPage() {
             className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
               isHistoryView
                 ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
-                : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
+                : 'text-[var(--wj-muted)] hover:bg-[var(--wj-surface-muted)] hover:text-[var(--wj-accent-strong)]'
             }`}
           >
             <History className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -104,7 +104,7 @@ export default function QualityPage() {
               className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 isReviewView
                   ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
-                  : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
+                  : 'text-[var(--wj-muted)] hover:bg-[var(--wj-surface-muted)] hover:text-[var(--wj-accent-strong)]'
               }`}
             >
               <BrainCircuit className="h-4 w-4 shrink-0" aria-hidden="true" />

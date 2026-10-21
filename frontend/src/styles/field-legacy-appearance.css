@@ -1,10 +1,11 @@
-/* Field appearance exclusion (2026-10-21). Original main roles and shared controls, scoped only to /field or a recognized field account. Keep the two field page styles unchanged. */
-:root[data-field-appearance="legacy"] {
+/* Field appearance exclusion (2026-10-21). Original main roles and shared controls, scoped only to field/terminal accounts or the excluded injection board. Keep the two field page styles unchanged. */
+:root:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) {
   --wj-bg: #edf5ff;
   --wj-bg-strong: #dcecff;
   --wj-surface: rgba(255, 255, 255, 0.62);
   --wj-surface-strong: rgba(255, 255, 255, 0.88);
   --wj-surface-solid: #f9fcff;
+  --wj-surface-muted: #f4f8fa;
   --wj-border: rgba(255, 255, 255, 0.76);
   --wj-border-blue: rgba(81, 145, 194, 0.2);
   --wj-text: #17324a;
@@ -34,7 +35,7 @@
   color-scheme: light;
 }
 @layer components {
-html[data-field-appearance="legacy"] .ui-card {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card {
     border: 1px solid var(--wj-border);
     border-radius: var(--wj-radius-card);
     background: rgba(255, 255, 255, 0.68);
@@ -42,12 +43,12 @@ html[data-field-appearance="legacy"] .ui-card {
     backdrop-filter: blur(18px) saturate(138%);
     -webkit-backdrop-filter: blur(18px) saturate(138%);
   }
-html[data-field-appearance="legacy"] .ui-card__header {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__header {
     padding: 18px 20px 10px;
   }
-html[data-field-appearance="legacy"] .ui-card__header h2,
-html[data-field-appearance="legacy"] .ui-card__header h3,
-html[data-field-appearance="legacy"] .ui-card__header h4 {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__header h2,
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__header h3,
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__header h4 {
     margin: 0;
     color: #233f56;
     font-size: 1.16rem;
@@ -55,17 +56,17 @@ html[data-field-appearance="legacy"] .ui-card__header h4 {
     letter-spacing: -0.02em;
     line-height: 1.35;
   }
-html[data-field-appearance="legacy"] .ui-card__header p {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__header p {
     margin: 5px 0 0;
     color: var(--wj-muted);
     font-size: 0.92rem;
     font-weight: 400;
     line-height: 1.5;
   }
-html[data-field-appearance="legacy"] .ui-card__content {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-card__content {
     padding: 0 20px 20px;
   }
-html[data-field-appearance="legacy"] .ui-button {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button {
     min-height: var(--wj-control-height);
     border: 1px solid rgba(255, 255, 255, 0.58);
     border-radius: var(--wj-control-radius);
@@ -75,55 +76,55 @@ html[data-field-appearance="legacy"] .ui-button {
     font-weight: 600;
     transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
   }
-html[data-field-appearance="legacy"] .ui-button:hover {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button:hover {
     filter: brightness(0.97);
   }
-html[data-field-appearance="legacy"] .ui-button--primary {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--primary {
     border-color: rgba(255, 255, 255, 0.35);
     background: linear-gradient(135deg, #168fc2, #477fe0);
     color: #fff;
     box-shadow: 0 9px 20px rgba(22, 121, 183, 0.22);
   }
-html[data-field-appearance="legacy"] .ui-button--primary:hover {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--primary:hover {
     background: linear-gradient(135deg, #0c7fb2, #3d70d2);
   }
-html[data-field-appearance="legacy"] .ui-button--ghost,
-html[data-field-appearance="legacy"] .ui-button--secondary {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--ghost,
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--secondary {
     background: rgba(255, 255, 255, 0.58);
     color: var(--wj-muted);
   }
-html[data-field-appearance="legacy"] .ui-button--warning {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--warning {
     background: #fef3c7;
     color: #92400e;
   }
-html[data-field-appearance="legacy"] .ui-button--danger {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--danger {
     background: #fee2e2;
     color: #b91c1c;
   }
-html[data-field-appearance="legacy"] .ui-button--info {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--info {
     background: #dbeafe;
     color: #1e40af;
   }
-html[data-field-appearance="legacy"] .ui-button--sm {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--sm {
     min-height: 42px;
     border-radius: 9px;
     padding: 6px 12px;
     font-size: 0.86rem;
   }
-html[data-field-appearance="legacy"] .ui-button--lg {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--lg {
     min-height: 52px;
     border-radius: var(--wj-radius-card);
     padding: 11px 24px;
     font-size: 1.06rem;
   }
-html[data-field-appearance="legacy"] .ui-button--icon {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-button--icon {
     width: 44px;
     height: 44px;
     min-height: 44px;
     border-radius: 999px;
     padding: 0;
   }
-html[data-field-appearance="legacy"] .ui-input {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-input {
     min-height: var(--wj-control-height);
     border: 1px solid rgba(79, 139, 184, 0.24);
     border-radius: var(--wj-control-radius);
@@ -133,25 +134,25 @@ html[data-field-appearance="legacy"] .ui-input {
     font-size: var(--wj-font-control);
     font-weight: 600;
   }
-html[data-field-appearance="legacy"] .ui-label {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .ui-label {
     color: var(--wj-muted);
     font-size: var(--wj-font-label);
     font-weight: 600;
   }
-html[data-field-appearance="legacy"] .main-workspace--standalone .ui-card {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .main-workspace--standalone .ui-card {
     border-color: #e2e8f0;
     background: #fff;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
-html[data-field-appearance="legacy"] .main-workspace--standalone .ui-input {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .main-workspace--standalone .ui-input {
     border-color: #cbd5e1;
     background: #fff;
     color: #0f172a;
     box-shadow: none;
   }
-html[data-field-appearance="legacy"] .main-workspace--standalone .ui-button {
+html:is([data-field-appearance="legacy"], [data-injection-board-appearance="legacy"]) .main-workspace--standalone .ui-button {
     box-shadow: none;
   }
 }

@@ -201,7 +201,7 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
             </tr>
           ))}
           {/* Summary row */}
-          <tr className="bg-[var(--wj-accent-soft)]">
+          <tr className="bg-[var(--wj-surface-muted)]">
             <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]" colSpan={3}>{t('sum')}</td>
             <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]">{totals.plan.toLocaleString()}</td>
             <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]">{totals.actual.toLocaleString()}</td>
