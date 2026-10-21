@@ -91,6 +91,9 @@ The AI runtime is tiered (current contract: `docs/ai/2026-09-21-chatgpt-daily-an
 
 ## Design and accessibility
 
+- 사출 현황판(`/boards/injection`, `/production/injection-board`, `InjectionBoardPage`)은 이번 A/B 적용에서 제외하고 기존 라이트 화면·팔레트를 유지한다. 저장된 다크 선택은 다른 화면을 위해 보존하며, 첫 화면 초기화와 런타임 모두 라이트를 강제한다.
+- `--wj-accent-soft`는 선택 강조에 사용한다. 중립 섹션·빈 상태·일반 안내에는 `--wj-surface-muted`, 완료/안내에는 분리된 의미 토큰을 사용한다.
+
 - 현장 칸반(/field)은 이번 A/B 라이트·다크 적용에서 제외하고 기존 팔레트를 유지한다. 현장 경로와 `parseFieldTerminalUser`로 판별한 현장 단말 계정은 저장된 다크 설정과 무관하게 기존 라이트 화면을 사용한다.
 
 ### Production plan material workflow: compact minimal (owner update, 2026-10-08)

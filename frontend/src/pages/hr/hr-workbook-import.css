@@ -29,7 +29,7 @@
 .hr-workbook-import td:first-child { overflow-wrap: anywhere; }
 .hr-workbook-import tr.is-excluded { color: var(--hr-muted); background: var(--wj-surface-solid); }
 .hr-workbook-file-table { margin: 10px 0; }
-.hr-workbook-months { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 11px 0; padding: 8px 11px; border-radius: 6px; background: var(--hr-soft, var(--wj-accent-soft)); font-size: 14px; }
+.hr-workbook-months { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 11px 0; padding: 8px 11px; border-radius: 6px; background: var(--wj-surface-muted); font-size: 14px; }
 .hr-workbook-months > strong { margin-right: 3px; }
 .hr-workbook-policy { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
 .hr-workbook-policy .hr-field { min-width: 290px; max-width: 100%; margin: 0; }

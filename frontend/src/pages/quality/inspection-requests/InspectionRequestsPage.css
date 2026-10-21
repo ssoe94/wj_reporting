@@ -182,7 +182,7 @@
 .inspection-notice { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0; padding: 14px 16px; border: 1px solid var(--wj-warning-border); border-radius: 9px; color: var(--wj-warning); background: var(--wj-warning-bg); }
 .inspection-notice svg { flex-shrink: 0; margin-top: 3px; }
 .inspection-notice p { margin: 3px 0 0; line-height: 1.6; }
-.inspection-message { margin: 12px 0; padding: 13px 15px; border: 1px solid var(--surface-border, var(--wj-border)); border-radius: 8px; background: var(--accent-soft, var(--wj-accent-soft)); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inspection-message { margin: 12px 0; padding: 13px 15px; border: 1px solid var(--surface-border, var(--wj-border)); border-radius: 8px; background: var(--wj-surface-muted); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inspection-message.is-error { border-color: var(--wj-danger-border); color: var(--wj-danger); background: var(--wj-surface-solid); }
 .inspection-message.is-success { border-color: var(--wj-success-border); color: var(--wj-success); background: var(--wj-success-bg); }
 .inspection-message p { margin: 5px 0 0; }
@@ -305,7 +305,7 @@
 .inspection-role-panel-body { margin-top: 8px; }
 .inspection-role-owner { margin: 5px 0; font-size: 14px; }
 .inspection-role-progress { color: var(--muted, var(--wj-muted)); font-size: 13px; }
-.inspection-role-terminal { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--accent-soft, var(--wj-accent-soft)); font-size: 13px; }
+.inspection-role-terminal { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--wj-surface-muted); font-size: 13px; }
 .inspection-role-item-label { font-size: 14px; }
 .inspection-role-item-label small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--muted, var(--wj-muted)); }
 .inspection-role-item-table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; font-size: 14px; text-align: left; }
@@ -365,7 +365,7 @@
 .inspection-role-worksheet thead { color: var(--muted, var(--wj-muted)); background: var(--bg, var(--wj-surface-solid)); font-size: 13px; }
 .inspection-role-worksheet thead th { height: 32px; font-weight: 650; }
 .inspection-role-worksheet tbody tr { height: 34px; }
-.inspection-role-worksheet tbody tr:nth-child(even) { background: var(--accent-soft, var(--wj-accent-soft)); }
+.inspection-role-worksheet tbody tr:nth-child(even) { background: var(--wj-surface-muted); }
 .inspection-role-worksheet :is(input, select) { display: block; width: 100%; max-width: 280px; min-height: 28px; padding: 3px 7px; font-size: 14px; }
 .inspection-role-sheet-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-weight: 650; }
 .inspection-role-spec { display: block; color: var(--muted, var(--wj-muted)); font-size: 12px; font-weight: 400; }
@@ -422,7 +422,7 @@
 .inspection-legacy-worksheet { max-width: none; min-width: 0; table-layout: fixed; }
 .inspection-legacy-worksheet thead th { position: sticky; top: 0; z-index: 1; background: var(--bg, var(--wj-surface-solid)); }
 .inspection-legacy-detail .inspection-legacy-worksheet :is(th, td) { padding: 2px 7px; height: 34px; line-height: 1.25; }
-.inspection-legacy-worksheet tbody tr:nth-child(even) { background: var(--accent-soft, var(--wj-accent-soft)); }
+.inspection-legacy-worksheet tbody tr:nth-child(even) { background: var(--wj-surface-muted); }
 .inspection-detail .inspection-items-table.inspection-legacy-worksheet :is(input, select) { max-width: 280px; min-height: 28px; padding: 3px 7px; }
 .inspection-legacy-spec { color: var(--muted, var(--wj-muted)); font-size: 13px; }
 .inspection-item-required { color: var(--muted, var(--wj-muted)); font-weight: 400; }
@@ -591,7 +591,7 @@
 .inspection-weekly-navigation { display: flex; gap: 6px; flex-wrap: wrap; }
 .inspection-weekly-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .inspection-weekly-card { min-width: 0; margin: 0; padding: 0; border: 1px solid var(--surface-border, var(--wj-border)); border-radius: 8px; background: var(--surface-strong, var(--wj-surface-solid)); overflow: hidden; }
-.inspection-weekly-card > legend { float: left; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; width: 100%; min-height: 38px; padding: 6px 10px; background: var(--accent-soft, #eff4f8); color: var(--text, #142b3d); font-size: 16px; line-height: 24px; }
+.inspection-weekly-card > legend { float: left; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; width: 100%; min-height: 38px; padding: 6px 10px; background: var(--wj-surface-muted); color: var(--text, #142b3d); font-size: 16px; line-height: 24px; }
 .inspection-weekly-card > legend span { font-weight: 450; }
 .inspection-weekly-card > legend strong { font-weight: 700; }
 .inspection-weekly-card > legend small { margin-left: auto; color: var(--muted, #627789); font-size: 13px; font-weight: 450; white-space: nowrap; }

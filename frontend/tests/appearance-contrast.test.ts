@@ -21,7 +21,7 @@ test('light and dark text, status fills, image-viewer labels and field boundarie
       const ratio = (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
       assert.ok(ratio >= minimum, `${mode}: ${fg} on ${bg}: ${ratio.toFixed(2)}`);
     };
-    for (const surface of ['--wj-bg', '--wj-bg-strong', '--wj-surface-solid']) {
+    for (const surface of ['--wj-bg', '--wj-bg-strong', '--wj-surface-solid', '--wj-surface-muted']) {
       check('--wj-text', surface);
       check('--wj-muted', surface);
       check('--wj-control-border', surface, 3);
@@ -34,5 +34,17 @@ test('light and dark text, status fills, image-viewer labels and field boundarie
     check('--wj-info', '--wj-info-bg');
     check('--wj-on-contrast', '--wj-contrast-surface');
     check('--wj-on-contrast-muted', '--wj-contrast-surface');
+  }
+});
+
+
+test('neutral, selected, success and info surfaces remain separate roles in both palettes', () => {
+  for (const [mode, palette] of Object.entries({ light, dark })) {
+    const backgrounds = ['--wj-surface-muted', '--wj-accent-soft', '--wj-success-bg', '--wj-info-bg'];
+    for (let i = 0; i < backgrounds.length; i++) {
+      for (let j = i + 1; j < backgrounds.length; j++) {
+        assert.notEqual(palette[backgrounds[i]], palette[backgrounds[j]], mode + ': ' + backgrounds[i] + ' must differ from ' + backgrounds[j]);
+      }
+    }
   }
 });

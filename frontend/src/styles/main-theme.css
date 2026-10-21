@@ -1,6 +1,7 @@
 /* Shared WJ shell and operational components. */
 @import "./design-tokens.css";
 @import "./field-legacy-appearance.css";
+@import "./injection-board-legacy-appearance.css";
 :root {
   --wj-font-xs: 0.75rem;
   --wj-font-sm: 0.875rem;
@@ -390,7 +391,7 @@ textarea:focus-visible {
 }
 
 .main-user-menu__popover button:hover {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
 }
 
@@ -604,7 +605,7 @@ textarea:focus-visible {
   }
 
   .ui-button--info {
-    background: var(--wj-accent-soft);
+    background: var(--wj-info-bg);
     color: var(--wj-accent-strong);
   }
 
@@ -1002,7 +1003,7 @@ textarea:focus-visible {
   border: 1px solid var(--wj-control-border);
   border-radius: 11px;
   padding: 8px 14px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   cursor: pointer;
   font-size: 0.76rem;
@@ -1011,7 +1012,7 @@ textarea:focus-visible {
 }
 
 .period-selector__reset:hover {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 /* Machining summary, records and entry workflow */
@@ -1063,7 +1064,7 @@ textarea:focus-visible {
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   box-shadow: var(--wj-highlight);
 }
@@ -1179,7 +1180,7 @@ textarea:focus-visible {
   justify-items: center;
   gap: 7px;
   border-radius: var(--wj-radius-card);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   text-align: center;
 }
@@ -1237,7 +1238,7 @@ section#new {
   gap: 16px;
   padding: 13px 16px;
   border-bottom: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .assembly-records-panel__header span {
@@ -1259,7 +1260,7 @@ section#new {
 .assembly-records-panel__header > strong {
   border-radius: 999px;
   padding: 5px 9px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   font-size: 0.75rem;
   font-weight: 650;
@@ -1549,7 +1550,7 @@ section#new {
 
 .assembly-record-form input:disabled,
 .assembly-record-form select:disabled {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
 }
 
@@ -1596,7 +1597,7 @@ section#new {
 .assembly-record-form__section-card {
   border-color: var(--wj-border);
   box-shadow: none;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .assembly-record-form__section-card > .ui-card__header {
@@ -1617,7 +1618,7 @@ section#new {
 .assembly-record-form__group-card {
   min-height: 142px;
   border-color: var(--wj-border);
-  background: var(--wj-accent-soft) !important;
+  background: var(--wj-surface-muted) !important;
 }
 
 .assembly-record-form__group-card > .ui-card__header {
@@ -1663,7 +1664,7 @@ section#new {
 
 .assembly-record-form__metric-input:disabled {
   border-color: var(--wj-control-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
 }
 

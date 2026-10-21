@@ -119,7 +119,7 @@
   margin: 10px 0 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .machine-board__total {
@@ -326,7 +326,7 @@
 .machine-board__detail-row > td {
   padding: 0 8px 10px;
   border-bottom: 1px solid var(--surface-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .machine-board__detail {

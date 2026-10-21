@@ -66,3 +66,23 @@ test('a recognized field-account hint applies only to its own current auth gener
   assert.equal(boot({ ...values, 'wj-auth-session-control-v2': JSON.stringify({ id: 'other-session' }) }).scheme, 'dark');
   assert.equal(boot({ ...values, 'wj-auth-session-control-v2': JSON.stringify({ id: null }) }).scheme, 'dark');
 });
+
+
+test('injection board first paint is legacy light with dark stored, broken auth storage or denied storage', () => {
+  const values = { 'wj:appearance:v1': 'dark', 'wj-auth-session-control-v2': '{broken' };
+  for (const path of ['/boards/injection', '/boards/injection/', '/production/injection-board', '/production/injection-board/index.html', '/next/production/injection-board/index.html']) {
+    for (const denied of [false, true]) {
+      const result = boot(values, denied, path);
+      assert.equal(result.attributes['data-app-theme'], 'light');
+      assert.equal(result.attributes['data-injection-board-appearance'], 'legacy');
+      assert.equal(result.attributes['data-field-appearance'], undefined);
+      assert.equal(result.scheme, 'light');
+    }
+  }
+  assert.equal(values['wj:appearance:v1'], 'dark');
+  for (const path of ['/boards/injection-history', '/boards/overview', '/boards/inspection', '/production/plan']) {
+    const result = boot(values, false, path);
+    assert.equal(result.scheme, 'dark');
+    assert.equal(result.attributes['data-injection-board-appearance'], undefined);
+  }
+});

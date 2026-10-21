@@ -1,4 +1,3 @@
-import { ThemeSwitch } from '@/components/layout/ThemeSwitch';
 import { InjectionQualityStatus } from '../components/InjectionQualityStatus';
 import { MesProductionReadStatusPanel } from '../components/MesProductionReadStatusPanel';
 import { reduceInjectionQuality } from '../injection-quality-status';
@@ -1519,7 +1518,6 @@ export function InjectionBoardPage() {
             <History aria-hidden="true" />
             {copy.previousSummary}
           </button>
-          <ThemeSwitch compact />
           <div className="injection-board__language" aria-label="Language">
             <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">한국어</button>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>

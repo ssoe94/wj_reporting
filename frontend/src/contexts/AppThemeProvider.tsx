@@ -4,7 +4,7 @@ import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
-import { APP_THEME_STORAGE_KEY, FIELD_APPEARANCE_SESSION_KEY, isFieldAppearance, resolveAppTheme, parseAppTheme, readAppTheme, rememberAppTheme } from '../domains/appearance/theme';
+import { APP_THEME_STORAGE_KEY, FIELD_APPEARANCE_SESSION_KEY, isFieldAppearance, isInjectionBoardAppearance, resolveAppTheme, parseAppTheme, readAppTheme, rememberAppTheme } from '../domains/appearance/theme';
 import type { AppTheme } from '../domains/appearance/theme';
 import { AppThemeContext } from './AppThemeContext';
 
@@ -20,7 +20,9 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const fieldTerminal = Boolean(parseFieldTerminalUser(user?.username));
   const fieldAppearance = isFieldAppearance(pathname, fieldTerminal)
     || (isLoading && !user && bootFieldAppearance);
-  const effectiveTheme = resolveAppTheme(theme, liteMode, fieldAppearance);
+  const injectionBoardAppearance = isInjectionBoardAppearance(pathname);
+  const legacyAppearance = fieldAppearance || injectionBoardAppearance;
+  const effectiveTheme = resolveAppTheme(theme, liteMode, legacyAppearance);
 
   useEffect(() => {
     const sync = () => setLiteMode(document.documentElement.classList.contains('lite-mode'));
@@ -34,9 +36,11 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.appTheme = effectiveTheme;
     if (fieldAppearance) document.documentElement.dataset.fieldAppearance = 'legacy';
     else delete document.documentElement.dataset.fieldAppearance;
+    if (injectionBoardAppearance) document.documentElement.dataset.injectionBoardAppearance = 'legacy';
+    else delete document.documentElement.dataset.injectionBoardAppearance;
     document.documentElement.style.colorScheme = effectiveTheme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', effectiveTheme === 'dark' ? '#101619' : '#F3F5F7');
-  }, [effectiveTheme, fieldAppearance]);
+  }, [effectiveTheme, fieldAppearance, injectionBoardAppearance]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -59,7 +63,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     try { rememberAppTheme(next, window.localStorage); } catch { /* Keep this tab usable without storage. */ }
   };
 
-  const materialTheme = useMemo(() => fieldAppearance ? createTheme() : createTheme({
+  const materialTheme = useMemo(() => legacyAppearance ? createTheme() : createTheme({
     palette: {
       mode: effectiveTheme,
       primary: { main: effectiveTheme === 'dark' ? '#57f2b6' : '#006d91', contrastText: effectiveTheme === 'dark' ? '#101619' : '#fff' },
@@ -73,7 +77,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       MuiTableCell: { styleOverrides: { root: { verticalAlign: 'middle', fontSize: 14 } } },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
     },
-  }), [effectiveTheme, fieldAppearance]);
+  }), [effectiveTheme, legacyAppearance]);
 
-  return <AppThemeContext.Provider value={{ theme: effectiveTheme, setTheme, liteMode, fieldAppearance }}><ThemeProvider theme={materialTheme}>{children}</ThemeProvider></AppThemeContext.Provider>;
+  return <AppThemeContext.Provider value={{ theme: effectiveTheme, setTheme, liteMode, fieldAppearance, injectionBoardAppearance }}><ThemeProvider theme={materialTheme}>{children}</ThemeProvider></AppThemeContext.Provider>;
 }

@@ -820,7 +820,7 @@
   margin: 8px 12px 0;
   padding: 8px 10px;
   border-radius: 7px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-size: 0.68rem;
 }
@@ -1626,7 +1626,7 @@
   justify-content: space-between;
   padding: 0 6px 0 14px;
   border-bottom: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   font-size: 0.74rem;
   font-weight: 850;
@@ -4777,7 +4777,7 @@
   padding: 4px 7px;
   border: 1px solid var(--wj-border);
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .machineRecommendationLine small {
@@ -5461,7 +5461,7 @@
   padding: 3px;
   border: 1px solid var(--wj-border);
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .filterChips button {
@@ -5736,7 +5736,7 @@
   min-height: 0;
   padding: 8px;
   overflow: auto;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   scrollbar-color: #b8cdd9 transparent;
   scrollbar-width: thin;
 }
@@ -5999,7 +5999,7 @@
   min-width: 0;
   padding: 6px 9px;
   border-radius: 6px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-size: 0.8rem;
   font-weight: 750;

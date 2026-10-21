@@ -6,4 +6,5 @@ export const AppThemeContext = createContext<{
   setTheme: (theme: AppTheme) => void;
   liteMode: boolean;
   fieldAppearance: boolean;
+  injectionBoardAppearance: boolean;
 } | null>(null);

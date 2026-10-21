@@ -14,7 +14,7 @@
 .plan-master-gaps table { border-collapse: collapse; width: 100%; min-width: 730px; table-layout: fixed; }
 .plan-master-gaps caption { text-align: left; position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .plan-master-gaps th, .plan-master-gaps td { padding: 7px 8px; border-bottom: 1px solid var(--wj-border); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-weight: 400; }
-.plan-master-gaps thead th { background: var(--wj-accent-soft); font-weight: 650; }
+.plan-master-gaps thead th { background: var(--wj-surface-muted); font-weight: 650; }
 .plan-master-gaps small { display: block; font-size: 14px; color: var(--wj-muted); margin-top: 3px; }
 .plan-master-gaps small.plan-master-gaps__attention { color: var(--wj-warning); }
 .plan-master-gaps ul { margin: 0; padding: 0; list-style: none; }

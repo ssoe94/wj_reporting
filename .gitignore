@@ -60,3 +60,6 @@ backups/
 
 # Claude
 .claude/
+
+# Local agent scratch files (never release)
+/work/
