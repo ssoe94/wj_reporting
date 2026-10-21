@@ -57,6 +57,18 @@ class SyncView(LgentView):
     def post(self,request):return Response(service.sync(request.user,request.data.get('cursor'),request.data.get('days')))
 
 
+class RefreshView(LgentView):
+    def post(self,request):
+        from .refresh import page
+        return Response(page(request.user,request.data.get('cursor'),request.data.get('force',False)))
+
+
+class AutoSyncView(LgentView):
+    def post(self,request):
+        from .continuous import enable
+        return Response(enable(request.user,request.data.get('enabled')))
+
+
 class LookupView(LgentView):
     def post(self,request):return Response(service.lookup(request.user,request.data.get('trolleyId')))
 

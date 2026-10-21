@@ -14,6 +14,8 @@ class LgentProfile(models.Model):
     menu_permission = models.CharField(max_length=32,blank=True,default='')
     expires_at = models.DateTimeField(null=True,blank=True)
     stale_days = models.PositiveIntegerField(default=30)
+    auto_sync_enabled = models.BooleanField(default=False)
+    sync_state = models.JSONField(default=dict,blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 
@@ -25,6 +27,8 @@ class LgentCart(models.Model):
     last_history_at = models.CharField(max_length=64,blank=True,default='')
     lg_modified_at = models.DateTimeField(null=True,blank=True)
     photo_file_at = models.DateTimeField(null=True,blank=True)
+    photo_changed_at = models.DateTimeField(null=True,blank=True)
+    photo_checked_at = models.DateTimeField(null=True,blank=True)
     verified_save_at = models.DateTimeField(null=True,blank=True)
     photo_sha256 = models.CharField(max_length=64,blank=True,default='')
     mirror_key = models.CharField(max_length=512,blank=True,default='')

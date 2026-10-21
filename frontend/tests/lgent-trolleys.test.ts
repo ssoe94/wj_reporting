@@ -9,6 +9,12 @@ const cart=(trolleyId:string,displayAt:string):Cart=>({trolleyId,displayAt,dateS
 test('only unique verified photos are selected automatically',()=>{assert.deepEqual(uniqueReadyPhotos([photo(1,'A'),photo(2,'A'),photo(3,'B'),photo(4,'C','review')]),[3]);});
 test('two photos for one trolley cannot be saved together',()=>{const photos=[photo(1,'A'),photo(2,'A'),photo(3,'B')];assert.equal(hasDuplicateCarts(photos,[1,2]),true);assert.equal(hasDuplicateCarts(photos,[1,3]),false);});
 test('unknown dates remain separate and sort after dated carts',()=>{const records=[cart('unknown',''),cart('new','2026-09-01'),cart('old','2025-03-01')];assert.deepEqual(sortCarts(records,'oldest').map(c=>c.trolleyId),['old','new','unknown']);assert.deepEqual(sortCarts(records,'newest').map(c=>c.trolleyId),['new','old','unknown']);assert.equal(records[0].trolleyId,'unknown');});
+test('LG change candidates sort independently without advancing the photo date',()=>{
+ const a={...cart('old-photo','2025-03-01'),photoCandidateAt:'2026-10-21T13:22:20+08:00'};
+ const b={...cart('newer-photo','2026-10-19'),photoCandidateAt:'2026-10-20T12:00:00+08:00'};
+ assert.deepEqual(sortCarts([b,a],'candidate').map(c=>c.trolleyId),['old-photo','newer-photo']);
+ assert.equal(a.displayAt,'2025-03-01');
+});
 test('folder filtering ignores hidden and non-image files',()=>{assert.equal(isImage({name:'.DS_Store',type:''}),false);assert.equal(isImage({name:'guide.pdf',type:'application/pdf'}),false);assert.equal(isImage({name:'照片.JPG',type:''}),true);});
 test('directory traversal includes nested images and all read batches',async()=>{const file=(name:string):DirectoryEntry=>({name,isFile:true,isDirectory:false,file:ok=>ok({name,type:name.endsWith('.jpg')?'image/jpeg':'text/plain'} as File)});const directory=(name:string,entries:DirectoryEntry[]):DirectoryEntry=>({name,isFile:false,isDirectory:true,createReader:()=>{let i=0;return {readEntries:ok=>ok(i++===0?entries:[])};}});const root=directory('photos',[file('one.jpg'),directory('child',[file('two.jpg'),file('notes.txt')]),file('.hidden.jpg')]);assert.deepEqual((await filesFromEntry(root)).map(f=>f.name),['one.jpg','two.jpg']);});
 test('sales access is fail closed and inactive accounts are denied',()=>{assert.equal(canAccessLgent(null),false);assert.equal(canAccessLgent({}),false);assert.equal(canAccessLgent({permissions:{can_view_sales:true}}),true);assert.equal(canAccessLgent({is_staff:true,is_active:false}),false);assert.equal(canAccessLgent({is_staff:true}),true);});

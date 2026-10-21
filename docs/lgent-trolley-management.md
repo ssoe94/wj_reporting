@@ -61,3 +61,53 @@ Dates use **Shanghai calendar days**, maximum 31 days. Plans use explicit `planA
 Only exact `qrCode` matches to previously LG-verified TT094 carts get photo/update metadata. A TT prefix, order ID, material number, current stock, or free-text remark never establishes cart ownership. Unassigned plans and unmatched identifiers remain visible, separately from missing photos and unknown update dates. MES order status is labelled as MES status; a created outbound record is preparation evidence, not a physical departure confirmation. Reversal records are distinct. Results cache for 60 seconds; incomplete/unstable pagination and range overflow fail explicitly and are not cached as successful data. Read-time joins refresh photo state without altering source records or triggering photo downloads.
 
 Local acceptance uses synthetic order/record fixtures and supplied sample photos; it never calls production MES/LG. Production OpenAPI permission and representative result reconciliation remain deployment acceptance checks.
+
+### External LG changes and continuous read-only synchronization (2026-10-21)
+
+The workspace poll reads WJ only. `/lgent/refresh/` performs a separate bounded LG
+metadata check (five known TT094 carts per request, 15-minute attempt freshness).
+It patches changed cards only, without locking gallery/upload/match/save controls.
+The refresh icon forces a metadata sweep; 30-day/5-year inbound discovery stays
+explicit. A full sweep adds time beyond the freshness interval. The inspected APK
+exposes no verified modified-since photo feed; inbound history cannot reliably
+identify photos changed without a new inbound movement.
+
+A changed LG URL/metadata is only a photo-check candidate. Existing photo dates
+are retained until the raw LG SHA-256 is compared with the previous private copy
+(or the verified upload digest). Equal bytes reuse the existing Cloudinary asset
+and preserve the date. Different bytes set `photo_changed_at` from the later of LG metadata/file timestamps
+(or observation time if neither is available). The first copy establishes a
+baseline and is not counted as a change. LG metadata modification timestamps alone
+never advance the photo badge. `photo_checked_at` records comparisons separately.
+An identical-URL replacement without a metadata signal still needs an explicit LG
+photo readback; no unverified changed-record feed is claimed.
+
+The existing `production-mes-progress-sync` Render cron keeps its five-minute
+schedule and `python manage.py sync_mes_progress_reports` command. After successful
+MES processing, it gives LG reads a 60-second budget and starts a new fleet round
+30 minutes after the previous round's last run. Unfinished rounds resume on later
+five-minute ticks; an in-flight bounded page can extend the budget. MES errors and
+dry runs never invoke LG; LG errors cannot fail completed MES processing. No new
+cron service or base charge is added, but extra running time can increase usage
+charges. The standalone `sync_lgent --seconds 240` command remains available for
+explicit bounded runs.
+
+Users explicitly enable `/lgent/auto-sync/`. The existing cron must use the same
+database, token encryption key and private media configuration as the backend.
+A mismatched encryption key fails closed with `configuration_error` and preserves
+the web connection's encrypted token. Never copy secrets into source, logs, or a
+task payload. The additive migration 0004 must be authorized and applied before
+activation. Deployment is separate from proving that scheduled execution works;
+check shared-cron logs and profile progress after rollout. No Mac or open browser
+is needed for the server job.
+
+Each subscriber's own active encrypted LG connection and current WJ sales access
+are required. No password is stored, no expired token is silently renewed, and no
+unsubscribed user's connection is borrowed. Disabling stops the next bounded page.
+Expired LG sessions display a reconnect status. Signed cursors persist in the
+profile's private sync state; workspace exposes only counts/status/times. Reported
+photo change/unchanged counts describe that server run, not lifetime turnover or
+all LG edits. Errors preserve prior business data. `checked_at` remains an attempt
+timestamp. A shared advisory lock avoids overlapping cron runs and metadata pages;
+compare-and-set updates preserve concurrent verified saves and durable write leases.
+LG save preflight/reconciliation continue to read LG live.

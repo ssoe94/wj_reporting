@@ -109,3 +109,17 @@ class Command(BaseCommand):
                 f"created={created} updated={updated} dry_run={dry_run}"
             )
         )
+        # Reuse this existing cron after the primary MES transaction succeeds.
+        # LG starts a new round at most every 30 minutes. A bounded unfinished
+        # round resumes on later ticks, without delaying the next MES tick for
+        # a full fleet scan. Dry runs never run the side task.
+        if not dry_run:
+            try:
+                from lgent.continuous import run
+                result=run(60,min_interval_seconds=1800)
+                self.stdout.write(f'[LGENT shared cron] {result}')
+            except Exception:
+                # Includes rollout before additive LGENT migration is applied.
+                # LG failure must not turn a successful MES sync into failure;
+                # provider exception details can contain credentials/URLs.
+                self.stderr.write('[LGENT shared cron] Deferred; MES sync completed successfully.')

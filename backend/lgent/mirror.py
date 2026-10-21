@@ -64,9 +64,17 @@ def copy(cart,token,force=False,*,max_seconds=27):
             digest=hashlib.sha256(raw).hexdigest()
             remaining=deadline-time.monotonic()
             if remaining<=0:raise client.LgError('사진 복제 시간이 초과됐습니다.','mirror_timeout',504)
-            key=media.put_mirror(raw,cart.trolley_id,digest,max_seconds=min(12,remaining))
-            changed=LgentCart.objects.filter(pk=cart.pk,baseline=row,save_attempt_id='').update(
-                mirror_key=key,mirror_sha256=digest,mirror_source_url=source,mirrored_at=timezone.now(),mirror_error='')
+            if cart.mirror_key and cart.mirror_sha256==digest:
+                media.mirror_ref(cart.mirror_key);key=cart.mirror_key
+            else:key=media.put_mirror(raw,cart.trolley_id,digest,max_seconds=min(12,remaining))
+            reference=cart.mirror_sha256 or cart.photo_sha256
+            photo_fields={'photo_checked_at':timezone.now()}
+            if reference and digest!=reference:
+                photo_fields.update(photo_changed_at=max(filter(None,(client.modified_at(row),client.photo_file_at(source))),default=timezone.now()),
+                    photo_file_at=client.photo_file_at(source),verified_save_at=None,photo_sha256=digest)
+            changed=LgentCart.objects.filter(pk=cart.pk,baseline=row,save_attempt_id='',
+                mirror_sha256=cart.mirror_sha256,photo_sha256=cart.photo_sha256,verified_save_at=cart.verified_save_at).update(
+                mirror_key=key,mirror_sha256=digest,mirror_source_url=source,mirrored_at=timezone.now(),mirror_error='',**photo_fields)
             if changed:cart.refresh_from_db()
             else:return raw,client.LgError('대차 정보 변경 후 다시 복제합니다.','mirror_source_changed',409)
             return raw,None
@@ -76,9 +84,14 @@ def copy(cart,token,force=False,*,max_seconds=27):
             LgentCart.objects.filter(pk=cart.pk,baseline=row,save_attempt_id='').update(mirror_error=message)
             return raw,error
 
-def attach_upload(cart,photo,row):
+def attach_upload(cart,photo,row,previous_sha256=''):
     """Called only after BOTH live LG field and photo digest verification."""
     media.mirror_ref(photo.storage_key)
+    reference=cart.mirror_sha256 or cart.photo_sha256 or previous_sha256
+    cart.photo_checked_at=timezone.now()
+    if not reference or reference!=photo.sha256:
+        cart.photo_changed_at=timezone.now();cart.verified_save_at=cart.photo_changed_at
+        cart.photo_file_at=client.photo_file_at(str(row.get('pic_url') or ''))
     cart.mirror_key=photo.storage_key;cart.mirror_sha256=photo.sha256
     cart.mirror_source_url=str(row.get('pic_url') or '');cart.mirrored_at=timezone.now();cart.mirror_error=''
 

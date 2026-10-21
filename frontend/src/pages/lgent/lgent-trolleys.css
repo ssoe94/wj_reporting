@@ -12,3 +12,5 @@
 @media(max-width:800px){.lgent-sidebar{order:-1}.lgent-batch{padding:10px}.lgent-drop{padding:9px 6px}}
 /* Touch screens cannot drag files in; keep only the pick buttons. */
 @media(hover:none){.lgent-drop>strong,.lgent-drop>small{display:none}}
+
+.lgent-auto-sync{display:flex;align-items:center;flex-wrap:wrap;gap:12px;min-height:24px;font-size:12px;color:#5c7896}.lgent-auto-sync label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}.lgent-auto-sync input{width:14px;height:14px;margin:0}.lgent-auto-sync small{font-size:12px}

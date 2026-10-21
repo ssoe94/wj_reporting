@@ -271,6 +271,157 @@ class LgentTests(TestCase):
             self.assertFalse(mirror.current(self.cart));self.assertTrue(mirror.pending().exists())
             mirror.copy(self.cart,'token');self.assertEqual(lg.call_count,2)
 
+    def test_new_url_with_identical_photo_keeps_original_photo_date(self):
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        original=service.public_cart(self.cart)['displayAt'];old_date=self.cart.photo_file_at
+        row={**ROW,'pic_url':'/files/trolley_grade_management/ENT/2026/10/20261021132220000000.jpg','update_time':'2026-10-21 13:22:20'}
+        self.cart=service.remember(row)
+        self.assertEqual(service.public_cart(self.cart)['displayAt'],original)
+        self.assertTrue(service.public_cart(self.cart)['photoCheckPending'])
+        with patch('lgent.client.photo',return_value=self.raw),patch('lgent.media.put_mirror') as upload:mirror.copy(self.cart,'token');upload.assert_not_called()
+        self.cart.refresh_from_db();self.assertEqual(self.cart.photo_file_at,old_date);self.assertIsNone(self.cart.photo_changed_at)
+        self.assertIsNotNone(self.cart.photo_checked_at);self.assertFalse(service.public_cart(self.cart)['photoCheckPending'])
+        again=service.remember(row);self.assertEqual(service.public_cart(again)['displayAt'],original)
+
+    def test_real_photo_change_advances_date_only_after_byte_comparison(self):
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        old=self.cart.photo_file_at
+        row={**ROW,'pic_url':'/files/trolley_grade_management/ENT/2026/10/20261021132220000000.jpg'}
+        self.cart=service.remember(row);self.assertEqual(self.cart.photo_file_at,old)
+        output=io.BytesIO();Image.new('RGB',(32,40),'blue').save(output,'JPEG')
+        with patch('lgent.client.photo',return_value=output.getvalue()):mirror.copy(self.cart,'token')
+        value=service.public_cart(self.cart);self.assertEqual(value['dateSource'],'photo_changed')
+        self.assertTrue(value['displayAt'].startswith('2026-10-21T13:22:20'))
+        before=value['displayAt'];self.cart=service.remember(row);self.assertEqual(service.public_cart(self.cart)['displayAt'],before)
+
+    def test_metadata_modification_alone_never_counts_as_photo_update(self):
+        original=self.cart.photo_file_at
+        cart=service.remember({**ROW,'last_grade':'A','update_time':'2026-10-21 13:22:20'})
+        self.assertEqual(cart.photo_file_at,original);self.assertEqual(service.public_cart(cart)['dateSource'],'photo_file')
+        self.assertIsNone(cart.photo_changed_at)
+
+    def test_modified_signal_rechecks_same_url_and_changes_cache_version_only_for_different_bytes(self):
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        version=service.cart_photo_version(self.cart)
+        self.cart=service.remember({**ROW,'update_time':'2026-10-21 13:22:20'})
+        self.assertTrue(service.public_cart(self.cart)['photoCheckPending']);self.assertTrue(mirror.pending().exists())
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        self.assertEqual(service.cart_photo_version(self.cart),version);self.assertIsNone(self.cart.photo_changed_at)
+        self.cart=service.remember({**ROW,'update_time':'2026-10-21 13:23:20'})
+        output=io.BytesIO();Image.new('RGB',(32,40),'blue').save(output,'JPEG')
+        with patch('lgent.client.photo',return_value=output.getvalue()):mirror.copy(self.cart,'token')
+        self.assertNotEqual(service.cart_photo_version(self.cart),version);self.assertIsNotNone(self.cart.photo_changed_at)
+        self.assertTrue(service.public_cart(self.cart)['displayAt'].startswith('2026-10-21T13:23:20'))
+
+    def test_same_photo_saved_again_keeps_original_photo_update_date(self):
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        original=service.public_cart(self.cart)['displayAt']
+        value=self.photo();value.previous_photo_sha256=self.digest;value.save()
+        with patch('lgent.client.info',return_value=copy.deepcopy(ROW)),patch('lgent.client.photo',return_value=self.raw),patch('lgent.client.request',return_value={'typeCode':True}):
+            self.assertEqual(service.save_one(self.user,value.pk)['status'],'saved')
+        self.cart.refresh_from_db();self.assertEqual(service.public_cart(self.cart)['displayAt'],original);self.assertIsNone(self.cart.photo_changed_at)
+
+    def test_continuous_sync_requires_own_opt_in_and_does_not_expose_cursors(self):
+        from .continuous import run
+        with patch('lgent.client.info') as info:run(1);info.assert_not_called()
+        self.assertEqual(self.api.post('/api/lgent/auto-sync/',{'enabled':True},format='json').status_code,200)
+        self.profile.refresh_from_db();self.assertTrue(self.profile.auto_sync_enabled)
+        self.profile.sync_state={'_cursor':'private-cursor','status':'running','photoChanged':2};self.profile.save()
+        response=self.api.get('/api/lgent/workspace/');self.assertEqual(response.data['sync']['state']['photoChanged'],2)
+        self.assertNotIn('private-cursor',response.content.decode())
+        self.api.force_authenticate(self.other)
+        self.assertEqual(self.api.post('/api/lgent/auto-sync/',{'enabled':True},format='json').status_code,409)
+        self.api.force_authenticate(self.user)
+        self.assertEqual(self.api.post('/api/lgent/auto-sync/',{'enabled':False},format='json').status_code,200)
+        self.profile.refresh_from_db();self.assertFalse(self.profile.auto_sync_enabled)
+
+    def test_continuous_sync_counts_actual_digest_changes_and_never_writes_lg(self):
+        from .continuous import run
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        self.cart.checked_at=timezone.now()-dt.timedelta(minutes=16);self.cart.save()
+        self.profile.auto_sync_enabled=True;self.profile.save()
+        row={**ROW,'pic_url':'/files/trolley_grade_management/ENT/2026/10/20261021132220000000.jpg'}
+        output=io.BytesIO();Image.new('RGB',(32,40),'blue').save(output,'JPEG')
+        def local(carts,token):
+            results=[mirror.copy(cart,token) for cart in carts]
+            return carts[-1].trolley_id,len(carts),sum(bool(error) for _,error in results)
+        with patch('lgent.client.info',return_value=row),patch('lgent.client.photo',return_value=output.getvalue()),patch('lgent.mirror.copy_batch',side_effect=local),patch('lgent.client.request') as write:
+            result=run(2)
+        write.assert_not_called();self.assertEqual(result['photoChanged'],1)
+        self.profile.refresh_from_db();self.assertEqual(self.profile.sync_state['photoChanged'],1);self.assertEqual(self.profile.sync_state['status'],'idle')
+
+    def test_continuous_sync_counts_identical_photo_without_resetting_photo_date(self):
+        from .continuous import run
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        original=self.cart.photo_file_at;self.cart.checked_at=timezone.now()-dt.timedelta(minutes=16);self.cart.save()
+        self.profile.auto_sync_enabled=True;self.profile.save()
+        def local(carts,token):
+            for cart in carts:mirror.copy(cart,token)
+            return carts[-1].trolley_id,len(carts),0
+        with patch('lgent.client.info',return_value={**ROW,'pic_url':'/files/new-url.jpg'}),patch('lgent.client.photo',return_value=self.raw),patch('lgent.mirror.copy_batch',side_effect=local):result=run(2)
+        self.assertEqual(result['photoChanged'],0);self.cart.refresh_from_db();self.assertEqual(self.cart.photo_file_at,original)
+        self.profile.refresh_from_db();self.assertEqual(self.profile.sync_state['photoUnchanged'],1)
+
+    def test_continuous_sync_skips_expired_or_revoked_users(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.expires_at=timezone.now()-dt.timedelta(seconds=1);self.profile.save()
+        with patch('lgent.client.info') as info:run(1);info.assert_not_called()
+        self.profile.refresh_from_db();self.assertEqual(self.profile.sync_state['status'],'connection_required')
+        self.user.is_active=False;self.user.save()
+        with patch('lgent.client.info') as info:run(1);info.assert_not_called()
+
+    def test_continuous_sync_resumes_private_cursor_after_bounded_run(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.save()
+        for index in range(6):service.remember({**ROW,'trolley_id':f'TT0949{index:03d}'})
+        LgentCart.objects.update(checked_at=timezone.now()-dt.timedelta(minutes=16))
+        with patch('lgent.client.info',side_effect=lambda token,code:{**ROW,'trolley_id':code}),patch('lgent.continuous.time.monotonic',side_effect=[0,0,0,2]):first=run(1)
+        self.assertEqual(first['processed'],5);self.profile.refresh_from_db();self.assertTrue(self.profile.sync_state['_cursor'])
+        def local(carts,token):
+            for cart in carts:mirror.copy(cart,token)
+            return carts[-1].trolley_id,len(carts),0
+        with patch('lgent.client.info',side_effect=lambda token,code:{**ROW,'trolley_id':code}),patch('lgent.client.photo',return_value=self.raw),patch('lgent.mirror.copy_batch',side_effect=local):second=run(2)
+        self.assertEqual(second['processed'],2);self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.sync_state['_cursor']);self.assertEqual(self.profile.sync_state['status'],'idle')
+        self.assertEqual(self.profile.sync_state['photoBaselined'],7);self.assertEqual(self.profile.sync_state['photoChanged'],0)
+
+    def test_shared_cron_waits_thirty_minutes_between_completed_rounds(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.sync_state={'status':'idle','lastRunAt':timezone.now().isoformat()};self.profile.save()
+        with patch('lgent.refresh.page') as page:run(1,min_interval_seconds=1800);page.assert_not_called()
+        self.profile.sync_state['lastRunAt']=(timezone.now()-dt.timedelta(minutes=31)).isoformat();self.profile.save()
+        with patch('lgent.refresh.page',return_value={'busy':False,'processed':0,'changed':0,'errors':0,'cursor':None}) as page:
+            run(1,min_interval_seconds=1800);page.assert_called_once()
+
+    def test_shared_cron_resumes_incomplete_round_without_waiting_thirty_minutes(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.sync_state={'status':'running','lastRunAt':timezone.now().isoformat(),'_cursor':'resume-here','processed':5,'metadataChanged':0,'errors':0};self.profile.save()
+        with patch('lgent.refresh.page',return_value={'busy':False,'processed':2,'changed':0,'errors':0,'cursor':None}) as page:
+            run(1,min_interval_seconds=1800);page.assert_called_once_with(self.user,'resume-here')
+
+    def test_shared_cron_key_mismatch_never_erases_a_valid_web_connection(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.save();encrypted=self.profile.encrypted_token
+        with patch('lgent.continuous.decrypt_token',return_value=''),patch('lgent.client.info') as info:run(1);info.assert_not_called()
+        self.profile.refresh_from_db();self.assertEqual(self.profile.encrypted_token,encrypted)
+        self.assertEqual(self.profile.sync_state['status'],'configuration_error');self.assertIsNotNone(self.profile.expires_at)
+
+    def test_mes_shared_cron_runs_lg_only_after_success_and_preserves_mes_success(self):
+        from django.core.management import call_command
+        target='production.management.commands.sync_mes_progress_reports.fetch_all_progress_reports'
+        with patch(target,return_value=[]),patch('lgent.continuous.run',return_value={}) as lg:
+            call_command('sync_mes_progress_reports',stdout=io.StringIO(),stderr=io.StringIO())
+            lg.assert_called_once_with(60,min_interval_seconds=1800)
+        with patch(target,return_value=[]),patch('lgent.continuous.run') as lg:
+            call_command('sync_mes_progress_reports',dry_run=True,stdout=io.StringIO());lg.assert_not_called()
+        with patch(target,side_effect=RuntimeError('MES fixture failure')),patch('lgent.continuous.run') as lg:
+            with self.assertRaises(RuntimeError):call_command('sync_mes_progress_reports',stdout=io.StringIO())
+            lg.assert_not_called()
+        out=io.StringIO();err=io.StringIO()
+        with patch(target,return_value=[]),patch('lgent.continuous.run',side_effect=RuntimeError('private upstream URL must never be logged')):
+            call_command('sync_mes_progress_reports',stdout=out,stderr=err)
+        self.assertIn('[MES Progress Sync]',out.getvalue());self.assertIn('MES sync completed successfully',err.getvalue())
+        self.assertNotIn('private upstream',err.getvalue())
     def test_mirror_failure_preserves_metadata_and_batch_cursor_continues(self):
         from django.core import signing
         for n in range(307,312):service.remember(dict(ROW,trolley_id=f'TT0940{n}'))
@@ -570,6 +721,82 @@ class LgentTests(TestCase):
         with patch('lgent.mirror.copy_batch',return_value=(self.cart.trolley_id,1,0)):final=service.sync(self.user,final['photoCursor'])
         self.assertEqual(final['phase'],'photos');self.assertIsNone(final['cursor'])
 
+    def test_background_refresh_returns_only_external_changes_and_new_photo_version(self):
+        old=service.public_cart(self.cart);key=service.cart_thumbnail_key(self.cart);cache.set(key,b'old-thumbnail',900)
+        row={**ROW,'pic_url':'/files/trolley_grade_management/ENT/2026/10/20261021112256000000.jpg','last_grade':'A'}
+        with patch('lgent.client.info',return_value=row) as info,patch('lgent.client.photo') as photo,patch('lgent.client.request') as write:
+            response=self.api.post('/api/lgent/refresh/',{'force':True},format='json')
+        self.assertEqual(response.status_code,200);info.assert_called_once_with('private-token',self.cart.trolley_id)
+        photo.assert_not_called();write.assert_not_called()
+        self.assertEqual(response.data['changed'],1);self.assertEqual(response.data['updated'][0]['grade'],'A')
+        self.assertNotEqual(response.data['updated'][0]['photoVersion'],old['photoVersion'])
+        self.assertTrue(response.data['updated'][0]['displayAt'].startswith('2026-10-21T11:22:56'))
+        self.assertNotIn('pic_url',response.content.decode());self.assertIsNotNone(response.data['photoCursor'])
+
+    def test_background_refresh_skips_fresh_rows_and_does_not_invalidate_unchanged_photos(self):
+        key=service.cart_thumbnail_key(self.cart);cache.set(key,b'cached',900)
+        with patch('lgent.client.info',return_value=copy.deepcopy(ROW)) as info:
+            result=self.api.post('/api/lgent/refresh/',{},format='json');info.assert_not_called()
+            self.assertEqual(result.data['processed'],0)
+            result=self.api.post('/api/lgent/refresh/',{'force':True},format='json');info.assert_called_once()
+        self.assertEqual(result.data['updated'],[]);self.assertEqual(result.data['changed'],0)
+        self.assertEqual(cache.get(key),b'cached')
+
+    def test_background_refresh_pages_five_and_binds_cursor_to_user(self):
+        from .refresh import page
+        for index in range(6):service.remember({**ROW,'trolley_id':f'TT0949{index:03d}'})
+        with patch('lgent.client.info',side_effect=lambda token,code:{**ROW,'trolley_id':code}) as info:
+            first=page(self.user,force=True);self.assertEqual(first['processed'],5);self.assertEqual(first['remaining'],2)
+            self.assertEqual(info.call_count,5)
+            second=page(self.user,first['cursor']);self.assertEqual(second['processed'],2);self.assertIsNone(second['cursor'])
+            third=page(self.user);self.assertEqual(third['processed'],0);self.assertEqual(info.call_count,7)
+        LgentProfile.objects.create(user=self.other,encrypted_token=encrypt_token('other-token'),expires_at=timezone.now()+dt.timedelta(hours=1))
+        with self.assertRaises(client.LgError):page(self.other,first['cursor'])
+        for bad in ('invalid',123,[],{'cursor':'x'}):
+            self.assertEqual(self.api.post('/api/lgent/refresh/',{'cursor':bad},format='json').status_code,400)
+
+    def test_background_refresh_cannot_overwrite_concurrent_save_or_lease(self):
+        from .refresh import page
+        # Inject a committed competitor between the LG read and CAS using the
+        # test transaction's connection; real thread acceptance is below.
+        pool=self.enterContext(patch('lgent.refresh.ThreadPoolExecutor'))
+        pool.return_value.__enter__.return_value.map.side_effect=lambda fn,items:map(fn,items)
+        new={**ROW,'pic_url':'new-verified-photo'}
+        def concurrent_save(token,code):
+            LgentCart.objects.filter(pk=self.cart.pk).update(baseline=new,photo_sha256='new-digest',verified_save_at=timezone.now())
+            return copy.deepcopy(ROW)
+        with patch('lgent.client.info',side_effect=concurrent_save):result=page(self.user,force=True)
+        self.cart.refresh_from_db();self.assertEqual(self.cart.baseline,new);self.assertEqual(self.cart.photo_sha256,'new-digest');self.assertEqual(result['changed'],0)
+        def concurrent_lease(token,code):
+            LgentCart.objects.filter(pk=self.cart.pk).update(save_attempt_id='durable-attempt')
+            return copy.deepcopy(ROW)
+        with patch('lgent.client.info',side_effect=concurrent_lease):page(self.user,force=True)
+        self.cart.refresh_from_db();self.assertEqual(self.cart.save_attempt_id,'durable-attempt');self.assertEqual(self.cart.baseline,new)
+        with patch('lgent.client.info') as info:page(self.user,force=True);info.assert_not_called()
+
+    def test_background_refresh_auth_failure_preserves_attempt_time_and_clears_only_own_connection(self):
+        before=self.cart.checked_at
+        with patch('lgent.client.info',side_effect=client.LgError('expired','lg_connection_required',409)):
+            result=self.api.post('/api/lgent/refresh/',{'force':True},format='json')
+        self.assertEqual(result.status_code,409);self.cart.refresh_from_db();self.assertEqual(self.cart.checked_at,before)
+        self.profile.refresh_from_db();self.assertEqual(self.profile.encrypted_token,'')
+
+    def test_background_refresh_failure_advances_without_changing_business_data(self):
+        from .refresh import page
+        with patch('lgent.client.info',side_effect=client.LgError('unavailable')):
+            result=page(self.user,force=True)
+        self.assertEqual(result['errors'],1);self.assertIsNone(result['cursor']);self.assertEqual(result['updated'],[])
+        self.cart.refresh_from_db();self.assertEqual(self.cart.baseline,ROW)
+
+    def test_background_refresh_claim_contention_does_not_read_lg(self):
+        from .refresh import page
+        from contextlib import contextmanager
+        @contextmanager
+        def occupied(_):yield False
+        with patch('lgent.mirror.claim',occupied),patch('lgent.client.info') as info:
+            result=page(self.user,force=True)
+        self.assertTrue(result['busy']);info.assert_not_called()
+
     def test_sync_history_window_is_selectable_and_bounded(self):
         with patch('lgent.client.request',return_value=[]) as lg:
             result=service.sync(self.user,days=90)
@@ -691,6 +918,32 @@ import threading,time
 
 @skipUnless(connection.vendor=='postgresql','PostgreSQL row-lock acceptance only')
 class LgentPostgresLockTests(TransactionTestCase):
+    def test_background_metadata_read_cannot_erase_a_concurrent_verified_save(self):
+        from .refresh import page
+        user=get_user_model().objects.create_user(username='pg-refresh',is_staff=True)
+        LgentProfile.objects.create(user=user,encrypted_token=encrypt_token('synthetic'),expires_at=timezone.now()+dt.timedelta(hours=1))
+        cart=service.remember(copy.deepcopy(ROW));started=threading.Event();release=threading.Event();state={}
+        def network(token,code):
+            started.set()
+            if not release.wait(5):raise AssertionError('LG fixture timed out')
+            return copy.deepcopy(ROW)
+        def refresh():
+            try:state['result']=page(get_user_model().objects.get(pk=user.pk),force=True)
+            except BaseException as error:state['error']=error
+            finally:connections.close_all()
+        thread=threading.Thread(target=refresh,daemon=True)
+        with patch('lgent.client.info',side_effect=network):
+            try:
+                thread.start();self.assertTrue(started.wait(3))
+                # Another connection can commit without waiting for LG I/O.
+                newer={**ROW,'pic_url':'verified-new-source'};verified=timezone.now()
+                LgentCart.objects.filter(pk=cart.pk).update(baseline=newer,photo_sha256='verified-digest',verified_save_at=verified,save_attempt_id='durable-lease')
+            finally:release.set();thread.join(5)
+        self.assertFalse(thread.is_alive())
+        if 'error' in state:raise state['error']
+        cart.refresh_from_db();self.assertEqual(cart.baseline,newer);self.assertEqual(cart.photo_sha256,'verified-digest')
+        self.assertEqual(cart.verified_save_at,verified);self.assertEqual(cart.save_attempt_id,'durable-lease');self.assertEqual(state['result']['changed'],0)
+
     @override_settings(LGENT_FORCE_LOCAL_MEDIA=True,LGENT_ALLOW_LOCAL_MEDIA=True)
     def test_five_parallel_mirrors_use_independent_connections(self):
         with tempfile.TemporaryDirectory(prefix='lgent-batch-') as directory,override_settings(MEDIA_ROOT=directory):
