@@ -240,7 +240,7 @@ export default function DailyReportPage() {
             <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
               <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">총 사용 带车수</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-purple-600">
+                <div className="text-2xl font-bold text-[var(--wj-accent-strong)]">
                   {summaryData.today.total_carts.toLocaleString()}
                 </div>
               )}
@@ -270,7 +270,7 @@ export default function DailyReportPage() {
             <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
               <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">제품창고 带车수</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-purple-500">
+                <div className="text-2xl font-bold text-[var(--wj-accent-strong)]">
                   {summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '成品仓库')?.cart_count || 0}
                 </div>
               )}

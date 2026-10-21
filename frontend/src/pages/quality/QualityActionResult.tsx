@@ -43,7 +43,7 @@ export default function QualityActionResult({
       )}
       {display.translated && (
         <details className="text-sm text-[var(--wj-muted)]">
-          <summary className="min-h-9 cursor-pointer py-1 text-xs leading-6 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+          <summary className="min-h-9 cursor-pointer py-1 text-xs leading-6 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-accent)]">
             중국어 원문 보기
           </summary>
           <p className="mt-1 whitespace-pre-wrap break-words leading-6" lang="zh-CN">{display.original}</p>
@@ -68,7 +68,7 @@ export default function QualityActionResult({
             className="w-full min-w-0 resize-y text-base leading-6 xl:text-sm"
           />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" onClick={onSave} disabled={disabled} className="bg-indigo-600 px-2 text-xs text-[var(--wj-on-accent)] hover:bg-indigo-700">
+            <Button type="button" size="sm" onClick={onSave} disabled={disabled} className="bg-[var(--wj-accent-strong)] px-2 text-xs text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)]">
               <Save className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
               {saving ? t('saving') : t('quality.save_action')}
             </Button>

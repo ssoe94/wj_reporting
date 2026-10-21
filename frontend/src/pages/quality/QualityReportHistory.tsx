@@ -420,7 +420,7 @@ export default function QualityReportHistory({
         {openCalendar === type && (
           <div className="absolute left-0 top-full z-20 mt-2">
             <div className="w-[280px] rounded-lg border bg-[var(--wj-surface-solid)] shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-r from-indigo-50 to-[var(--wj-bg-strong)] px-3 py-2 border-b flex items-center justify-between">
+              <div className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-3 py-2 border-b flex items-center justify-between">
                 <button 
                   type="button" 
                   onClick={() => setCurrentMonth(dayjs(currentMonth).subtract(1, 'month').toDate())}
@@ -737,8 +737,8 @@ export default function QualityReportHistory({
 
   return (
     <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
-      <div className="flex items-center gap-2 border-b border-[var(--wj-border)] px-4 py-3 bg-gradient-to-r from-indigo-50 to-[var(--wj-surface-solid)]">
-        <FolderOpen className="w-5 h-5 text-indigo-600" />
+      <div className="flex items-center gap-2 border-b border-[var(--wj-border)] px-4 py-3 bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-surface-solid)]">
+        <FolderOpen className="w-5 h-5 text-[var(--wj-accent-strong)]" />
         <h2 className="text-base font-semibold text-[var(--wj-text)]">{t('quality.history_title')}</h2>
       </div>
       <div className="p-4 space-y-4">
@@ -765,12 +765,12 @@ export default function QualityReportHistory({
                   {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
                 </span>
                 {activeFilterCount > 0 && (
-                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                  <span className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--wj-accent-strong)]">
                     {lang === 'zh' ? `${activeFilterCount} 个筛选条件` : `필터 ${activeFilterCount}개 적용`}
                   </span>
                 )}
                 {isFetching && (
-                  <span className="text-xs font-medium text-indigo-600" role="status">
+                  <span className="text-xs font-medium text-[var(--wj-accent-strong)]" role="status">
                     {lang === 'zh' ? '正在更新…' : '조회 중…'}
                   </span>
                 )}
@@ -1273,7 +1273,7 @@ export default function QualityReportHistory({
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-[var(--wj-border)] text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                 checked={filters.includeSimilar}
                 disabled={!hasPartFilter}
                 onChange={(e) => {
@@ -1306,7 +1306,7 @@ export default function QualityReportHistory({
                   checked={allVisibleSelected}
                   disabled={visibleReportIds.length === 0 || reportMutationInFlight}
                   onChange={toggleVisibleReports}
-                  className="h-5 w-5 rounded border-[var(--wj-border)] text-indigo-600 focus:ring-indigo-500"
+                  className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                 />
                 <span>{lang === 'zh' ? '选择本页' : '현재 페이지 선택'}</span>
               </label>
@@ -1344,7 +1344,7 @@ export default function QualityReportHistory({
         {/* 모바일 카드 목록 */}
         <div className="space-y-3 xl:hidden" aria-busy={isFetching}>
           {isLoading ? (
-            <div className="rounded-xl border border-indigo-100 bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
+            <div className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
               {t('loading')}...
             </div>
           ) : isError ? (
@@ -1352,7 +1352,7 @@ export default function QualityReportHistory({
               {t('error_loading_data')}
             </div>
           ) : reports.length === 0 ? (
-            <div className="rounded-xl border border-indigo-100 bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
+            <div className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
               {t('no_data')}
             </div>
           ) : (
@@ -1362,9 +1362,9 @@ export default function QualityReportHistory({
               return (
                 <article
                   key={r.id}
-                  className={`min-w-0 overflow-hidden rounded-xl border bg-[var(--wj-surface-solid)] shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-indigo-400 ring-2 ring-indigo-200' : 'border-indigo-200'}`}
+                  className={`min-w-0 overflow-hidden rounded-xl border bg-[var(--wj-surface-solid)] shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-[var(--wj-accent)] ring-2 ring-[var(--wj-accent)]' : 'border-[var(--wj-accent)]'}`}
                 >
-                  <div className="flex items-start justify-between gap-3 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-[var(--wj-bg-strong)] px-4 py-3">
+                  <div className="flex items-start justify-between gap-3 border-b border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-4 py-3">
                     <div className="flex min-w-0 items-start gap-2">
                       {canEditQuality && (
                         <label className="-ml-2 -mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-[var(--wj-surface-solid)]">
@@ -1374,7 +1374,7 @@ export default function QualityReportHistory({
                             disabled={reportMutationInFlight}
                             onChange={() => toggleReportSelection(r.id)}
                             aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
-                            className="h-5 w-5 rounded border-[var(--wj-border)] text-indigo-600 focus:ring-indigo-500"
+                            className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                           />
                         </label>
                       )}
@@ -1428,28 +1428,28 @@ export default function QualityReportHistory({
                             setSelectedImages(images.map(resolveImageUrl));
                             setCurrentImageIndex(0);
                           }}
-                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2 text-left transition-colors hover:bg-indigo-50"
+                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-accent-soft)]/50 p-2 text-left transition-colors hover:bg-[var(--wj-accent-soft)]"
                           aria-label={`${t('quality.image_upload')} ${images.length}`}
                         >
                           <span className="relative shrink-0">
                             <img
                               src={resolveImageUrl(images[0])}
                               alt=""
-                              className="h-12 w-12 rounded-md border border-indigo-200 object-cover"
+                              className="h-12 w-12 rounded-md border border-[var(--wj-accent)] object-cover"
                               onError={(event) => {
                                 event.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
                               }}
                             />
                             {images.length > 1 && (
-                              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[11px] font-bold text-[var(--wj-on-accent)]">
+                              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--wj-accent-strong)] px-1 text-[11px] font-bold text-[var(--wj-on-accent)]">
                                 {images.length}
                               </span>
                             )}
                           </span>
-                          <span className="min-w-0 flex-1 text-sm font-medium text-indigo-700">
+                          <span className="min-w-0 flex-1 text-sm font-medium text-[var(--wj-accent-strong)]">
                             {t('quality.view_detail')}
                           </span>
-                          <Eye className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
+                          <Eye className="h-5 w-5 shrink-0 text-[var(--wj-accent-strong)]" aria-hidden="true" />
                         </button>
                       ) : (
                         <p className="mt-1 text-sm text-[var(--wj-muted)]">-</p>
@@ -1492,10 +1492,10 @@ export default function QualityReportHistory({
         </div>
 
         {/* 데스크톱 테이블 */}
-        <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block" aria-busy={isFetching}>
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--wj-accent)] shadow-sm xl:block" aria-busy={isFetching}>
           <table className="w-full min-w-[1380px] table-fixed text-sm">
-            <thead className="bg-gradient-to-r from-indigo-50 to-[var(--wj-bg-strong)] whitespace-nowrap">
-              <tr className="border-b border-indigo-200">
+            <thead className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] whitespace-nowrap">
+              <tr className="border-b border-[var(--wj-accent)]">
                 {canEditQuality && (
                   <th className="w-12 px-2 py-3 text-center">
                     <input
@@ -1505,7 +1505,7 @@ export default function QualityReportHistory({
                       disabled={visibleReportIds.length === 0 || isDeleting}
                       onChange={toggleVisibleReports}
                       aria-label={lang === 'zh' ? '选择当前页全部报告' : '현재 페이지 보고서 전체 선택'}
-                      className="h-5 w-5 rounded border-[var(--wj-border)] text-indigo-600 focus:ring-indigo-500"
+                      className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                     />
                   </th>
                 )}
@@ -1532,7 +1532,7 @@ export default function QualityReportHistory({
               ) : (
                 reports.map((r: QualityReport) => {
                   return (
-                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-indigo-50' : 'hover:bg-indigo-50/50'}`}>
+                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-[var(--wj-accent-soft)]' : 'hover:bg-[var(--wj-accent-soft)]/50'}`}>
                       {canEditQuality && (
                         <td className="px-2 py-3 text-center">
                           <input
@@ -1541,7 +1541,7 @@ export default function QualityReportHistory({
                             disabled={reportMutationInFlight}
                             onChange={() => toggleReportSelection(r.id)}
                             aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
-                            className="h-5 w-5 rounded border-[var(--wj-border)] text-indigo-600 focus:ring-indigo-500"
+                            className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                           />
                         </td>
                       )}
@@ -1576,14 +1576,14 @@ export default function QualityReportHistory({
                                 <img
                                   src={resolveImageUrl(images[0])}
                                   alt="Thumbnail"
-                                  className="w-12 h-12 object-cover rounded border border-indigo-200 hover:border-indigo-400 transition-all cursor-pointer"
+                                  className="w-12 h-12 object-cover rounded border border-[var(--wj-accent)] hover:border-[var(--wj-accent)] transition-all cursor-pointer"
                                   onError={(e) => {
                                     console.error('Image load error:', images[0]);
                                     e.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
                                   }}
                                 />
                                 {images.length > 1 && (
-                                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-[var(--wj-on-accent)] text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                                  <span className="absolute -top-1 -right-1 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
                                     {images.length}
                                   </span>
                                 )}
@@ -1599,7 +1599,7 @@ export default function QualityReportHistory({
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => setSelectedReport(r)}
-                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            className="p-2 text-[var(--wj-accent-strong)] hover:bg-[var(--wj-accent-soft)] rounded-lg transition-colors"
                             title={t('quality.view_detail')}
                           >
                             <Eye className="w-4 h-4" />
@@ -1721,14 +1721,14 @@ export default function QualityReportHistory({
                 setSelectedImages([]);
                 setCurrentImageIndex(0);
               }}
-              className="absolute -top-12 right-0 text-[var(--wj-on-accent)] hover:text-[var(--wj-muted)] transition-colors z-10"
+              className="absolute -top-12 right-0 text-[var(--wj-on-contrast)] hover:text-[var(--wj-muted)] transition-colors z-10"
             >
               <X className="w-8 h-8" />
             </button>
 
             {/* 이미지 카운터 */}
             {selectedImages.length > 1 && (
-              <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 text-[var(--wj-on-accent)] text-sm">
+              <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 text-[var(--wj-on-contrast)] text-sm">
                 {currentImageIndex + 1} / {selectedImages.length}
               </div>
             )}
@@ -1749,7 +1749,7 @@ export default function QualityReportHistory({
                     e.stopPropagation();
                     setCurrentImageIndex(prev => prev - 1);
                   }}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-[var(--wj-on-accent)] rounded-full p-3 transition-all"
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/80 text-[var(--wj-on-contrast)] rounded-full p-3 transition-all"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -1762,7 +1762,7 @@ export default function QualityReportHistory({
                     e.stopPropagation();
                     setCurrentImageIndex(prev => prev + 1);
                   }}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-[var(--wj-on-accent)] rounded-full p-3 transition-all"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/80 text-[var(--wj-on-contrast)] rounded-full p-3 transition-all"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
@@ -1781,7 +1781,7 @@ export default function QualityReportHistory({
                     }}
                     className={`w-16 h-16 rounded border-2 overflow-hidden transition-all ${
                       idx === currentImageIndex
-                        ? 'border-indigo-500 scale-110'
+                        ? 'border-[var(--wj-accent)] scale-110'
                         : 'border-[var(--wj-border)] opacity-60 hover:opacity-100'
                     }`}
                   >
@@ -1809,11 +1809,11 @@ export default function QualityReportHistory({
             onClick={(e) => e.stopPropagation()}
           >
             {/* 헤더 */}
-            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] px-6 py-4 flex items-center justify-between rounded-t-lg">
+            <div className="sticky top-0 bg-[var(--wj-bg-strong)] text-[var(--wj-text)] px-6 py-4 flex items-center justify-between rounded-t-lg">
               <h3 className="text-lg font-semibold">{t('quality.detail_title')}</h3>
               <button
                 onClick={() => setSelectedReport(null)}
-                className="text-[var(--wj-on-accent)] hover:text-[var(--wj-muted)] transition-colors"
+                className="text-[var(--wj-text)] hover:text-[var(--wj-muted)] transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1959,7 +1959,7 @@ export default function QualityReportHistory({
                           <img
                             src={resolveImageUrl(img)}
                             alt={`Image ${idx + 1}`}
-                            className="w-full h-48 object-cover rounded-lg border-2 border-[var(--wj-border)] cursor-pointer hover:border-indigo-400 transition-all"
+                            className="w-full h-48 object-cover rounded-lg border-2 border-[var(--wj-border)] cursor-pointer hover:border-[var(--wj-accent)] transition-all"
                             onClick={() => {
                               setSelectedImages(images.map(resolveImageUrl));
                               setCurrentImageIndex(idx);
@@ -1970,7 +1970,7 @@ export default function QualityReportHistory({
                             }}
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all rounded-lg flex items-center justify-center">
-                            <Eye className="w-8 h-8 text-[var(--wj-on-accent)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <Eye className="w-8 h-8 text-[var(--wj-on-contrast)] opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
                         </div>
                       ))}

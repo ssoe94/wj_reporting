@@ -220,7 +220,7 @@ export default function QualityImportCompletionModal({
                     </div>
                     <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3">
                       <p className="flex items-center gap-2 text-xs font-semibold text-[var(--wj-muted)]">
-                        <CalendarRange className="h-4 w-4 text-violet-600" aria-hidden="true" />{c.appliedPeriod}
+                        <CalendarRange className="h-4 w-4 text-[var(--wj-accent-strong)]" aria-hidden="true" />{c.appliedPeriod}
                       </p>
                       <p className="mt-1 text-base font-bold tabular-nums text-[var(--wj-text)]">{appliedPeriod || c.unknown}</p>
                       <p className="mt-1 text-xs text-[var(--wj-muted)]">{c.appliedPeriodHelp}</p>

@@ -868,7 +868,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                         >
                           <X className="w-4 h-4" />
                         </button>
-                        <div className="absolute bottom-2 left-2 bg-black/60 text-[var(--wj-on-accent)] text-xs px-2 py-1 rounded">
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-[var(--wj-on-contrast)] text-xs px-2 py-1 rounded">
                           {index + 1}
                         </div>
                       </div>

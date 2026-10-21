@@ -62,10 +62,10 @@ export default function QualityRecentReports({ onViewAll }: QualityRecentReports
   const totalCount = data?.count || 0;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-indigo-100 bg-[var(--wj-surface-solid)] shadow-sm" aria-labelledby="recent-quality-title">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--wj-border)] bg-gradient-to-r from-indigo-50/90 to-[var(--wj-surface-solid)] px-4 py-3.5 md:px-5">
+    <section className="overflow-hidden rounded-2xl border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] shadow-sm" aria-labelledby="recent-quality-title">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-accent-soft)]/90 to-[var(--wj-surface-solid)] px-4 py-3.5 md:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="rounded-lg bg-indigo-600 p-2 text-[var(--wj-on-accent)] shadow-sm">
+          <span className="rounded-lg bg-[var(--wj-accent-strong)] p-2 text-[var(--wj-on-accent)] shadow-sm">
             <Clock3 className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -79,7 +79,7 @@ export default function QualityRecentReports({ onViewAll }: QualityRecentReports
                 </span>
               )}
               {isFetching && !isLoading && (
-                <span className="text-xs font-medium text-indigo-600">
+                <span className="text-xs font-medium text-[var(--wj-accent-strong)]">
                   {locale === 'zh' ? '正在更新' : '업데이트 중'}
                 </span>
               )}
@@ -92,7 +92,7 @@ export default function QualityRecentReports({ onViewAll }: QualityRecentReports
         <button
           type="button"
           onClick={onViewAll}
-          className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--wj-accent-strong)] shadow-sm transition hover:border-[var(--wj-accent)] hover:bg-[var(--wj-accent-soft)]"
         >
           {locale === 'zh' ? '查看更多履历' : '전체 이력 더보기'}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -138,7 +138,7 @@ export default function QualityRecentReports({ onViewAll }: QualityRecentReports
               </thead>
               <tbody className="divide-y divide-[var(--wj-border)]">
                 {reports.map((report) => (
-                  <tr key={report.id} className="transition hover:bg-indigo-50/40">
+                  <tr key={report.id} className="transition hover:bg-[var(--wj-accent-soft)]/40">
                     <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums text-[var(--wj-text)]">{report.report_dt.slice(0, 10)}</td>
                     <td className="px-3 py-3 text-[var(--wj-muted)]">{sectionLabel(report.section, locale)}</td>
                     <td className="px-3 py-3">

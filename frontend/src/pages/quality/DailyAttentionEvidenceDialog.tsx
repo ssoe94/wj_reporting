@@ -214,11 +214,11 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
             <DialogPanel className="flex max-h-[calc(100dvh-1rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-[var(--wj-surface-solid)] shadow-2xl ring-1 ring-[var(--wj-border)] sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl">
               {selection && (
                 <>
-                  <header className="border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-nav-surface)] via-[var(--wj-nav-surface)] to-[var(--wj-accent-strong)] px-4 py-4 text-[var(--wj-on-accent)] sm:px-6 sm:py-5">
+                  <header className="border-b border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-4 text-[var(--wj-text)] sm:px-6 sm:py-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--wj-accent-strong)]">{copy.eyebrow}</div>
-                        <DialogTitle className="mt-1 break-keep text-xl font-bold leading-8 text-[var(--wj-on-accent)] sm:text-2xl">
+                        <DialogTitle className="mt-1 break-keep text-xl font-bold leading-8 text-[var(--wj-text)] sm:text-2xl">
                           {selection.metricLabel} {copy.titleSuffix}
                         </DialogTitle>
                         <div className="mt-3 flex min-w-0 items-start gap-2 text-sm font-semibold text-[var(--wj-muted)]">
@@ -238,7 +238,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                       <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-on-accent)] transition hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
+                        className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-text)] transition hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
                         aria-label={copy.close}
                       >
                         <X className="h-5 w-5" />
@@ -448,15 +448,15 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
               <>
                 <div className="flex items-start justify-between gap-4 border-b border-[var(--wj-border)] px-4 py-3 sm:px-5">
                   <div className="min-w-0">
-                    <DialogTitle className="truncate text-sm font-bold text-[var(--wj-on-accent)] sm:text-base">
+                    <DialogTitle className="truncate text-sm font-bold text-[var(--wj-on-contrast)] sm:text-base">
                       {activeCase.model || activeCase.partNo} · {activeImage.index + 1}/{activeCase.images.length}
                     </DialogTitle>
-                    <p className="mt-1 truncate text-xs text-[var(--wj-muted)]">{activeCase.partNo} · {activeCase.rawPhenomenon}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--wj-on-contrast-muted)]">{activeCase.partNo} · {activeCase.rawPhenomenon}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setActiveImage(null)}
-                    className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-on-accent)] hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
+                    className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-text)] hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
                     aria-label={copy.closeImage}
                   >
                     <X className="h-5 w-5" />

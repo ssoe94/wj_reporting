@@ -357,7 +357,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                     <span className="px-2 py-1 rounded-md bg-[var(--wj-warning-bg)] text-[var(--wj-warning)] text-xs inline-flex items-center gap-1">
                       <Percent className="w-3 h-3" /> {t('defect_rate')}: {detailDefectRate.toFixed(1)}%
                     </span>
-                    <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs inline-flex items-center gap-1">
+                    <span className="px-2 py-1 rounded-md bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)] text-xs inline-flex items-center gap-1">
                       <Gauge className="w-3 h-3" /> {t('uph')}: {detail.uph || '-'}
                     </span>
                   </div>
@@ -475,7 +475,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
                   {/* 오른쪽 열 하단: 외주불량 */}
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-purple-700 bg-purple-50">{t('assembly_outsourcing_defect')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-accent-strong)] bg-[var(--wj-accent-soft)]">{t('assembly_outsourcing_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {

@@ -89,8 +89,8 @@ export default function QualityPage() {
             aria-current={isHistoryView ? 'page' : undefined}
             className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
               isHistoryView
-                ? 'bg-indigo-600 text-[var(--wj-on-accent)] shadow-sm'
-                : 'text-[var(--wj-muted)] hover:bg-indigo-50 hover:text-indigo-700'
+                ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
+                : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
             }`}
           >
             <History className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -103,8 +103,8 @@ export default function QualityPage() {
               aria-current={isReviewView ? 'page' : undefined}
               className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 isReviewView
-                  ? 'bg-violet-600 text-[var(--wj-on-accent)] shadow-sm'
-                  : 'text-[var(--wj-muted)] hover:bg-violet-50 hover:text-violet-700'
+                  ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
+                  : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
               }`}
             >
               <BrainCircuit className="h-4 w-4 shrink-0" aria-hidden="true" />

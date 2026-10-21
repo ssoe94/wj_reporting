@@ -67,7 +67,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
     <div
       className={`border rounded p-2 min-h-20 text-xs cursor-pointer transition-colors ${
         setups.length > 0
-          ? 'bg-[var(--wj-surface-solid)] border-indigo-200 hover:bg-indigo-50 shadow-sm'
+          ? 'bg-[var(--wj-surface-solid)] border-[var(--wj-accent)] hover:bg-[var(--wj-accent-soft)] shadow-sm'
           : 'bg-[var(--wj-surface-solid)] border-[var(--wj-border)] hover:bg-[var(--wj-bg-strong)]'
       }`}
       onClick={handleClick}
@@ -97,7 +97,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
             </div>
           )}
           {setup.setups[0].mean_cycle_time && (
-            <div className="text-purple-600 text-xs">
+            <div className="text-[var(--wj-accent-strong)] text-xs">
               {t('history.mean_ct_label')}: {setup.setups[0].mean_cycle_time}{t('unit.seconds')}
             </div>
           )}
@@ -385,7 +385,7 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
                     {setup.mean_cycle_time && (
                       <div>
                         <span className="font-medium text-[var(--wj-text)]">{t('history.mean_ct_label')}:</span>{' '}
-                        <span className="text-purple-600">{setup.mean_cycle_time}{t('unit.seconds')}</span>
+                        <span className="text-[var(--wj-accent-strong)]">{setup.mean_cycle_time}{t('unit.seconds')}</span>
                       </div>
                     )}
                     <div>

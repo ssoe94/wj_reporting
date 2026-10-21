@@ -515,18 +515,18 @@ export default function QualityClassificationReview() {
 
   return (
     <section className="space-y-4" aria-labelledby="quality-classification-review-title">
-      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-accent-soft)] via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="rounded-xl bg-indigo-600 p-2.5 text-[var(--wj-on-accent)] shadow-sm"><BrainCircuit className="h-5 w-5" /></span>
+            <span className="rounded-xl bg-[var(--wj-accent-strong)] p-2.5 text-[var(--wj-on-accent)] shadow-sm"><BrainCircuit className="h-5 w-5" /></span>
             <div>
               <h2 id="quality-classification-review-title" className="text-xl font-bold text-[var(--wj-text)]">{copy.title}</h2>
               <p className="mt-1 text-sm text-[var(--wj-muted)]">{copy.subtitle}</p>
-              <p className="mt-1 text-xs font-medium text-indigo-700">{data?.taxonomy_version ?? '-'}</p>
+              <p className="mt-1 text-xs font-medium text-[var(--wj-accent-strong)]">{data?.taxonomy_version ?? '-'}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void startAudit()} disabled={mutating} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-[var(--wj-on-accent)] shadow-sm disabled:opacity-50">
+            <button type="button" onClick={() => void startAudit()} disabled={mutating} className="inline-flex items-center gap-2 rounded-xl bg-[var(--wj-accent-strong)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-on-accent)] shadow-sm disabled:opacity-50">
               {mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.start}
             </button>
             <button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-text)]">
@@ -554,7 +554,7 @@ export default function QualityClassificationReview() {
             <div className="flex items-center justify-between gap-2">
               <div className="inline-flex rounded-lg bg-[var(--wj-bg-strong)] p-1">
               {(['attention', 'all'] as const).map((value) => (
-                <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => { setDeepLinkReportId(null); setStatusFilter(value); setPage(1); }} className={`rounded-md px-3 py-1.5 text-xs font-bold ${statusFilter === value ? 'bg-[var(--wj-surface-solid)] text-indigo-700 shadow-sm' : 'text-[var(--wj-muted)]'}`}>
+                <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => { setDeepLinkReportId(null); setStatusFilter(value); setPage(1); }} className={`rounded-md px-3 py-1.5 text-xs font-bold ${statusFilter === value ? 'bg-[var(--wj-surface-solid)] text-[var(--wj-accent-strong)] shadow-sm' : 'text-[var(--wj-muted)]'}`}>
                   {value === 'attention' ? copy.attention : copy.all}
                 </button>
               ))}
@@ -571,7 +571,7 @@ export default function QualityClassificationReview() {
             </form>
           </div>
           <div className="max-h-[min(52dvh,520px)] overflow-y-auto p-2 xl:max-h-[720px]">
-            {loading && !data ? <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-indigo-600" /></div> : null}
+            {loading && !data ? <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-[var(--wj-accent-strong)]" /></div> : null}
             {!loading && !data && queueError ? <p className="p-8 text-center text-sm text-[var(--wj-muted)]">{copy.loadUnavailable}</p> : null}
             {!loading && data?.results.length === 0 ? <p className="p-8 text-center text-sm text-[var(--wj-muted)]">{copy.empty}</p> : null}
             <div className="space-y-2">
@@ -579,7 +579,7 @@ export default function QualityClassificationReview() {
                 const selectedRow = row.report.id === selectedReportId;
                 const aiLabels = row.result?.qwen_classification?.candidate_selections?.map((term) => localized(term.label, lang)).filter(Boolean) ?? [];
                 return (
-                          <button key={row.report.id} type="button" aria-pressed={selectedRow} onClick={() => chooseReport(row.report.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedRow ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-100' : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)] hover:border-indigo-200 hover:bg-[var(--wj-surface-solid)]'}`}>
+                          <button key={row.report.id} type="button" aria-pressed={selectedRow} onClick={() => chooseReport(row.report.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedRow ? 'border-[var(--wj-accent)] bg-[var(--wj-accent-soft)] ring-2 ring-[var(--wj-accent)]' : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)] hover:border-[var(--wj-accent)] hover:bg-[var(--wj-surface-solid)]'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-[var(--wj-muted)]">{dayjs(row.report.report_dt).format('YYYY-MM-DD')} · {row.report.section}</span>
                       <span className={`rounded-full px-2 py-1 text-[10px] font-bold ring-1 ring-inset ${queueStatusClass(row.queue_status)}`}>{statusLabel(row.queue_status)}</span>
@@ -610,7 +610,7 @@ export default function QualityClassificationReview() {
             <div className="space-y-5">
               <header className="flex flex-col gap-3 border-b border-[var(--wj-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <div className="text-xs font-bold uppercase tracking-[0.12em] text-indigo-600">Report #{selected.report.id}</div>
+                  <div className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--wj-accent-strong)]">Report #{selected.report.id}</div>
                   <h3 className="mt-1 break-words text-xl font-bold text-[var(--wj-text)]">{selected.report.part_no || '-'}</h3>
                   <p className="mt-1 text-sm font-semibold text-[var(--wj-muted)]">{selected.report.model || '-'} · {selected.report.section} · {dayjs(selected.report.report_dt).format('YYYY-MM-DD HH:mm')}</p>
                 </div>
@@ -653,15 +653,15 @@ export default function QualityClassificationReview() {
                   <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><SearchCheck className="h-4 w-4" />{copy.dictionary}</h4>
                   <div className="mt-3 flex flex-wrap gap-2">{selected.deterministic_classification.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-[var(--wj-accent-strong)] ring-1 ring-[var(--wj-border)]">{taxonomyLabel(term, lang)}</span>)}</div>
                 </section>
-                <section className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
-                  <h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><Sparkles className="h-4 w-4" />{copy.aiSuggestion}</h4>
+                <section className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-accent-soft)]/60 p-4">
+                  <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><Sparkles className="h-4 w-4" />{copy.aiSuggestion}</h4>
                   {selected.result?.available ? (
                     <>
-                      <div className="mt-3 flex flex-wrap gap-2">{selected.result.qwen_classification?.candidate_selections?.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">{localized(term.label, lang)}</span>)}</div>
-                      <p className="mt-3 text-xs font-semibold text-violet-700">{localized(CONFIDENCE_LABELS[selected.result.qwen_classification?.confidence ?? ''], lang) || '-'}</p>
-                      {selected.result.qwen_classification?.needs_new_category && <p className="mt-3 rounded-lg border border-violet-200 bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold leading-5 text-violet-900">{copy.needsCategory}</p>}
+                      <div className="mt-3 flex flex-wrap gap-2">{selected.result.qwen_classification?.candidate_selections?.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-[var(--wj-accent-strong)] ring-1 ring-[var(--wj-accent)]">{localized(term.label, lang)}</span>)}</div>
+                      <p className="mt-3 text-xs font-semibold text-[var(--wj-accent-strong)]">{localized(CONFIDENCE_LABELS[selected.result.qwen_classification?.confidence ?? ''], lang) || '-'}</p>
+                      {selected.result.qwen_classification?.needs_new_category && <p className="mt-3 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--wj-accent-strong)]">{copy.needsCategory}</p>}
                     </>
-                  ) : <p className="mt-3 text-sm text-violet-700">{selected.job?.status === 'failed' ? selected.job.error_message : statusLabel(selected.queue_status)}</p>}
+                  ) : <p className="mt-3 text-sm text-[var(--wj-accent-strong)]">{selected.job?.status === 'failed' ? selected.job.error_message : statusLabel(selected.queue_status)}</p>}
                 </section>
               </div>
 
@@ -696,7 +696,7 @@ export default function QualityClassificationReview() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         {selected.taxonomy_candidates.map((term) => {
                           const active = selectedCategoryKeys.includes(term.key);
-                          return <button key={term.key} type="button" aria-pressed={active} onClick={() => toggleCategory(term.key)} className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${active ? 'bg-indigo-600 text-[var(--wj-on-accent)] ring-indigo-600' : 'bg-[var(--wj-surface-solid)] text-[var(--wj-muted)] ring-[var(--wj-border)]'}`}>{active && <Check className="mr-1 inline h-3 w-3" />}{localized(term.label, lang)}</button>;
+                          return <button key={term.key} type="button" aria-pressed={active} onClick={() => toggleCategory(term.key)} className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${active ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] ring-[var(--wj-accent)]' : 'bg-[var(--wj-surface-solid)] text-[var(--wj-muted)] ring-[var(--wj-border)]'}`}>{active && <Check className="mr-1 inline h-3 w-3" />}{localized(term.label, lang)}</button>;
                         })}
                       </div>
                     </div>
@@ -711,12 +711,12 @@ export default function QualityClassificationReview() {
                   <label className="mt-4 block text-sm font-bold text-[var(--wj-text)]" htmlFor="audit-review-note">{copy.note}</label>
                   <textarea id="audit-review-note" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border-[var(--wj-border)] text-sm" />
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => void saveReview(false)} disabled={mutating || selectedCategoryKeys.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40"><Save className="h-4 w-4" />{copy.saveReview}</button>
+                    <button type="button" onClick={() => void saveReview(false)} disabled={mutating || selectedCategoryKeys.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-[var(--wj-accent-strong)] px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40"><Save className="h-4 w-4" />{copy.saveReview}</button>
                     <button type="button" onClick={() => void saveReview(true)} disabled={mutating} className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-2.5 text-sm font-bold text-[var(--wj-danger)] disabled:opacity-40">{selected.result.qwen_classification?.needs_new_category ? copy.keepGap : copy.reject}</button>
                   </div>
                 </section>
               ) : (
-                <button type="button" onClick={() => void startAudit([selected.report.id])} disabled={mutating || ['pending', 'claimed', 'running'].includes(selected.queue_status)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40">{mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.enqueueOne}</button>
+                <button type="button" onClick={() => void startAudit([selected.report.id])} disabled={mutating || ['pending', 'claimed', 'running'].includes(selected.queue_status)} className="inline-flex items-center gap-2 rounded-xl bg-[var(--wj-accent-strong)] px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40">{mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.enqueueOne}</button>
               )}
 
               {canApplyMaster && selected.result?.review && selected.result.review.status !== 'rejected' && approvedReviewColorKey && approvedReviewColorKey !== 'undetermined' && approvedReviewColorKey !== 'other' && !selected.result.master_color_application ? (
@@ -740,8 +740,8 @@ export default function QualityClassificationReview() {
         <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-6">
           <DialogPanel className="relative flex h-full w-full max-w-6xl items-center justify-center">
             <DialogTitle className="sr-only">{selected?.report.part_no} {copy.photos}</DialogTitle>
-            <button type="button" onClick={() => setActiveImage(null)} aria-label={copy.closeImage} className="absolute right-0 top-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]"><X className="h-5 w-5" /></button>
-            {selected && selected.report.image_refs.length > 1 && <><button type="button" onClick={() => moveImage(-1)} className="absolute left-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]" aria-label={copy.previous}><ChevronLeft className="h-6 w-6" /></button><button type="button" onClick={() => moveImage(1)} className="absolute right-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]" aria-label={copy.next}><ChevronRight className="h-6 w-6" /></button></>}
+            <button type="button" onClick={() => setActiveImage(null)} aria-label={copy.closeImage} className="absolute right-0 top-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-text)]"><X className="h-5 w-5" /></button>
+            {selected && selected.report.image_refs.length > 1 && <><button type="button" onClick={() => moveImage(-1)} className="absolute left-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-text)]" aria-label={copy.previous}><ChevronLeft className="h-6 w-6" /></button><button type="button" onClick={() => moveImage(1)} className="absolute right-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-text)]" aria-label={copy.next}><ChevronRight className="h-6 w-6" /></button></>}
             {activeImageUrl && <img src={activeImageUrl} alt={`${selected?.report.part_no ?? ''} ${copy.photos}`} className="max-h-full max-w-full object-contain" />}
           </DialogPanel>
         </div>

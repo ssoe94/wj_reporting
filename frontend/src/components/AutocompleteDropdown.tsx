@@ -18,7 +18,7 @@ const getTypeIcon = (type: string) => {
     case 'eco_no': return <Hash className="w-4 h-4 text-[var(--wj-accent-strong)]" />;
     case 'eco_model': return <Package className="w-4 h-4 text-[var(--wj-success)]" />;
     case 'part_no': return <Package className="w-4 h-4 text-[var(--wj-warning)]" />;
-    case 'customer': return <Building className="w-4 h-4 text-purple-500" />;
+    case 'customer': return <Building className="w-4 h-4 text-[var(--wj-accent-strong)]" />;
     default: return <Search className="w-4 h-4 text-[var(--wj-muted)]" />;
   }
 };
@@ -162,7 +162,7 @@ export default function AutocompleteDropdown({
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           suggestion.type === 'part_no' 
-                            ? 'bg-purple-100 text-purple-700'
+                            ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'
                             : suggestion.type === 'eco_no'
                             ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'
                             : suggestion.type === 'eco_model'

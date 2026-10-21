@@ -1504,7 +1504,7 @@
 .zoneFocusButton[aria-pressed="true"] {
   outline: 0;
   background: var(--zone-accent);
-  color: var(--wj-on-accent);
+  color: var(--wj-on-contrast);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
@@ -1552,8 +1552,8 @@
 
 .page .occupiedCell {
   border-color: color-mix(in srgb, var(--zone-accent) 52%, var(--wj-border));
-  background: color-mix(in srgb, var(--zone-accent) 78%, var(--wj-surface-solid));
-  color: var(--wj-text);
+  background: color-mix(in srgb, var(--zone-accent) 90%, var(--wj-surface-solid));
+  color: var(--wj-on-contrast);
   cursor: pointer;
   text-shadow: 0 1px 1px rgba(22, 50, 69, 0.24);
 }
@@ -5834,7 +5834,7 @@
   place-items: center;
   border-radius: 7px;
   background: var(--zone-accent);
-  color: var(--wj-text);
+  color: var(--wj-on-contrast);
   font-size: 0.95rem;
   font-weight: 900;
 }

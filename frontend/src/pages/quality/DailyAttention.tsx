@@ -1990,7 +1990,7 @@ export default function DailyAttentionPage() {
       ) : (
         <div className="space-y-8">
           <section className="overflow-hidden rounded-3xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
-            <div className="relative overflow-hidden bg-gradient-to-br from-[var(--wj-nav-surface)] via-[var(--wj-accent-strong)] to-[var(--wj-accent-strong)] px-5 py-6 text-[var(--wj-on-accent)] sm:px-7 lg:px-8">
+            <div className="relative overflow-hidden bg-[var(--wj-bg-strong)] px-5 py-6 text-[var(--wj-text)] sm:px-7 lg:px-8">
               <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[var(--wj-accent-soft)] blur-3xl" />
               <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-[var(--wj-accent-soft)] blur-2xl" />
               <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -1999,7 +1999,7 @@ export default function DailyAttentionPage() {
                     <BrainCircuit className="h-4 w-4" />
                     {analysisCopy.eyebrow}
                   </div>
-                  <h2 className="!text-2xl font-bold !text-[var(--wj-on-accent)] tracking-tight sm:!text-3xl">{analysisCopy.title}</h2>
+                  <h2 className="!text-2xl font-bold !text-[var(--wj-text)] tracking-tight sm:!text-3xl">{analysisCopy.title}</h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--wj-accent-strong)]">{analysisCopy.scope}</p>
                 </div>
                 <div className="flex flex-col items-start gap-2 xl:items-end">
@@ -2010,17 +2010,17 @@ export default function DailyAttentionPage() {
               <div className="relative mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3 text-sm text-[var(--wj-accent-strong)] backdrop-blur-sm">
                 <span className="inline-flex items-center gap-2">
                   <CalendarDays className="h-4 w-4 text-[var(--wj-accent-strong)]" />
-                  {analysisCopy.analysisDate} <strong className="font-semibold text-[var(--wj-on-accent)]">{report?.business_date ?? targetDate}</strong>
+                  {analysisCopy.analysisDate} <strong className="font-semibold text-[var(--wj-text)]">{report?.business_date ?? targetDate}</strong>
                 </span>
                 <span className="hidden h-4 w-px bg-[var(--wj-surface-solid)] sm:block" />
                 <span className="inline-flex items-center gap-2">
                   <Clock3 className="h-4 w-4 text-[var(--wj-accent-strong)]" />
-                  {analysisCopy.latestRefresh} <strong className="font-semibold text-[var(--wj-on-accent)]">{formatReportDateTime(canUseNarrative ? report?.completed_at ?? report?.generated_at : deterministic?.calculated_at)}</strong>
+                  {analysisCopy.latestRefresh} <strong className="font-semibold text-[var(--wj-text)]">{formatReportDateTime(canUseNarrative ? report?.completed_at ?? report?.generated_at : deterministic?.calculated_at)}</strong>
                 </span>
                 <span className="hidden h-4 w-px bg-[var(--wj-surface-solid)] sm:block" />
                 <span className="inline-flex items-center gap-2">
                   <Database className="h-4 w-4 text-[var(--wj-accent-strong)]" />
-                  {analysisCopy.evidenceCount} <strong className="font-semibold tabular-nums text-[var(--wj-on-accent)]">{formatMetricNumber(deterministic?.coverage.matched_report_count)}</strong>
+                  {analysisCopy.evidenceCount} <strong className="font-semibold tabular-nums text-[var(--wj-text)]">{formatMetricNumber(deterministic?.coverage.matched_report_count)}</strong>
                 </span>
               </div>
             </div>
@@ -2083,14 +2083,14 @@ export default function DailyAttentionPage() {
 
                 {narrative && (
                   <section className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
-                    <div className="border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-accent-strong)] via-[var(--wj-accent-strong)] to-indigo-900 px-5 py-4 text-[var(--wj-on-accent)] sm:px-6">
+                    <div className="border-b border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-5 py-4 text-[var(--wj-text)] sm:px-6">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="flex items-start gap-3">
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-surface-solid)] text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-border)]">
                             <CheckCircle2 className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="text-lg font-bold text-[var(--wj-on-accent)]">{analysisCopy.shiftBriefing}</h3>
+                            <h3 className="text-lg font-bold text-[var(--wj-text)]">{analysisCopy.shiftBriefing}</h3>
                             <p className="mt-1 max-w-4xl text-xs leading-5 text-[var(--wj-accent-strong)]">{analysisCopy.shiftBriefingDescription}</p>
                           </div>
                         </div>
@@ -2201,7 +2201,7 @@ export default function DailyAttentionPage() {
                                 {(metric.observed_terms ?? []).length > 0 && (
                                   <div className="mt-1.5 flex flex-wrap justify-center gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
                                     {metric.observed_terms?.map((observed) => (
-                                      <span key={observed.canonical_key} className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100">
+                                      <span key={observed.canonical_key} className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-accent)]">
                                         {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
                                       </span>
                                     ))}
@@ -2305,7 +2305,7 @@ export default function DailyAttentionPage() {
                   />
                   <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm">
                     <div className="mb-5 flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]">
                         <Target className="h-5 w-5" />
                       </div>
                       <div>

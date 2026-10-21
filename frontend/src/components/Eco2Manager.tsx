@@ -379,7 +379,7 @@ export default function Eco2Manager() {
       <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
-            <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-indigo-50">
+            <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)]">
               <tr>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_no')}</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_model')}</th>

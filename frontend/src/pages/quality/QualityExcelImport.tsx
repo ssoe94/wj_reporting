@@ -1075,7 +1075,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                   {tableResultRows.length === 0 ? (
                     <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-[var(--wj-muted)]">{c.noRows}</td></tr>
                   ) : tableResultRows.map((row) => (
-                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-[var(--wj-danger-bg)]' : row.status === 'changed' ? 'bg-violet-50/30' : row.status === 'updated' ? 'bg-[var(--wj-bg-strong)]' : 'hover:bg-[var(--wj-bg-strong)]'}>
+                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-[var(--wj-danger-bg)]' : row.status === 'changed' ? 'bg-[var(--wj-accent-soft)]/30' : row.status === 'updated' ? 'bg-[var(--wj-bg-strong)]' : 'hover:bg-[var(--wj-bg-strong)]'}>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--wj-text)]">
                         <strong className="block text-[var(--wj-text)]">{row.sheet_name}</strong>
                         <span className="text-xs text-[var(--wj-muted)]">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
@@ -1092,7 +1092,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                         <p className="mt-1 line-clamp-2 leading-5">{row.phenomenon || '-'}</p>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--wj-muted)]">
-                        <span className="font-semibold text-violet-700">{row.images_saved.toLocaleString()}</span>
+                        <span className="font-semibold text-[var(--wj-accent-strong)]">{row.images_saved.toLocaleString()}</span>
                         <span> / {row.images_found.toLocaleString()}</span>
                       </td>
                       <td className="max-w-sm px-4 py-3 text-sm text-[var(--wj-muted)]">

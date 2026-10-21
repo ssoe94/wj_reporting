@@ -79,7 +79,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                 <p className="text-sm text-[var(--wj-muted)] mb-1">{stat.title}</p>
                 <p className="text-2xl font-semibold text-[var(--wj-text)]">{stat.value}</p>
               </div>
-              <div className={`${stat.color} p-3 rounded-lg text-[var(--wj-on-accent)]`}>
+              <div className={`${stat.color} p-3 rounded-lg text-[var(--wj-on-contrast)]`}>
                 {stat.icon}
               </div>
             </div>

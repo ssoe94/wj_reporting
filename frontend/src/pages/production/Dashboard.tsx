@@ -54,10 +54,10 @@ const MachineCard: FC<{
     : machine.machine_name;
 
   const progressColorClass = machine.progress >= 100
-    ? 'text-emerald-500'
+    ? 'text-[var(--wj-success)]'
     : machine.progress > 80
-      ? 'text-blue-500'
-      : 'text-amber-500';
+      ? 'text-[var(--wj-info)]'
+      : 'text-[var(--wj-warning)]';
 
   const barColorClass = machine.progress >= 100
     ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
@@ -490,7 +490,7 @@ const ProductionDashboardPage: FC = () => {
               title={t('dashboard_summary_total_achievement')}
               value={`${stats.avgProgress}%`}
               icon={<TrendingUp className="w-6 h-6 text-[var(--wj-accent-strong)]" />}
-              colorClass="bg-blue-50"
+              colorClass="bg-[var(--wj-info-bg)]"
               delay={0.1}
             />
             <StatCard
@@ -498,7 +498,7 @@ const ProductionDashboardPage: FC = () => {
               value={stats.activeCount}
               label={t('unit.records')}
               icon={<Activity className="w-6 h-6 text-[var(--wj-success)]" />}
-              colorClass="bg-green-50"
+              colorClass="bg-[var(--wj-success-bg)]"
               delay={0.2}
             />
             <StatCard
@@ -506,15 +506,15 @@ const ProductionDashboardPage: FC = () => {
               value={roundQty(stats.totalActual).toLocaleString()}
               label={`/ ${roundQty(stats.totalPlanned).toLocaleString()}`}
               icon={<Package className="w-6 h-6 text-[var(--wj-warning)]" />}
-              colorClass="bg-orange-50"
+              colorClass="bg-[var(--wj-warning-bg)]"
               delay={0.3}
             />
             <StatCard
               title={t('dashboard_summary_trend')}
               value="+"
               label={stats.trendLabel}
-              icon={<BarChart3 className="w-6 h-6 text-indigo-600" />}
-              colorClass="bg-indigo-50"
+              icon={<BarChart3 className="w-6 h-6 text-[var(--wj-accent-strong)]" />}
+              colorClass="bg-[var(--wj-accent-soft)]"
               delay={0.4}
             />
           </div>
