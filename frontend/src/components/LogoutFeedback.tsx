@@ -9,7 +9,7 @@ export default function LogoutFeedback() {
   const { lang } = useLang();
   if (!logoutError) return null;
   return (
-    <div role="alert" className="fixed bottom-4 left-1/2 z-[150] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-red-200 bg-white p-4 text-slate-900 shadow-xl">
+    <div role="alert" className="fixed bottom-4 left-1/2 z-[150] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] p-4 text-[var(--wj-text)] shadow-xl">
       <p className="text-sm">{lang === 'ko'
         ? '로그아웃 완료를 확인할 수 없습니다. 로그인 상태가 유지됩니다. 다시 시도해 주세요.'
         : '无法确认是否已退出登录。当前登录状态仍保留，请重试。'}</p>

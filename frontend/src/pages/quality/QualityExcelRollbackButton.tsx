@@ -141,27 +141,27 @@ export default function QualityExcelRollbackButton({
       </Button>
 
       {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="presentation">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--wj-nav-surface)] p-4" role="presentation">
           <section
-            className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-5 shadow-2xl"
+            className="w-full max-w-lg rounded-2xl border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] p-5 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="quality-excel-rollback-title"
           >
-            <h3 id="quality-excel-rollback-title" className="text-lg font-bold text-slate-950">
+            <h3 id="quality-excel-rollback-title" className="text-lg font-bold text-[var(--wj-text)]">
               {zh ? '确认取消今天的 Excel 登记' : '오늘 Excel 등록 취소 확인'}
             </h3>
-            <p className="mt-2 text-sm leading-6 text-slate-700">
+            <p className="mt-2 text-sm leading-6 text-[var(--wj-text)]">
               {zh
                 ? `${preview.target_date} 通过 Excel 登记的 ${preview.count.toLocaleString()} 条报告将被删除。`
                 : `${preview.target_date}에 Excel로 등록된 보고서 ${preview.count.toLocaleString()}건을 삭제합니다.`}
             </p>
-            <ul className="mt-3 space-y-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            <ul className="mt-3 space-y-2 rounded-xl bg-[var(--wj-surface-solid)] p-3 text-sm text-[var(--wj-text)]">
               {preview.source_groups.map((group) => (
                 <li key={`${group.source_filename}:${group.sheet_name}`}>
-                  <strong className="text-slate-900">{group.sheet_name}</strong>
+                  <strong className="text-[var(--wj-text)]">{group.sheet_name}</strong>
                   {' · '}{group.count.toLocaleString()}{zh ? '条' : '건'}
-                  <span className="ml-2 break-all text-xs text-slate-500">{group.source_filename}</span>
+                  <span className="ml-2 break-all text-xs text-[var(--wj-muted)]">{group.source_filename}</span>
                 </li>
               ))}
               <li>
@@ -170,18 +170,18 @@ export default function QualityExcelRollbackButton({
               <li>
                 {zh ? '同时清理已结束的导入任务' : '함께 정리할 완료 작업'} · {preview.terminal_incremental_jobs.toLocaleString()}{zh ? '个' : '개'}
               </li>
-              <li className="font-semibold text-emerald-700">
+              <li className="font-semibold text-[var(--wj-success)]">
                 {zh ? '保留手工登记' : '보존할 오늘 수동 등록'} · {preview.manual_reports_preserved.toLocaleString()}{zh ? '条' : '건'}
               </li>
             </ul>
             {preview.image_reference_count > 0 && (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p className="mt-3 rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-3 py-2 text-sm text-[var(--wj-warning)]">
                 {zh
                   ? '报告中的图片引用将被删除，但远程图片文件需要单独清理。'
                   : '보고서의 사진 참조는 삭제되지만 원격 사진 파일은 별도 정리가 필요합니다.'}
               </p>
             )}
-            <p className="mt-3 text-sm font-semibold text-rose-700">
+            <p className="mt-3 text-sm font-semibold text-[var(--wj-danger)]">
               {zh ? '此操作无法撤销。' : '이 작업은 되돌릴 수 없습니다.'}
             </p>
             <div className="mt-5 flex justify-end gap-2">

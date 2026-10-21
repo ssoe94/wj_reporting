@@ -41,21 +41,21 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
 
   const SkeletonRow = () => (
     <tr className="animate-pulse">
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
     </tr>
   );
 
   const SkeletonTable = () => (
     <table className="w-full border-collapse text-sm mt-4">
-      <thead className="bg-blue-600 text-white">
+      <thead className="bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)]">
         <tr>
           <th className="px-2 py-1">{t('table_machine')}</th>
           <th className="px-2 py-1">{t('table_model')}</th>
@@ -142,21 +142,21 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
   if (!date) return null;
   if (isLoading) return <SkeletonTable />;
   if (isError) return (
-    <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+    <div role="alert" className="rounded-xl border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] p-4 text-sm text-[var(--wj-warning)]">
       <p>{lang === 'zh' ? '手工日报查询失败，无法判断是否有记录。' : '수기일보를 불러오지 못해 기록 유무를 확인할 수 없습니다.'}</p>
       <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={isFetching} onClick={() => void refetch()}>
         {lang === 'zh' ? '重试' : '다시 조회'}
       </Button>
     </div>
   );
-  if (!list.length) return <p className="text-gray-500 text-sm">{t('no_record_on_date')}</p>;
+  if (!list.length) return <p className="text-[var(--wj-muted)] text-sm">{t('no_record_on_date')}</p>;
 
   return (
     <>
       <table
         className="w-full border-collapse text-sm mt-4"
       >
-        <thead className="bg-blue-600 text-white">
+        <thead className="bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)]">
           <tr>
             <th className="px-2 py-1">{t('table_machine')}</th>
             <th className="px-2 py-1">{t('table_model')}</th>
@@ -169,9 +169,9 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
             <th className="px-2 py-1">{t('table_ct_delta')}</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-[var(--wj-border)]">
           {list.map((r) => (
-            <tr key={r.id} className="hover:bg-blue-50 cursor-pointer" onClick={() => { setDetail(r); setEditing(false); }}>
+            <tr key={r.id} className="hover:bg-[var(--wj-bg-strong)] cursor-pointer" onClick={() => { setDetail(r); setEditing(false); }}>
               <td className="px-2 py-1 text-center">{r.machine_no}</td>
               <td className="px-2 py-1">{r.model}</td>
               <td className="px-2 py-1 text-center">{r.part_no}</td>
@@ -187,7 +187,7 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
               <td className="px-2 py-1 text-center">
                 {(() => {
                   const deviation = r.cycle_time_deviation;
-                  if (deviation === null || deviation === undefined) return <span className="text-blue-500 font-semibold">New</span>;
+                  if (deviation === null || deviation === undefined) return <span className="text-[var(--wj-accent-strong)] font-semibold">New</span>;
 
                   const color = deviation > 0 ? 'text-red-600' : 'text-green-600';
                   return (
@@ -201,12 +201,12 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
             </tr>
           ))}
           {/* Summary row */}
-          <tr className="bg-blue-100">
-            <td className="px-2 py-2 text-right font-semibold text-gray-700" colSpan={3}>{t('sum')}</td>
-            <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.plan.toLocaleString()}</td>
-            <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.actual.toLocaleString()}</td>
-            <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.defect.toLocaleString()}</td>
-            <td className="px-2 py-2 text-right font-semibold text-gray-700" colSpan={3}>
+          <tr className="bg-[var(--wj-accent-soft)]">
+            <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]" colSpan={3}>{t('sum')}</td>
+            <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]">{totals.plan.toLocaleString()}</td>
+            <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]">{totals.actual.toLocaleString()}</td>
+            <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]">{totals.defect.toLocaleString()}</td>
+            <td className="px-2 py-2 text-right font-semibold text-[var(--wj-text)]" colSpan={3}>
               {t('achievement_rate')}: {achievementRate === null ? '-' : `${achievementRate.toFixed(1)}%`}
             </td>
           </tr>
@@ -215,35 +215,35 @@ export default function DateRecordsTable({ date, machineNumber }: Props) {
       {detail && (
         <Dialog open={!!detail} onClose={() => setDetail(null)} className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-          <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-xl p-6 space-y-4">
+          <Dialog.Panel className="relative bg-[var(--wj-surface-solid)] rounded-lg w-full max-w-xl p-6 space-y-4">
             {!editing ? (
               <>
                 <Dialog.Title className="text-lg font-bold">
                   {dayjs(detail!.date).format('YYYY.MM.DD')} – {detail!.machine_no}{lang === 'zh' ? '号机' : '호기'}
                 </Dialog.Title>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-gray-500">{t('report_date')}</span><span>{detail!.date}</span>
-                  <span className="text-gray-500">{t('machine')}</span><span>{detail!.machine_no}</span>
-                  <span className="text-gray-500">{t('model')}</span><span>{detail!.model}</span>
-                  <span className="text-gray-500">Part No</span>
+                  <span className="text-[var(--wj-muted)]">{t('report_date')}</span><span>{detail!.date}</span>
+                  <span className="text-[var(--wj-muted)]">{t('machine')}</span><span>{detail!.machine_no}</span>
+                  <span className="text-[var(--wj-muted)]">{t('model')}</span><span>{detail!.model}</span>
+                  <span className="text-[var(--wj-muted)]">Part No</span>
                   <span>
                     <button
                       onClick={(e) => handlePartNoClick(detail!.part_no, e)}
-                      className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                      className="text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] hover:underline font-medium"
                       title={t('part_no_history_tooltip')}
                     >
                       {detail!.part_no}
                     </button>
                   </span>
-                  <span className="text-gray-500">{t('plan_qty')}</span><span>{detail!.plan_qty}</span>
-                  <span className="text-gray-500">{t('actual_qty')}</span><span>{detail!.actual_qty}</span>
-                  <span className="text-gray-500">{t('actual_defect')}</span><span>{detail!.actual_defect}</span>
-                  <span className="text-gray-500">{t('start_dt')}</span><span>{detail!.start_datetime ? dayjs(detail!.start_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
-                  <span className="text-gray-500">{t('end_dt')}</span><span>{detail!.end_datetime ? dayjs(detail!.end_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
-                  <span className="text-gray-500">{t('total_time')}</span><span>{detail!.total_time ? `${detail!.total_time}${t('minutes_unit')}` : '-'}</span>
-                  <span className="text-gray-500">{t('idle_time')}</span><span>{detail!.total_time && detail!.operation_time ? `${detail!.total_time - detail!.operation_time}${t('minutes_unit')}` : '-'}</span>
-                  <span className="text-gray-500">{t('run_time')}</span><span>{detail!.operation_time ? `${detail!.operation_time}${t('minutes_unit')}` : '-'}</span>
-                  <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail!.note}</span>
+                  <span className="text-[var(--wj-muted)]">{t('plan_qty')}</span><span>{detail!.plan_qty}</span>
+                  <span className="text-[var(--wj-muted)]">{t('actual_qty')}</span><span>{detail!.actual_qty}</span>
+                  <span className="text-[var(--wj-muted)]">{t('actual_defect')}</span><span>{detail!.actual_defect}</span>
+                  <span className="text-[var(--wj-muted)]">{t('start_dt')}</span><span>{detail!.start_datetime ? dayjs(detail!.start_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
+                  <span className="text-[var(--wj-muted)]">{t('end_dt')}</span><span>{detail!.end_datetime ? dayjs(detail!.end_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
+                  <span className="text-[var(--wj-muted)]">{t('total_time')}</span><span>{detail!.total_time ? `${detail!.total_time}${t('minutes_unit')}` : '-'}</span>
+                  <span className="text-[var(--wj-muted)]">{t('idle_time')}</span><span>{detail!.total_time && detail!.operation_time ? `${detail!.total_time - detail!.operation_time}${t('minutes_unit')}` : '-'}</span>
+                  <span className="text-[var(--wj-muted)]">{t('run_time')}</span><span>{detail!.operation_time ? `${detail!.operation_time}${t('minutes_unit')}` : '-'}</span>
+                  <span className="text-[var(--wj-muted)]">{t('header_note')}</span><span className="col-span-1">{detail!.note}</span>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="info" onClick={() => { setEditing(true); }}>{t('edit')}</Button>

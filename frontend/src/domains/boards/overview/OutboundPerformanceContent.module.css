@@ -7,7 +7,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  color: var(--board-heading, #173d61);
+  color: var(--board-heading, var(--wj-text));
   font-family: inherit;
   font-optical-sizing: auto;
   font-variant-numeric: tabular-nums;
@@ -30,13 +30,13 @@
   align-items: baseline;
   min-width: 0;
   gap: 0.5rem;
-  color: var(--board-muted, #60778e);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.7rem;
   line-height: 1.15;
 }
 
 .heading strong {
-  color: var(--board-text, #284b6d);
+  color: var(--board-text, var(--wj-text));
   font-weight: 650;
 }
 
@@ -91,27 +91,27 @@
 }
 
 .quantity > strong {
-  color: var(--board-heading, #163d64);
+  color: var(--board-heading, var(--wj-text));
   font-size: 1.3rem;
   font-weight: 740;
   line-height: 1.1;
 }
 
 .quantity > span {
-  color: var(--board-muted, #91a2b2);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.88rem;
   font-weight: 500;
 }
 
 .quantity > b {
-  color: var(--board-text, #526e88);
+  color: var(--board-text, var(--wj-muted));
   font-size: 1.02rem;
   font-weight: 550;
   line-height: 1.1;
 }
 
 .quantity > small {
-  color: var(--board-muted, #60778e);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.65rem;
   font-weight: 550;
 }
@@ -127,7 +127,7 @@
 
 .rate[data-state="no-plan"],
 .rate[data-state="unknown"] {
-  color: var(--board-muted, #60778e);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.92rem;
   font-weight: 650;
 }
@@ -138,7 +138,7 @@
   height: 0.25rem;
   overflow: hidden;
   border-radius: 99px;
-  background: var(--board-track, #e1e9f0);
+  background: var(--board-track, var(--wj-accent-soft));
 }
 
 .progress > span {
@@ -149,7 +149,7 @@
 }
 
 .progress[data-state="unknown"] {
-  background: var(--board-track, #edf1f5);
+  background: var(--board-track, var(--wj-bg-strong));
 }
 
 .secondary {
@@ -158,7 +158,7 @@
   gap: 0.38rem;
   min-width: 0;
   overflow: hidden;
-  color: var(--board-muted, #60778e);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.67rem;
   font-weight: 550;
   line-height: 1.15;
@@ -174,12 +174,12 @@
 
 .secondary > span + span::before {
   margin-right: 0.38rem;
-  color: var(--board-muted, #a7b6c4);
+  color: var(--board-muted, var(--wj-muted));
   content: "·";
 }
 
 .secondary > span[data-tone="attention"] {
-  color: var(--board-orange, #b05b15);
+  color: var(--board-orange, var(--wj-warning));
 }
 
 .priority {
@@ -194,7 +194,7 @@
 
 .priority > span {
   flex: 0 0 auto;
-  color: var(--board-orange, #b05b15);
+  color: var(--board-orange, var(--wj-warning));
   font-size: 0.67rem;
   font-weight: 600;
 }
@@ -203,7 +203,7 @@
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--board-text, #284b6d);
+  color: var(--board-text, var(--wj-text));
   font-size: 0.74rem;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -213,7 +213,7 @@
   flex: 1 2 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--board-muted, #6b8094);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.67rem;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -222,7 +222,7 @@
 .priorityEmpty {
   min-width: 0;
   overflow: hidden;
-  color: var(--board-muted, #6b8094);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.67rem;
   line-height: 1.15;
   text-overflow: ellipsis;
@@ -235,7 +235,7 @@
   min-width: 0;
   gap: 0.14rem;
   padding-top: 0.22rem;
-  border-top: 1px solid var(--board-border, #dce5ed);
+  border-top: 1px solid var(--board-border, var(--wj-border));
 }
 
 .period {
@@ -250,7 +250,7 @@
 .periodLabel {
   min-width: 0;
   overflow: hidden;
-  color: var(--board-muted, #60778e);
+  color: var(--board-muted, var(--wj-muted));
   font-size: 0.71rem;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -267,17 +267,17 @@
 
 .periodMetric b {
   min-width: 2.15rem;
-  color: var(--board-blue, #1260b6);
+  color: var(--board-blue, var(--wj-accent-strong));
   font-size: 0.66rem;
   font-weight: 650;
 }
 
 .periodMetric[data-code="CSKD"] b {
-  color: var(--board-green, #078c55);
+  color: var(--board-green, var(--wj-success));
 }
 
 .periodMetric strong {
-  color: var(--board-text, #284b6d);
+  color: var(--board-text, var(--wj-text));
   font-size: 0.78rem;
   font-weight: 650;
 }
@@ -299,10 +299,10 @@
   .priorityEmpty,
   .periodLabel,
   .heading {
-    color: var(--board-text-high-contrast, #334e68);
+    color: var(--board-text-high-contrast, var(--wj-text));
   }
 
   .progress {
-    outline: 1px solid var(--board-border-strong, #60778e);
+    outline: 1px solid var(--board-border-strong, var(--wj-border));
   }
 }

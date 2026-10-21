@@ -46,7 +46,7 @@ export default function RecordsTable() {
     }
   };
 
-  if (isLoading) return <p className="text-gray-500">{t('loading')}</p>;
+  if (isLoading) return <p className="text-[var(--wj-muted)]">{t('loading')}</p>;
 
   const sortedReports = [...reports].sort((a, b) => {
     if (a.date > b.date) return -1;
@@ -61,12 +61,12 @@ export default function RecordsTable() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-blue-700 mb-4">{t('records_title')}</h2>
+      <h2 className="text-xl font-bold text-[var(--wj-accent-strong)] mb-4">{t('records_title')}</h2>
       {reports.length === 0 ? (
-        <p className="text-gray-500">{t('no_data')}</p>
+        <p className="text-[var(--wj-muted)]">{t('no_data')}</p>
       ) : (
         <table className="w-full border-collapse text-sm mt-4">
-          <thead className="bg-blue-600 text-white">
+          <thead className="bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)]">
             <tr>
               <th className="px-2 py-1 text-center">{t('date')}</th>
               <th className="px-2 py-1 text-center">{t('header_model')}</th>
@@ -82,9 +82,9 @@ export default function RecordsTable() {
               <th className="px-2 py-1 text-center w-20">{t('header_action')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-[var(--wj-border)]">
             {sortedReports.map((r) => (
-              <tr key={r.id} className="hover:bg-blue-50">
+              <tr key={r.id} className="hover:bg-[var(--wj-bg-strong)]">
                 <td className="px-2 py-1 text-center">{r.date}</td>
                 <td className="px-2 py-1 text-center whitespace-pre-line">
                   <span className="block">
@@ -92,7 +92,7 @@ export default function RecordsTable() {
                     {r.section ? ` - ${r.section}` : ''}
                   </span>
                   {r.part_no && (
-                    <span className="block text-gray-500">{r.part_no}</span>
+                    <span className="block text-[var(--wj-muted)]">{r.part_no}</span>
                   )}
                 </td>
                 <td className="px-2 py-1 text-center">{r.machine_no}</td>
@@ -120,23 +120,23 @@ export default function RecordsTable() {
                 <td className="px-2 py-1 text-left w-52 max-w-[210px] align-top relative group">
                   <span className="line-clamp-2 whitespace-pre-line">{r.note}</span>
                   {r.note && (
-                    <div className="pointer-events-none absolute left-0 top-full mt-1 hidden w-72 whitespace-pre-line rounded border bg-white p-2 text-xs shadow-lg group-hover:block z-50">
+                    <div className="pointer-events-none absolute left-0 top-full mt-1 hidden w-72 whitespace-pre-line rounded border bg-[var(--wj-surface-solid)] p-2 text-xs shadow-lg group-hover:block z-50">
                       {r.note}
                     </div>
                   )}
                 </td>
                 <td className="px-2 py-1 w-20 flex justify-center items-center gap-2 align-top">
-                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-[var(--wj-muted)] hover:text-[var(--wj-accent-strong)]" onClick={() => setEditing(r)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-red-600" onClick={() => handleDelete(r.id)}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-[var(--wj-muted)] hover:text-[var(--wj-danger)]" onClick={() => handleDelete(r.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </td>
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-blue-100 font-semibold">
+          <tfoot className="bg-[var(--wj-accent-soft)] font-semibold">
             <tr>
               <td className="px-2 py-1 text-center" colSpan={4}>{t('sum')}</td>
               <td className="px-2 py-1 text-center">{totalPlan}</td>
@@ -154,7 +154,7 @@ export default function RecordsTable() {
       <Dialog open={!!editing} onClose={closeDialog} className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-black/50" aria-hidden="true" />
         {editing && (
-          <Dialog.Panel className="relative w-full max-w-lg rounded-lg bg-white p-6 space-y-4">
+          <Dialog.Panel className="relative w-full max-w-lg rounded-lg bg-[var(--wj-surface-solid)] p-6 space-y-4">
             <Dialog.Title className="text-lg font-semibold">{t('modal_edit_title')}</Dialog.Title>
             <form className="space-y-4" onSubmit={handleUpdate}>
               <div className="grid grid-cols-2 gap-4">

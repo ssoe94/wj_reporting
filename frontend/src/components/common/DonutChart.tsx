@@ -49,7 +49,7 @@ const DonutChart: React.FC<DonutChartProps> = ({
           stroke="currentColor"
           strokeWidth={strokeWidth}
           fill="transparent"
-          className="text-gray-200"
+          className="text-[var(--wj-muted)]"
         />
         {/* Progress Circle */}
         <circle
@@ -66,11 +66,11 @@ const DonutChart: React.FC<DonutChartProps> = ({
         />
       </svg>
       <div className="absolute flex flex-col items-center justify-center">
-        <span className="text-lg font-bold text-gray-800">
+        <span className="text-lg font-bold text-[var(--wj-text)]">
           {Math.round(progress)}%
         </span>
         {!hideQuantity && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[var(--wj-muted)]">
             {actualQty} / {plannedQty}
           </span>
         )}

@@ -1,3 +1,37 @@
+
+.page[data-board-theme="light"],
+.statePage[data-board-theme="light"] {
+  --board-canvas: #f3f5f7;
+  --board-surface: #fff;
+  --board-surface-raised: #fff;
+  --board-surface-muted: #f0f3f5;
+  --board-glass: rgba(255,255,255,.96);
+  --board-heading: #222b33;
+  --board-text: #222b33;
+  --board-muted: #5d6872;
+  --board-text-high-contrast: #222b33;
+  --board-blue: #006d91;
+  --board-green: #176645;
+  --board-orange: #855000;
+  --board-teal: #287d83;
+  --board-on-accent: #fff;
+  --board-border: #dce1e5;
+  --board-border-strong: #7c8993;
+  --board-focus: #006d91;
+  --board-blue-surface: #edf7fb;
+  --board-success-surface: #e8f4ed;
+  --board-success-border: #85ac97;
+  --board-warning-surface: #fff4dd;
+  --board-warning-border: #b49b6b;
+  --board-track: #e5e9ec;
+  --board-chart-grid: #dce1e5;
+  --board-chart-axis: #5d6872;
+  --board-chart-blue: #0087c1;
+  --board-chart-blue-soft: #4b8fab;
+  --board-chart-time: #71808d;
+  --board-chart-orange: #a66f00;
+  --board-shadow: rgba(24,38,48,.06);
+}
 :global(html):has(.page) {
   font-size: clamp(6px, min(1vw, 1.7778dvh), 58px);
 }
@@ -9,36 +43,36 @@
 /* Tokens exist only inside this board; fallbacks retain the original light colors. */
 .page[data-board-theme="dark"],
 .statePage[data-board-theme="dark"] {
-  --board-canvas: #091727;
-  --board-surface: #12263d;
-  --board-surface-raised: #173049;
-  --board-surface-muted: #152b42;
-  --board-glass: rgba(21, 43, 66, 0.96);
-  --board-heading: #edf4fc;
-  --board-text: #d4e3f1;
-  --board-muted: #adc2d7;
-  --board-text-high-contrast: #edf4fc;
-  --board-blue: #75b8f8;
-  --board-green: #64d4a0;
-  --board-orange: #f2b471;
-  --board-teal: #71c7cf;
-  --board-on-accent: #091727;
-  --board-border: #344d67;
-  --board-border-strong: #6c89a5;
-  --board-focus: #8dcaff;
-  --board-blue-surface: #1a3855;
-  --board-success-surface: #163c33;
-  --board-success-border: #42755f;
-  --board-warning-surface: #433426;
-  --board-warning-border: #916941;
-  --board-track: #30475e;
-  --board-chart-grid: #30475e;
-  --board-chart-axis: #607e99;
-  --board-chart-blue: #75b8f8;
-  --board-chart-blue-soft: #5993c3;
-  --board-chart-time: #b2c3d4;
-  --board-chart-orange: #f2b471;
-  --board-shadow: rgba(0, 0, 0, 0.18);
+  --board-canvas: #101619;
+  --board-surface: #192328;
+  --board-surface-raised: #202d33;
+  --board-surface-muted: #253139;
+  --board-glass: rgba(25,35,40,.96);
+  --board-heading: #eff5f6;
+  --board-text: #e1eaee;
+  --board-muted: #adbcc4;
+  --board-text-high-contrast: #eff5f6;
+  --board-blue: #57f2b6;
+  --board-green: #8ce8b4;
+  --board-orange: #ffd27d;
+  --board-teal: #85d5ce;
+  --board-on-accent: #101619;
+  --board-border: #35444c;
+  --board-border-strong: #81929c;
+  --board-focus: #57f2b6;
+  --board-blue-surface: #153c31;
+  --board-success-surface: #173d2d;
+  --board-success-border: #568c6f;
+  --board-warning-surface: #48371c;
+  --board-warning-border: #a78951;
+  --board-track: #35444c;
+  --board-chart-grid: #35444c;
+  --board-chart-axis: #adbcc4;
+  --board-chart-blue: #91d7f2;
+  --board-chart-blue-soft: #66b5d4;
+  --board-chart-time: #bdcbd1;
+  --board-chart-orange: #ffd27d;
+  --board-shadow: rgba(0,0,0,.18);
   color-scheme: dark;
 }
 
@@ -60,7 +94,7 @@
 :global(html):has(.page[data-board-theme="dark"], .statePage[data-board-theme="dark"]),
 :global(body):has(.page[data-board-theme="dark"], .statePage[data-board-theme="dark"]),
 :global(#root):has(.page[data-board-theme="dark"], .statePage[data-board-theme="dark"]) {
-  background: #091727;
+  background: #101619;
 }
 
 .page {
@@ -2737,3 +2771,22 @@
 .page:lang(zh) .card h2,
 .page:lang(zh) .titleButton strong { letter-spacing: 0; font-weight: 900; }
 .page:lang(zh) .businessDate { letter-spacing: 0; }
+
+.page,.statePage {
+  --wj-bg: var(--board-canvas);
+  --wj-bg-strong: var(--board-surface-muted);
+  --wj-surface-solid: var(--board-surface);
+  --wj-surface-strong: var(--board-surface-raised);
+  --wj-text: var(--board-text);
+  --wj-muted: var(--board-muted);
+  --wj-border: var(--board-border);
+  --wj-control-border: var(--board-border-strong);
+  --wj-accent: var(--board-blue);
+  --wj-accent-strong: var(--board-blue);
+  --wj-accent-soft: var(--board-blue-surface);
+  --wj-on-accent: var(--board-on-accent);
+  --wj-success: var(--board-green);
+  --wj-success-bg: var(--board-success-surface);
+  --wj-warning: var(--board-orange);
+  --wj-warning-bg: var(--board-warning-surface);
+}

@@ -13,7 +13,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const base =
-      "ui-button inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:pointer-events-none";
+      "ui-button inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-accent)] disabled:opacity-50 disabled:pointer-events-none";
     const variants = {
       primary: "ui-button--primary",
       ghost: "ui-button--ghost",

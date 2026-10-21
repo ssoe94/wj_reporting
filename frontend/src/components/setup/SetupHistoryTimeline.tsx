@@ -51,7 +51,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
   t: (key: string, params?: any) => string;
 }) => {
   if (setups.length === 0) {
-    return <div className="border border-gray-200 rounded p-2 min-h-20 bg-gray-50"></div>;
+    return <div className="border border-[var(--wj-border)] rounded p-2 min-h-20 bg-[var(--wj-surface-solid)]"></div>;
   }
 
   const handleClick = () => {
@@ -67,32 +67,32 @@ const TimelineCell = ({ setups, onCellClick, t }: {
     <div
       className={`border rounded p-2 min-h-20 text-xs cursor-pointer transition-colors ${
         setups.length > 0
-          ? 'bg-white border-indigo-200 hover:bg-indigo-50 shadow-sm'
-          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+          ? 'bg-[var(--wj-surface-solid)] border-indigo-200 hover:bg-indigo-50 shadow-sm'
+          : 'bg-[var(--wj-surface-solid)] border-[var(--wj-border)] hover:bg-[var(--wj-bg-strong)]'
       }`}
       onClick={handleClick}
     >
       {setups.map((setup, index) => (
         <div key={index} className="mb-2 last:mb-0">
-          <div className="font-semibold text-gray-900 mb-1 leading-tight break-words" title={setup.model_code}>
+          <div className="font-semibold text-[var(--wj-text)] mb-1 leading-tight break-words" title={setup.model_code}>
             {setup.model_code}
           </div>
-          <div className="text-gray-600 mb-1 leading-tight break-words" title={setup.part_no}>
+          <div className="text-[var(--wj-muted)] mb-1 leading-tight break-words" title={setup.part_no}>
             {setup.part_no}
           </div>
           <div className="flex items-center justify-between">
-            <div className="text-blue-600 text-xs">
+            <div className="text-[var(--wj-accent-strong)] text-xs">
               {t('history.target_ct_label')}: {setup.target_cycle_time}{t('unit.seconds')}
             </div>
             {setup.count > 1 && (
-              <div className="text-orange-500 text-xs bg-orange-100 px-1 rounded">
+              <div className="text-[var(--wj-warning)] text-xs bg-[var(--wj-warning-bg)] px-1 rounded">
                 ×{setup.count}
               </div>
             )}
           </div>
           {/* 추가 사이클 타임 정보 */}
           {setup.setups[0].standard_cycle_time && (
-            <div className="text-green-600 text-xs mt-1">
+            <div className="text-[var(--wj-success)] text-xs mt-1">
               {t('history.standard_ct_label')}: {setup.setups[0].standard_cycle_time}{t('unit.seconds')}
             </div>
           )}
@@ -102,7 +102,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
             </div>
           )}
           {index < setups.length - 1 && (
-            <hr className="my-2 border-gray-300" />
+            <hr className="my-2 border-[var(--wj-border)]" />
           )}
         </div>
       ))}
@@ -240,7 +240,7 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-[var(--wj-muted)]">
               {formatDateForAPI(currentDateRange.startDate)} ~ {formatDateForAPI(currentDateRange.endDate)}
             </span>
           </div>
@@ -258,7 +258,7 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
 
       {!setups.length && (
         <Card className="p-6">
-          <p className="text-center text-gray-500">{t('history.no_data')}</p>
+          <p className="text-center text-[var(--wj-muted)]">{t('history.no_data')}</p>
         </Card>
       )}
 
@@ -267,7 +267,7 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
         <div className="overflow-x-auto">
           <div className="grid gap-2 mb-2" style={{gridTemplateColumns: '100px repeat(5, 1fr)', minWidth: 'fit-content'}}>
             {/* 헤더 */}
-            <div className="text-center font-semibold text-gray-700 p-2 bg-gray-100 rounded sticky left-0 z-10">
+            <div className="text-center font-semibold text-[var(--wj-text)] p-2 bg-[var(--wj-bg-strong)] rounded sticky left-0 z-10">
               {t('history.machine_unit')}
             </div>
             {displayDates.map((dateKey) => {
@@ -279,8 +279,8 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
                   key={dateKey}
                   className={`text-center font-semibold p-2 text-sm rounded transition-colors ${
                     hasData
-                      ? 'bg-blue-100 text-blue-800 border-blue-200 border-2'
-                      : 'bg-gray-50 text-gray-700'
+                      ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)] border-[var(--wj-border)] border-2'
+                      : 'bg-[var(--wj-surface-solid)] text-[var(--wj-text)]'
                   }`}
                 >
                   <div className="flex flex-col items-center">
@@ -314,8 +314,8 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
                     {/* 호기 열 */}
                     <div className={`flex items-center justify-center p-3 rounded text-sm font-medium sticky left-0 z-10 transition-colors ${
                       hasData
-                        ? 'bg-green-100 text-green-800 border-green-200 border-2'
-                        : 'bg-gray-100 text-gray-600'
+                        ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)] border-[var(--wj-success-border)] border-2'
+                        : 'bg-[var(--wj-bg-strong)] text-[var(--wj-muted)]'
                     }`}>
                       <div className="flex flex-col items-center">
                         <span className="font-semibold text-lg">{machineNo}</span>
@@ -343,7 +343,7 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
       {/* 상세 모달 */}
       {showDetailModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-4">
                 <h3 className="text-lg font-semibold">{t('history.detail_title')}</h3>
@@ -362,40 +362,40 @@ export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSe
 
             <div className="space-y-3">
               {selectedSetups.map((setup) => (
-                <div key={setup.id} className="p-4 rounded-lg transition-colors bg-gray-50">
+                <div key={setup.id} className="p-4 rounded-lg transition-colors bg-[var(--wj-surface-solid)]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="font-medium text-gray-700">{t('history.machine_no_label')}:</span>{' '}
-                      <span className="text-gray-900">{setup.machine_no}</span>
+                      <span className="font-medium text-[var(--wj-text)]">{t('history.machine_no_label')}:</span>{' '}
+                      <span className="text-[var(--wj-text)]">{setup.machine_no}</span>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">{t('history.part_no_label')}:</span>{' '}
-                      <span className="text-gray-900">{setup.part_no}</span>
+                      <span className="font-medium text-[var(--wj-text)]">{t('history.part_no_label')}:</span>{' '}
+                      <span className="text-[var(--wj-text)]">{setup.part_no}</span>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">{t('history.target_ct_label')}:</span>{' '}
-                      <span className="text-blue-600">{setup.target_cycle_time}{t('unit.seconds')}</span>
+                      <span className="font-medium text-[var(--wj-text)]">{t('history.target_ct_label')}:</span>{' '}
+                      <span className="text-[var(--wj-accent-strong)]">{setup.target_cycle_time}{t('unit.seconds')}</span>
                     </div>
                     {setup.standard_cycle_time && (
                       <div>
-                        <span className="font-medium text-gray-700">{t('history.standard_ct_label')}:</span>{' '}
-                        <span className="text-green-600">{setup.standard_cycle_time}{t('unit.seconds')}</span>
+                        <span className="font-medium text-[var(--wj-text)]">{t('history.standard_ct_label')}:</span>{' '}
+                        <span className="text-[var(--wj-success)]">{setup.standard_cycle_time}{t('unit.seconds')}</span>
                       </div>
                     )}
                     {setup.mean_cycle_time && (
                       <div>
-                        <span className="font-medium text-gray-700">{t('history.mean_ct_label')}:</span>{' '}
+                        <span className="font-medium text-[var(--wj-text)]">{t('history.mean_ct_label')}:</span>{' '}
                         <span className="text-purple-600">{setup.mean_cycle_time}{t('unit.seconds')}</span>
                       </div>
                     )}
                     <div>
-                      <span className="font-medium text-gray-700">{t('history.status_label')}:</span>{' '}
-                      <span className="text-gray-900">{getStatusText(setup.status)}</span>
+                      <span className="font-medium text-[var(--wj-text)]">{t('history.status_label')}:</span>{' '}
+                      <span className="text-[var(--wj-text)]">{getStatusText(setup.status)}</span>
                     </div>
                   </div>
 
                   {setup.note && (
-                    <div className="mt-3 text-sm text-gray-600 bg-white p-2 rounded border-l-4 border-blue-200">
+                    <div className="mt-3 text-sm text-[var(--wj-muted)] bg-[var(--wj-surface-solid)] p-2 rounded border-l-4 border-[var(--wj-border)]">
                       <strong>{t('history.setup_note_label')}:</strong> {setup.note}
                     </div>
                   )}

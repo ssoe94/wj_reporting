@@ -129,15 +129,15 @@ export default function NewSetupModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 bg-[var(--wj-surface-solid)] bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-semibold text-gray-900">
+            <h3 className="text-xl font-semibold text-[var(--wj-text)]">
               {t('setup.new_setup_title')}
             </h3>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)] text-2xl font-bold"
             >
               ×
             </button>
@@ -146,20 +146,20 @@ export default function NewSetupModal({
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                   {t('setup.machine_no')} *
                 </label>
                 <input
                   type="number"
                   value={formData.machine_no}
                   onChange={(e) => handleInputChange('machine_no', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   required
                   placeholder={t('setup.machine_no_placeholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                   Part No. *
                 </label>
                 <Autocomplete
@@ -190,8 +190,8 @@ export default function NewSetupModal({
                   renderOption={(props, option) => {
                     if ((option as any).isAddNew) {
                       return (
-                        <li {...props} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-                          <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+                        <li {...props} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+                          <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                             <Plus className="h-3 w-3" />
                             <span>"{(option as any).part_no}" {t('add_new_part_prompt')}</span>
                           </div>
@@ -210,21 +210,21 @@ export default function NewSetupModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                   Model *
                 </label>
                 <input
                   type="text"
                   value={formData.model_code}
                   onChange={(e) => handleInputChange('model_code', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   required
                   placeholder={t('setup.model_code_placeholder')}
                   disabled
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                   {t('setup.target_cycle_time')} *
                 </label>
                 <input
@@ -232,28 +232,28 @@ export default function NewSetupModal({
                   min="1"
                   value={formData.target_cycle_time}
                   onChange={(e) => handleInputChange('target_cycle_time', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   required
                   placeholder="0"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                 {t('setup.note')}
               </label>
               <textarea
                 value={formData.note}
                 onChange={(e) => handleInputChange('note', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                 rows={3}
                 placeholder={t('setup.note_placeholder')}
               />
             </div>
 
             {error && (
-              <div className="p-3 bg-red-100 border border-red-400 rounded">
-                <p className="text-sm text-red-800">{error}</p>
+              <div className="p-3 bg-[var(--wj-danger-bg)] border border-[var(--wj-danger-border)] rounded">
+                <p className="text-sm text-[var(--wj-danger)]">{error}</p>
               </div>
             )}
 

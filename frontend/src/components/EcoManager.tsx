@@ -156,7 +156,7 @@ export default function EcoManager() {
           <option value="CLOSED">CLOSED</option>
         </select>
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--wj-muted)] h-4 w-4" />
           <Input
             type="text"
             placeholder={mode === 'eco' ? t('eco_search_placeholder') : t('part_search_placeholder')}
@@ -167,11 +167,11 @@ export default function EcoManager() {
         </div>
         <Button size="sm" onClick={() => { setForm(emptyForm); setDialogOpen(true); }}>{t('new_eco')}</Button>
       </div>
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg overflow-hidden">
         {mode === 'eco' ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-slate-100">
+            <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+              <thead className="bg-[var(--wj-bg-strong)]">
                 <tr>
                   <th className="px-3 py-2 text-left">{t('eco_no')}</th>
                   <th className="px-3 py-2 text-left">{t('eco_model')}</th>
@@ -184,7 +184,7 @@ export default function EcoManager() {
               <tbody>
                 {filteredEcos.map((e: any) => (
                   <tr key={e.id} className={rowCls}>
-                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async () => {
+                    <td className="px-3 py-1 font-mono cursor-pointer text-[var(--wj-accent-strong)] underline" onClick={async () => {
                       setErrors({});
                       try {
                         const { data } = await api.get(`/ecos/${e.id}/`);
@@ -226,7 +226,7 @@ export default function EcoManager() {
               <>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-100">
+                    <thead className="bg-[var(--wj-bg-strong)]">
                       <tr className="border-y">
                         <th className="px-3 py-2 text-left">Part No</th>
                         <th className="px-3 py-2 text-left">{t('description') || 'Description'}</th>
@@ -245,7 +245,7 @@ export default function EcoManager() {
                               }} />
                               <span className="cursor-pointer" onClick={() => setSelectedPart(pc.part_no)}>{pc.part_no}</span>
                             </td>
-                            <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
+                            <td className="px-3 py-1 text-xs cursor-pointer hover:bg-[var(--wj-warning-bg)]" onClick={() => {
                               const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
                               if (newDesc !== null && newDesc !== pc.description) {
                                 // API 호출하여 ECO Part description 업데이트
@@ -271,7 +271,7 @@ export default function EcoManager() {
                     <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
-                        <thead className="bg-slate-100">
+                        <thead className="bg-[var(--wj-bg-strong)]">
                           <tr>
                             <th className="px-3 py-2 text-center">{t('part') || 'Part'}</th>
                             <th className="px-3 py-2 text-center">{t('eco') || 'ECO'}</th>
@@ -300,7 +300,7 @@ export default function EcoManager() {
                                 {idx === 0 && (
                                   <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
                                 )}
-                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async () => {
+                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-[var(--wj-accent-strong)] underline" onClick={async () => {
                                   setErrors({});
                                   const { data } = await api.get(`/ecos/${row.eco_id}/`);
                                   setForm(data);
@@ -321,7 +321,7 @@ export default function EcoManager() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-100">
+                  <thead className="bg-[var(--wj-bg-strong)]">
                     <tr>
                       <th className="px-3 py-2 text-left">{t('eco')}</th>
                       <th className="px-3 py-2 text-left">{t('change_details')}</th>

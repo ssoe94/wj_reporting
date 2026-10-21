@@ -28,13 +28,13 @@ function OeeDashboardSkeleton() {
     <div className="space-y-6 animate-pulse">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, idx) => (
-          <div key={idx} className="h-24 rounded-xl bg-gray-200" />
+          <div key={idx} className="h-24 rounded-xl bg-[var(--wj-bg-strong)]" />
         ))}
       </div>
-      <div className="h-64 rounded-2xl bg-gray-200" />
+      <div className="h-64 rounded-2xl bg-[var(--wj-bg-strong)]" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="h-56 rounded-2xl bg-gray-200" />
-        <div className="h-56 rounded-2xl bg-gray-200" />
+        <div className="h-56 rounded-2xl bg-[var(--wj-bg-strong)]" />
+        <div className="h-56 rounded-2xl bg-[var(--wj-bg-strong)]" />
       </div>
     </div>
   );
@@ -310,7 +310,7 @@ export default function OEEDashboard() {
   }
 
   if (!overallMetrics) {
-    return <p className="text-gray-500 text-sm">{t('analysis_no_period_data')}</p>;
+    return <p className="text-[var(--wj-muted)] text-sm">{t('analysis_no_period_data')}</p>;
   }
 
   const rangeLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
@@ -351,16 +351,16 @@ export default function OEEDashboard() {
         {metricCards.map((metric) => (
           <div key={metric.key} title={metric.tooltip}>
             <Card>
-              <CardHeader className="text-sm text-gray-500">{metric.label}</CardHeader>
+              <CardHeader className="text-sm text-[var(--wj-muted)]">{metric.label}</CardHeader>
               <CardContent className="space-y-3">
                 {summaryRows.map((row) => {
                   const value = row.metrics?.[metric.key];
                   return (
                     <div key={row.key} className="flex items-center justify-between gap-3">
                       <div className="flex flex-col">
-                        <span className="text-xs font-medium text-gray-500">{row.title}</span>
+                        <span className="text-xs font-medium text-[var(--wj-muted)]">{row.title}</span>
                         {row.subtitle && (
-                          <span className="text-[11px] text-gray-400">{row.subtitle}</span>
+                          <span className="text-[11px] text-[var(--wj-muted)]">{row.subtitle}</span>
                         )}
                       </div>
                       <span className={`text-lg font-semibold ${getOeeColor(value)}`}>
@@ -375,7 +375,7 @@ export default function OEEDashboard() {
         ))}
       </div>
       {noRangeData && (
-        <p className="text-xs text-orange-600">{t('analysis_no_period_data')}</p>
+        <p className="text-xs text-[var(--wj-warning)]">{t('analysis_no_period_data')}</p>
       )}
 
       {/* OEE 트렌드 차트 */}
@@ -388,7 +388,7 @@ export default function OEEDashboard() {
                 setCompareMode(!compareMode);
                 setSelectedDates([]);
               }}
-              className={`px-3 py-1 rounded text-sm ${compareMode ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              className={`px-3 py-1 rounded text-sm ${compareMode ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)]' : 'bg-[var(--wj-bg-strong)] text-[var(--wj-text)] hover:bg-[var(--wj-bg-strong)]'}`}
             >
               {compareMode ? t('compare_mode_off') : t('compare')}
             </button>
@@ -444,15 +444,15 @@ export default function OEEDashboard() {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-gray-500">
+              <div className="flex h-full items-center justify-center text-sm text-[var(--wj-muted)]">
                 {t('analysis_no_period_data')}
               </div>
             )}
           </div>
           {/* 비교 모드 안내 */}
           {compareMode && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
+            <div className="mt-4 p-3 bg-[var(--wj-bg-strong)] rounded-lg">
+              <p className="text-sm text-[var(--wj-accent-strong)]">
                 {t('compare_mode_guide')}
                 {selectedDates.length > 0 && (
                   <span className="ml-2 font-medium">
@@ -529,7 +529,7 @@ export default function OEEDashboard() {
           <CardContent>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-[var(--wj-surface-solid)]">
                   <tr>
                     <th className="px-4 py-2 text-left border-b">{t('사출기')}</th>
                     <th className="px-4 py-2 text-center border-b" colSpan={4}>{machineComparisonData.date1}</th>
@@ -553,7 +553,7 @@ export default function OEEDashboard() {
                     const date2Machine = machineComparisonData.date2Data.find(d => d.machine_no === machineNo);
 
                     return (
-                      <tr key={machineNo} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50`}>
+                      <tr key={machineNo} className={`${index % 2 === 0 ? 'bg-[var(--wj-surface-solid)]' : 'bg-[var(--wj-surface-solid)]'} hover:bg-[var(--wj-bg-strong)]`}>
                         <td className="px-4 py-2 font-medium border-b">{machineNo}{t('호기')}</td>
                         {/* 날짜1 데이터 */}
                         <td className="px-2 py-2 text-center border-b">{date1Machine ? date1Machine.model : '-'}</td>

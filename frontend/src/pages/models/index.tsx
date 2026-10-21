@@ -60,14 +60,14 @@ export default function ModelsPage() {
   return (
     <div className="p-4">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('modelsTitle')}</h1>
-        <p className="text-gray-600 mt-2">{t('models_desc')}</p>
+        <h1 className="text-2xl font-bold text-[var(--wj-text)]">{t('modelsTitle')}</h1>
+        <p className="text-[var(--wj-muted)] mt-2">{t('models_desc')}</p>
       </div>
 
       {/* 검색 */}
       <div className="mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--wj-muted)] h-4 w-4" />
           <Input
             type="text"
             placeholder={t('models_search_placeholder')}
@@ -95,7 +95,7 @@ export default function ModelsPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-[var(--wj-surface-solid)]">
                   <tr>
                     <th className="px-4 py-2 text-left">Part No.</th>
                     <th className="px-4 py-2 text-left">Model Code</th>
@@ -107,7 +107,7 @@ export default function ModelsPage() {
                 </thead>
                 <tbody>
                   {filteredPartSpecs.map((part) => (
-                    <tr key={part.id} className="border-t border-gray-200 hover:bg-gray-50">
+                    <tr key={part.id} className="border-t border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)]">
                       <td className="px-4 py-2 font-mono">{part.part_no}</td>
                       <td className="px-4 py-2">{part.model_code}</td>
                       <td className="px-4 py-2">{part.description}</td>
@@ -135,7 +135,7 @@ export default function ModelsPage() {
       {/* Add Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{editingPart ? 'Part Spec 수정' : '새 Part Spec 추가'}</h3>
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Part No" className="border rounded px-2 py-1 col-span-2" value={form.part_no} onChange={e=>setForm({...form,part_no:e.target.value})}/>

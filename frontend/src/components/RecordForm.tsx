@@ -259,9 +259,9 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
 
   return (
     <form onSubmit={handleSubmit} onChangeCapture={() => { dirtyRef.current = true; }} className="flex flex-col gap-y-6">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+      <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3 text-sm text-[var(--wj-text)]">
         <strong>{lang === 'zh' ? '填写对象' : '작성 대상'}: {form.date} · {form.machineId ? `${form.machineId}${lang === 'zh' ? '号机' : '호기'}` : (lang === 'zh' ? '请选择设备' : '설비를 선택하세요')}</strong>
-        {scopeDiffers ? <div role="status" className="mt-2 text-amber-800">
+        {scopeDiffers ? <div role="status" className="mt-2 text-[var(--wj-warning)]">
           <p>{lang === 'zh' ? '填写对象与查询范围不同，已保留当前输入。请确认保存日期及设备。' : '조회 범위와 작성 대상이 다릅니다. 입력 내용은 보존했으니 저장할 날짜·설비를 확인하세요.'}</p>
           <Button type="button" size="sm" variant="secondary" className="mt-2" onClick={applySelectedScope}>{lang === 'zh' ? '将此输入移到所选日期及设备' : '이 입력을 선택 날짜·설비로 옮기기'}</Button>
         </div> : null}
@@ -280,7 +280,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
             id="machineId"
             value={form.machineId}
             onChange={handleChange}
-            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+            className="block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)] text-center"
           >
             <option value="">{t('select')}</option>
             {machines.map((m) => (
@@ -310,8 +310,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
               const { key, ...rest } = props as any;
               if ((option as any).id === -1) {
                 return (
-                  <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
-                    <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
+                  <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-accent-soft)] border-t border-[var(--wj-border)]">
+                    <div className="flex items-center justify-center gap-2 text-[var(--wj-accent-strong)] font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>{t('add_new_part_spec')}</span>
                     </div>
@@ -322,7 +322,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
                 <li key={key} {...rest}>
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{option.model_code}</span>
-                    <span className="text-sm text-gray-600">{option.description}</span>
+                    <span className="text-sm text-[var(--wj-muted)]">{option.description}</span>
                   </div>
                 </li>
               );
@@ -585,8 +585,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
               const { key, ...rest } = props as any;
               if ('isAddNew' in option && option.isAddNew) {
                 return (
-                  <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
-                    <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
+                  <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-accent-soft)] border-t border-[var(--wj-border)]">
+                    <div className="flex items-center justify-center gap-2 text-[var(--wj-accent-strong)] font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>"{option.part_no}" {t('add_new_part_spec')}</span>
                     </div>
@@ -599,7 +599,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{spec.part_no}</span>
                     {spec.model_code && (
-                      <span className="text-sm text-gray-600">{spec.model_code} - {spec.description}</span>
+                      <span className="text-sm text-[var(--wj-muted)]">{spec.model_code} - {spec.description}</span>
                     )}
                   </div>
                 </li>
@@ -612,27 +612,27 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
 
       {/* ── (2) Part Spec 선택 시 요약 카드 ── */}
       {selectedPartSpec && (
-        <Card className="bg-slate-50">
-          <CardHeader className="text-blue-700 font-semibold text-lg">
+        <Card className="bg-[var(--wj-surface-solid)]">
+          <CardHeader className="text-[var(--wj-accent-strong)] font-semibold text-lg">
             {form.model} / {form.partNo}
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-x-10 text-base">
             {/* Left */}
             <div className="grid grid-cols-[120px_1fr] gap-y-2">
-              <span className="text-gray-500">Resin</span>
+              <span className="text-[var(--wj-muted)]">Resin</span>
               <span className="font-medium font-mono">{form.resin || '-'}</span>
-              <span className="text-gray-500">Color</span>
+              <span className="text-[var(--wj-muted)]">Color</span>
               <span className="font-medium font-mono">{selectedPartSpec.color || '-'}</span>
-              <span className="text-gray-500">{t('good_ct')}</span>
+              <span className="text-[var(--wj-muted)]">{t('good_ct')}</span>
               <span className="font-medium font-mono">{form.ct}</span>
             </div>
             {/* Right */}
             <div className="grid grid-cols-[120px_1fr] gap-y-2">
-              <span className="text-gray-500">Net Wt (g)</span>
+              <span className="text-[var(--wj-muted)]">Net Wt (g)</span>
               <span className="font-medium font-mono">{form.netG}</span>
-              <span className="text-gray-500">S/R Wt (g)</span>
+              <span className="text-[var(--wj-muted)]">S/R Wt (g)</span>
               <span className="font-medium font-mono">{form.srG}</span>
-              <span className="text-gray-500">{t('avg_def')}</span>
+              <span className="text-[var(--wj-muted)]">{t('avg_def')}</span>
               <span className="font-medium font-mono">
                 {selectedPartSpec.defect_rate_pct != null ? `${(selectedPartSpec.defect_rate_pct * 100).toFixed(1)}%` : '-'}
               </span>
@@ -645,7 +645,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 items-stretch">
         {/* 생산 시간 */}
         <Card className="h-full flex flex-col">
-          <CardHeader className="font-semibold text-blue-700">{t('prod_time')}</CardHeader>
+          <CardHeader className="font-semibold text-[var(--wj-accent-strong)]">{t('prod_time')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
             {/* 시작/종료 */}
             <div className="grid grid-cols-2 gap-4">
@@ -686,7 +686,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
 
         {/* 생산 보고 입력 */}
         <Card className="h-full flex flex-col">
-          <CardHeader className="font-semibold text-blue-700">{t('prod_report')}</CardHeader>
+          <CardHeader className="font-semibold text-[var(--wj-accent-strong)]">{t('prod_report')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col">
@@ -723,7 +723,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
                 permission="can_edit_injection"
                 type="submit"
                 disabled={submitting}
-                className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+                className="px-3 py-2 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
               >
                 <PlusCircle className="h-4 w-4 shrink-0" />
                 <span>{t('save')}</span>
@@ -736,9 +736,9 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
       {/* Add Part Modal */}
       {showAddPartModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{t('quality.part_model_desc_required')}</p>
+            <p className="text-xs text-[var(--wj-muted)]">{t('quality.part_model_desc_required')}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k as keyof typeof newPartForm] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -748,7 +748,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
                   <>
                     <input
                       placeholder="Part No (MCK12345678…)"
-                      className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300${editedCls('part_no')}`}
+                      className={`border rounded px-2 py-1 col-span-2 bg-[var(--wj-success-bg)] border-[var(--wj-success-border)]${editedCls('part_no')}`}
                       value={newPartForm.part_no}
                       onChange={(e) => setNewPartForm((f) => ({ ...f, part_no: e.target.value }))}
                     />
@@ -826,7 +826,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNum
               <Button variant="ghost" size="sm" onClick={() => setShowAddPartModal(false)}>{t('cancel')}</Button>
               <PermissionButton
                 permission="can_edit_injection"
-                className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
+                className="px-3 py-1 text-sm bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] rounded-md font-medium transition-all duration-200"
                 onClick={async () => {
                   try {
                     const partNo = newPartForm.part_no.trim().toUpperCase();

@@ -345,7 +345,7 @@ export default function InventoryStatusPage() {
       <h1 className="text-2xl font-bold mb-2">재고 상세 현황</h1>
 
       {isError && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-sm text-[var(--wj-warning)]" role="alert">
           <span>저장된 재고 목록을 불러오지 못했습니다.</span>
           <Button onClick={() => { void refetch(); }} size="sm" variant="ghost">
             다시 불러오기
@@ -365,7 +365,7 @@ export default function InventoryStatusPage() {
           >
             <span className="truncate text-left">{selectedLabel}</span>
             <svg
-              className="w-4 h-4 ml-2 text-gray-400"
+              className="w-4 h-4 ml-2 text-[var(--wj-muted)]"
               viewBox="0 0 20 20"
               fill="currentColor"
             >
@@ -377,11 +377,11 @@ export default function InventoryStatusPage() {
             </svg>
           </button>
           {openDropdown && (
-            <div className="absolute z-20 mt-1 w-60 max-h-48 overflow-y-auto rounded-md border border-gray-300 bg-white shadow-lg p-2 space-y-1">
+            <div className="absolute z-20 mt-1 w-60 max-h-48 overflow-y-auto rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-lg p-2 space-y-1">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
-                  className="accent-blue-600"
+                  className="accent-[var(--wj-accent-strong)]"
                   checked={allSelected}
                   onChange={() => toggleWarehouse('__ALL__')}
                 />
@@ -391,7 +391,7 @@ export default function InventoryStatusPage() {
                 <label key={w.warehouse_code} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    className="accent-blue-600"
+                    className="accent-[var(--wj-accent-strong)]"
                     checked={selectedWarehouses.includes(w.warehouse_code)}
                     onChange={() => toggleWarehouse(w.warehouse_code)}
                   />
@@ -454,7 +454,7 @@ export default function InventoryStatusPage() {
               <button
                 type="button"
                 onClick={handleClearSearch}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -468,19 +468,19 @@ export default function InventoryStatusPage() {
         <div className="flex flex-col items-end gap-2">
           {/* 최근 업데이트 시간 */}
           {lastUpdate?.last_update ? (
-            <div className="text-xs text-gray-500 text-right">
+            <div className="text-xs text-[var(--wj-muted)] text-right">
               최근 업데이트: {format(new Date(lastUpdate.last_update), 'yyyy-MM-dd HH:mm:ss')}
             </div>
           ) : isLastUpdateLoading ? (
-            <div className="text-xs text-gray-400 text-right">
+            <div className="text-xs text-[var(--wj-muted)] text-right">
               업데이트 정보 불러오는 중...
             </div>
           ) : isLastUpdateError ? (
-            <div className="text-xs text-amber-700 text-right">
+            <div className="text-xs text-[var(--wj-warning)] text-right">
               업데이트 시각 확인 불가
             </div>
           ) : (
-            <div className="text-xs text-gray-400 text-right">
+            <div className="text-xs text-[var(--wj-muted)] text-right">
               저장된 업데이트 기록 없음
             </div>
           )}
@@ -488,7 +488,7 @@ export default function InventoryStatusPage() {
             <PermissionButton 
               permission="can_edit_inventory" 
               onClick={refreshInventory} 
-              className={`inline-flex items-center justify-center gap-1 h-10 px-4 rounded-xl bg-blue-600 text-white hover:bg-blue-700 font-semibold text-base ${updating ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`inline-flex items-center justify-center gap-1 h-10 px-4 rounded-xl bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] font-semibold text-base ${updating ? 'opacity-60 cursor-not-allowed' : ''}`}
               disabled={updating}
             >
             {updating && (
@@ -510,7 +510,7 @@ export default function InventoryStatusPage() {
             )}
             재고 업데이트
             </PermissionButton>
-          <Button onClick={downloadCSV} className="flex items-center gap-1 h-10 bg-green-600 hover:bg-green-700">
+          <Button onClick={downloadCSV} className="flex items-center gap-1 h-10 bg-[var(--wj-success)] hover:bg-[var(--wj-success)]">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
@@ -521,13 +521,13 @@ export default function InventoryStatusPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-slate-100 whitespace-nowrap">
+          <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+          <thead className="bg-[var(--wj-bg-strong)] whitespace-nowrap">
             <tr>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('updated_at')}
               >
                 <div className="flex items-center justify-center">
@@ -536,7 +536,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('qr_code')}
               >
                 <div className="flex items-center justify-center">
@@ -545,7 +545,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('material_code')}
               >
                 <div className="flex items-center justify-center">
@@ -554,7 +554,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('specification')}
               >
                 <div className="flex items-center justify-center">
@@ -563,7 +563,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center w-24 cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center w-24 cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('quantity')}
               >
                 <div className="flex items-center justify-center">
@@ -572,7 +572,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('warehouse_name')}
               >
                 <div className="flex items-center justify-center">
@@ -581,7 +581,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('qc_status')}
               >
                 <div className="flex items-center justify-center">
@@ -590,7 +590,7 @@ export default function InventoryStatusPage() {
                 </div>
               </th>
               <th 
-                className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors"
                 onClick={() => handleSort('work_order_code')}
               >
                 <div className="flex items-center justify-center">
@@ -641,7 +641,7 @@ export default function InventoryStatusPage() {
       {/* Pagination */}
       {data && (
         <div className="flex justify-between items-center pt-4">
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-[var(--wj-muted)]">
             총 {(data.total ?? 0).toLocaleString()} 건
           </span>
           <div className="flex gap-2 items-center">
@@ -671,19 +671,19 @@ export default function InventoryStatusPage() {
       {/* Progress Modal */}
       {updating && progress.status !== 'idle' && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">재고 업데이트 진행 중</h3>
-              <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <h3 className="text-lg font-semibold text-[var(--wj-text)]">재고 업데이트 진행 중</h3>
+              <div className="animate-spin h-6 w-6 border-2 border-[var(--wj-accent)] border-t-transparent rounded-full"></div>
             </div>
             
             <div className="space-y-3">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-[var(--wj-muted)]">
                 {progress.status === 'initializing' && '초기화 중...'}
                 {progress.status === 'fetching' && (
                   <div className="space-y-2">
                     <div>페이지 {progress.page} 처리 중...</div>
-                    <div className="font-semibold text-blue-600">
+                    <div className="font-semibold text-[var(--wj-accent-strong)]">
                       총 {progress.total.toLocaleString()} 항목 처리됨
                     </div>
                   </div>
@@ -693,9 +693,9 @@ export default function InventoryStatusPage() {
               </div>
               
               {progress.status === 'fetching' && (
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-[var(--wj-bg-strong)] rounded-full h-2">
                   <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    className="bg-[var(--wj-accent-strong)] h-2 rounded-full transition-all duration-300"
                     style={{ 
                       width: progress.total > 0 
                         ? `${Math.min((progress.current / progress.total) * 100, 100)}%` 
@@ -705,7 +705,7 @@ export default function InventoryStatusPage() {
                 </div>
               )}
               
-              <div className="text-xs text-gray-500 mt-2">
+              <div className="text-xs text-[var(--wj-muted)] mt-2">
                 업데이트가 완료될 때까지 잠시 기다려주세요...
               </div>
             </div>

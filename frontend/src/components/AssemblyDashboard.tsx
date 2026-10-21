@@ -113,15 +113,15 @@ function AssemblyDashboardSkeleton() {
     <div className="space-y-6 animate-pulse">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, idx) => (
-          <div key={idx} className="h-28 rounded-2xl bg-gray-200" />
+          <div key={idx} className="h-28 rounded-2xl bg-[var(--wj-bg-strong)]" />
         ))}
       </div>
-      <div className="h-72 rounded-2xl bg-gray-200" />
+      <div className="h-72 rounded-2xl bg-[var(--wj-bg-strong)]" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="h-64 rounded-2xl bg-gray-200" />
-        <div className="h-64 rounded-2xl bg-gray-200" />
+        <div className="h-64 rounded-2xl bg-[var(--wj-bg-strong)]" />
+        <div className="h-64 rounded-2xl bg-[var(--wj-bg-strong)]" />
       </div>
-      <div className="h-96 rounded-2xl bg-gray-200" />
+      <div className="h-96 rounded-2xl bg-[var(--wj-bg-strong)]" />
     </div>
   );
 }
@@ -461,7 +461,7 @@ export default function AssemblyDashboard() {
         {metricCards.map((metric) => (
           <Card key={metric.key}>
             <CardHeader className="pb-2">
-              <h4 className="text-sm font-medium text-gray-600">{metric.label}</h4>
+              <h4 className="text-sm font-medium text-[var(--wj-muted)]">{metric.label}</h4>
             </CardHeader>
             <CardContent className="space-y-3">
               {summaryRows.map((row) => {
@@ -469,9 +469,9 @@ export default function AssemblyDashboard() {
                 return (
                   <div key={row.key} className="flex items-center justify-between gap-3">
                     <div className="flex flex-col">
-                      <span className="text-xs font-medium text-gray-500">{row.title}</span>
+                      <span className="text-xs font-medium text-[var(--wj-muted)]">{row.title}</span>
                       {row.subtitle && (
-                        <span className="text-[11px] text-gray-400">{row.subtitle}</span>
+                        <span className="text-[11px] text-[var(--wj-muted)]">{row.subtitle}</span>
                       )}
                     </div>
                     <span className={`text-lg font-semibold ${getMetricColor(value, metric.key, metric.unit)}`}>
@@ -486,7 +486,7 @@ export default function AssemblyDashboard() {
       </div>
 
       {noRangeData && (
-        <p className="text-xs text-orange-600">{t('analysis_no_period_data')}</p>
+        <p className="text-xs text-[var(--wj-warning)]">{t('analysis_no_period_data')}</p>
       )}
 
       <Card>
@@ -577,7 +577,7 @@ export default function AssemblyDashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-gray-500">
+              <div className="flex h-full items-center justify-center text-sm text-[var(--wj-muted)]">
                 {t('analysis_no_period_data')}
               </div>
             )}
@@ -586,16 +586,16 @@ export default function AssemblyDashboard() {
           <div className="border-t pt-6 space-y-5">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
               <div>
-                <h4 className="text-sm font-semibold text-gray-700">
+                <h4 className="text-sm font-semibold text-[var(--wj-text)]">
                   {t('analysis_defect_detail_title')}
                   {defectPeriodLabel && (
-                    <span className="ml-2 text-xs font-normal text-gray-400">{defectPeriodLabel}</span>
+                    <span className="ml-2 text-xs font-normal text-[var(--wj-muted)]">{defectPeriodLabel}</span>
                   )}
                 </h4>
-                <p className="text-xs text-gray-500">{t('analysis_defect_detail_hint')}</p>
+                <p className="text-xs text-[var(--wj-muted)]">{t('analysis_defect_detail_hint')}</p>
               </div>
               {defectBreakdown.total > 0 && (
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-[var(--wj-muted)]">
                   {t('analysis_defect_total')}: {defectBreakdown.total.toLocaleString()}
                 </div>
               )}
@@ -604,18 +604,18 @@ export default function AssemblyDashboard() {
             {defectDetailTree.length > 0 ? (
               <div className="space-y-4">
                 {defectDetailTree.map((category) => (
-                  <div key={category.key} className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
+                  <div key={category.key} className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-[var(--wj-text)]">
                         <span
                           className="inline-block h-2.5 w-2.5 rounded-full"
                           style={{ backgroundColor: defectColors[category.key] ?? '#2563eb' }}
                         />
                         {category.label}
                       </div>
-                      <div className="text-sm font-semibold text-gray-700">
+                      <div className="text-sm font-semibold text-[var(--wj-text)]">
                         {category.total.toLocaleString()}
-                        <span className="ml-2 text-xs text-gray-400">({category.percentOfTotal}%)</span>
+                        <span className="ml-2 text-xs text-[var(--wj-muted)]">({category.percentOfTotal}%)</span>
                       </div>
                     </div>
 
@@ -623,13 +623,13 @@ export default function AssemblyDashboard() {
                       {category.children.map((child) => (
                         <div key={child.key} className="space-y-1">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">{child.label}</span>
-                            <span className="font-medium text-gray-800">
+                            <span className="text-[var(--wj-muted)]">{child.label}</span>
+                            <span className="font-medium text-[var(--wj-text)]">
                               {child.value.toLocaleString()}
-                              <span className="ml-2 text-xs text-gray-400">({child.percentOfTotal}%)</span>
+                              <span className="ml-2 text-xs text-[var(--wj-muted)]">({child.percentOfTotal}%)</span>
                             </span>
                           </div>
-                          <div className="h-2 rounded-full bg-white shadow-inner">
+                          <div className="h-2 rounded-full bg-[var(--wj-surface-solid)] shadow-inner">
                             <div
                               className="h-2 rounded-full"
                               style={{
@@ -645,7 +645,7 @@ export default function AssemblyDashboard() {
                 ))}
               </div>
             ) : (
-              <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+              <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] text-sm text-[var(--wj-muted)]">
                 {t('analysis_defect_no_data')}
               </div>
             )}

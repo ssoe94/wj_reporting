@@ -108,9 +108,9 @@ export default function InjectionReportsPanel({ businessDate, machineNumber = nu
       <section id="records" className="space-y-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 text-sm font-bold text-sky-700"><History className="h-4 w-4" />{tx('수기일보', '手工日报')}</div>
-            <h2 className="mt-2 text-xl font-bold text-slate-900">{scopeLabel}</h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">{tx('담당자가 직접 등록하거나 CSV로 가져온 일보입니다. 현장 불량 신고, MES 계수, 관리자 실행 기록은 각각 별도 원천이며 이 수량에 합산되지 않습니다.', '这里仅包含人工登记或 CSV 导入的日报。现场不良申报、MES 计数及管理执行记录属于独立来源，不合并计入此数量。')}</p>
+            <div className="inline-flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><History className="h-4 w-4" />{tx('수기일보', '手工日报')}</div>
+            <h2 className="mt-2 text-xl font-bold text-[var(--wj-text)]">{scopeLabel}</h2>
+            <p className="mt-2 max-w-3xl text-sm text-[var(--wj-muted)]">{tx('담당자가 직접 등록하거나 CSV로 가져온 일보입니다. 현장 불량 신고, MES 계수, 관리자 실행 기록은 각각 별도 원천이며 이 수량에 합산되지 않습니다.', '这里仅包含人工登记或 CSV 导入的日报。现场不良申报、MES 计数及管理执行记录属于独立来源，不合并计入此数量。')}</p>
           </div>
           <Button type="button" size="sm" className="gap-2" onClick={downloadCsv} disabled={downloading}>
             <DownloadCloud className="h-4 w-4" />{tx('선택 범위 수기일보 CSV', '导出所选范围手工日报')}
@@ -118,7 +118,7 @@ export default function InjectionReportsPanel({ businessDate, machineNumber = nu
         </div>
 
         {summaryQuery.isError ? (
-          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div role="alert" className="rounded-xl border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] p-4 text-sm text-[var(--wj-warning)]">
             {tx('수기일보 요약 조회에 실패했습니다. 수치를 확인할 수 없습니다.', '手工日报汇总查询失败，无法确认数量。')}
             <Button type="button" size="sm" variant="secondary" className="ml-3" disabled={summaryQuery.isFetching} onClick={() => void summaryQuery.refetch()}>{tx('다시 조회', '重试')}</Button>
           </div>
@@ -129,20 +129,20 @@ export default function InjectionReportsPanel({ businessDate, machineNumber = nu
               [tx('수기 계획 수량', '手工计划数量'), summary?.total_plan_qty],
               [tx('수기 실적 수량', '手工实绩数量'), summary?.total_actual_qty],
               [tx('수기 실제불량 수량', '手工实际不良数量'), summary?.total_defect_qty],
-            ].map(([label, value]) => <Card key={String(label)} className="border-slate-200 shadow-none"><CardContent className="pt-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-900">{typeof value === 'number' ? value.toLocaleString() : '—'}</p></CardContent></Card>)}
+            ].map(([label, value]) => <Card key={String(label)} className="border-[var(--wj-border)] shadow-none"><CardContent className="pt-4"><p className="text-xs text-[var(--wj-muted)]">{label}</p><p className="mt-1 text-2xl font-bold text-[var(--wj-text)]">{typeof value === 'number' ? value.toLocaleString() : '—'}</p></CardContent></Card>)}
           </div>
         )}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <Card className="min-w-0 border-slate-200 shadow-sm">
-            <CardHeader className="pb-3"><h3 className="font-bold text-slate-900">{tx('수기일보 상세', '手工日报明细')}</h3></CardHeader>
+          <Card className="min-w-0 border-[var(--wj-border)] shadow-sm">
+            <CardHeader className="pb-3"><h3 className="font-bold text-[var(--wj-text)]">{tx('수기일보 상세', '手工日报明细')}</h3></CardHeader>
             <CardContent><div className="max-h-[62vh] overflow-auto"><DateRecordsTable date={selectedDate} machineNumber={machineNumber} /></div></CardContent>
           </Card>
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-3"><h3 className="font-bold text-slate-900">{tx('수기일보 날짜 찾기', '查找手工日报日期')}</h3></CardHeader>
+          <Card className="border-[var(--wj-border)] shadow-sm">
+            <CardHeader className="pb-3"><h3 className="font-bold text-[var(--wj-text)]">{tx('수기일보 날짜 찾기', '查找手工日报日期')}</h3></CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-xs text-slate-500">{tx('기록이 없어도 선택 날짜를 유지합니다. 표시된 날짜만 수기일보가 등록된 날짜입니다.', '无记录时仍保留所选日期。标记日期表示已有手工日报。')}</p>
-              {datesQuery.isError ? <p role="alert" className="text-sm text-amber-800">{tx('기록 날짜를 불러오지 못했습니다.', '未能加载记录日期。')} <button type="button" className="underline" onClick={() => void datesQuery.refetch()}>{tx('재시도', '重试')}</button></p> : null}
+              <p className="text-xs text-[var(--wj-muted)]">{tx('기록이 없어도 선택 날짜를 유지합니다. 표시된 날짜만 수기일보가 등록된 날짜입니다.', '无记录时仍保留所选日期。标记日期表示已有手工日报。')}</p>
+              {datesQuery.isError ? <p role="alert" className="text-sm text-[var(--wj-warning)]">{tx('기록 날짜를 불러오지 못했습니다.', '未能加载记录日期。')} <button type="button" className="underline" onClick={() => void datesQuery.refetch()}>{tx('재시도', '重试')}</button></p> : null}
               <Button type="button" size="sm" variant="secondary" disabled={!datesQuery.isSuccess || !reportDates.length} onClick={() => selectDate(reportDates[0])}>{tx('최근 기록일', '最近记录日')}{datesQuery.isSuccess && reportDates[0] ? ` · ${reportDates[0]}` : ''}</Button>
               <ProdCalendar selected={selectedDate} onSelect={selectDate} availableDates={reportDates} />
             </CardContent>
@@ -150,12 +150,12 @@ export default function InjectionReportsPanel({ businessDate, machineNumber = nu
         </div>
       </section>
 
-      <details ref={newRecordDetails} id="new" className="rounded-xl border border-slate-200 bg-white p-5">
-        <summary className="cursor-pointer font-bold text-slate-900"><FilePlus2 className="mr-2 inline h-5 w-5 text-blue-600" />{tx('수기일보 신규 입력 / CSV 가져오기', '新增手工日报 / 导入 CSV')}</summary>
-        <p className="mt-3 text-sm text-slate-600">{tx('현장 신고를 다시 입력하는 곳이 아닙니다. 대조 후 별도로 관리할 수기일보가 있을 때 사용하세요. 신규 입력의 날짜·설비는 아래 작성 대상에서 확인합니다.', '此处无需重复录入现场申报。仅在核对后需要独立手工日报时使用。请以下方填写的日期及设备为准。')}</p>
+      <details ref={newRecordDetails} id="new" className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5">
+        <summary className="cursor-pointer font-bold text-[var(--wj-text)]"><FilePlus2 className="mr-2 inline h-5 w-5 text-[var(--wj-accent-strong)]" />{tx('수기일보 신규 입력 / CSV 가져오기', '新增手工日报 / 导入 CSV')}</summary>
+        <p className="mt-3 text-sm text-[var(--wj-muted)]">{tx('현장 신고를 다시 입력하는 곳이 아닙니다. 대조 후 별도로 관리할 수기일보가 있을 때 사용하세요. 신규 입력의 날짜·설비는 아래 작성 대상에서 확인합니다.', '此处无需重复录入现场申报。仅在核对后需要独立手工日报时使用。请以下方填写的日期及设备为准。')}</p>
         <div className="mt-5"><RecordForm reportDate={selectedDate} machineNumber={machineNumber} onSaved={handleRecordSaved} /></div>
-        <div className="mt-6 border-t border-slate-200 pt-4">
-          <p className="mb-3 text-sm text-slate-600">{tx('CSV 가져오기는 파일 안의 날짜·설비를 사용합니다. 같은 날짜·설비·품번의 기존 일보는 갱신됩니다. 위 조회 범위로 제한되지 않습니다.', 'CSV 按文件中的日期及设备导入。同日期、设备和品号的已有日报会被更新，不受上方查询范围限制。')}</p>
+        <div className="mt-6 border-t border-[var(--wj-border)] pt-4">
+          <p className="mb-3 text-sm text-[var(--wj-muted)]">{tx('CSV 가져오기는 파일 안의 날짜·설비를 사용합니다. 같은 날짜·설비·품번의 기존 일보는 갱신됩니다. 위 조회 범위로 제한되지 않습니다.', 'CSV 按文件中的日期及设备导入。同日期、设备和品号的已有日报会被更新，不受上方查询范围限制。')}</p>
           <input id="injectionReportsCsvFile" type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvUpload} disabled={uploading} />
           <Button type="button" size="sm" variant="secondary" disabled={uploading} onClick={() => document.getElementById('injectionReportsCsvFile')?.click()}>{uploading ? tx('가져오는 중…', '导入中…') : tx('CSV 가져오기', '导入 CSV')}</Button>
         </div>

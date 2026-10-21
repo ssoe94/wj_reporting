@@ -243,20 +243,20 @@ export default function MesConnectionDialog({ onClose, diagnosticRequestUid }: {
     <Dialog open onClose={() => { clearTicket(); onClose(); }} className="relative z-[100]">
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4">
-        <DialogPanel className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-          <DialogTitle className="text-xl font-bold text-slate-900">{ko ? 'MES 연결' : 'MES 连接'}</DialogTitle>
-          {diagnosticRequestUid && <p className="mt-2 text-sm text-slate-700">{ko ? '이 단건 준비번호에만 연결합니다' : '仅连接此单工单准备编号'}: <span className="break-all">{diagnosticRequestUid}</span></p>}
-          <p className="mt-4 text-base text-slate-700" aria-live="polite">
+        <DialogPanel className="w-full max-w-md rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-6 shadow-xl">
+          <DialogTitle className="text-xl font-bold text-[var(--wj-text)]">{ko ? 'MES 연결' : 'MES 连接'}</DialogTitle>
+          {diagnosticRequestUid && <p className="mt-2 text-sm text-[var(--wj-text)]">{ko ? '이 단건 준비번호에만 연결합니다' : '仅连接此单工单准备编号'}: <span className="break-all">{diagnosticRequestUid}</span></p>}
+          <p className="mt-4 text-base text-[var(--wj-text)]" aria-live="polite">
             {status ? labels[status.status] : busy ? (ko ? '연결 상태 확인 중…' : '正在检查连接状态…') : (ko ? '연결 상태를 확인해 주세요.' : '请检查连接状态。')}
           </p>
           {diagnostic && (
-            <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700" role="status">
+            <div className="mt-3 rounded-lg bg-[var(--wj-surface-solid)] p-3 text-sm text-[var(--wj-text)]" role="status">
               <p>{diagnostic.message}</p>
-              <p className="mt-2 break-all text-xs text-slate-600">{ko ? '진단코드' : '诊断代码'}: <code>{diagnostic.code}</code></p>
+              <p className="mt-2 break-all text-xs text-[var(--wj-muted)]">{ko ? '진단코드' : '诊断代码'}: <code>{diagnostic.code}</code></p>
             </div>
           )}
           {status?.status === 'connected' && (
-            <div className="mt-2 text-sm text-slate-600">
+            <div className="mt-2 text-sm text-[var(--wj-muted)]">
               <p>{diagnosticRequestUid ? (ko ? '이 준비번호의 승인 범위로 MES 신원을 다시 확인합니다.' : '按此准备编号的批准范围重新确认 MES 身份。') : status.mode === 'stored_identity'
                 ? (ko ? '현재 사용자의 유효한 MES 연결을 자동으로 재사용합니다.' : '自动复用当前用户的有效 MES 连接。')
                 : (ko ? '현재 사용자의 MES 신원을 확인했습니다.' : '已确认当前用户的 MES 身份。')}</p>
@@ -265,28 +265,28 @@ export default function MesConnectionDialog({ onClose, diagnosticRequestUid }: {
             </div>
           )}
           {status?.login_hint && (status.can_connect || launch) && (
-            <div className="mt-4 rounded-lg bg-slate-50 p-3">
-              <p className="text-sm text-slate-700">{ko ? '공식 MES 화면에서 아래 계정으로 로그인해 주세요. 비밀번호는 MES 화면에 직접 입력합니다.' : '请在 MES 官方页面使用以下账号登录，并在 MES 页面直接输入密码。'}</p>
+            <div className="mt-4 rounded-lg bg-[var(--wj-surface-solid)] p-3">
+              <p className="text-sm text-[var(--wj-text)]">{ko ? '공식 MES 화면에서 아래 계정으로 로그인해 주세요. 비밀번호는 MES 화면에 직접 입력합니다.' : '请在 MES 官方页面使用以下账号登录，并在 MES 页面直接输入密码。'}</p>
               <div className="mt-3 flex items-end gap-2">
-                <label className="min-w-0 flex-1 text-sm text-slate-700">{ko ? '공장번호' : '工厂编号'}
-                  <input className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-base" value={status.login_hint.factory_number} readOnly autoComplete="off" />
+                <label className="min-w-0 flex-1 text-sm text-[var(--wj-text)]">{ko ? '공장번호' : '工厂编号'}
+                  <input className="mt-1 w-full rounded border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-2 py-1.5 text-base" value={status.login_hint.factory_number} readOnly autoComplete="off" />
                 </label>
                 <Button type="button" variant="secondary" disabled={isLoggingOut} onClick={() => { void copyLoginHint('factory'); }}>{ko ? '공장번호 복사' : '复制工厂编号'}</Button>
               </div>
               <div className="mt-2 flex items-end gap-2">
-                <label className="min-w-0 flex-1 text-sm text-slate-700">{ko ? 'MES 로그인 ID' : 'MES 登录账号'}
-                  <input className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-base" value={status.login_hint.account_name} readOnly autoComplete="off" />
+                <label className="min-w-0 flex-1 text-sm text-[var(--wj-text)]">{ko ? 'MES 로그인 ID' : 'MES 登录账号'}
+                  <input className="mt-1 w-full rounded border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-2 py-1.5 text-base" value={status.login_hint.account_name} readOnly autoComplete="off" />
                 </label>
                 <Button type="button" variant="secondary" disabled={isLoggingOut} onClick={() => { void copyLoginHint('account'); }}>{ko ? 'ID 복사' : '复制账号'}</Button>
               </div>
-              <p className="mt-2 text-sm text-slate-600">{ko ? '다른 검사자는 먼저 WJ의 검사자를 변경해 주세요. 위 계정과 다른 MES 계정은 연결할 수 없습니다.' : '其他检验员请先切换 WJ 检验员。无法连接与上方账号不同的 MES 账号。'}</p>
-              {copyNotice && <p role="status" className="mt-2 text-sm text-slate-700">{copyNotice === 'failed'
+              <p className="mt-2 text-sm text-[var(--wj-muted)]">{ko ? '다른 검사자는 먼저 WJ의 검사자를 변경해 주세요. 위 계정과 다른 MES 계정은 연결할 수 없습니다.' : '其他检验员请先切换 WJ 检验员。无法连接与上方账号不同的 MES 账号。'}</p>
+              {copyNotice && <p role="status" className="mt-2 text-sm text-[var(--wj-text)]">{copyNotice === 'failed'
                 ? (ko ? '복사할 수 없습니다. 위 값을 선택해 직접 복사해 주세요.' : '无法复制，请选中上方内容手动复制。')
                 : copyNotice === 'factory' ? (ko ? '공장번호를 복사했습니다.' : '已复制工厂编号。') : (ko ? 'MES 로그인 ID를 복사했습니다.' : '已复制 MES 登录账号。')}</p>}
             </div>
           )}
-          {error && <p role="alert" className="mt-3 text-sm text-red-700">{ko ? '요청 완료를 확인할 수 없습니다. 상태를 확인한 뒤 다시 시도해 주세요.' : '无法确认请求是否完成。请检查状态后重试。'}</p>}
-          {notice && <p role="status" className="mt-3 text-sm text-slate-700">
+          {error && <p role="alert" className="mt-3 text-sm text-[var(--wj-danger)]">{ko ? '요청 완료를 확인할 수 없습니다. 상태를 확인한 뒤 다시 시도해 주세요.' : '无法确认请求是否完成。请检查状态后重试。'}</p>}
+          {notice && <p role="status" className="mt-3 text-sm text-[var(--wj-text)]">
             {notice === 'opened' ? (ko ? 'MES 화면에서 ‘WJ Lee 신원 확인’을 한 번 눌러 주세요. 현재 WJ 사용자에게 연결할 MES 계정으로 로그인되어 있어야 합니다. 다른 계정이면 MES에서 전환해 주세요.' : '请在 MES 页面点击一次“WJ Lee 신원 확인”。需登录当前 WJ 用户对应的 MES 账号；账号不符时请在 MES 切换。')
               : notice === 'expired' ? (ko ? '연결 준비 시간이 지났습니다. 다시 준비해 주세요.' : '连接准备已过期，请重新准备。')
                 : (ko ? 'MES 연결을 해제했습니다.' : '已断开 MES 连接。')}
@@ -303,7 +303,7 @@ export default function MesConnectionDialog({ onClose, diagnosticRequestUid }: {
             <Button type="button" variant="secondary" disabled={disabled || !status?.can_disconnect} onClick={() => { void disconnect(); }}>{ko ? '연결 해제' : '断开连接'}</Button>
             <Button type="button" variant="ghost" disabled={disabled} onClick={() => { void loadStatus(); }}>{ko ? '상태 확인' : '检查状态'}</Button>
           </div>
-          {launch && <p className="mt-2 text-sm text-slate-600">{ko ? '새 창에서 연결합니다. 1분 안에 눌러 주세요.' : '将在新窗口连接。请在一分钟内点击。'}</p>}
+          {launch && <p className="mt-2 text-sm text-[var(--wj-muted)]">{ko ? '새 창에서 연결합니다. 1분 안에 눌러 주세요.' : '将在新窗口连接。请在一分钟内点击。'}</p>}
           <div className="mt-5 flex justify-end"><Button type="button" variant="ghost" onClick={() => { clearTicket(); onClose(); }}>{ko ? '닫기' : '关闭'}</Button></div>
         </DialogPanel>
       </div>

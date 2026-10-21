@@ -70,8 +70,8 @@ export default function NewPartNoSelector({ model, value, onChange, onAddNewPart
         const { key, ...rest } = props as any;
         if ('isAddNew' in option) {
           return (
-            <li key={key} {...rest} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-              <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+            <li key={key} {...rest} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+              <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                 <Plus className="h-3 w-3" />
                 <span>{`"${option.part_no}" ${t('add_new_part_prompt')}`}</span>
               </div>
@@ -84,7 +84,7 @@ export default function NewPartNoSelector({ model, value, onChange, onAddNewPart
             <div className="flex flex-col">
               <span className="font-mono font-medium">{spec.part_no}</span>
               {spec.model_code && (
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-[var(--wj-muted)]">
                   {spec.model_code}
                   {spec.description ? ` - ${spec.description}` : ''}
                 </span>

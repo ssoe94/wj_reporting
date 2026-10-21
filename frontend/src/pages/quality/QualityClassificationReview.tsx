@@ -515,173 +515,173 @@ export default function QualityClassificationReview() {
 
   return (
     <section className="space-y-4" aria-labelledby="quality-classification-review-title">
-      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="rounded-xl bg-indigo-600 p-2.5 text-white shadow-sm"><BrainCircuit className="h-5 w-5" /></span>
+            <span className="rounded-xl bg-indigo-600 p-2.5 text-[var(--wj-on-accent)] shadow-sm"><BrainCircuit className="h-5 w-5" /></span>
             <div>
-              <h2 id="quality-classification-review-title" className="text-xl font-bold text-slate-950">{copy.title}</h2>
-              <p className="mt-1 text-sm text-slate-600">{copy.subtitle}</p>
+              <h2 id="quality-classification-review-title" className="text-xl font-bold text-[var(--wj-text)]">{copy.title}</h2>
+              <p className="mt-1 text-sm text-[var(--wj-muted)]">{copy.subtitle}</p>
               <p className="mt-1 text-xs font-medium text-indigo-700">{data?.taxonomy_version ?? '-'}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void startAudit()} disabled={mutating} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">
+            <button type="button" onClick={() => void startAudit()} disabled={mutating} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-[var(--wj-on-accent)] shadow-sm disabled:opacity-50">
               {mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.start}
             </button>
-            <button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+            <button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-text)]">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{copy.refresh}
             </button>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {['total', 'with_images', 'unprocessed', 'pending', 'needs_review', 'matched', 'reviewed'].map((key) => (
-            <div key={key} className="rounded-xl border border-white bg-white/80 px-3 py-2 shadow-sm">
-              <div className="text-[11px] font-semibold text-slate-500">{statusLabel(key)}</div>
-              <div className="mt-0.5 text-lg font-bold text-slate-950">{data ? (data.stats[key] ?? 0) : '—'}</div>
+            <div key={key} className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 shadow-sm">
+              <div className="text-[11px] font-semibold text-[var(--wj-muted)]">{statusLabel(key)}</div>
+              <div className="mt-0.5 text-lg font-bold text-[var(--wj-text)]">{data ? (data.stats[key] ?? 0) : '—'}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {queueError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><span>{queueError}</span><button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{copy.retry}</button></div>}
-      {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
-      {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div>}
+      {queueError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-3 text-sm font-semibold text-[var(--wj-danger)]"><span>{queueError}</span><button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-3 py-1.5 text-sm font-semibold text-[var(--wj-danger)] disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{copy.retry}</button></div>}
+      {error && <div role="alert" className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-3 text-sm font-semibold text-[var(--wj-danger)]">{error}</div>}
+      {notice && <div role="status" aria-live="polite" className="rounded-xl border border-[var(--wj-success-border)] bg-[var(--wj-success-bg)] px-4 py-3 text-sm font-semibold text-[var(--wj-success)]">{notice}</div>}
 
       <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.7fr)]">
-        <aside className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="space-y-3 border-b border-slate-200 p-3">
+        <aside className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+          <div className="space-y-3 border-b border-[var(--wj-border)] p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="inline-flex rounded-lg bg-slate-100 p-1">
+              <div className="inline-flex rounded-lg bg-[var(--wj-bg-strong)] p-1">
               {(['attention', 'all'] as const).map((value) => (
-                <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => { setDeepLinkReportId(null); setStatusFilter(value); setPage(1); }} className={`rounded-md px-3 py-1.5 text-xs font-bold ${statusFilter === value ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}>
+                <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => { setDeepLinkReportId(null); setStatusFilter(value); setPage(1); }} className={`rounded-md px-3 py-1.5 text-xs font-bold ${statusFilter === value ? 'bg-[var(--wj-surface-solid)] text-indigo-700 shadow-sm' : 'text-[var(--wj-muted)]'}`}>
                   {value === 'attention' ? copy.attention : copy.all}
                 </button>
               ))}
               </div>
-              <span className="text-xs font-semibold text-slate-500">{data?.count ?? '—'}</span>
+              <span className="text-xs font-semibold text-[var(--wj-muted)]">{data?.count ?? '—'}</span>
             </div>
             <form onSubmit={submitSearch} className="flex gap-2" role="search">
               <label className="relative min-w-0 flex-1">
                 <span className="sr-only">{copy.searchPlaceholder}</span>
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={copy.searchPlaceholder} className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--wj-muted)]" />
+                <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={copy.searchPlaceholder} className="h-10 w-full rounded-xl border border-[var(--wj-border)] pl-9 pr-3 text-sm" />
               </label>
-              <button type="submit" className="rounded-xl bg-slate-900 px-3 text-sm font-bold text-white" aria-label={copy.search}>{copy.search}</button>
+              <button type="submit" className="rounded-xl bg-[var(--wj-contrast-surface)] px-3 text-sm font-bold text-[var(--wj-on-contrast)]" aria-label={copy.search}>{copy.search}</button>
             </form>
           </div>
           <div className="max-h-[min(52dvh,520px)] overflow-y-auto p-2 xl:max-h-[720px]">
             {loading && !data ? <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-indigo-600" /></div> : null}
-            {!loading && !data && queueError ? <p className="p-8 text-center text-sm text-slate-500">{copy.loadUnavailable}</p> : null}
-            {!loading && data?.results.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">{copy.empty}</p> : null}
+            {!loading && !data && queueError ? <p className="p-8 text-center text-sm text-[var(--wj-muted)]">{copy.loadUnavailable}</p> : null}
+            {!loading && data?.results.length === 0 ? <p className="p-8 text-center text-sm text-[var(--wj-muted)]">{copy.empty}</p> : null}
             <div className="space-y-2">
               {data?.results.map((row) => {
                 const selectedRow = row.report.id === selectedReportId;
                 const aiLabels = row.result?.qwen_classification?.candidate_selections?.map((term) => localized(term.label, lang)).filter(Boolean) ?? [];
                 return (
-                          <button key={row.report.id} type="button" aria-pressed={selectedRow} onClick={() => chooseReport(row.report.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedRow ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-100' : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'}`}>
+                          <button key={row.report.id} type="button" aria-pressed={selectedRow} onClick={() => chooseReport(row.report.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedRow ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-100' : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)] hover:border-indigo-200 hover:bg-[var(--wj-surface-solid)]'}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-500">{dayjs(row.report.report_dt).format('YYYY-MM-DD')} · {row.report.section}</span>
+                      <span className="text-xs font-semibold text-[var(--wj-muted)]">{dayjs(row.report.report_dt).format('YYYY-MM-DD')} · {row.report.section}</span>
                       <span className={`rounded-full px-2 py-1 text-[10px] font-bold ring-1 ring-inset ${queueStatusClass(row.queue_status)}`}>{statusLabel(row.queue_status)}</span>
                     </div>
-                    <div className="mt-2 truncate text-sm font-bold text-slate-950">{row.report.part_no || '-'}</div>
-                    <div className="text-xs font-medium text-slate-600">{row.report.model || '-'}</div>
-                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-700">{row.report.phenomenon || '-'}</p>
+                    <div className="mt-2 truncate text-sm font-bold text-[var(--wj-text)]">{row.report.part_no || '-'}</div>
+                    <div className="text-xs font-medium text-[var(--wj-muted)]">{row.report.model || '-'}</div>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--wj-text)]">{row.report.phenomenon || '-'}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(aiLabels.length ? aiLabels : row.deterministic_classification.map((term) => taxonomyLabel(term, lang))).map((label) => (
-                        <span key={label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{label}</span>
+                        <span key={label} className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-0.5 text-[10px] font-semibold text-[var(--wj-muted)]">{label}</span>
                       ))}
-                      {row.report.image_refs.length > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700"><Camera className="h-3 w-3" />{row.report.image_refs.length}</span>}
+                      {row.report.image_refs.length > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-[var(--wj-bg-strong)] px-2 py-0.5 text-[10px] font-semibold text-[var(--wj-accent-strong)]"><Camera className="h-3 w-3" />{row.report.image_refs.length}</span>}
                     </div>
                   </button>
                 );
               })}
             </div>
           </div>
-          <div className="flex items-center justify-between border-t border-slate-200 p-3">
+          <div className="flex items-center justify-between border-t border-[var(--wj-border)] p-3">
             <button type="button" disabled={!data?.previous_page} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-40">{copy.previous}</button>
-            <span className="text-xs font-semibold text-slate-500">{data?.page ?? 1}</span>
+            <span className="text-xs font-semibold text-[var(--wj-muted)]">{data?.page ?? 1}</span>
             <button type="button" disabled={!data?.next_page} onClick={() => setPage((value) => value + 1)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-40">{copy.next}</button>
           </div>
         </aside>
 
-        <article ref={detailRef} tabIndex={-1} className="min-w-0 scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:p-5">
-          {!selected ? <div className="flex min-h-[500px] items-center justify-center text-sm text-slate-500">{!data && queueError ? copy.loadUnavailable : copy.select}</div> : (
+        <article ref={detailRef} tabIndex={-1} className="min-w-0 scroll-mt-4 rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:p-5">
+          {!selected ? <div className="flex min-h-[500px] items-center justify-center text-sm text-[var(--wj-muted)]">{!data && queueError ? copy.loadUnavailable : copy.select}</div> : (
             <div className="space-y-5">
-              <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <header className="flex flex-col gap-3 border-b border-[var(--wj-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="text-xs font-bold uppercase tracking-[0.12em] text-indigo-600">Report #{selected.report.id}</div>
-                  <h3 className="mt-1 break-words text-xl font-bold text-slate-950">{selected.report.part_no || '-'}</h3>
-                  <p className="mt-1 text-sm font-semibold text-slate-600">{selected.report.model || '-'} · {selected.report.section} · {dayjs(selected.report.report_dt).format('YYYY-MM-DD HH:mm')}</p>
+                  <h3 className="mt-1 break-words text-xl font-bold text-[var(--wj-text)]">{selected.report.part_no || '-'}</h3>
+                  <p className="mt-1 text-sm font-semibold text-[var(--wj-muted)]">{selected.report.model || '-'} · {selected.report.section} · {dayjs(selected.report.report_dt).format('YYYY-MM-DD HH:mm')}</p>
                 </div>
                 <span className={`self-start rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${queueStatusClass(selected.queue_status)}`}>{statusLabel(selected.queue_status)}</span>
               </header>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <h4 className="text-sm font-bold text-slate-900">{copy.raw}</h4>
-                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">{selected.report.phenomenon || '-'}</p>
-                  {(selected.report.disposition || selected.report.action_result) && <div className="mt-3 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-600">{selected.report.disposition}<br />{selected.report.action_result}</div>}
+                <section className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4">
+                  <h4 className="text-sm font-bold text-[var(--wj-text)]">{copy.raw}</h4>
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--wj-text)]">{selected.report.phenomenon || '-'}</p>
+                  {(selected.report.disposition || selected.report.action_result) && <div className="mt-3 border-t border-[var(--wj-border)] pt-3 text-xs leading-5 text-[var(--wj-muted)]">{selected.report.disposition}<br />{selected.report.action_result}</div>}
                 </section>
-                <section className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="text-sm font-bold text-slate-900">{copy.photos} <span className="text-slate-400">{selected.report.image_refs.length}</span></h4>
+                <section className="rounded-xl border border-[var(--wj-border)] p-4">
+                  <h4 className="text-sm font-bold text-[var(--wj-text)]">{copy.photos} <span className="text-[var(--wj-muted)]">{selected.report.image_refs.length}</span></h4>
                   {selected.report.image_refs.length ? (
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {selected.report.image_refs.map((image, index) => {
                         const observation = selected.result?.image_observations?.find((row) => row.slot === image.slot);
                         const isColorEvidence = selected.result?.product_color_suggestion?.evidence_image_slots?.includes(image.slot);
                         return (
-                          <button key={image.slot} type="button" onClick={() => setActiveImage(index)} className="group relative aspect-square overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
+                          <button key={image.slot} type="button" onClick={() => setActiveImage(index)} className="group relative aspect-square overflow-hidden rounded-lg bg-[var(--wj-bg-strong)] ring-1 ring-[var(--wj-border)]">
                             <img src={image.url} alt={`${selected.report.part_no} ${copy.photos} ${index + 1}`} loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
                             {observation && (
-                              <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-full bg-white/90 px-2 py-1 text-[10px] font-bold text-slate-900 shadow-sm">
+                              <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-full bg-[var(--wj-surface-solid)] px-2 py-1 text-[10px] font-bold text-[var(--wj-text)] shadow-sm">
                                 {localized(observation.body_color_label, lang)} · {localized(CONFIDENCE_LABELS[observation.confidence], lang)}
                               </span>
                             )}
-                            {isColorEvidence && <span className="absolute left-2 top-2 rounded-full bg-cyan-700 px-2 py-1 text-[10px] font-bold text-white shadow-sm">{copy.usedEvidence}</span>}
-                            <span className="absolute bottom-2 right-2 rounded-full bg-slate-950/70 p-1.5 text-white"><ZoomIn className="h-3.5 w-3.5" /></span>
+                            {isColorEvidence && <span className="absolute left-2 top-2 rounded-full bg-[var(--wj-accent-strong)] px-2 py-1 text-[10px] font-bold text-[var(--wj-on-accent)] shadow-sm">{copy.usedEvidence}</span>}
+                            <span className="absolute bottom-2 right-2 rounded-full bg-[var(--wj-contrast-surface)] p-1.5 text-[var(--wj-on-contrast)]"><ZoomIn className="h-3.5 w-3.5" /></span>
                           </button>
                         );
                       })}
                     </div>
-                  ) : <div className="mt-4 flex items-center gap-2 text-sm text-slate-500"><ImageOff className="h-4 w-4" />{copy.noPhoto}</div>}
+                  ) : <div className="mt-4 flex items-center gap-2 text-sm text-[var(--wj-muted)]"><ImageOff className="h-4 w-4" />{copy.noPhoto}</div>}
                 </section>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <section className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
-                  <h4 className="flex items-center gap-2 text-sm font-bold text-blue-950"><SearchCheck className="h-4 w-4" />{copy.dictionary}</h4>
-                  <div className="mt-3 flex flex-wrap gap-2">{selected.deterministic_classification.map((term) => <span key={term.key} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700 ring-1 ring-blue-200">{taxonomyLabel(term, lang)}</span>)}</div>
+                <section className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] p-4">
+                  <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><SearchCheck className="h-4 w-4" />{copy.dictionary}</h4>
+                  <div className="mt-3 flex flex-wrap gap-2">{selected.deterministic_classification.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-[var(--wj-accent-strong)] ring-1 ring-[var(--wj-border)]">{taxonomyLabel(term, lang)}</span>)}</div>
                 </section>
                 <section className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
                   <h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><Sparkles className="h-4 w-4" />{copy.aiSuggestion}</h4>
                   {selected.result?.available ? (
                     <>
-                      <div className="mt-3 flex flex-wrap gap-2">{selected.result.qwen_classification?.candidate_selections?.map((term) => <span key={term.key} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">{localized(term.label, lang)}</span>)}</div>
+                      <div className="mt-3 flex flex-wrap gap-2">{selected.result.qwen_classification?.candidate_selections?.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">{localized(term.label, lang)}</span>)}</div>
                       <p className="mt-3 text-xs font-semibold text-violet-700">{localized(CONFIDENCE_LABELS[selected.result.qwen_classification?.confidence ?? ''], lang) || '-'}</p>
-                      {selected.result.qwen_classification?.needs_new_category && <p className="mt-3 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold leading-5 text-violet-900">{copy.needsCategory}</p>}
+                      {selected.result.qwen_classification?.needs_new_category && <p className="mt-3 rounded-lg border border-violet-200 bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold leading-5 text-violet-900">{copy.needsCategory}</p>}
                     </>
                   ) : <p className="mt-3 text-sm text-violet-700">{selected.job?.status === 'failed' ? selected.job.error_message : statusLabel(selected.queue_status)}</p>}
                 </section>
               </div>
 
-              <section className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
-                <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-cyan-700" /><div><h4 className="text-sm font-bold text-cyan-950">{copy.productColor}</h4><p className="mt-1 text-xs leading-5 text-cyan-800">{copy.visualWarning}</p></div></div>
+              <section className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] p-4">
+                <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--wj-accent-strong)]" /><div><h4 className="text-sm font-bold text-[var(--wj-accent-strong)]">{copy.productColor}</h4><p className="mt-1 text-xs leading-5 text-[var(--wj-accent-strong)]">{copy.visualWarning}</p></div></div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg bg-white p-3 ring-1 ring-cyan-100"><div className="text-[11px] font-semibold text-slate-500">{copy.productColor}</div><div className="mt-1 text-base font-bold text-slate-950">{localized(selected.result?.product_color_suggestion?.suggested_color_label, lang) || '-'}</div><div className="mt-1 text-xs text-slate-500">{localized(CONFIDENCE_LABELS[selected.result?.product_color_suggestion?.confidence ?? ''], lang) || '-'}</div></div>
-                  <div className="rounded-lg bg-white p-3 ring-1 ring-cyan-100"><div className="text-[11px] font-semibold text-slate-500">{copy.masterColor}</div><div className="mt-1 text-base font-bold text-slate-950">{selected.part_spec.color_raw || '-'}</div><div className="mt-1 text-xs text-slate-500">{selected.part_spec.valid_from || '-'}</div></div>
-                  <div className="rounded-lg bg-white p-3 ring-1 ring-cyan-100"><div className="text-[11px] font-semibold text-slate-500">{copy.consensus}</div><div className="mt-1 text-base font-bold text-slate-950">{selected.exact_part_consensus ? `${localized(selected.exact_part_consensus.dominant_color_label, lang)} · ${selected.exact_part_consensus.agreement_pct}%` : '-'}</div><div className="mt-1 text-xs text-slate-500">{selected.exact_part_consensus ? `${copy.approvedColor} ${selected.exact_part_consensus.reviewed_report_count ?? 0}` : '-'}</div></div>
+                  <div className="rounded-lg bg-[var(--wj-surface-solid)] p-3 ring-1 ring-[var(--wj-border)]"><div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.productColor}</div><div className="mt-1 text-base font-bold text-[var(--wj-text)]">{localized(selected.result?.product_color_suggestion?.suggested_color_label, lang) || '-'}</div><div className="mt-1 text-xs text-[var(--wj-muted)]">{localized(CONFIDENCE_LABELS[selected.result?.product_color_suggestion?.confidence ?? ''], lang) || '-'}</div></div>
+                  <div className="rounded-lg bg-[var(--wj-surface-solid)] p-3 ring-1 ring-[var(--wj-border)]"><div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.masterColor}</div><div className="mt-1 text-base font-bold text-[var(--wj-text)]">{selected.part_spec.color_raw || '-'}</div><div className="mt-1 text-xs text-[var(--wj-muted)]">{selected.part_spec.valid_from || '-'}</div></div>
+                  <div className="rounded-lg bg-[var(--wj-surface-solid)] p-3 ring-1 ring-[var(--wj-border)]"><div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.consensus}</div><div className="mt-1 text-base font-bold text-[var(--wj-text)]">{selected.exact_part_consensus ? `${localized(selected.exact_part_consensus.dominant_color_label, lang)} · ${selected.exact_part_consensus.agreement_pct}%` : '-'}</div><div className="mt-1 text-xs text-[var(--wj-muted)]">{selected.exact_part_consensus ? `${copy.approvedColor} ${selected.exact_part_consensus.reviewed_report_count ?? 0}` : '-'}</div></div>
                 </div>
-                <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs font-semibold leading-5 text-cyan-900">{copy.exactWarning}</p>
+                <p className="mt-3 rounded-lg bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--wj-accent-strong)]">{copy.exactWarning}</p>
                 {(selected.result?.image_observations?.length || selected.result?.review_reason_codes?.length) ? (
-                  <div className="mt-3 rounded-lg border border-cyan-100 bg-white/80 p-3">
-                    <div className="text-xs font-bold text-cyan-950">{copy.aiEvidence}</div>
+                  <div className="mt-3 rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3">
+                    <div className="text-xs font-bold text-[var(--wj-accent-strong)]">{copy.aiEvidence}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {Array.from(new Set(selected.result.image_observations?.flatMap((row) => row.uncertainty_codes) ?? [])).map((code) => (
-                        <span key={`uncertainty-${code}`} className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">{localized(UNCERTAINTY_LABELS[code], lang) || code}</span>
+                        <span key={`uncertainty-${code}`} className="rounded-full bg-[var(--wj-warning-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--wj-warning)] ring-1 ring-[var(--wj-warning-border)]">{localized(UNCERTAINTY_LABELS[code], lang) || code}</span>
                       ))}
                       {selected.result.review_reason_codes?.map((code) => (
-                        <span key={`reason-${code}`} className="rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-800 ring-1 ring-rose-200">{localized(REVIEW_REASON_LABELS[code], lang) || code}</span>
+                        <span key={`reason-${code}`} className="rounded-full bg-[var(--wj-danger-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--wj-danger)] ring-1 ring-[var(--wj-danger-border)]">{localized(REVIEW_REASON_LABELS[code], lang) || code}</span>
                       ))}
                     </div>
                   </div>
@@ -689,45 +689,45 @@ export default function QualityClassificationReview() {
               </section>
 
               {selected.job?.status === 'completed' && selected.result?.available ? (
-                <section className="rounded-xl border border-slate-200 p-4">
+                <section className="rounded-xl border border-[var(--wj-border)] p-4">
                   <div className="grid gap-5 lg:grid-cols-2">
                     <div>
-                      <h4 className="text-sm font-bold text-slate-950">{copy.categoryDecision}</h4>
+                      <h4 className="text-sm font-bold text-[var(--wj-text)]">{copy.categoryDecision}</h4>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {selected.taxonomy_candidates.map((term) => {
                           const active = selectedCategoryKeys.includes(term.key);
-                          return <button key={term.key} type="button" aria-pressed={active} onClick={() => toggleCategory(term.key)} className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${active ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-200'}`}>{active && <Check className="mr-1 inline h-3 w-3" />}{localized(term.label, lang)}</button>;
+                          return <button key={term.key} type="button" aria-pressed={active} onClick={() => toggleCategory(term.key)} className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${active ? 'bg-indigo-600 text-[var(--wj-on-accent)] ring-indigo-600' : 'bg-[var(--wj-surface-solid)] text-[var(--wj-muted)] ring-[var(--wj-border)]'}`}>{active && <Check className="mr-1 inline h-3 w-3" />}{localized(term.label, lang)}</button>;
                         })}
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-bold text-slate-950" htmlFor="audit-product-color">{copy.colorDecision}</label>
-                      <select id="audit-product-color" value={selectedColorKey} onChange={(event) => { setSelectedColorKey(event.target.value); setColorConfirmed(false); }} className="mt-3 w-full rounded-xl border-slate-300 text-sm">
+                      <label className="text-sm font-bold text-[var(--wj-text)]" htmlFor="audit-product-color">{copy.colorDecision}</label>
+                      <select id="audit-product-color" value={selectedColorKey} onChange={(event) => { setSelectedColorKey(event.target.value); setColorConfirmed(false); }} className="mt-3 w-full rounded-xl border-[var(--wj-border)] text-sm">
                         {Object.entries(COLOR_LABELS).map(([key, label]) => <option key={key} value={key}>{localized(label, lang)}</option>)}
                       </select>
-                      <label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-slate-700"><input type="checkbox" checked={colorConfirmed} onChange={(event) => setColorConfirmed(event.target.checked)} className="mt-0.5 rounded border-slate-300" />{copy.colorConfirm}</label>
+                      <label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--wj-text)]"><input type="checkbox" checked={colorConfirmed} onChange={(event) => setColorConfirmed(event.target.checked)} className="mt-0.5 rounded border-[var(--wj-border)]" />{copy.colorConfirm}</label>
                     </div>
                   </div>
-                  <label className="mt-4 block text-sm font-bold text-slate-950" htmlFor="audit-review-note">{copy.note}</label>
-                  <textarea id="audit-review-note" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border-slate-300 text-sm" />
+                  <label className="mt-4 block text-sm font-bold text-[var(--wj-text)]" htmlFor="audit-review-note">{copy.note}</label>
+                  <textarea id="audit-review-note" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border-[var(--wj-border)] text-sm" />
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => void saveReview(false)} disabled={mutating || selectedCategoryKeys.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"><Save className="h-4 w-4" />{copy.saveReview}</button>
-                    <button type="button" onClick={() => void saveReview(true)} disabled={mutating} className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 disabled:opacity-40">{selected.result.qwen_classification?.needs_new_category ? copy.keepGap : copy.reject}</button>
+                    <button type="button" onClick={() => void saveReview(false)} disabled={mutating || selectedCategoryKeys.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40"><Save className="h-4 w-4" />{copy.saveReview}</button>
+                    <button type="button" onClick={() => void saveReview(true)} disabled={mutating} className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-2.5 text-sm font-bold text-[var(--wj-danger)] disabled:opacity-40">{selected.result.qwen_classification?.needs_new_category ? copy.keepGap : copy.reject}</button>
                   </div>
                 </section>
               ) : (
-                <button type="button" onClick={() => void startAudit([selected.report.id])} disabled={mutating || ['pending', 'claimed', 'running'].includes(selected.queue_status)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.enqueueOne}</button>
+                <button type="button" onClick={() => void startAudit([selected.report.id])} disabled={mutating || ['pending', 'claimed', 'running'].includes(selected.queue_status)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40">{mutating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.enqueueOne}</button>
               )}
 
               {canApplyMaster && selected.result?.review && selected.result.review.status !== 'rejected' && approvedReviewColorKey && approvedReviewColorKey !== 'undetermined' && approvedReviewColorKey !== 'other' && !selected.result.master_color_application ? (
-                <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <h4 className="flex items-center gap-2 text-sm font-bold text-amber-950"><AlertTriangle className="h-4 w-4" />{copy.applyMaster}</h4>
-                  <p className="mt-2 rounded-lg bg-white/80 px-3 py-2 text-sm font-bold text-amber-950">{copy.approvedColor}: {selected.result.review.exact_part_no} → {localized(COLOR_LABELS[approvedReviewColorKey], lang)}</p>
+                <section className="rounded-xl border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] p-4">
+                  <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-warning)]"><AlertTriangle className="h-4 w-4" />{copy.applyMaster}</h4>
+                  <p className="mt-2 rounded-lg bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-bold text-[var(--wj-warning)]">{copy.approvedColor}: {selected.result.review.exact_part_no} → {localized(COLOR_LABELS[approvedReviewColorKey], lang)}</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <label className="text-xs font-bold text-amber-950">{copy.effective}<input type="date" value={effectiveDate} max={dayjs().format('YYYY-MM-DD')} onChange={(event) => setEffectiveDate(event.target.value)} className="mt-1 block w-full rounded-lg border-amber-300 bg-white text-sm" /></label>
-                    <button type="button" onClick={() => void applyMasterColor()} disabled={!masterConfirmed || mutating} className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"><Save className="h-4 w-4" />{copy.applyMaster}</button>
+                    <label className="text-xs font-bold text-[var(--wj-warning)]">{copy.effective}<input type="date" value={effectiveDate} max={dayjs().format('YYYY-MM-DD')} onChange={(event) => setEffectiveDate(event.target.value)} className="mt-1 block w-full rounded-lg border-[var(--wj-warning-border)] bg-[var(--wj-surface-solid)] text-sm" /></label>
+                    <button type="button" onClick={() => void applyMasterColor()} disabled={!masterConfirmed || mutating} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--wj-warning)] px-4 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] disabled:opacity-40"><Save className="h-4 w-4" />{copy.applyMaster}</button>
                   </div>
-                  <label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-amber-950"><input type="checkbox" checked={masterConfirmed} onChange={(event) => setMasterConfirmed(event.target.checked)} className="mt-0.5 rounded border-amber-400" />{copy.confirmMaster}: {selected.result.review.exact_part_no} → {localized(COLOR_LABELS[approvedReviewColorKey], lang)}</label>
+                  <label className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--wj-warning)]"><input type="checkbox" checked={masterConfirmed} onChange={(event) => setMasterConfirmed(event.target.checked)} className="mt-0.5 rounded border-[var(--wj-warning-border)]" />{copy.confirmMaster}: {selected.result.review.exact_part_no} → {localized(COLOR_LABELS[approvedReviewColorKey], lang)}</label>
                 </section>
               ) : null}
             </div>
@@ -736,12 +736,12 @@ export default function QualityClassificationReview() {
       </div>
 
       <Dialog open={Boolean(activeImageUrl)} onClose={() => setActiveImage(null)} className="relative z-[100]">
-        <DialogBackdrop className="fixed inset-0 bg-slate-950/90" />
+        <DialogBackdrop className="fixed inset-0 bg-[var(--wj-nav-surface)]" />
         <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-6">
           <DialogPanel className="relative flex h-full w-full max-w-6xl items-center justify-center">
             <DialogTitle className="sr-only">{selected?.report.part_no} {copy.photos}</DialogTitle>
-            <button type="button" onClick={() => setActiveImage(null)} aria-label={copy.closeImage} className="absolute right-0 top-0 z-10 rounded-full bg-white/10 p-3 text-white"><X className="h-5 w-5" /></button>
-            {selected && selected.report.image_refs.length > 1 && <><button type="button" onClick={() => moveImage(-1)} className="absolute left-0 z-10 rounded-full bg-white/10 p-3 text-white" aria-label={copy.previous}><ChevronLeft className="h-6 w-6" /></button><button type="button" onClick={() => moveImage(1)} className="absolute right-0 z-10 rounded-full bg-white/10 p-3 text-white" aria-label={copy.next}><ChevronRight className="h-6 w-6" /></button></>}
+            <button type="button" onClick={() => setActiveImage(null)} aria-label={copy.closeImage} className="absolute right-0 top-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]"><X className="h-5 w-5" /></button>
+            {selected && selected.report.image_refs.length > 1 && <><button type="button" onClick={() => moveImage(-1)} className="absolute left-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]" aria-label={copy.previous}><ChevronLeft className="h-6 w-6" /></button><button type="button" onClick={() => moveImage(1)} className="absolute right-0 z-10 rounded-full bg-[var(--wj-surface-solid)] p-3 text-[var(--wj-on-accent)]" aria-label={copy.next}><ChevronRight className="h-6 w-6" /></button></>}
             {activeImageUrl && <img src={activeImageUrl} alt={`${selected?.report.part_no ?? ''} ${copy.photos}`} className="max-h-full max-w-full object-contain" />}
           </DialogPanel>
         </div>

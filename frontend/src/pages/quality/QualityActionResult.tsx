@@ -31,18 +31,18 @@ export default function QualityActionResult({
 
   return (
     <div className="min-w-0 space-y-2 text-left">
-      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-800" lang={display.translated ? 'ko' : undefined}>
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--wj-text)]" lang={display.translated ? 'ko' : undefined}>
         {display.text || '-'}
       </p>
       {display.status && (
-        <p className="text-xs leading-5 text-gray-500" role="status">
+        <p className="text-xs leading-5 text-[var(--wj-muted)]" role="status">
           {display.status === 'pending'
             ? '한국어 번역 대기 중'
             : '한국어 번역을 준비하지 못했습니다'}
         </p>
       )}
       {display.translated && (
-        <details className="text-sm text-gray-600">
+        <details className="text-sm text-[var(--wj-muted)]">
           <summary className="min-h-9 cursor-pointer py-1 text-xs leading-6 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
             중국어 원문 보기
           </summary>
@@ -56,7 +56,7 @@ export default function QualityActionResult({
       )}
       {canEdit && editing && (
         <div className="space-y-2">
-          <label htmlFor={editorId} className="block text-xs font-medium text-gray-600">{editLabel}</label>
+          <label htmlFor={editorId} className="block text-xs font-medium text-[var(--wj-muted)]">{editLabel}</label>
           <Textarea
             id={editorId}
             aria-label={`${editLabel} · ${contextLabel}`}
@@ -68,7 +68,7 @@ export default function QualityActionResult({
             className="w-full min-w-0 resize-y text-base leading-6 xl:text-sm"
           />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" onClick={onSave} disabled={disabled} className="bg-indigo-600 px-2 text-xs text-white hover:bg-indigo-700">
+            <Button type="button" size="sm" onClick={onSave} disabled={disabled} className="bg-indigo-600 px-2 text-xs text-[var(--wj-on-accent)] hover:bg-indigo-700">
               <Save className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
               {saving ? t('saving') : t('quality.save_action')}
             </Button>

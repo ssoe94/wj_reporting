@@ -120,8 +120,8 @@ export default function CycleTimeForm({ onSuccess }: CycleTimeFormProps) {
   return (
     <Card className="p-6 max-w-2xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">새 사이클 타임 셋업</h2>
-        <p className="text-gray-600">사출기에서 사용할 사이클 타임을 설정합니다.</p>
+        <h2 className="text-xl font-semibold text-[var(--wj-text)] mb-2">새 사이클 타임 셋업</h2>
+        <p className="text-[var(--wj-muted)]">사출기에서 사용할 사이클 타임을 설정합니다.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -147,7 +147,7 @@ export default function CycleTimeForm({ onSuccess }: CycleTimeFormProps) {
             placeholder="Part No.를 입력하세요"
           />
           {existingCycleTime && (
-            <p className="mt-1 text-sm text-blue-600">
+            <p className="mt-1 text-sm text-[var(--wj-accent-strong)]">
               현재 설정된 사이클 타임: {existingCycleTime}초
             </p>
           )}
@@ -165,7 +165,7 @@ export default function CycleTimeForm({ onSuccess }: CycleTimeFormProps) {
             placeholder="예: 45"
             required
           />
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-[var(--wj-muted)]">
             새로 설정하고자 하는 사이클 타임을 초 단위로 입력하세요.
           </p>
         </div>

@@ -98,7 +98,7 @@ export function DefectTypeInput({
         <div className="flex justify-between items-center">
           <div className="text-base font-semibold">{title}</div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">{t('sum')}:</span>
+            <span className="text-sm text-[var(--wj-muted)]">{t('sum')}:</span>
             <span className={`px-2 py-0.5 rounded-md font-semibold text-sm ${badgeClassFor(totalQuantity)}`}>
               {totalQuantity}
             </span>
@@ -107,7 +107,7 @@ export function DefectTypeInput({
       </CardHeader>
       <CardContent className="space-y-3">
         {/* 테이블 헤더 */}
-        <div className="grid grid-cols-[1fr_100px_40px] gap-2 pb-1 text-sm font-medium text-gray-600">
+        <div className="grid grid-cols-[1fr_100px_40px] gap-2 pb-1 text-sm font-medium text-[var(--wj-muted)]">
           <div>{t('defect_type')}</div>
           <div className="text-center">{t('quantity')}</div>
           <div></div>
@@ -142,7 +142,7 @@ export function DefectTypeInput({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8 text-gray-500 hover:text-red-500"
+                className="h-8 w-8 text-[var(--wj-muted)] hover:text-[var(--wj-danger)]"
                 onClick={() => handleDeleteRow(entry.id)}
                 disabled={disabled}
                 aria-label={t('delete')}

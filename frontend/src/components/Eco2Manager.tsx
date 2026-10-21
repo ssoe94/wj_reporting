@@ -21,7 +21,7 @@ const PartNoNavigator = ({ parts }: { parts: any[] }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
   
   if (!parts || parts.length === 0) {
-    return <span className="text-gray-400 text-sm">-</span>;
+    return <span className="text-[var(--wj-muted)] text-sm">-</span>;
   }
   
   const handlePrevious = () => {
@@ -36,27 +36,27 @@ const PartNoNavigator = ({ parts }: { parts: any[] }) => {
     <div className="flex items-center gap-1 max-w-48">
       <button 
         onClick={handlePrevious}
-        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+        className="flex-shrink-0 p-1 hover:bg-[var(--wj-bg-strong)] rounded transition-colors"
         disabled={parts.length <= 1}
       >
-        <ChevronLeft className={`h-3 w-3 ${parts.length <= 1 ? 'text-gray-300' : 'text-gray-500'}`} />
+        <ChevronLeft className={`h-3 w-3 ${parts.length <= 1 ? 'text-[var(--wj-muted)]' : 'text-[var(--wj-muted)]'}`} />
       </button>
       
       <div className="flex-1 text-center">
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[var(--wj-success-bg)] text-[var(--wj-success)]">
           {parts[currentIndex]?.part_no || '-'}
         </span>
       </div>
       
       <button 
         onClick={handleNext}
-        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+        className="flex-shrink-0 p-1 hover:bg-[var(--wj-bg-strong)] rounded transition-colors"
         disabled={parts.length <= 1}
       >
-        <ChevronRight className={`h-3 w-3 ${parts.length <= 1 ? 'text-gray-300' : 'text-gray-500'}`} />
+        <ChevronRight className={`h-3 w-3 ${parts.length <= 1 ? 'text-[var(--wj-muted)]' : 'text-[var(--wj-muted)]'}`} />
       </button>
       
-      <span className="flex-shrink-0 text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+      <span className="flex-shrink-0 text-xs text-[var(--wj-muted)] bg-[var(--wj-surface-solid)] px-1.5 py-0.5 rounded">
         {currentIndex + 1}/{parts.length}
       </span>
     </div>
@@ -318,7 +318,7 @@ export default function Eco2Manager() {
               <PartMultiSelect onAdd={(parts) => { setSelectedPartSpecs(parts); setTriggerSearch(true); }} />
           ) : (
               <>
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--wj-muted)] h-4 w-4" />
                   <Input
                       type="text"
                       placeholder={
@@ -336,14 +336,14 @@ export default function Eco2Manager() {
         {searchType === 'part' && (
           <div className="flex items-center gap-2">
             {selectedPartSpecs.length > 0 && (
-              <div className="hidden md:flex items-center gap-1 text-xs text-gray-600">
+              <div className="hidden md:flex items-center gap-1 text-xs text-[var(--wj-muted)]">
                 <button 
                   type="button"
                   onClick={() => {
                     const list = selectedPartSpecs.map(p => `${p.part_no}${p.description ? ` - ${p.description}` : ''}`).join('\n');
                     alert(list || '');
                   }}
-                  className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                  className="px-2 py-1 bg-[var(--wj-bg-strong)] rounded hover:bg-[var(--wj-bg-strong)] transition-colors"
                   title={selectedPartSpecs.map(p=>p.part_no).join(', ')}
                 >
                   {selectedPartSpecs.length} selected
@@ -368,7 +368,7 @@ export default function Eco2Manager() {
           <PermissionButton
             permission="can_edit_eco"
             onClick={() => { setForm(emptyForm); setDialogOpen(true); }}
-            className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+            className="px-3 py-2 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4 shrink-0" />
             {t('new_eco')}
@@ -376,35 +376,35 @@ export default function Eco2Manager() {
         </div>
       </div>
       
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
+          <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+            <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-indigo-50">
               <tr>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_no')}</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_model')}</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Part No.</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_reason')}</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_details')}</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('applicable_date')}</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('status')}</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_no')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_model')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">Part No.</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('change_reason')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('change_details')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('applicable_date')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('status')}</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">작업</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-[var(--wj-surface-solid)] divide-y divide-[var(--wj-border)]">
               {ecosLoading ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8">
                     <div className="flex items-center justify-center space-x-2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-                      <span className="text-gray-500 text-sm">Loading...</span>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[var(--wj-accent)]"></div>
+                      <span className="text-[var(--wj-muted)] text-sm">Loading...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredEcos.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8">
-                    <span className="text-gray-500 text-sm">
+                    <span className="text-[var(--wj-muted)] text-sm">
                       {searchType === 'part' && selectedPartSpecs.length > 0
                         ? '선택한 Part No.에 해당하는 ECO가 없습니다.'
                         : (keyword ? '검색 결과가 없습니다.' : 'ECO를 검색해주세요.')}
@@ -412,43 +412,43 @@ export default function Eco2Manager() {
                   </td>
                 </tr>
               ) : filteredEcos.map((e: Eco) => (
-                <tr key={e.id} className="bg-white hover:bg-blue-50/30 transition-colors duration-150">
+                <tr key={e.id} className="bg-[var(--wj-surface-solid)] hover:bg-[var(--wj-bg-strong)] transition-colors duration-150">
                   <td className="px-3 py-3 whitespace-nowrap">
                     <button 
                       onClick={() => handleViewEco(e)}
-                      className="font-mono text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      className="font-mono text-sm font-semibold text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] hover:underline transition-colors"
                     >
                       {e.eco_no}
                     </button>
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
-                    <span className="text-sm font-medium text-gray-900">{e.eco_model}</span>
+                    <span className="text-sm font-medium text-[var(--wj-text)]">{e.eco_model}</span>
                   </td>
                   <td className="px-2 py-3">
                     <PartNoNavigator parts={e.details || []} />
                   </td>
                   <td className="px-3 py-3 max-w-xs">
-                    <div className="text-sm text-gray-900">
+                    <div className="text-sm text-[var(--wj-text)]">
                       <p className="line-clamp-2 leading-relaxed" title={e.change_reason || ''}>
                         {e.change_reason}
                       </p>
                     </div>
                   </td>
                   <td className="px-3 py-3 max-w-md">
-                    <div className="text-sm text-gray-700">
+                    <div className="text-sm text-[var(--wj-text)]">
                       <p className="line-clamp-2 leading-relaxed" title={e.change_details || ''}>
                         {e.change_details}
                       </p>
                     </div>
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
-                    <span className="text-sm font-medium text-gray-900">{(e as any).applicable_date || '-'}</span>
+                    <span className="text-sm font-medium text-[var(--wj-text)]">{(e as any).applicable_date || '-'}</span>
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      e.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
-                      e.status === 'WIP' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-green-100 text-green-800'
+                      e.status === 'OPEN' ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]' :
+                      e.status === 'WIP' ? 'bg-[var(--wj-warning-bg)] text-[var(--wj-warning)]' :
+                      'bg-[var(--wj-success-bg)] text-[var(--wj-success)]'
                     }`}>
                       {e.status}
                     </span>
@@ -459,7 +459,7 @@ export default function Eco2Manager() {
                         size="icon" 
                         variant="ghost" 
                         onClick={() => handleViewEco(e)}
-                        className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600 rounded-full"
+                        className="h-8 w-8 hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)] rounded-full"
                         aria-label={t('view')}
                       >
                         <Eye className="w-4 h-4" />
@@ -476,14 +476,14 @@ export default function Eco2Manager() {
                           }
                           setDialogOpen(true);
                         }} 
-                        className="h-8 w-8 hover:bg-amber-100 hover:text-amber-600 rounded-full p-0"
+                        className="h-8 w-8 hover:bg-[var(--wj-warning-bg)] hover:text-[var(--wj-warning)] rounded-full p-0"
                       >
                         <Pencil className="w-4 h-4" />
                       </PermissionButton>
                       <PermissionButton
                         permission="can_edit_eco"
                         onClick={() => handleDelete(e)} 
-                        className="h-8 w-8 hover:bg-red-100 hover:text-red-600 rounded-full p-0"
+                        className="h-8 w-8 hover:bg-[var(--wj-danger-bg)] hover:text-[var(--wj-danger)] rounded-full p-0"
                         disabled={del.isPending}
                       >
                         <Trash2 className="w-4 h-4" />

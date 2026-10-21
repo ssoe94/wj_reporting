@@ -9,7 +9,7 @@
 .hr-ribbon-chart { flex:1; min-width:0; padding-left:22px; border-left:1px solid var(--hr-border); }
 .hr-cost-distribution { height:34px; display:flex; overflow:hidden; border-radius:5px; }
 .hr-cost-distribution > span { flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; min-width:0; white-space:nowrap; overflow:hidden; }
-.hr-cost-distribution > span + span { border-left:1px solid #ffffff60; }
+.hr-cost-distribution > span + span { border-left:1px solid var(--wj-border); }
 .hr-cost-legend { display:flex; flex-wrap:wrap; gap:5px 13px; margin-top:9px; }
 .hr-cost-legend > span { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--hr-muted); }
 .hr-cost-legend i { width:8px; height:8px; border-radius:50%; flex:none; }

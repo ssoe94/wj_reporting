@@ -59,7 +59,7 @@ export default function PartSpecSelector({
     <div className="space-y-4">
       {/* Model Selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
           Model *
         </label>
         <Autocomplete<PartSpec>
@@ -83,7 +83,7 @@ export default function PartSpecSelector({
 
       {/* Part Selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
           Part No. *
         </label>
         <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string }>
@@ -133,7 +133,7 @@ export default function PartSpecSelector({
               <li {...props}>
                 <div className="flex flex-col w-full">
                   <span className="font-mono font-medium">{(option as PartSpec).part_no}</span>
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-[var(--wj-muted)]">
                     {(option as PartSpec).model_code}
                     {(option as PartSpec).description ? ` - ${(option as PartSpec).description}` : ''}
                   </span>

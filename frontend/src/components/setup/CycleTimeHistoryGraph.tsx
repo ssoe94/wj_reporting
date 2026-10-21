@@ -148,7 +148,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+        <div className="bg-[var(--wj-surface-solid)] p-3 border border-[var(--wj-border)] rounded shadow-lg">
           <p className="font-semibold">{formatDate(label)}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} style={{ color: entry.color }}>
@@ -165,7 +165,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
 
   const renderLegend = () => {
     return (
-      <div className="absolute bg-white p-2 border border-gray-300 rounded shadow-lg" style={{ fontSize: '0.65rem', right: 40, bottom: 45 }}>
+      <div className="absolute bg-[var(--wj-surface-solid)] p-2 border border-[var(--wj-border)] rounded shadow-lg" style={{ fontSize: '0.65rem', right: 40, bottom: 45 }}>
         <div className="flex items-center mb-1">
           <div style={{ width: 10, height: 2, backgroundColor: '#10B981', marginRight: 5 }} />
           <span>{t('history.avg_ct_legend')}</span>
@@ -185,7 +185,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
         animate={{ opacity: 1 }}
         className="flex justify-center items-center h-40"
       >
-        <div className="text-gray-500">{t('loading')}</div>
+        <div className="text-[var(--wj-muted)]">{t('loading')}</div>
       </motion.div>
     );
   }
@@ -197,7 +197,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
         animate={{ opacity: 1 }}
         className="flex justify-center items-center h-40"
       >
-        <div className="text-red-500">{error}</div>
+        <div className="text-[var(--wj-danger)]">{error}</div>
       </motion.div>
     );
   }
@@ -209,7 +209,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
         animate={{ opacity: 1 }}
         className="flex justify-center items-center h-40"
       >
-        <div className="text-gray-500">{t('history.no_data')}</div>
+        <div className="text-[var(--wj-muted)]">{t('history.no_data')}</div>
       </motion.div>
     );
   }
@@ -219,39 +219,39 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-gray-50 rounded-lg px-4 pb-4"
+      className="bg-[var(--wj-surface-solid)] rounded-lg px-4 pb-4"
     >
       {/* 통계 요약 */}
-      <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-white rounded border border-gray-300">
+      <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-[var(--wj-surface-solid)] rounded border border-[var(--wj-border)]">
         <div className="text-center">
-          <div className="text-sm text-gray-500">{t('history.total_records')}</div>
-          <div className="text-lg font-semibold text-gray-900">
+          <div className="text-sm text-[var(--wj-muted)]">{t('history.total_records')}</div>
+          <div className="text-lg font-semibold text-[var(--wj-text)]">
             {historyData.reduce((sum, day) => sum + day.count, 0)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-sm text-gray-500">{t('avg_cycle_time')}</div>
-          <div className="text-lg font-semibold text-green-600">
+          <div className="text-sm text-[var(--wj-muted)]">{t('avg_cycle_time')}</div>
+          <div className="text-lg font-semibold text-[var(--wj-success)]">
             {historyData.length > 0 ? (historyData.reduce((sum, day) => sum + day.avgCycleTime, 0) / historyData.length).toFixed(1) : '0'}
             {t('unit.seconds')}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-sm text-gray-500">{t('history.period')}</div>
-          <div className="text-sm font-medium text-gray-900">
+          <div className="text-sm text-[var(--wj-muted)]">{t('history.period')}</div>
+          <div className="text-sm font-medium text-[var(--wj-text)]">
             {historyData.length > 0 && formatDate(historyData[0].date)}
             {historyData.length > 1 && ` - ${formatDate(historyData[historyData.length - 1].date)}`}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-sm text-gray-500">{t('history.model_count')}</div>
-          <div className="text-lg font-semibold text-blue-600">
+          <div className="text-sm text-[var(--wj-muted)]">{t('history.model_count')}</div>
+          <div className="text-lg font-semibold text-[var(--wj-accent-strong)]">
             {new Set(historyData.flatMap(day => day.records.map(r => r.model))).size}
           </div>
         </div>
       </div>
 
-      <h4 className="text-lg font-semibold text-gray-900 mb-2">
+      <h4 className="text-lg font-semibold text-[var(--wj-text)] mb-2">
         {partPrefix}** {t('history.ct_record_graph')}
       </h4>
 
@@ -308,9 +308,9 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
       </div>
 
       {/* 상세 정보 테이블 */}
-      <div className="mt-4 max-h-40 overflow-y-auto border border-gray-200 rounded">
+      <div className="mt-4 max-h-40 overflow-y-auto border border-[var(--wj-border)] rounded">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100 sticky top-0">
+          <thead className="bg-[var(--wj-bg-strong)] sticky top-0">
             <tr>
               <th className="px-3 py-2 text-center font-semibold">{t('date')}</th>
               <th className="px-3 py-2 text-center font-semibold">Model & Description</th>
@@ -323,19 +323,19 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
           </thead>
           <tbody>
             {currentItems.map((record, index) => (
-              <tr key={index} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={index} className="border-b border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)]">
                 <td className="px-3 py-2 text-center">{formatDate(record.setup.setup_date)}</td>
                 <td className="px-3 py-2 text-center font-medium">
                   {record.model}{record.description ? ` - ${record.description}` : ''}
                 </td>
-                <td className="px-3 py-2 text-center text-blue-600">{record.partNo}</td>
-                <td className="px-3 py-2 text-center text-orange-600 font-medium">{record.target.toFixed(1)}</td>
+                <td className="px-3 py-2 text-center text-[var(--wj-accent-strong)]">{record.partNo}</td>
+                <td className="px-3 py-2 text-center text-[var(--wj-warning)] font-medium">{record.target.toFixed(1)}</td>
                 <td className="px-3 py-2 text-center">{record.mean?.toFixed(1) || '-'}</td>
                 <td className="px-3 py-2 text-center">{record.standard?.toFixed(1) || '-'}</td>
                 <td className="px-3 py-2 text-center">
                   <Button
                     onClick={() => onSelectSetup?.(record.setup)}
-                    className="px-2 py-1 border rounded text-sm text-blue-600 hover:bg-blue-50"
+                    className="px-2 py-1 border rounded text-sm text-[var(--wj-accent-strong)] hover:bg-[var(--wj-bg-strong)]"
                   >
                     {t('details')}
                   </Button>

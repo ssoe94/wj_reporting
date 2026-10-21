@@ -70,7 +70,7 @@ export default function HistoricalPerformanceModal({ isOpen, onClose, partPrefix
   return (
     <Dialog open={isOpen} onClose={handleClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-      <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-6xl p-6 space-y-2 max-h-[90vh] overflow-hidden">
+      <Dialog.Panel className="relative bg-[var(--wj-surface-solid)] rounded-lg w-full max-w-6xl p-6 space-y-2 max-h-[90vh] overflow-hidden">
         <AnimatePresence mode="wait">
           {!showDetailRecord ? (
             <motion.div
@@ -86,7 +86,7 @@ export default function HistoricalPerformanceModal({ isOpen, onClose, partPrefix
 
               <div className="min-h-[20rem] flex items-center justify-center">
                 {isLoading && <p>{t('loading')}...</p>}
-                {error && <p className="text-red-500">{t('error_loading_data')}</p>}
+                {error && <p className="text-[var(--wj-danger)]">{t('error_loading_data')}</p>}
                 {data && data.length > 0 && <HistoricalPerformanceChart data={data} onBarClick={handleBarClick} />}
                 {data && data.length === 0 && <p>{t('no_data')}</p>}
               </div>
@@ -114,65 +114,65 @@ export default function HistoricalPerformanceModal({ isOpen, onClose, partPrefix
               </div>
 
               {selectedRecord && (
-                <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded-lg">
+                <div className="grid grid-cols-2 gap-4 text-sm bg-[var(--wj-surface-solid)] p-4 rounded-lg">
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('report_date')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('report_date')}</span>
                       <span>{selectedRecord.date}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('machine')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('machine')}</span>
                       <span>{selectedRecord.machine_no}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('model')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('model')}</span>
                       <span>{selectedRecord.model}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">Part No</span>
-                      <span className="font-medium text-blue-600">{selectedRecord.part_no}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">Part No</span>
+                      <span className="font-medium text-[var(--wj-accent-strong)]">{selectedRecord.part_no}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('plan_qty')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('plan_qty')}</span>
                       <span>{selectedRecord.plan_qty}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('actual_qty')}</span>
-                      <span className="font-medium text-green-600">{selectedRecord.actual_qty}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('actual_qty')}</span>
+                      <span className="font-medium text-[var(--wj-success)]">{selectedRecord.actual_qty}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('actual_defect')}</span>
-                      <span className="text-red-600">{selectedRecord.actual_defect}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('actual_defect')}</span>
+                      <span className="text-[var(--wj-danger)]">{selectedRecord.actual_defect}</span>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('start_dt')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('start_dt')}</span>
                       <span>{selectedRecord.start_datetime ? dayjs(selectedRecord.start_datetime).format('HH:mm') : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('end_dt')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('end_dt')}</span>
                       <span>{selectedRecord.end_datetime ? dayjs(selectedRecord.end_datetime).format('HH:mm') : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('total_time')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('total_time')}</span>
                       <span>{selectedRecord.total_time ? `${selectedRecord.total_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('idle_time')}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('idle_time')}</span>
                       <span>{selectedRecord.total_time && selectedRecord.operation_time ? `${selectedRecord.total_time - selectedRecord.operation_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('run_time')}</span>
-                      <span className="font-medium text-blue-600">{selectedRecord.operation_time ? `${selectedRecord.operation_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('run_time')}</span>
+                      <span className="font-medium text-[var(--wj-accent-strong)]">{selectedRecord.operation_time ? `${selectedRecord.operation_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('achievement_rate')}</span>
-                      <span className="font-medium text-green-600">{selectedRecord.achievement_rate ? `${selectedRecord.achievement_rate.toFixed(1)}%` : '-'}</span>
+                      <span className="text-[var(--wj-muted)] font-medium">{t('achievement_rate')}</span>
+                      <span className="font-medium text-[var(--wj-success)]">{selectedRecord.achievement_rate ? `${selectedRecord.achievement_rate.toFixed(1)}%` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">{t('table_ct')}</span>
-                      <span className="font-medium text-orange-600">
+                      <span className="text-[var(--wj-muted)] font-medium">{t('table_ct')}</span>
+                      <span className="font-medium text-[var(--wj-warning)]">
                         {selectedRecord.actual_qty && selectedRecord.operation_time ?
                           `${((selectedRecord.operation_time * 60) / selectedRecord.actual_qty).toFixed(1)}초` :
                           '-'
@@ -181,9 +181,9 @@ export default function HistoricalPerformanceModal({ isOpen, onClose, partPrefix
                     </div>
                   </div>
                   {selectedRecord.note && (
-                    <div className="col-span-2 pt-2 border-t border-gray-200">
-                      <span className="text-gray-500 font-medium">{t('header_note')}</span>
-                      <p className="mt-1 text-gray-700">{selectedRecord.note}</p>
+                    <div className="col-span-2 pt-2 border-t border-[var(--wj-border)]">
+                      <span className="text-[var(--wj-muted)] font-medium">{t('header_note')}</span>
+                      <p className="mt-1 text-[var(--wj-text)]">{selectedRecord.note}</p>
                     </div>
                   )}
                 </div>

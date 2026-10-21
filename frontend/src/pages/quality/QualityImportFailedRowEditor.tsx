@@ -324,24 +324,24 @@ export default function QualityImportFailedRowEditor({
   if (registered) return null;
 
   return (
-    <article ref={rootRef} className="rounded-xl border border-rose-200 bg-white shadow-sm">
+    <article ref={rootRef} className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] shadow-sm">
       <div className="flex flex-wrap items-start gap-3 p-4">
-        <span className="rounded-lg bg-rose-100 p-2 text-rose-700">
+        <span className="rounded-lg bg-[var(--wj-danger-bg)] p-2 text-[var(--wj-danger)]">
           <AlertTriangle className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <strong className="text-sm text-slate-950">
+            <strong className="text-sm text-[var(--wj-text)]">
               {row.sheet_name} #{row.source_row_number}
               {row.source_sequence ? ` · No.${row.source_sequence}` : ''}
             </strong>
-            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 ring-1 ring-inset ring-rose-200">
+            <span className="rounded-full bg-[var(--wj-danger-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--wj-danger)] ring-1 ring-inset ring-[var(--wj-danger-border)]">
               {failureLabel(row, c)}
             </span>
           </div>
-          <p className="mt-1 text-sm leading-5 text-slate-700">{failureMessage(row, c)}</p>
+          <p className="mt-1 text-sm leading-5 text-[var(--wj-text)]">{failureMessage(row, c)}</p>
           {row.validation_errors.length > 0 && (
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-rose-700">
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--wj-danger)]">
               {row.validation_errors.map((error) => (
                 <li key={`${error.field}-${error.code}`}>{validationErrorMessage(error, c)}</li>
               ))}
@@ -353,7 +353,7 @@ export default function QualityImportFailedRowEditor({
           aria-expanded={open}
           aria-controls={formId}
           onClick={() => setOpen((current) => !current)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)]"
         >
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           {open ? c.closeEdit : c.editRow}
@@ -363,15 +363,15 @@ export default function QualityImportFailedRowEditor({
       {open && (
         <form
           id={formId}
-          className="border-t border-rose-100 bg-rose-50/40 p-4"
+          className="border-t border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
         >
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <label className="text-sm font-semibold text-slate-700">
-              {c.reportDate} <span className="text-rose-600">*</span>
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
+              {c.reportDate} <span className="text-[var(--wj-danger)]">*</span>
               <input
                 ref={reportDateRef}
                 type="date"
@@ -381,10 +381,10 @@ export default function QualityImportFailedRowEditor({
                 onChange={(event) => updateForm('report_date', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrorMessage('report_date') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('report_date')}</span>}
+              {fieldErrorMessage('report_date') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('report_date')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
-              {c.section} <span className="text-rose-600">*</span>
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
+              {c.section} <span className="text-[var(--wj-danger)]">*</span>
               <select
                 ref={sectionRef}
                 required
@@ -398,9 +398,9 @@ export default function QualityImportFailedRowEditor({
                   <option key={section} value={section}>{c.sectionLabels[section]}</option>
                 ))}
               </select>
-              {fieldErrorMessage('section') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('section')}</span>}
+              {fieldErrorMessage('section') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('section')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
               {c.occurrenceLocation}
               <input
                 ref={occurrenceLocationRef}
@@ -410,9 +410,9 @@ export default function QualityImportFailedRowEditor({
                 onChange={(event) => updateForm('occurrence_location', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrorMessage('occurrence_location') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('occurrence_location')}</span>}
+              {fieldErrorMessage('occurrence_location') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('occurrence_location')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
               {c.model}
               <input
                 ref={modelRef}
@@ -423,12 +423,12 @@ export default function QualityImportFailedRowEditor({
                 className={inputClass}
               />
               {(fieldErrorMessage('model') || modelOrPartErrorMessage) && (
-                <span className="mt-1 block text-xs font-normal text-rose-700">
+                <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">
                   {fieldErrorMessage('model') || modelOrPartErrorMessage}
                 </span>
               )}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
               {c.partNo}
               <input
                 ref={partNoRef}
@@ -438,9 +438,9 @@ export default function QualityImportFailedRowEditor({
                 onChange={(event) => updateForm('part_no', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrorMessage('part_no') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('part_no')}</span>}
+              {fieldErrorMessage('part_no') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('part_no')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
               {c.defectRate}
               <input
                 ref={defectRateRef}
@@ -450,9 +450,9 @@ export default function QualityImportFailedRowEditor({
                 onChange={(event) => updateForm('defect_rate', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrorMessage('defect_rate') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('defect_rate')}</span>}
+              {fieldErrorMessage('defect_rate') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('defect_rate')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-[var(--wj-text)]">
               {c.judgement}
               <input
                 ref={judgementRef}
@@ -462,10 +462,10 @@ export default function QualityImportFailedRowEditor({
                 onChange={(event) => updateForm('judgement', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrorMessage('judgement') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('judgement')}</span>}
+              {fieldErrorMessage('judgement') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('judgement')}</span>}
             </label>
-            <label className="text-sm font-semibold text-slate-700 md:col-span-2 xl:col-span-3">
-              {c.phenomenon} <span className="text-rose-600">*</span>
+            <label className="text-sm font-semibold text-[var(--wj-text)] md:col-span-2 xl:col-span-3">
+              {c.phenomenon} <span className="text-[var(--wj-danger)]">*</span>
               <textarea
                 ref={phenomenonRef}
                 required
@@ -473,13 +473,13 @@ export default function QualityImportFailedRowEditor({
                 value={form.phenomenon}
                 aria-invalid={Boolean(fieldError('phenomenon'))}
                 onChange={(event) => updateForm('phenomenon', event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                className="mt-1 block w-full rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm text-[var(--wj-text)] shadow-sm focus:border-[var(--wj-accent)] focus:ring-2 focus:ring-[var(--wj-border)]"
               />
-              {fieldErrorMessage('phenomenon') && <span className="mt-1 block text-xs font-normal text-rose-700">{fieldErrorMessage('phenomenon')}</span>}
+              {fieldErrorMessage('phenomenon') && <span className="mt-1 block text-xs font-normal text-[var(--wj-danger)]">{fieldErrorMessage('phenomenon')}</span>}
             </label>
           </div>
           {submitError && (
-            <p className="mt-4 whitespace-pre-wrap rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm text-rose-800" role="alert">
+            <p className="mt-4 whitespace-pre-wrap rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm text-[var(--wj-danger)]" role="alert">
               {submitError}
             </p>
           )}
@@ -487,7 +487,7 @@ export default function QualityImportFailedRowEditor({
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-[var(--wj-danger)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-on-accent)] hover:bg-[var(--wj-danger)] disabled:cursor-wait disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {submitting ? c.correcting : c.correctAndRegister}

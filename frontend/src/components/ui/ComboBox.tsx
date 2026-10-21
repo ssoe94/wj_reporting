@@ -162,11 +162,11 @@ export function ComboBox({
           placeholder={placeholder}
           disabled={disabled}
           className={`
-            w-full px-3 py-2 pr-10 border border-gray-300 rounded-md bg-white
-            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-            disabled:bg-gray-100 disabled:cursor-not-allowed
+            w-full px-3 py-2 pr-10 border border-[var(--wj-border)] rounded-md bg-[var(--wj-surface-solid)]
+            focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)] focus:border-transparent
+            disabled:bg-[var(--wj-bg-strong)] disabled:cursor-not-allowed
             transition-all
-            ${isOpen ? 'ring-2 ring-blue-500 border-transparent' : ''}
+            ${isOpen ? 'ring-2 ring-[var(--wj-accent)] border-transparent' : ''}
           `}
         />
 
@@ -176,21 +176,21 @@ export function ComboBox({
             <button
               type="button"
               onClick={handleClear}
-              className="p-1 hover:bg-gray-100 rounded"
+              className="p-1 hover:bg-[var(--wj-bg-strong)] rounded"
               tabIndex={-1}
             >
-              <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+              <X className="w-4 h-4 text-[var(--wj-muted)] hover:text-[var(--wj-muted)]" />
             </button>
           )}
           <button
             type="button"
             onClick={handleToggle}
-            className="p-1 hover:bg-gray-100 rounded"
+            className="p-1 hover:bg-[var(--wj-bg-strong)] rounded"
             disabled={disabled}
             tabIndex={-1}
           >
             <ChevronDown
-              className={`w-4 h-4 text-gray-400 transition-transform ${
+              className={`w-4 h-4 text-[var(--wj-muted)] transition-transform ${
                 isOpen ? 'rotate-180' : ''
               }`}
             />
@@ -202,7 +202,7 @@ export function ComboBox({
       {isOpen && filteredOptions.length > 0 && (
         <ul
           ref={listRef}
-          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+          className="fixed z-[9999] bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-md shadow-lg max-h-60 overflow-auto"
           style={{
             top: `${(containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4}px`,
             left: `${containerRef.current?.getBoundingClientRect().left ?? 0}px`,
@@ -217,8 +217,8 @@ export function ComboBox({
               aria-selected={index === activeIndex}
               className={`group px-3 py-2 cursor-pointer transition-colors flex items-center justify-between ${
                 index === activeIndex
-                  ? 'bg-blue-100 text-blue-900'
-                  : 'hover:bg-gray-50'
+                  ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'
+                  : 'hover:bg-[var(--wj-surface-solid)]'
               }`}
               onMouseEnter={() => setActiveIndex(index)}
             >
@@ -234,10 +234,10 @@ export function ComboBox({
                       onDelete(option);
                     }
                   }}
-                  className="ml-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-opacity"
+                  className="ml-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-[var(--wj-danger-bg)] rounded transition-opacity"
                   title="삭제"
                 >
-                  <X className="w-3 h-3 text-red-500" />
+                  <X className="w-3 h-3 text-[var(--wj-danger)]" />
                 </button>
               )}
             </li>
@@ -248,7 +248,7 @@ export function ComboBox({
       {/* 옵션이 없을 때 */}
       {isOpen && filteredOptions.length === 0 && inputValue.trim() && allowCustomInput && (
         <div
-          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg"
+          className="fixed z-[9999] bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-md shadow-lg"
           style={{
             top: `${(containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4}px`,
             left: `${containerRef.current?.getBoundingClientRect().left ?? 0}px`,
@@ -256,7 +256,7 @@ export function ComboBox({
           }}
         >
           <div
-            className="px-3 py-2 text-blue-600 cursor-pointer hover:bg-blue-50"
+            className="px-3 py-2 text-[var(--wj-accent-strong)] cursor-pointer hover:bg-[var(--wj-bg-strong)]"
             onClick={() => handleSelectOption(inputValue.trim())}
           >
             "{inputValue.trim()}" 추가하기

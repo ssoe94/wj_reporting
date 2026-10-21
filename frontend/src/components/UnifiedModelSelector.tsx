@@ -129,8 +129,8 @@ export default function UnifiedModelSelector({
 
         if ('isAddNew' in option) {
           return (
-            <li key={key} {...restProps} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-              <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+            <li key={key} {...restProps} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+              <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                 <Plus className="h-3 w-3" />
                 <span>"{option.searchQuery}" {t('add_new_model_prompt')}</span>
               </div>
@@ -143,7 +143,7 @@ export default function UnifiedModelSelector({
             <div className="flex flex-col">
               <span className="font-mono font-medium">{option.model_code}</span>
               {option.description && (
-                <span className="text-sm text-gray-600">{option.description}</span>
+                <span className="text-sm text-[var(--wj-muted)]">{option.description}</span>
               )}
             </div>
           </li>
