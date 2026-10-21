@@ -10,7 +10,7 @@ Selected by the owner on 2026-10-21. This profile supersedes the earlier color d
 - Actions use `--wj-on-accent`; dark mint buttons need dark lettering. Success, attention, failure and data-series colors have separate roles with explicit status names.
 - Keep the supplied logo and its aspect ratio, on a small white plate when necessary. Check the visible glyph center of the uppercase wordmark independently of its line box.
 
-- Neutral panels use `--wj-surface-muted`: light `#F4F8FA`, dark `#202D33`. Reserve `--wj-accent-soft` for selection; do not tint neutral cards or empty/help states mint. Success uses a distinct olive-green dark fill `#30451C` with `#C4EB91` lettering; light info uses periwinkle `#E5EDFF` with `#274C91` lettering, separate from cyan selection.
+- Neutral panels use `--wj-surface-muted`: light `#F4F8FA`, dark `#202D33`. Chart tint keeps its pre-review values under the separate `--wj-data-tint` role. Reserve `--wj-accent-soft` for selection and pressed/drag choices; do not tint neutral cards or empty/help states mint. Success uses a distinct olive-green dark fill `#30451C` with `#C4EB91` lettering; light info uses periwinkle `#E5EDFF` with `#274C91` lettering, separate from cyan selection.
 
 ## Mode behavior
 

@@ -115,7 +115,7 @@ export default function EcoViewModal({ eco, open, onClose, onEdit }: Props) {
                   <div className="border border-[var(--wj-border)] rounded-lg">
                     <div className="p-4 border-b border-[var(--wj-border)] flex justify-between items-center">
                       <h3 className="font-semibold text-[var(--wj-text)]">{t('part_details_info')}</h3>
-                      <span className="bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)] text-xs font-medium px-2.5 py-1 rounded-full">
+                      <span className="bg-[var(--wj-surface-muted)] text-[var(--wj-accent-strong)] text-xs font-medium px-2.5 py-1 rounded-full">
                         {allDetails.length} {t('items')}
                       </span>
                     </div>
@@ -141,7 +141,7 @@ export default function EcoViewModal({ eco, open, onClose, onEdit }: Props) {
                                 }
                               </td>
                               <td className="px-4 py-2 text-center">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${detail.status === 'CLOSED' ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]' : 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'}`}>
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${detail.status === 'CLOSED' ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]' : 'bg-[var(--wj-info-bg)] text-[var(--wj-accent-strong)]'}`}>
                                   {detail.status}
                                 </span>
                               </td>

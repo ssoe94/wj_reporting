@@ -379,7 +379,7 @@ export default function Eco2Manager() {
       <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
-            <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)]">
+            <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-surface-muted)]">
               <tr>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_no')}</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--wj-text)] uppercase tracking-wider">{t('eco_model')}</th>
@@ -446,7 +446,7 @@ export default function Eco2Manager() {
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      e.status === 'OPEN' ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]' :
+                      e.status === 'OPEN' ? 'bg-[var(--wj-info-bg)] text-[var(--wj-accent-strong)]' :
                       e.status === 'WIP' ? 'bg-[var(--wj-warning-bg)] text-[var(--wj-warning)]' :
                       'bg-[var(--wj-success-bg)] text-[var(--wj-success)]'
                     }`}>
@@ -459,7 +459,7 @@ export default function Eco2Manager() {
                         size="icon" 
                         variant="ghost" 
                         onClick={() => handleViewEco(e)}
-                        className="h-8 w-8 hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)] rounded-full"
+                        className="h-8 w-8 hover:bg-[var(--wj-surface-muted)] hover:text-[var(--wj-accent-strong)] rounded-full"
                         aria-label={t('view')}
                       >
                         <Eye className="w-4 h-4" />

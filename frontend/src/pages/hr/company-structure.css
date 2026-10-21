@@ -11,12 +11,12 @@
 .company-compact-price small { color: var(--wj-warning); font-size: 12px; line-height: 1.4; white-space: nowrap; }
 .company-compact-price.is-empty strong { color: var(--hr-muted, var(--wj-muted)); font-weight: 400; }
 .company-group-functions { display: flex; flex-direction: column; gap: 2px; }
-.company-function-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 38px; width: 100%; padding: 6px 5px; border: 0; border-radius: 4px; background: var(--wj-accent-soft); color: var(--hr-text, var(--wj-text)); text-align: left; font-size: 14px; }
+.company-function-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 38px; width: 100%; padding: 6px 5px; border: 0; border-radius: 4px; background: var(--wj-surface-muted); color: var(--hr-text, var(--wj-text)); text-align: left; font-size: 14px; }
 .company-function-label { min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
 .company-function-count { color: var(--hr-muted, var(--wj-muted)); font-size: 13px; white-space: nowrap; }
 .company-function-row.is-empty { background: var(--wj-surface-solid); color: var(--hr-muted, var(--wj-muted)); }
 .company-function-row.is-empty .company-function-count { color: var(--hr-muted, var(--wj-muted)); }
-.company-group-header:hover, .company-function-row:hover, .company-leader-cell:hover { background: var(--wj-accent-soft); }
+.company-group-header:hover, .company-function-row:hover, .company-leader-cell:hover { background: var(--wj-surface-muted); }
 .company-group-header.is-selected, .company-function-row.is-selected { background: var(--wj-accent-soft); }
 .company-group-header.is-drop-target, .company-function-row.is-drop-target, .company-leader-cell.is-drop-target { outline: 2px solid var(--wj-border); outline-offset: -2px; background: var(--wj-accent-soft); }
 .company-leaders-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
@@ -54,12 +54,12 @@
 .company-organization-canvas { background: var(--wj-surface-solid); }
 .company-organization-lines { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 .company-organization-lines path { stroke: #315c88; stroke-width: 3; fill: none; }
-.company-organization-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 176px; height: 176px; padding: 17px; border: 1px solid var(--wj-border); border-radius: 50%; background: var(--wj-accent-soft); color: var(--wj-text); text-align: center; }
-.company-organization-node.is-chairman { width: 210px; height: 210px; background: var(--wj-accent-soft); border-color: var(--wj-border); }
-.company-organization-node.is-deputy { width: 192px; height: 192px; background: var(--wj-accent-soft); border-color: var(--wj-border); }
+.company-organization-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 176px; height: 176px; padding: 17px; border: 1px solid var(--wj-border); border-radius: 50%; background: var(--wj-surface-muted); color: var(--wj-text); text-align: center; }
+.company-organization-node.is-chairman { width: 210px; height: 210px; background: var(--wj-surface-muted); border-color: var(--wj-border); }
+.company-organization-node.is-deputy { width: 192px; height: 192px; background: var(--wj-surface-muted); border-color: var(--wj-border); }
 .company-organization-node.is-manager { background: var(--wj-bg-strong); border-color: var(--wj-border); }
-.company-organization-node.is-support { width: 158px; height: 158px; background: var(--wj-accent-soft); color: var(--wj-text); border-color: var(--wj-border); }
-.company-organization-node.is-qa { background: var(--wj-accent-soft); border-color: var(--wj-border); }
+.company-organization-node.is-support { width: 158px; height: 158px; background: var(--wj-surface-muted); color: var(--wj-text); border-color: var(--wj-border); }
+.company-organization-node.is-qa { background: var(--wj-surface-muted); border-color: var(--wj-border); }
 .company-organization-node strong { display: block; font-size: 25px; font-weight: 750; line-height: 1.45; white-space: pre-line; }
 .company-organization-node[data-organization-node="sales-operations"] strong { font-size: 23px; white-space: nowrap; }
 .company-organization-node span { display: block; margin-top: 6px; font-size: 26px; font-weight: 800; line-height: 1.4; }

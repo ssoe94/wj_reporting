@@ -131,7 +131,7 @@
 }
 
 .analysis-unit {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   border-radius: 6px;
   font-size: 12px;
@@ -162,7 +162,7 @@
   display: inline-block;
   font-size: 12px;
   font-weight: 600;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
   padding: 4px 7px;
   border-radius: 5px;

@@ -515,7 +515,7 @@ export default function QualityClassificationReview() {
 
   return (
     <section className="space-y-4" aria-labelledby="quality-classification-review-title">
-      <div className="rounded-2xl border border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-accent-soft)] via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-surface-muted)] via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <span className="rounded-xl bg-[var(--wj-accent-strong)] p-2.5 text-[var(--wj-on-accent)] shadow-sm"><BrainCircuit className="h-5 w-5" /></span>
@@ -653,7 +653,7 @@ export default function QualityClassificationReview() {
                   <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><SearchCheck className="h-4 w-4" />{copy.dictionary}</h4>
                   <div className="mt-3 flex flex-wrap gap-2">{selected.deterministic_classification.map((term) => <span key={term.key} className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-bold text-[var(--wj-accent-strong)] ring-1 ring-[var(--wj-border)]">{taxonomyLabel(term, lang)}</span>)}</div>
                 </section>
-                <section className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-accent-soft)]/60 p-4">
+                <section className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-surface-muted)]/60 p-4">
                   <h4 className="flex items-center gap-2 text-sm font-bold text-[var(--wj-accent-strong)]"><Sparkles className="h-4 w-4" />{copy.aiSuggestion}</h4>
                   {selected.result?.available ? (
                     <>

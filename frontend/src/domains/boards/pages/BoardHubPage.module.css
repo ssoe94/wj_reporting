@@ -91,7 +91,7 @@
   padding: 3px;
   border: 1px solid var(--wj-border);
   border-radius: 12px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .languageSwitch button {
@@ -189,7 +189,7 @@
   margin: 0;
   overflow: hidden;
   border-bottom: 1px solid var(--wj-border);
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .thumbnail img {
@@ -244,7 +244,7 @@
   place-items: center;
   border: 1px solid var(--wj-border);
   border-radius: 13px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
 }
 

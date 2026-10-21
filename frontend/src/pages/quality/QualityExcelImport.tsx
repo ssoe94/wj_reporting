@@ -880,7 +880,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                 {overallProgressText && <span className="tabular-nums">{overallProgressText}</span>}
               </div>
               <div
-                className="h-2 overflow-hidden rounded-full bg-[var(--wj-accent-soft)]"
+                className="h-2 overflow-hidden rounded-full bg-[var(--wj-surface-muted)]"
                 role="progressbar"
                 aria-label={c.overallProgressLabel}
                 aria-valuemin={0}
@@ -1075,7 +1075,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                   {tableResultRows.length === 0 ? (
                     <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-[var(--wj-muted)]">{c.noRows}</td></tr>
                   ) : tableResultRows.map((row) => (
-                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-[var(--wj-danger-bg)]' : row.status === 'changed' ? 'bg-[var(--wj-accent-soft)]/30' : row.status === 'updated' ? 'bg-[var(--wj-bg-strong)]' : 'hover:bg-[var(--wj-bg-strong)]'}>
+                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-[var(--wj-danger-bg)]' : row.status === 'changed' ? 'bg-[var(--wj-info-bg)]/30' : row.status === 'updated' ? 'bg-[var(--wj-bg-strong)]' : 'hover:bg-[var(--wj-bg-strong)]'}>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--wj-text)]">
                         <strong className="block text-[var(--wj-text)]">{row.sheet_name}</strong>
                         <span className="text-xs text-[var(--wj-muted)]">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>

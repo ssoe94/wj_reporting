@@ -184,7 +184,7 @@
 
 .horizontalViewport::-webkit-scrollbar-thumb {
   border-radius: 99px;
-  background: var(--board-border-strong, var(--wj-accent-soft));
+  background: var(--board-border-strong, var(--wj-surface-muted));
 }
 
 .horizontalViewport > strong {
@@ -220,7 +220,7 @@
   transform: translateY(-50%);
   border: 1px solid var(--board-border-strong, var(--wj-border));
   border-radius: 0.25rem;
-  background: var(--briefing-tint, var(--board-blue-surface, var(--wj-accent-soft)));
+  background: var(--briefing-tint, var(--board-blue-surface, var(--wj-surface-muted)));
   color: var(--briefing-accent, var(--board-blue, var(--wj-accent-strong)));
   cursor: pointer;
 }

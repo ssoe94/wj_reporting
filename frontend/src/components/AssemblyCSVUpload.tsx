@@ -167,7 +167,7 @@ export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps)
               type="file"
               accept=".csv"
               onChange={handleFileSelect}
-              className="block w-full text-sm text-[var(--wj-muted)] file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[var(--wj-bg-strong)] file:text-[var(--wj-accent-strong)] hover:file:bg-[var(--wj-accent-soft)]"
+              className="block w-full text-sm text-[var(--wj-muted)] file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[var(--wj-bg-strong)] file:text-[var(--wj-accent-strong)] hover:file:bg-[var(--wj-surface-muted)]"
             />
             {file && (
               <p className="text-sm text-[var(--wj-muted)] mt-1">

@@ -7,7 +7,7 @@
 .board-part-summary h3 small { display: block; margin-top: 4px; font-size: 13px; font-weight: 500; color: var(--wj-muted); }
 .board-part-summary section { border-top: 1px solid var(--wj-border); margin-top: 18px; padding-top: 18px; }
 .board-part-summary p { margin: 10px 0 0; color: var(--wj-muted); font-size: 13px; line-height: 1.55; }
-.board-part-summary button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--wj-border); border-radius: 8px; background: var(--wj-accent-soft); color: var(--wj-text); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.board-part-summary button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--wj-border); border-radius: 8px; background: var(--wj-surface-muted); color: var(--wj-text); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .board-part-summary :focus-visible { outline: 3px solid var(--wj-control-border); outline-offset: 3px; }
 .board-part-summary__machines article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; margin-top: 6px; border-radius: 8px; background: var(--wj-surface-muted); }
 .board-part-summary__machines article span, .board-part-summary__machines article small { display: block; color: var(--wj-muted); font-size: 13px; }

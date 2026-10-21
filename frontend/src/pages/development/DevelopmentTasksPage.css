@@ -72,7 +72,7 @@
 .development-task-option strong { display: block; margin: 8px 0 12px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .development-task-status { display: inline-block; flex-shrink: 0; padding: 3px 6px; border-radius: 4px; background: var(--dt-surface-strong); color: var(--dt-muted); font-size: 12px; font-weight: 700; }
 .development-task-status.is-review { color: var(--wj-warning); background: var(--wj-warning-bg); }
-.development-task-status.is-in_progress { color: var(--dt-accent); background: var(--dt-accent-soft); }
+.development-task-status.is-in_progress { color: var(--dt-accent); background: var(--wj-info-bg); }
 .development-task-status.is-blocked { color: var(--wj-danger); background: var(--wj-danger-bg); }
 .development-task-status.is-done { color: var(--wj-success); background: var(--wj-success-bg); }
 .development-task-option-bottom { display: flex; align-items: center; gap: 8px; color: var(--dt-muted); font-size: 12px; }
@@ -116,7 +116,7 @@
 .development-task-checklist label { display: flex; align-items: flex-start; gap: 9px; color: var(--dt-text); font-size: 14px; line-height: 1.7; }
 .development-task-checklist input { flex-shrink: 0; width: 14px; height: 14px; margin: 3px 0 0; accent-color: var(--dt-accent); }
 .development-task-release { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; color: var(--dt-muted); background: var(--dt-surface-strong); border-radius: 4px; font-size: 12px; }
-.development-task-release.is-code_available { color: var(--dt-accent); background: var(--dt-accent-soft); }
+.development-task-release.is-code_available { color: var(--dt-accent); background: var(--wj-info-bg); }
 .development-task-release.is-deployed { color: var(--wj-success); background: var(--wj-success-bg); }
 .development-tasks-muted { margin: 8px 0 0; color: var(--dt-muted); font-size: 14px; }
 .development-task-record { margin-top: 13px; padding: 13px; border: 1px solid var(--dt-border); border-radius: 7px; }

@@ -51,7 +51,7 @@ export default function DateTimeField({ value, onChange, locale, minuteStep = 5 
 
   const dialogPanel = (
     <div className="w-[340px] bg-[var(--wj-surface-solid)] rounded-lg shadow-xl border overflow-hidden">
-      <div className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)] px-4 py-2.5 border-b flex items-center justify-between">
+      <div className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-surface-muted)] px-4 py-2.5 border-b flex items-center justify-between">
         <span className="text-sm font-medium text-[var(--wj-text)]">{summary}</span>
         <button type="button" className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)] transition-colors" onClick={()=> setOpen(false)}>✕</button>
       </div>

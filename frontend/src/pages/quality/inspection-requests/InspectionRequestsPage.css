@@ -141,7 +141,7 @@
 .inspection-plan-alignment[data-alignment=part_not_listed] { color: var(--wj-danger); font-weight: 650; }
 .inspection-kanban-empty { padding: 17px 12px; margin: 0; text-align: center; color: var(--muted, var(--wj-muted)); font-size: 14px; }
 .inspection-status[data-stage=waiting] { color: var(--wj-warning); background: var(--wj-warning-bg); }
-.inspection-status[data-stage=in_progress] { color: var(--wj-text); background: var(--wj-accent-soft); }
+.inspection-status[data-stage=in_progress] { color: var(--wj-text); background: var(--wj-info-bg); }
 .inspection-status[data-stage=completed] { color: var(--wj-success); background: var(--wj-success-bg); }
 .inspection-status[data-stage=blocked] { color: var(--wj-danger); background: var(--wj-danger-bg); }
 .inspection-unmapped { margin-top: 22px; padding: 16px; border: 1px solid var(--surface-border, var(--wj-border)); border-radius: 9px; background: var(--wj-surface-solid); }
@@ -208,8 +208,8 @@
 .inspection-list-row strong { overflow-wrap: anywhere; }
 .inspection-list-row p { margin: 8px 0 5px; line-height: 1.5; overflow-wrap: anywhere; }
 .inspection-list-row small { display: block; color: var(--muted, var(--wj-muted)); line-height: 1.6; overflow-wrap: anywhere; }
-.inspection-status { display: inline-flex; padding: 4px 7px; border-radius: 5px; font-size: 12px; line-height: 1.3; color: var(--wj-muted); background: var(--wj-accent-soft); white-space: nowrap; }
-.inspection-status[data-status=submitted] { color: var(--wj-text); background: var(--wj-accent-soft); }
+.inspection-status { display: inline-flex; padding: 4px 7px; border-radius: 5px; font-size: 12px; line-height: 1.3; color: var(--wj-muted); background: var(--wj-surface-muted); white-space: nowrap; }
+.inspection-status[data-status=submitted] { color: var(--wj-text); background: var(--wj-info-bg); }
 .inspection-status[data-status=approved], .inspection-status[data-status=succeeded] { color: var(--wj-success); background: var(--wj-success-bg); }
 .inspection-status[data-status=rejected], .inspection-status[data-status=failed] { color: var(--wj-danger); background: var(--wj-danger-bg); }
 .inspection-status[data-status=blocked], .inspection-status[data-status=unknown], .inspection-status[data-status=disabled] { color: var(--wj-warning); background: var(--wj-warning-bg); }
@@ -292,9 +292,9 @@
 .inspection-room-owner small { color: var(--muted, var(--wj-muted)); font-size: 13px; }
 .inspection-board-warning { display: flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: 13px; color: var(--wj-warning); }
 .inspection-machine-status { padding: 9px 12px; }
-.inspection-machine-meter { display: flex; gap: 2px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--wj-accent-soft); }
+.inspection-machine-meter { display: flex; gap: 2px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--wj-surface-muted); }
 .inspection-machine-meter span[data-stage=waiting] { background: var(--wj-warning-bg); }
-.inspection-machine-meter span[data-stage=in_progress] { background: var(--wj-accent-soft); }
+.inspection-machine-meter span[data-stage=in_progress] { background: var(--wj-info-bg); }
 .inspection-machine-meter span[data-stage=completed] { background: var(--wj-success-bg); }
 .inspection-machine-meter span[data-stage=blocked] { background: var(--wj-danger-bg); }
 .inspection-machine-stage-counts { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 7px; color: var(--muted, var(--wj-muted)); font-size: 12px; }
@@ -342,7 +342,7 @@
 .inspection-station-production { color: var(--muted, var(--wj-muted)); }
 .inspection-station-signals { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
 .inspection-station-signal { display: inline-flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 4px; background: var(--wj-bg-strong); color: var(--wj-muted); font-weight: 650; overflow-wrap: anywhere; }
-.inspection-station-signal[data-tone=requested] { background: var(--wj-accent-soft); color: var(--wj-text); }
+.inspection-station-signal[data-tone=requested] { background: var(--wj-info-bg); color: var(--wj-text); }
 .inspection-station-signal[data-tone=needed] { background: var(--wj-warning-bg); color: var(--wj-warning); }
 .inspection-station-signal[data-tone=overdue], .inspection-station-signal[data-tone=failed] { background: var(--wj-danger-bg); color: var(--wj-danger); }
 .inspection-station-signal[data-tone=completed] { background: var(--wj-success-bg); color: var(--wj-success); }
@@ -369,7 +369,7 @@
 .inspection-role-worksheet :is(input, select) { display: block; width: 100%; max-width: 280px; min-height: 28px; padding: 3px 7px; font-size: 14px; }
 .inspection-role-sheet-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-weight: 650; }
 .inspection-role-spec { display: block; color: var(--muted, var(--wj-muted)); font-size: 12px; font-weight: 400; }
-.inspection-role-area-tag { display: inline-block; padding: 3px 6px; border-radius: 4px; background: var(--wj-accent-soft); color: var(--wj-text); font-size: 12px; }
+.inspection-role-area-tag { display: inline-block; padding: 3px 6px; border-radius: 4px; background: var(--wj-surface-muted); color: var(--wj-text); font-size: 12px; }
 .inspection-role-area-tag[data-area=appearance] { color: var(--wj-success); background: var(--wj-success-bg); }
 .inspection-role-row-state { font-size: 14px; color: var(--muted, var(--wj-muted)); }
 .inspection-role-row-state[data-state=saved] { color: var(--wj-success); }
@@ -449,7 +449,7 @@
 .inspection-auxiliary-tabbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .inspection-auxiliary-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .inspection-auxiliary-tabbar .inspection-auxiliary-tab { min-height: 34px; padding: 5px 10px; gap: 6px; font-size: 13px; font-weight: 600; }
-.inspection-auxiliary-tab[aria-expanded=true] { background: var(--accent-soft, var(--wj-accent-soft)); border-color: var(--accent, var(--wj-border)); }
+.inspection-auxiliary-tab[aria-expanded=true] { background: var(--wj-surface-muted, var(--wj-surface-muted)); border-color: var(--accent, var(--wj-border)); }
 .inspection-auxiliary-tab svg { flex-shrink: 0; }
 .inspection-auxiliary-tab[aria-expanded=true] svg { transform: rotate(180deg); }
 .inspection-auxiliary-tab-actions { margin-left: auto; }
@@ -506,7 +506,7 @@
 @media (max-width: 1000px) { .inspection-area-cards { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .inspection-card-savebar .inspection-button { min-height: 44px; } }
 .inspection-auto-verdict { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: 13px; }
-.inspection-verdict-badge { display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 14px; font-weight: 650; color: var(--wj-muted); background: var(--wj-accent-soft); }
+.inspection-verdict-badge { display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 14px; font-weight: 650; color: var(--wj-muted); background: var(--wj-surface-muted); }
 .inspection-verdict-badge[data-verdict=pass] { color: var(--wj-success); background: var(--wj-success-bg); }
 .inspection-verdict-badge[data-verdict=fail] { color: var(--wj-danger); background: var(--wj-danger-bg); }
 .inspection-verdict-difference { color: var(--wj-danger); font-variant-numeric: tabular-nums; }

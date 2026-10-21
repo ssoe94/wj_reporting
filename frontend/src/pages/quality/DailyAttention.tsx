@@ -1991,8 +1991,8 @@ export default function DailyAttentionPage() {
         <div className="space-y-8">
           <section className="overflow-hidden rounded-3xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
             <div className="relative overflow-hidden bg-[var(--wj-bg-strong)] px-5 py-6 text-[var(--wj-text)] sm:px-7 lg:px-8">
-              <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[var(--wj-accent-soft)] blur-3xl" />
-              <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-[var(--wj-accent-soft)] blur-2xl" />
+              <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[var(--wj-surface-muted)] blur-3xl" />
+              <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-[var(--wj-surface-muted)] blur-2xl" />
               <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="max-w-4xl">
                   <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-[var(--wj-accent-strong)]">
@@ -2201,7 +2201,7 @@ export default function DailyAttentionPage() {
                                 {(metric.observed_terms ?? []).length > 0 && (
                                   <div className="mt-1.5 flex flex-wrap justify-center gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
                                     {metric.observed_terms?.map((observed) => (
-                                      <span key={observed.canonical_key} className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-accent)]">
+                                      <span key={observed.canonical_key} className="rounded-full bg-[var(--wj-surface-muted)] px-2 py-1 text-[10px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-accent)]">
                                         {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
                                       </span>
                                     ))}
@@ -2305,7 +2305,7 @@ export default function DailyAttentionPage() {
                   />
                   <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm">
                     <div className="mb-5 flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-surface-muted)] text-[var(--wj-accent-strong)]">
                         <Target className="h-5 w-5" />
                       </div>
                       <div>

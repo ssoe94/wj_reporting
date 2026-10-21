@@ -2446,7 +2446,7 @@ select {
 }
 
 .production-ai-chat-launcher:hover:not(.is-dragging) {
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   transform: translateY(-1px);
 }
 
@@ -11434,7 +11434,7 @@ select {
 }
 
 .raw-freshness > .raw-mode-badge {
-  background: var(--accent-soft);
+  background: var(--wj-info-bg);
   color: var(--accent-strong);
 }
 
@@ -11602,7 +11602,7 @@ select {
 
 .raw-status-item--warehouse {
   border-color: var(--wj-border);
-  background: var(--accent-soft);
+  background: var(--wj-info-bg);
 }
 
 .raw-status-item--schedule {
@@ -11778,7 +11778,7 @@ select {
   height: 22px;
   place-items: center;
   border-radius: 7px;
-  background: var(--accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--accent-strong);
   font-size: 0.7rem;
   font-weight: 800;
@@ -11913,7 +11913,7 @@ select {
 .raw-risk-chip--unknown { background: var(--wj-bg-strong); color: var(--wj-muted); }
 .raw-action--in { background: var(--wj-success-bg); color: var(--wj-success); }
 .raw-action--out { background: var(--wj-warning-bg); color: var(--wj-warning); }
-.raw-action--adjust { background: var(--accent-soft); color: var(--accent-strong); }
+.raw-action--adjust { background: var(--wj-surface-muted); color: var(--accent-strong); }
 
 .raw-pagination {
   display: flex;
@@ -13010,7 +13010,7 @@ select {
   height: 18px;
   place-items: center;
   border-radius: 5px;
-  background: var(--accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--accent-strong);
 }
 

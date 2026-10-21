@@ -420,7 +420,7 @@ export default function QualityReportHistory({
         {openCalendar === type && (
           <div className="absolute left-0 top-full z-20 mt-2">
             <div className="w-[280px] rounded-lg border bg-[var(--wj-surface-solid)] shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-3 py-2 border-b flex items-center justify-between">
+              <div className="bg-gradient-to-r from-[var(--wj-surface-muted)] to-[var(--wj-bg-strong)] px-3 py-2 border-b flex items-center justify-between">
                 <button 
                   type="button" 
                   onClick={() => setCurrentMonth(dayjs(currentMonth).subtract(1, 'month').toDate())}
@@ -737,7 +737,7 @@ export default function QualityReportHistory({
 
   return (
     <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
-      <div className="flex items-center gap-2 border-b border-[var(--wj-border)] px-4 py-3 bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-surface-solid)]">
+      <div className="flex items-center gap-2 border-b border-[var(--wj-border)] px-4 py-3 bg-gradient-to-r from-[var(--wj-surface-muted)] to-[var(--wj-surface-solid)]">
         <FolderOpen className="w-5 h-5 text-[var(--wj-accent-strong)]" />
         <h2 className="text-base font-semibold text-[var(--wj-text)]">{t('quality.history_title')}</h2>
       </div>
@@ -765,7 +765,7 @@ export default function QualityReportHistory({
                   {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
                 </span>
                 {activeFilterCount > 0 && (
-                  <span className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--wj-accent-strong)]">
+                  <span className="rounded-full bg-[var(--wj-surface-muted)] px-2 py-0.5 text-xs font-semibold text-[var(--wj-accent-strong)]">
                     {lang === 'zh' ? `${activeFilterCount} 个筛选条件` : `필터 ${activeFilterCount}개 적용`}
                   </span>
                 )}
@@ -1364,7 +1364,7 @@ export default function QualityReportHistory({
                   key={r.id}
                   className={`min-w-0 overflow-hidden rounded-xl border bg-[var(--wj-surface-solid)] shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-[var(--wj-accent)] ring-2 ring-[var(--wj-accent)]' : 'border-[var(--wj-accent)]'}`}
                 >
-                  <div className="flex items-start justify-between gap-3 border-b border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-4 py-3">
+                  <div className="flex items-start justify-between gap-3 border-b border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-surface-muted)] to-[var(--wj-bg-strong)] px-4 py-3">
                     <div className="flex min-w-0 items-start gap-2">
                       {canEditQuality && (
                         <label className="-ml-2 -mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-[var(--wj-surface-solid)]">
@@ -1428,7 +1428,7 @@ export default function QualityReportHistory({
                             setSelectedImages(images.map(resolveImageUrl));
                             setCurrentImageIndex(0);
                           }}
-                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-accent-soft)]/50 p-2 text-left transition-colors hover:bg-[var(--wj-accent-soft)]"
+                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-surface-muted)]/50 p-2 text-left transition-colors hover:bg-[var(--wj-surface-muted)]"
                           aria-label={`${t('quality.image_upload')} ${images.length}`}
                         >
                           <span className="relative shrink-0">
@@ -1494,7 +1494,7 @@ export default function QualityReportHistory({
         {/* 데스크톱 테이블 */}
         <div className="hidden overflow-x-auto rounded-lg border border-[var(--wj-accent)] shadow-sm xl:block" aria-busy={isFetching}>
           <table className="w-full min-w-[1380px] table-fixed text-sm">
-            <thead className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] whitespace-nowrap">
+            <thead className="bg-gradient-to-r from-[var(--wj-surface-muted)] to-[var(--wj-bg-strong)] whitespace-nowrap">
               <tr className="border-b border-[var(--wj-accent)]">
                 {canEditQuality && (
                   <th className="w-12 px-2 py-3 text-center">
@@ -1532,7 +1532,7 @@ export default function QualityReportHistory({
               ) : (
                 reports.map((r: QualityReport) => {
                   return (
-                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-[var(--wj-accent-soft)]' : 'hover:bg-[var(--wj-accent-soft)]/50'}`}>
+                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-[var(--wj-accent-soft)]' : 'hover:bg-[var(--wj-surface-muted)]/50'}`}>
                       {canEditQuality && (
                         <td className="px-2 py-3 text-center">
                           <input
@@ -1599,7 +1599,7 @@ export default function QualityReportHistory({
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => setSelectedReport(r)}
-                            className="p-2 text-[var(--wj-accent-strong)] hover:bg-[var(--wj-accent-soft)] rounded-lg transition-colors"
+                            className="p-2 text-[var(--wj-accent-strong)] hover:bg-[var(--wj-surface-muted)] rounded-lg transition-colors"
                             title={t('quality.view_detail')}
                           >
                             <Eye className="w-4 h-4" />

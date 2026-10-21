@@ -63,7 +63,7 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 18px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-text);
   box-shadow: var(--wj-shadow-soft);
 }
@@ -156,7 +156,7 @@
   padding: 3px;
   border: 1px solid var(--wj-border);
   border-radius: 13px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
 }
 
 .language button {
@@ -440,7 +440,7 @@
   overflow: hidden;
   padding: 0 7px;
   border-radius: 8px;
-  background: var(--wj-accent-soft);
+  background: var(--wj-surface-muted);
   color: var(--wj-muted);
   font-size: 0.75rem;
   font-weight: 800;
@@ -450,7 +450,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   max-width: 100%;
-  background: var(--wj-accent-soft);
+  background: var(--wj-data-tint);
 }
 
 .shiftBars .previousBar {

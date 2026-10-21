@@ -15,6 +15,7 @@
   --wj-accent: #006d91;
   --wj-accent-strong: #006d91;
   --wj-accent-soft: #edf7fb;
+  --wj-data-tint: #edf7fb;
   --wj-on-accent: #fff;
   --wj-contrast-surface: #222b33;
   --wj-on-contrast: #fff;
@@ -62,6 +63,7 @@
   --wj-accent: #57f2b6;
   --wj-accent-strong: #57f2b6;
   --wj-accent-soft: #153c31;
+  --wj-data-tint: #153c31;
   --wj-on-accent: #101619;
   --wj-nav-surface: #0b1013;
   --wj-nav-text: #eff5f6;
@@ -102,6 +104,7 @@
   --wj-accent: #00546f;
   --wj-accent-strong: #00546f;
   --wj-accent-soft: #e5f2f7;
+  --wj-data-tint: #e5f2f7;
   --wj-on-accent: #fff;
   --wj-nav-surface: #fff;
   --wj-nav-text: #111;
