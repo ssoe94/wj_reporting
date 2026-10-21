@@ -384,6 +384,44 @@ class LgentTests(TestCase):
         self.assertEqual(second['processed'],2);self.profile.refresh_from_db()
         self.assertIsNone(self.profile.sync_state['_cursor']);self.assertEqual(self.profile.sync_state['status'],'idle')
         self.assertEqual(self.profile.sync_state['photoBaselined'],7);self.assertEqual(self.profile.sync_state['photoChanged'],0)
+
+    def test_shared_cron_waits_thirty_minutes_between_completed_rounds(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.sync_state={'status':'idle','lastRunAt':timezone.now().isoformat()};self.profile.save()
+        with patch('lgent.refresh.page') as page:run(1,min_interval_seconds=1800);page.assert_not_called()
+        self.profile.sync_state['lastRunAt']=(timezone.now()-dt.timedelta(minutes=31)).isoformat();self.profile.save()
+        with patch('lgent.refresh.page',return_value={'busy':False,'processed':0,'changed':0,'errors':0,'cursor':None}) as page:
+            run(1,min_interval_seconds=1800);page.assert_called_once()
+
+    def test_shared_cron_resumes_incomplete_round_without_waiting_thirty_minutes(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.sync_state={'status':'running','lastRunAt':timezone.now().isoformat(),'_cursor':'resume-here','processed':5,'metadataChanged':0,'errors':0};self.profile.save()
+        with patch('lgent.refresh.page',return_value={'busy':False,'processed':2,'changed':0,'errors':0,'cursor':None}) as page:
+            run(1,min_interval_seconds=1800);page.assert_called_once_with(self.user,'resume-here')
+
+    def test_shared_cron_key_mismatch_never_erases_a_valid_web_connection(self):
+        from .continuous import run
+        self.profile.auto_sync_enabled=True;self.profile.save();encrypted=self.profile.encrypted_token
+        with patch('lgent.continuous.decrypt_token',return_value=''),patch('lgent.client.info') as info:run(1);info.assert_not_called()
+        self.profile.refresh_from_db();self.assertEqual(self.profile.encrypted_token,encrypted)
+        self.assertEqual(self.profile.sync_state['status'],'configuration_error');self.assertIsNotNone(self.profile.expires_at)
+
+    def test_mes_shared_cron_runs_lg_only_after_success_and_preserves_mes_success(self):
+        from django.core.management import call_command
+        target='production.management.commands.sync_mes_progress_reports.fetch_all_progress_reports'
+        with patch(target,return_value=[]),patch('lgent.continuous.run',return_value={}) as lg:
+            call_command('sync_mes_progress_reports',stdout=io.StringIO(),stderr=io.StringIO())
+            lg.assert_called_once_with(60,min_interval_seconds=1800)
+        with patch(target,return_value=[]),patch('lgent.continuous.run') as lg:
+            call_command('sync_mes_progress_reports',dry_run=True,stdout=io.StringIO());lg.assert_not_called()
+        with patch(target,side_effect=RuntimeError('MES fixture failure')),patch('lgent.continuous.run') as lg:
+            with self.assertRaises(RuntimeError):call_command('sync_mes_progress_reports',stdout=io.StringIO())
+            lg.assert_not_called()
+        out=io.StringIO();err=io.StringIO()
+        with patch(target,return_value=[]),patch('lgent.continuous.run',side_effect=RuntimeError('private upstream URL must never be logged')):
+            call_command('sync_mes_progress_reports',stdout=out,stderr=err)
+        self.assertIn('[MES Progress Sync]',out.getvalue());self.assertIn('MES sync completed successfully',err.getvalue())
+        self.assertNotIn('private upstream',err.getvalue())
     def test_mirror_failure_preserves_metadata_and_batch_cursor_continues(self):
         from django.core import signing
         for n in range(307,312):service.remember(dict(ROW,trolley_id=f'TT0940{n}'))

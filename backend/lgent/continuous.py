@@ -2,9 +2,10 @@
 import time
 from types import SimpleNamespace
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from . import client,mirror,refresh,service
 from .models import LgentCart,LgentProfile
-from .security import LgentAccess
+from .security import LgentAccess,decrypt_token
 
 PUBLIC_STATE=('status','startedAt','lastRunAt','processed','metadataChanged','photoChanged','photoUnchanged','photoBaselined','errors')
 
@@ -21,7 +22,7 @@ def enable(user,enabled):
     return {'enabled':enabled}
 
 
-def run(seconds=240):
+def run(seconds=240,*,min_interval_seconds=0):
     deadline=time.monotonic()+seconds;summary={'profiles':0,'processed':0,'photoChanged':0,'errors':0}
     # One scheduled run across processes; web refresh uses its own small-page
     # lock and photo copies use per-cart locks. Never lock business rows here.
@@ -34,6 +35,15 @@ def run(seconds=240):
             state=record.sync_state.copy();state['lastRunAt']=timezone.now().isoformat()
             if not record.expires_at or record.expires_at<=timezone.now():
                 state['status']='connection_required';_store(record,state);continue
+            # An existing cron may use a different SECRET_KEY. Fail closed
+            # without erasing a token that still works on the web service.
+            if not decrypt_token(record.encrypted_token):
+                state['status']='configuration_error';_store(record,state);summary['errors']+=1;continue
+            previous=record.sync_state
+            last_run=parse_datetime(str(previous.get('lastRunAt') or ''))
+            resuming=bool(previous.get('_cursor') or previous.get('_photoCursor'))
+            if (not resuming and previous.get('status')=='idle' and last_run and timezone.is_aware(last_run)
+                    and (timezone.now()-last_run).total_seconds()<min_interval_seconds):continue
             try:
                 _,token=service.connection(record.user)
                 summary['profiles']+=1

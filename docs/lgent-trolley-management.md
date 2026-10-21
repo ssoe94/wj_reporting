@@ -82,14 +82,24 @@ never advance the photo badge. `photo_checked_at` records comparisons separately
 An identical-URL replacement without a metadata signal still needs an explicit LG
 photo readback; no unverified changed-record feed is claimed.
 
-`python manage.py sync_lgent --seconds 240` is a bounded, resumable server job for
-users who explicitly enable `/lgent/auto-sync/`. Configure a dedicated Render cron
-`lgent-photo-sync` every five minutes with the backend's existing database,
-SECRET_KEY and private Cloudinary configuration, in the same workspace/region.
-Never copy secrets into source, logs, or a task payload. The additive migration
-0004 must be applied before enabling this command. Creating/deploying the command
-is separate from proving that the scheduled service is configured and running.
-No Mac or open browser is needed once that cron is active.
+The existing `production-mes-progress-sync` Render cron keeps its five-minute
+schedule and `python manage.py sync_mes_progress_reports` command. After successful
+MES processing, it gives LG reads a 60-second budget and starts a new fleet round
+30 minutes after the previous round's last run. Unfinished rounds resume on later
+five-minute ticks; an in-flight bounded page can extend the budget. MES errors and
+dry runs never invoke LG; LG errors cannot fail completed MES processing. No new
+cron service or base charge is added, but extra running time can increase usage
+charges. The standalone `sync_lgent --seconds 240` command remains available for
+explicit bounded runs.
+
+Users explicitly enable `/lgent/auto-sync/`. The existing cron must use the same
+database, token encryption key and private media configuration as the backend.
+A mismatched encryption key fails closed with `configuration_error` and preserves
+the web connection's encrypted token. Never copy secrets into source, logs, or a
+task payload. The additive migration 0004 must be authorized and applied before
+activation. Deployment is separate from proving that scheduled execution works;
+check shared-cron logs and profile progress after rollout. No Mac or open browser
+is needed for the server job.
 
 Each subscriber's own active encrypted LG connection and current WJ sales access
 are required. No password is stored, no expired token is silently renewed, and no
