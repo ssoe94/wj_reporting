@@ -158,7 +158,7 @@ export default function QualityImportCompletionModal({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-slate-950/55 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-[var(--wj-nav-surface)] backdrop-blur-sm" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
@@ -172,26 +172,26 @@ export default function QualityImportCompletionModal({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-3 sm:scale-95"
             >
-              <Dialog.Panel className="flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-900/10">
-                <div className={`shrink-0 border-b px-4 py-5 sm:px-7 ${hasFailures ? 'border-amber-100 bg-amber-50/70' : 'border-emerald-100 bg-emerald-50/70'}`}>
+              <Dialog.Panel className="flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-[var(--wj-surface-solid)] shadow-2xl ring-1 ring-[var(--wj-border)]">
+                <div className={`shrink-0 border-b px-4 py-5 sm:px-7 ${hasFailures ? 'border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)]' : 'border-[var(--wj-success-border)] bg-[var(--wj-success-bg)]'}`}>
                   <div className="flex items-start gap-3 sm:gap-4">
-                    <span className={`rounded-2xl p-3 text-white shadow-sm ${hasFailures ? 'bg-amber-500' : 'bg-emerald-600'}`}>
+                    <span className={`rounded-2xl p-3 text-[var(--wj-on-accent)] shadow-sm ${hasFailures ? 'bg-[var(--wj-warning)]' : 'bg-[var(--wj-success)]'}`}>
                       {hasFailures
                         ? <AlertTriangle className="h-6 w-6" aria-hidden="true" />
                         : <CheckCircle2 className="h-6 w-6" aria-hidden="true" />}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <Dialog.Title className="text-lg font-bold text-slate-950 sm:text-2xl">
+                      <Dialog.Title className="text-lg font-bold text-[var(--wj-text)] sm:text-2xl">
                         {c.title}
                       </Dialog.Title>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                      <p className="mt-1 text-sm leading-6 text-[var(--wj-muted)]">
                         {hasFailures ? c.descriptionWithFailures : c.description}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={onClose}
-                      className="rounded-xl p-2 text-slate-500 hover:bg-white hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="rounded-xl p-2 text-[var(--wj-muted)] hover:bg-[var(--wj-surface-solid)] hover:text-[var(--wj-text)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                       aria-label={c.close}
                     >
                       <X className="h-5 w-5" aria-hidden="true" />
@@ -201,55 +201,55 @@ export default function QualityImportCompletionModal({
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                        <FileSpreadsheet className="h-4 w-4 text-blue-600" aria-hidden="true" />{c.file}
+                    <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-[var(--wj-muted)]">
+                        <FileSpreadsheet className="h-4 w-4 text-[var(--wj-accent-strong)]" aria-hidden="true" />{c.file}
                       </p>
-                      <p className="mt-1 truncate text-sm font-bold text-slate-900" title={result.filename}>{result.filename}</p>
+                      <p className="mt-1 truncate text-sm font-bold text-[var(--wj-text)]" title={result.filename}>{result.filename}</p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="text-xs font-semibold text-slate-500">{c.sheet}</p>
-                      <p className="mt-1 text-sm font-bold text-slate-900">{sheetName}</p>
+                    <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3">
+                      <p className="text-xs font-semibold text-[var(--wj-muted)]">{c.sheet}</p>
+                      <p className="mt-1 text-sm font-bold text-[var(--wj-text)]">{sheetName}</p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                        <CalendarRange className="h-4 w-4 text-blue-600" aria-hidden="true" />{c.fileDataPeriod}
+                    <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-[var(--wj-muted)]">
+                        <CalendarRange className="h-4 w-4 text-[var(--wj-accent-strong)]" aria-hidden="true" />{c.fileDataPeriod}
                       </p>
-                      <p className="mt-1 text-base font-bold tabular-nums text-slate-900">{fileDataPeriod || c.unknown}</p>
-                      <p className="mt-1 text-xs text-slate-500">{c.fileDataPeriodHelp}</p>
+                      <p className="mt-1 text-base font-bold tabular-nums text-[var(--wj-text)]">{fileDataPeriod || c.unknown}</p>
+                      <p className="mt-1 text-xs text-[var(--wj-muted)]">{c.fileDataPeriodHelp}</p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                        <CalendarRange className="h-4 w-4 text-violet-600" aria-hidden="true" />{c.appliedPeriod}
+                    <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-[var(--wj-muted)]">
+                        <CalendarRange className="h-4 w-4 text-[var(--wj-accent-strong)]" aria-hidden="true" />{c.appliedPeriod}
                       </p>
-                      <p className="mt-1 text-base font-bold tabular-nums text-slate-900">{appliedPeriod || c.unknown}</p>
-                      <p className="mt-1 text-xs text-slate-500">{c.appliedPeriodHelp}</p>
+                      <p className="mt-1 text-base font-bold tabular-nums text-[var(--wj-text)]">{appliedPeriod || c.unknown}</p>
+                      <p className="mt-1 text-xs text-[var(--wj-muted)]">{c.appliedPeriodHelp}</p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
                     {metrics.map((metric) => (
                       <div key={metric.label} className={`rounded-xl px-3 py-3 ${metric.bg}`}>
-                        <p className="text-xs font-semibold text-slate-600">{metric.label}</p>
+                        <p className="text-xs font-semibold text-[var(--wj-muted)]">{metric.label}</p>
                         <p className={`mt-1 text-2xl font-bold tabular-nums ${metric.tone}`}>{metric.value.toLocaleString()}</p>
                       </div>
                     ))}
                   </div>
 
                   {hasFailures && (
-                    <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold leading-6 text-rose-800" role="status">
+                    <p className="mt-4 rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--wj-danger)]" role="status">
                       {interpolate(c.remainingFailures, { count: result.failed_count })}
                     </p>
                   )}
                 </div>
 
-                <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row-reverse sm:items-center sm:px-7">
+                <div className="flex shrink-0 flex-col gap-2 border-t border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-5 py-4 sm:flex-row-reverse sm:items-center sm:px-7">
                   <button
                     type="button"
                     autoFocus={!completionDisabled && (!hasFailures || !canOpenHistory)}
                     disabled={completionDisabled}
                     onClick={guardedPrimaryAction}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--wj-accent-strong)] px-5 py-2.5 text-sm font-bold text-[var(--wj-on-accent)] shadow-sm hover:bg-[var(--wj-accent-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)] focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
                   >
                     <Rows3 className="h-4 w-4" aria-hidden="true" />
                     {guardedPrimaryLabel}
@@ -259,7 +259,7 @@ export default function QualityImportCompletionModal({
                       type="button"
                       autoFocus
                       onClick={onReviewFailures}
-                      className="rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-danger-border)]"
                     >
                       {hasEditableFailures ? c.continueFailures : c.reviewResults}
                     </button>
@@ -267,7 +267,7 @@ export default function QualityImportCompletionModal({
                   <button
                     type="button"
                     onClick={onShowDetails}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-2.5 text-sm font-semibold text-[var(--wj-text)] hover:bg-[var(--wj-bg-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   >
                     {c.details}
                   </button>

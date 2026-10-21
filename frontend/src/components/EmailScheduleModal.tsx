@@ -44,10 +44,10 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <div className="fixed inset-0 bg-[var(--wj-surface-solid)] bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 w-full max-w-md mx-4">
         {/* 개발 중 배너 */}
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4">
+        <div className="bg-[var(--wj-warning-bg)] border border-[var(--wj-warning-border)] text-[var(--wj-warning)] px-4 py-3 rounded mb-4">
           <div className="flex items-center">
             <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -67,7 +67,7 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
               type="text"
               value={selectedDate}
               disabled
-              className="bg-gray-50"
+              className="bg-[var(--wj-surface-solid)]"
             />
           </div>
 
@@ -81,7 +81,7 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
               placeholder="email1@example.com, email2@example.com"
               required
             />
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-[var(--wj-muted)] mt-1">
               여러 이메일은 쉼표(,)로 구분하세요
             </p>
           </div>
@@ -94,7 +94,7 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
             />
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-[var(--wj-muted)] mt-1">
               비워두면 즉시 발송됩니다
             </p>
           </div>
@@ -111,7 +111,7 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
             <Button
               type="submit"
               disabled={isScheduling}
-              className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold"
+              className="flex-1 bg-[var(--wj-warning)] hover:bg-[var(--wj-warning)] text-[var(--wj-on-accent)] font-bold"
             >
               {isScheduling ? '예약 중...' : '예약하기'}
             </Button>

@@ -332,19 +332,19 @@ export default function MachineSetupModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-semibold text-gray-900">
+          <h3 className="text-xl font-semibold text-[var(--wj-text)]">
             {isEditMode ? t('setup.edit_machine_setup') : t('setup.new_setup_title')} - {machineId}{t('dashboard.machine_id_unit')} ({machine?.ton}T)
           </h3>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          <button type="button" onClick={onClose} className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)] text-2xl font-bold">×</button>
         </div>
 
         <form onSubmit={isEditMode ? (e) => { e.preventDefault(); setEditMode(true); } : handleCreate} className="space-y-6">
           {/* Form fields */}
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('machine')} *</label>
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('machine')} *</label>
               <MachineSelector
                 selectedMachine={formData.machine_no}
                 onMachineChange={handleMachineChange}
@@ -355,7 +355,7 @@ export default function MachineSetupModal({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('setup.model_code')} *</label>
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('setup.model_code')} *</label>
                 <NewModelSelector
                   value={selectedModel}
                   onChange={handleModelChange}
@@ -363,7 +363,7 @@ export default function MachineSetupModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('part_no')} *</label>
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('part_no')} *</label>
                 <NewPartNoSelector
                   model={selectedModel}
                   value={selectedPart}
@@ -375,26 +375,26 @@ export default function MachineSetupModal({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('target_cycle_time')} *</label>
-              <input type="number" min="1" value={formData.target_cycle_time || ''} onChange={(e) => handleInputChange('target_cycle_time', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" required disabled={isEditMode && !editMode} />
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('target_cycle_time')} *</label>
+              <input type="number" min="1" value={formData.target_cycle_time || ''} onChange={(e) => handleInputChange('target_cycle_time', e.target.value)} className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md" required disabled={isEditMode && !editMode} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('standard_cycle_time')}</label>
-              <input type="number" min="1" value={formData.standard_cycle_time || ''} onChange={(e) => handleInputChange('standard_cycle_time', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" disabled={isEditMode && !editMode} />
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('standard_cycle_time')}</label>
+              <input type="number" min="1" value={formData.standard_cycle_time || ''} onChange={(e) => handleInputChange('standard_cycle_time', e.target.value)} className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md" disabled={isEditMode && !editMode} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('avg_cycle_time')}</label>
-              <input type="number" min="1" value={formData.avg_cycle_time || ''} className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" readOnly />
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('avg_cycle_time')}</label>
+              <input type="number" min="1" value={formData.avg_cycle_time || ''} className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md bg-[var(--wj-bg-strong)]" readOnly />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('ct_table.personnel_header')}</label>
-              <input type="number" min="0" step="0.1" value={formData.personnel_count || ''} onChange={(e) => handleInputChange('personnel_count', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" disabled={isEditMode && !editMode} />
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">{t('ct_table.personnel_header')}</label>
+              <input type="number" min="0" step="0.1" value={formData.personnel_count || ''} onChange={(e) => handleInputChange('personnel_count', e.target.value)} className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md" disabled={isEditMode && !editMode} />
             </div>
           </div>
 
           {error && (
-            <div className="p-3 bg-red-100 border border-red-400 rounded">
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="p-3 bg-[var(--wj-danger-bg)] border border-[var(--wj-danger-border)] rounded">
+              <p className="text-sm text-[var(--wj-danger)]">{error}</p>
             </div>
           )}
 
@@ -414,16 +414,16 @@ export default function MachineSetupModal({
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 p-4 rounded-lg border flex flex-col">
+                    <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg border flex flex-col">
                         <h4 className="font-semibold mb-2">{t('setup.edit_existing')}</h4>
-                        <p className="text-xs text-gray-600 mb-3 flex-grow">{t('setup.edit_existing_desc')}</p>
+                        <p className="text-xs text-[var(--wj-muted)] mb-3 flex-grow">{t('setup.edit_existing_desc')}</p>
                         <Button variant="primary" onClick={handleUpdate} disabled={loading} className="w-full">
                           {loading ? t('setup.updating') : t('setup.save_changes')}
                         </Button>
                     </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-col">
-                        <h4 className="font-semibold text-blue-800 mb-2">{t('setup.create_new_version')}</h4>
-                        <p className="text-xs text-blue-700 mb-3 flex-grow">{t('setup.create_new_version_desc')}</p>
+                    <div className="bg-[var(--wj-bg-strong)] p-4 rounded-lg border border-[var(--wj-border)] flex flex-col">
+                        <h4 className="font-semibold text-[var(--wj-accent-strong)] mb-2">{t('setup.create_new_version')}</h4>
+                        <p className="text-xs text-[var(--wj-accent-strong)] mb-3 flex-grow">{t('setup.create_new_version_desc')}</p>
                         <Button variant="info" onClick={handleCreateNewVersion} disabled={loading} className="w-full">
                           {loading ? t('setup.creating') : t('setup.create_new_version')}
                         </Button>

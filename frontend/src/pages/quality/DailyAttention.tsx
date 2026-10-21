@@ -983,19 +983,19 @@ function MetricBarPanel({
   const dataQualityDenominator = Math.max(0, ...dataQualityMetrics.map((metric) => metric.all_history_denominator));
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm">
       <div className="mb-5 flex items-start gap-3">
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent.icon}`}>
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h3 className="font-semibold text-slate-900">{title}</h3>
-          <p className="mt-0.5 text-xs leading-5 text-slate-500">{subtitle}</p>
+          <h3 className="font-semibold text-[var(--wj-text)]">{title}</h3>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--wj-muted)]">{subtitle}</p>
         </div>
       </div>
 
       {visibleMetrics.length === 0 && dataQualityMetrics.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-8 text-center text-sm text-[var(--wj-muted)]">
           {lang === 'zh' ? '无可分析的历史记录' : '분석 가능한 이력이 없습니다.'}
         </div>
       ) : (
@@ -1004,7 +1004,7 @@ function MetricBarPanel({
             <div key={`${dimension}-${metric.metric_key}`}>
               <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate font-medium text-slate-800" title={metricDisplayLabel({ ...metric, dimension }, lang)}>
+                  <span className="truncate font-medium text-[var(--wj-text)]" title={metricDisplayLabel({ ...metric, dimension }, lang)}>
                     {metricDisplayLabel({ ...metric, dimension }, lang) || '-'}
                   </span>
                   {metric.repeat_status === 'repeated' && (
@@ -1013,14 +1013,14 @@ function MetricBarPanel({
                     </span>
                   )}
                 </div>
-                <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                <span className="shrink-0 font-semibold tabular-nums text-[var(--wj-text)]">
                   {formatMetricPercent(metric.all_history_share_pct)}
                 </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={metric.all_history_share_pct ?? 0}>
+              <div className="h-2 overflow-hidden rounded-full bg-[var(--wj-bg-strong)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={metric.all_history_share_pct ?? 0}>
                 <div className={`h-full rounded-full ${accent.bar}`} style={{ width: percentageWidth(metric.all_history_share_pct) }} />
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[var(--wj-muted)]">
                 <span>
                   {lang === 'zh' ? '分析范围历史依据' : '분석 대상 전체 이력 근거'} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}
                 </span>
@@ -1029,7 +1029,7 @@ function MetricBarPanel({
               {(metric.observed_terms ?? []).length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {metric.observed_terms?.map((observed) => (
-                    <span key={observed.canonical_key} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                    <span key={observed.canonical_key} className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1 text-[10px] font-semibold text-[var(--wj-muted)]">
                       {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
                     </span>
                   ))}
@@ -1038,22 +1038,22 @@ function MetricBarPanel({
             </div>
           ))}
           {dataQualityMetrics.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600">
+            <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-sm text-[var(--wj-muted)]">
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex min-w-0 items-center gap-2 font-medium">
-                  <CircleAlert className="h-4 w-4 shrink-0 text-slate-500" />
+                  <CircleAlert className="h-4 w-4 shrink-0 text-[var(--wj-muted)]" />
                   <span className="truncate">
                     {lang === 'zh' ? '未分类·未填写现象合并' : '유형 미분류·현상 미입력 통합'}
                   </span>
-                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <span className="shrink-0 rounded-full bg-[var(--wj-surface-solid)] px-2 py-0.5 text-[10px] font-semibold text-[var(--wj-muted)] ring-1 ring-inset ring-[var(--wj-border)]">
                     {lang === 'zh' ? '数据质量' : '데이터 품질'}
                   </span>
                 </span>
-                <strong className="shrink-0 tabular-nums text-slate-700">
+                <strong className="shrink-0 tabular-nums text-[var(--wj-text)]">
                   {formatMetricNumber(dataQualityCount)} / {formatMetricNumber(dataQualityDenominator)}
                 </strong>
               </div>
-              <p className="mt-1.5 text-xs leading-5 text-slate-500">
+              <p className="mt-1.5 text-xs leading-5 text-[var(--wj-muted)]">
                 {lang === 'zh'
                   ? '未在分类词典中确认的原文不作推测，仅汇总为一个数据质量项。'
                   : '분류 사전에서 확인되지 않은 원문은 추정하지 않고 하나의 데이터 품질 항목으로만 합산합니다.'}
@@ -1074,13 +1074,13 @@ function PriorityTrendComparison({ metric, lang }: { metric: DimensionedMetric; 
     : 'bg-amber-50 text-amber-700';
 
   return (
-    <div className="mt-2 rounded-xl border border-slate-200 bg-white/90 p-3 xl:p-2.5 2xl:p-3">
+    <div className="mt-2 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3 xl:p-2.5 2xl:p-3">
       <div className="flex items-center justify-between gap-1.5">
-        <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500 xl:text-[10px] 2xl:text-[11px]">
+        <span className="whitespace-nowrap text-[11px] font-semibold text-[var(--wj-muted)] xl:text-[10px] 2xl:text-[11px]">
           {lang === 'zh' ? '近期变化' : '최근 변화'}
         </span>
         {isInsufficient ? (
-          <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 xl:text-[9px] 2xl:text-[10px]">
+          <span className="whitespace-nowrap rounded-full bg-[var(--wj-bg-strong)] px-2 py-1 text-[10px] font-bold text-[var(--wj-muted)] xl:text-[9px] 2xl:text-[10px]">
             {lang === 'zh' ? '样本不足 · 无法比较' : '표본 부족 · 비교 불가'}
           </span>
         ) : (
@@ -1111,16 +1111,16 @@ function PriorityTrendComparison({ metric, lang }: { metric: DimensionedMetric; 
         ].map((window) => (
           <div key={window.key}>
             <div className="mb-1 flex items-center justify-between gap-1.5 text-xs xl:text-[10px] 2xl:text-xs">
-              <span className="whitespace-nowrap text-slate-500">{window.label}</span>
-              <span className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
+              <span className="whitespace-nowrap text-[var(--wj-muted)]">{window.label}</span>
+              <span className="whitespace-nowrap font-semibold tabular-nums text-[var(--wj-text)]">
                 {formatMetricNumber(window.count)} / {formatMetricNumber(window.denominator)} · {formatMetricPercent(window.share)}
               </span>
             </div>
             {window.share == null ? (
-              <div className="h-2 rounded-full bg-slate-100" aria-label={`${window.label} ${lang === 'zh' ? '无法比较' : '비교 불가'}`} />
+              <div className="h-2 rounded-full bg-[var(--wj-bg-strong)]" aria-label={`${window.label} ${lang === 'zh' ? '无法比较' : '비교 불가'}`} />
             ) : (
               <div
-                className="h-2 overflow-hidden rounded-full bg-slate-100"
+                className="h-2 overflow-hidden rounded-full bg-[var(--wj-bg-strong)]"
                 role="progressbar"
                 aria-label={`${window.label} ${formatMetricPercent(window.share)}`}
                 aria-valuemin={0}
@@ -1133,9 +1133,9 @@ function PriorityTrendComparison({ metric, lang }: { metric: DimensionedMetric; 
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500 xl:text-[10px] 2xl:text-[11px]">
+      <div className="mt-3 flex items-center justify-between gap-1.5 border-t border-[var(--wj-border)] pt-3 text-[11px] text-[var(--wj-muted)] xl:text-[10px] 2xl:text-[11px]">
         <span className="whitespace-nowrap">{lang === 'zh' ? '全部历史' : '전체 이력'}</span>
-        <strong className="whitespace-nowrap tabular-nums text-slate-800">
+        <strong className="whitespace-nowrap tabular-nums text-[var(--wj-text)]">
           {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)} · {formatMetricPercent(metric.all_history_share_pct)}
         </strong>
       </div>
@@ -1948,18 +1948,18 @@ export default function DailyAttentionPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-white px-4 py-3">
-          <AlertTriangle className="h-5 w-5 text-amber-600" />
+      <section className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+        <div className="flex items-center gap-2 border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-warning-bg)] to-[var(--wj-surface-solid)] px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-[var(--wj-warning)]" />
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">{t('quality.daily_attention_title')}</h1>
-            <p className="text-sm text-gray-600">{t('quality.daily_attention_description')}</p>
+            <h1 className="text-lg font-semibold text-[var(--wj-text)]">{t('quality.daily_attention_title')}</h1>
+            <p className="text-sm text-[var(--wj-muted)]">{t('quality.daily_attention_description')}</p>
           </div>
         </div>
         <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex items-end gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">{t('date')}</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--wj-text)]">{t('date')}</label>
               <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className="w-[180px]" />
             </div>
             <Button type="button" variant="secondary" onClick={() => refetch()} disabled={isFetching}>
@@ -1967,67 +1967,67 @@ export default function DailyAttentionPage() {
             </Button>
           </div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-              <div className="text-slate-500">{t('quality.daily_attention_total_plans')}</div>
-              <div className="text-xl font-bold text-slate-800">{data?.total_plan_count ?? 0}</div>
+            <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3 text-sm">
+              <div className="text-[var(--wj-muted)]">{t('quality.daily_attention_total_plans')}</div>
+              <div className="text-xl font-bold text-[var(--wj-text)]">{data?.total_plan_count ?? 0}</div>
             </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-              <div className="text-amber-700">{t('quality.daily_attention_total_matches')}</div>
-              <div className="text-xl font-bold text-amber-800">{data?.total_matching_reports ?? 0}</div>
+            <div className="rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-sm">
+              <div className="text-[var(--wj-warning)]">{t('quality.daily_attention_total_matches')}</div>
+              <div className="text-xl font-bold text-[var(--wj-warning)]">{data?.total_matching_reports ?? 0}</div>
             </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
-              <div className="text-emerald-700">{t('quality.daily_attention_without_history')}</div>
-              <div className="text-xl font-bold text-emerald-800">{data?.without_history_count ?? 0}</div>
+            <div className="rounded-lg border border-[var(--wj-success-border)] bg-[var(--wj-success-bg)] px-4 py-3 text-sm">
+              <div className="text-[var(--wj-success)]">{t('quality.daily_attention_without_history')}</div>
+              <div className="text-xl font-bold text-[var(--wj-success)]">{data?.without_history_count ?? 0}</div>
             </div>
           </div>
         </div>
       </section>
 
       {isLoading ? (
-        <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('loading')}...</div>
+        <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-6 py-12 text-center text-[var(--wj-muted)]">{t('loading')}...</div>
       ) : isError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-12 text-center text-red-600">{t('error_loading_data')}</div>
+        <div className="rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-6 py-12 text-center text-[var(--wj-danger)]">{t('error_loading_data')}</div>
       ) : (
         <div className="space-y-8">
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
-            <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-blue-800 px-5 py-6 text-white sm:px-7 lg:px-8">
-              <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
-              <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-blue-300/10 blur-2xl" />
+          <section className="overflow-hidden rounded-3xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+            <div className="relative overflow-hidden bg-[var(--wj-bg-strong)] px-5 py-6 text-[var(--wj-text)] sm:px-7 lg:px-8">
+              <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[var(--wj-accent-soft)] blur-3xl" />
+              <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-[var(--wj-accent-soft)] blur-2xl" />
               <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="max-w-4xl">
-                  <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-cyan-200">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-[var(--wj-accent-strong)]">
                     <BrainCircuit className="h-4 w-4" />
                     {analysisCopy.eyebrow}
                   </div>
-                  <h2 className="!text-2xl font-bold !text-white tracking-tight sm:!text-3xl">{analysisCopy.title}</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">{analysisCopy.scope}</p>
+                  <h2 className="!text-2xl font-bold !text-[var(--wj-text)] tracking-tight sm:!text-3xl">{analysisCopy.title}</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--wj-accent-strong)]">{analysisCopy.scope}</p>
                 </div>
                 <div className="flex flex-col items-start gap-2 xl:items-end">
                   <ReportStatusBadge report={report} lang={lang} narrativeReady={canUseNarrative} />
                 </div>
               </div>
 
-              <div className="relative mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-blue-50 backdrop-blur-sm">
+              <div className="relative mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3 text-sm text-[var(--wj-accent-strong)] backdrop-blur-sm">
                 <span className="inline-flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-cyan-200" />
-                  {analysisCopy.analysisDate} <strong className="font-semibold text-white">{report?.business_date ?? targetDate}</strong>
+                  <CalendarDays className="h-4 w-4 text-[var(--wj-accent-strong)]" />
+                  {analysisCopy.analysisDate} <strong className="font-semibold text-[var(--wj-text)]">{report?.business_date ?? targetDate}</strong>
                 </span>
-                <span className="hidden h-4 w-px bg-white/20 sm:block" />
+                <span className="hidden h-4 w-px bg-[var(--wj-surface-solid)] sm:block" />
                 <span className="inline-flex items-center gap-2">
-                  <Clock3 className="h-4 w-4 text-cyan-200" />
-                  {analysisCopy.latestRefresh} <strong className="font-semibold text-white">{formatReportDateTime(canUseNarrative ? report?.completed_at ?? report?.generated_at : deterministic?.calculated_at)}</strong>
+                  <Clock3 className="h-4 w-4 text-[var(--wj-accent-strong)]" />
+                  {analysisCopy.latestRefresh} <strong className="font-semibold text-[var(--wj-text)]">{formatReportDateTime(canUseNarrative ? report?.completed_at ?? report?.generated_at : deterministic?.calculated_at)}</strong>
                 </span>
-                <span className="hidden h-4 w-px bg-white/20 sm:block" />
+                <span className="hidden h-4 w-px bg-[var(--wj-surface-solid)] sm:block" />
                 <span className="inline-flex items-center gap-2">
-                  <Database className="h-4 w-4 text-cyan-200" />
-                  {analysisCopy.evidenceCount} <strong className="font-semibold tabular-nums text-white">{formatMetricNumber(deterministic?.coverage.matched_report_count)}</strong>
+                  <Database className="h-4 w-4 text-[var(--wj-accent-strong)]" />
+                  {analysisCopy.evidenceCount} <strong className="font-semibold tabular-nums text-[var(--wj-text)]">{formatMetricNumber(deterministic?.coverage.matched_report_count)}</strong>
                 </span>
               </div>
             </div>
 
             {!deterministic ? (
-              <div className="m-5 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center text-sm text-slate-600 sm:m-7">
-                <Database className="mx-auto mb-3 h-7 w-7 text-slate-400" />
+              <div className="m-5 rounded-2xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-5 py-10 text-center text-sm text-[var(--wj-muted)] sm:m-7">
+                <Database className="mx-auto mb-3 h-7 w-7 text-[var(--wj-muted)]" />
                 {analysisCopy.noReport}
               </div>
             ) : (
@@ -2065,52 +2065,52 @@ export default function DailyAttentionPage() {
                   ].map((summary) => {
                     const Icon = summary.icon;
                     return (
-                      <article key={summary.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <article key={summary.label} className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-xs font-medium text-slate-500">{summary.label}</div>
-                            <div className="mt-1 text-3xl font-bold tabular-nums text-slate-950">{formatMetricNumber(summary.value)}</div>
+                            <div className="text-xs font-medium text-[var(--wj-muted)]">{summary.label}</div>
+                            <div className="mt-1 text-3xl font-bold tabular-nums text-[var(--wj-text)]">{formatMetricNumber(summary.value)}</div>
                           </div>
                           <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${summary.color}`}>
                             <Icon className="h-5 w-5" />
                           </div>
                         </div>
-                        <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500" title={summary.sub}>{summary.sub}</p>
+                        <p className="mt-3 line-clamp-2 text-xs leading-5 text-[var(--wj-muted)]" title={summary.sub}>{summary.sub}</p>
                       </article>
                     );
                   })}
                 </div>
 
                 {narrative && (
-                  <section className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-sm">
-                    <div className="border-b border-blue-100 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 px-5 py-4 text-white sm:px-6">
+                  <section className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+                    <div className="border-b border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-5 py-4 text-[var(--wj-text)] sm:px-6">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-200 ring-1 ring-inset ring-white/15">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-surface-solid)] text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-border)]">
                             <CheckCircle2 className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="text-lg font-bold text-white">{analysisCopy.shiftBriefing}</h3>
-                            <p className="mt-1 max-w-4xl text-xs leading-5 text-blue-100">{analysisCopy.shiftBriefingDescription}</p>
+                            <h3 className="text-lg font-bold text-[var(--wj-text)]">{analysisCopy.shiftBriefing}</h3>
+                            <p className="mt-1 max-w-4xl text-xs leading-5 text-[var(--wj-accent-strong)]">{analysisCopy.shiftBriefingDescription}</p>
                           </div>
                         </div>
-                        <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-blue-100 ring-1 ring-inset ring-white/15">
+                        <span className="shrink-0 rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-[11px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-border)]">
                           {analysisCopy.serverPriorityOrder}
                         </span>
                       </div>
                     </div>
 
                     <div className="space-y-5 p-5 sm:p-6">
-                      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
-                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-blue-700">{analysisCopy.historicalEvidenceBrief}</div>
+                      <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3">
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--wj-accent-strong)]">{analysisCopy.historicalEvidenceBrief}</div>
                         {executiveSummarySegments.length > 0 ? (
                           <div className="grid gap-2 lg:grid-cols-3">
                             {executiveSummarySegments.map((segment) => (
-                              <div key={segment.key} className="rounded-lg bg-white px-3 py-2.5 text-sm leading-6 text-slate-700 ring-1 ring-inset ring-blue-100">
-                                <div className="text-[11px] font-semibold text-slate-500">{localizedText(segment.label, lang)}</div>
+                              <div key={segment.key} className="rounded-lg bg-[var(--wj-surface-solid)] px-3 py-2.5 text-sm leading-6 text-[var(--wj-text)] ring-1 ring-inset ring-[var(--wj-border)]">
+                                <div className="text-[11px] font-semibold text-[var(--wj-muted)]">{localizedText(segment.label, lang)}</div>
                                 <p>
                                   {segment.parts.map((part, index) => (
-                                    <span key={`${segment.key}-${index}`} className={part.strong ? 'font-bold text-slate-950' : undefined}>
+                                    <span key={`${segment.key}-${index}`} className={part.strong ? 'font-bold text-[var(--wj-text)]' : undefined}>
                                       {localizedText(part.text, lang)}
                                     </span>
                                   ))}
@@ -2119,20 +2119,20 @@ export default function DailyAttentionPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm leading-6 text-slate-700">{localizedText(narrative.executive_summary, lang)}</p>
+                          <p className="text-sm leading-6 text-[var(--wj-text)]">{localizedText(narrative.executive_summary, lang)}</p>
                         )}
                       </div>
 
                       {commonShiftChecks.length > 0 && (
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
-                          <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                        <div className="rounded-xl border border-[var(--wj-success-border)] bg-[var(--wj-success-bg)] p-4">
+                          <div className="flex items-center gap-2 text-xs font-bold text-[var(--wj-success)]">
                             <CheckCircle2 className="h-4 w-4" />
                             {analysisCopy.commonShiftChecks}
                           </div>
-                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-emerald-950/80">
+                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-[var(--wj-success)]">
                             {commonShiftChecks.map((check, index) => (
                               <li key={`shift-check-${index}`} className="flex gap-2">
-                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--wj-success)]" />
                                 <span>{check}</span>
                               </li>
                             ))}
@@ -2143,20 +2143,20 @@ export default function DailyAttentionPage() {
                   </section>
                 )}
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm sm:p-6">
                     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                       <div className="flex items-start gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-warning-bg)] text-[var(--wj-warning)]">
                           <Target className="h-5 w-5" />
                         </div>
                         <div>
-                          <h3 className="!text-lg font-bold text-slate-950">
+                          <h3 className="!text-lg font-bold text-[var(--wj-text)]">
                             {analysisCopy.priorities} {priorityCards.length}{lang === 'zh' ? ' 项' : ''}
                           </h3>
-                          <p className="text-xs leading-5 text-slate-500">{analysisCopy.prioritiesDescription}</p>
+                          <p className="text-xs leading-5 text-[var(--wj-muted)]">{analysisCopy.prioritiesDescription}</p>
                         </div>
                       </div>
-                      <div className="shrink-0 text-xs tabular-nums text-slate-500">
+                      <div className="shrink-0 text-xs tabular-nums text-[var(--wj-muted)]">
                         {formatReportDate(deterministic.trend_policy.previous_start)}–{formatReportDate(deterministic.trend_policy.previous_end)}
                         <span className="px-2">vs</span>
                         {formatReportDate(deterministic.trend_policy.recent_start)}–{formatReportDate(deterministic.trend_policy.recent_end)}
@@ -2189,19 +2189,19 @@ export default function DailyAttentionPage() {
                           const tooltipAlignmentClass = `left-1/2 -translate-x-1/2 ${twoColumnTooltipClass} ${fourColumnTooltipClass}`;
 
                           return (
-                            <article key={priority.key} className={`flex h-full min-w-0 flex-col rounded-2xl border border-t-4 border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ${accentClass}`}>
+                            <article key={priority.key} className={`flex h-full min-w-0 flex-col rounded-2xl border border-t-4 border-[var(--wj-border)] bg-gradient-to-br from-[var(--wj-surface-solid)] to-[var(--wj-surface-solid)] p-4 shadow-sm ${accentClass}`}>
                               <div className="flex min-w-0 items-center justify-between gap-1.5">
-                                <span className="inline-flex min-h-8 shrink-0 items-center rounded-xl border border-white/70 bg-slate-900/[0.045] px-2 py-1 text-[9px] font-bold tracking-tight text-slate-700 shadow-sm backdrop-blur-sm sm:text-[10px]">
+                                <span className="inline-flex min-h-8 shrink-0 items-center rounded-xl border border-[var(--wj-border)] bg-[var(--wj-nav-surface)]/[0.045] px-2 py-1 text-[9px] font-bold tracking-tight text-[var(--wj-text)] shadow-sm backdrop-blur-sm sm:text-[10px]">
                                   {lang === 'zh' ? '问题类型' : '문제유형'}&nbsp;<span className="tabular-nums">{index + 1}</span>
                                 </span>
                                 <span className={`inline-flex min-h-8 min-w-0 items-center justify-center rounded-xl px-2 py-1 text-center text-[9px] font-semibold leading-4 ring-1 ring-inset sm:text-[10px] ${trendClass}`}>{metricTrendLabel(metric, lang)}</span>
                               </div>
                               <div className="mt-2 flex min-h-10 flex-col items-center justify-center text-center">
-                                <h4 className="max-w-full truncate text-base font-bold leading-6 text-slate-950 2xl:text-lg" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
+                                <h4 className="max-w-full truncate text-base font-bold leading-6 text-[var(--wj-text)] 2xl:text-lg" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
                                 {(metric.observed_terms ?? []).length > 0 && (
                                   <div className="mt-1.5 flex flex-wrap justify-center gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
                                     {metric.observed_terms?.map((observed) => (
-                                      <span key={observed.canonical_key} className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100">
+                                      <span key={observed.canonical_key} className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-accent)]">
                                         {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
                                       </span>
                                     ))}
@@ -2209,12 +2209,12 @@ export default function DailyAttentionPage() {
                                 )}
                               </div>
                               <PriorityTrendComparison metric={metric} lang={lang} />
-                              <div className="mt-4 border-t border-slate-200 pt-4">
+                              <div className="mt-4 border-t border-[var(--wj-border)] pt-4">
                                 <div className="mb-2 flex items-center justify-between gap-3">
-                                  <span className="text-xs font-bold text-slate-700">
+                                  <span className="text-xs font-bold text-[var(--wj-text)]">
                                     {lang === 'zh' ? '关联计划对象' : '관련 계획 대상'}
                                   </span>
-                                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600">
+                                  <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1 text-[11px] font-semibold tabular-nums text-[var(--wj-muted)]">
                                     {priority.totalTargetCount > priority.targets.length
                                       ? (lang === 'zh'
                                         ? `前 ${priority.targets.length} / ${priority.totalTargetCount}`
@@ -2223,7 +2223,7 @@ export default function DailyAttentionPage() {
                                   </span>
                                 </div>
                                 {priority.targets.length > 0 ? (
-                                  <div className="divide-y divide-slate-200/70">
+                                  <div className="divide-y divide-[var(--wj-border)]">
                                     {priority.targets.map((target, targetIndex) => {
                                       const machineLabel = compactMachineLabel(target.machineName, target.machineNumber, lang);
                                       const modelLabel = compactModelLabel(
@@ -2254,23 +2254,23 @@ export default function DailyAttentionPage() {
                                           onKeyDown={(event) => {
                                             if (event.key === 'Escape') event.currentTarget.blur();
                                           }}
-                                          className="group relative flex min-h-12 w-full min-w-0 items-center gap-1.5 px-1 py-2.5 text-left text-sm font-semibold text-slate-800 outline-none ring-blue-300 transition-colors hover:bg-blue-50/60 focus-visible:rounded-lg focus-visible:ring-2 xl:text-xs 2xl:text-sm"
+                                          className="group relative flex min-h-12 w-full min-w-0 items-center gap-1.5 px-1 py-2.5 text-left text-sm font-semibold text-[var(--wj-text)] outline-none ring-[var(--wj-border)] transition-colors hover:bg-[var(--wj-bg-strong)] focus-visible:rounded-lg focus-visible:ring-2 xl:text-xs 2xl:text-sm"
                                           aria-label={`${analysisCopy.viewEvidence}: ${machineLabel} — ${modelLabel}, ${lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} ${target.recentEvidenceCount}${lang === 'zh' ? ' 件' : '건'}`}
                                           aria-describedby={tooltipId}
                                         >
-                                          <Factory className="h-4 w-4 shrink-0 text-blue-600 xl:hidden 2xl:block" />
+                                          <Factory className="h-4 w-4 shrink-0 text-[var(--wj-accent-strong)] xl:hidden 2xl:block" />
                                           <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-xs xl:text-[11px] 2xl:text-sm">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
-                                            <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-500">
+                                            <span className="block truncate text-xs xl:text-[11px] 2xl:text-sm">{machineLabel} <span className="text-[var(--wj-muted)]">—</span> {modelLabel}</span>
+                                            <span className="mt-0.5 block truncate text-[10px] font-medium text-[var(--wj-muted)]">
                                               {lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} {formatMetricNumber(target.recentEvidenceCount)}{lang === 'zh' ? ' 件' : '건'}
                                             </span>
                                           </span>
-                                          <span className="shrink-0 text-[11px] text-blue-700 xl:hidden">{lang === 'zh' ? '查看' : '보기'}</span>
-                                          <Images className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+                                          <span className="shrink-0 text-[11px] text-[var(--wj-accent-strong)] xl:hidden">{lang === 'zh' ? '查看' : '보기'}</span>
+                                          <Images className="h-4 w-4 shrink-0 text-[var(--wj-accent-strong)]" aria-hidden="true" />
                                           <span
                                             id={tooltipId}
                                             role="tooltip"
-                                            className={`pointer-events-auto absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
+                                            className={`pointer-events-auto absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-[var(--wj-contrast-surface)] px-3 py-2 text-xs font-medium leading-5 text-[var(--wj-on-contrast)] shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
                                           >
                                             {analysisCopy.viewEvidence} · {identityTitle} · {lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} {formatMetricNumber(target.recentEvidenceCount)}{lang === 'zh' ? ' 件' : '건'}
                                           </span>
@@ -2279,7 +2279,7 @@ export default function DailyAttentionPage() {
                                     })}
                                   </div>
                                 ) : (
-                                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                                  <div className="rounded-xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-4 text-center text-xs text-[var(--wj-muted)]">
                                     {lang === 'zh' ? '没有关联的当前计划对象。' : '연결된 오늘 계획 대상이 없습니다.'}
                                   </div>
                                 )}
@@ -2289,7 +2289,7 @@ export default function DailyAttentionPage() {
                         })}
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                      <div className="rounded-xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
                         {analysisCopy.noMetrics}
                       </div>
                     )}
@@ -2303,18 +2303,18 @@ export default function DailyAttentionPage() {
                     lang={lang}
                     dimension="problem"
                   />
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm">
                     <div className="mb-5 flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]">
                         <Target className="h-5 w-5" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-slate-900">{analysisCopy.locationCoverage}</h3>
-                        <p className="mt-0.5 text-xs leading-5 text-slate-500">{analysisCopy.locationsDescription}</p>
+                        <h3 className="font-semibold text-[var(--wj-text)]">{analysisCopy.locationCoverage}</h3>
+                        <p className="mt-0.5 text-xs leading-5 text-[var(--wj-muted)]">{analysisCopy.locationsDescription}</p>
                       </div>
                     </div>
                     {explicitLocationMetrics.length === 0 && !unknownLocationMetric ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      <div className="rounded-xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-8 text-center text-sm text-[var(--wj-muted)]">
                         {analysisCopy.noMetrics}
                       </div>
                     ) : (
@@ -2322,26 +2322,26 @@ export default function DailyAttentionPage() {
                         {explicitLocationMetrics.slice(0, 6).map((metric) => (
                           <div key={metric.metric_key}>
                             <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-                              <span className="truncate font-medium text-slate-800">{localizedText(metric.label, lang) || '-'}</span>
-                              <span className="shrink-0 font-semibold tabular-nums text-slate-900">{formatMetricPercent(metric.all_history_share_pct)}</span>
+                              <span className="truncate font-medium text-[var(--wj-text)]">{localizedText(metric.label, lang) || '-'}</span>
+                              <span className="shrink-0 font-semibold tabular-nums text-[var(--wj-text)]">{formatMetricPercent(metric.all_history_share_pct)}</span>
                             </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-2 overflow-hidden rounded-full bg-[var(--wj-bg-strong)]">
                               <div className="h-full rounded-full bg-violet-500" style={{ width: percentageWidth(metric.all_history_share_pct) }} />
                             </div>
-                            <div className="mt-1.5 text-[11px] text-slate-500">
+                            <div className="mt-1.5 text-[11px] text-[var(--wj-muted)]">
                               {analysisCopy.evidence} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}
                             </div>
                           </div>
                         ))}
                         {unknownLocationMetric && (
-                          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600">
+                          <div className="mt-5 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-sm text-[var(--wj-muted)]">
                             <div className="flex items-center justify-between gap-3">
                               <span className="inline-flex items-center gap-2 font-medium">
-                                <CircleAlert className="h-4 w-4 text-slate-500" />
+                                <CircleAlert className="h-4 w-4 text-[var(--wj-muted)]" />
                                 {analysisCopy.locationUnknown}
-                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">{analysisCopy.locationDataQuality}</span>
+                                <span className="rounded-full bg-[var(--wj-surface-solid)] px-2 py-0.5 text-[10px] font-semibold text-[var(--wj-muted)] ring-1 ring-inset ring-[var(--wj-border)]">{analysisCopy.locationDataQuality}</span>
                               </span>
-                              <strong className="tabular-nums text-slate-700">
+                              <strong className="tabular-nums text-[var(--wj-text)]">
                                 {formatMetricNumber(unknownLocationMetric.evidence_count)} / {formatMetricNumber(unknownLocationMetric.all_history_denominator)} · {formatMetricPercent(unknownLocationMetric.all_history_share_pct)}
                               </strong>
                             </div>
@@ -2353,17 +2353,17 @@ export default function DailyAttentionPage() {
                 </div>
 
                 {(deterministic.problem_location_pairs ?? []).length > 0 && (
-                  <section className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50/70 via-white to-white p-5 shadow-sm">
+                  <section className="rounded-2xl border border-[var(--wj-border)] bg-gradient-to-br from-[var(--wj-bg-strong)] via-[var(--wj-surface-solid)] to-[var(--wj-surface-solid)] p-5 shadow-sm">
                     <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <Layers3 className="h-5 w-5 text-cyan-700" />
-                          <h3 className="font-bold text-slate-950">{analysisCopy.pairedSignals}</h3>
+                          <Layers3 className="h-5 w-5 text-[var(--wj-accent-strong)]" />
+                          <h3 className="font-bold text-[var(--wj-text)]">{analysisCopy.pairedSignals}</h3>
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">{analysisCopy.pairedSignalsDescription}</p>
+                        <p className="mt-1 text-xs leading-5 text-[var(--wj-muted)]">{analysisCopy.pairedSignalsDescription}</p>
                       </div>
                       {(deterministic.coverage.ambiguous_pair_report_count ?? 0) > 0 && (
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                        <span className="rounded-full bg-[var(--wj-bg-strong)] px-3 py-1 text-xs text-[var(--wj-muted)]">
                           {lang === 'zh' ? '因组合不明确而排除' : '조합 불명확 제외'} {formatMetricNumber(deterministic.coverage.ambiguous_pair_report_count)}
                         </span>
                       )}
@@ -2373,15 +2373,15 @@ export default function DailyAttentionPage() {
                         .sort((a, b) => b.evidence_count - a.evidence_count)
                         .slice(0, 6)
                         .map((metric) => (
-                          <article key={metric.metric_key} className="rounded-xl border border-cyan-100 bg-white p-4">
-                            <div className="text-xs font-semibold text-blue-700">{localizedText(metric.problem_label, lang) || '-'}</div>
-                            <div className="mt-1 flex items-center gap-2 text-base font-bold text-slate-950">
-                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                          <article key={metric.metric_key} className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4">
+                            <div className="text-xs font-semibold text-[var(--wj-accent-strong)]">{localizedText(metric.problem_label, lang) || '-'}</div>
+                            <div className="mt-1 flex items-center gap-2 text-base font-bold text-[var(--wj-text)]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[var(--wj-accent-strong)]" />
                               {localizedText(metric.location_label, lang) || '-'}
                             </div>
-                            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500">
+                            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--wj-muted)]">
                               <span>{analysisCopy.evidence} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}</span>
-                              <strong className="tabular-nums text-slate-800">{formatMetricPercent(metric.all_history_share_pct)}</strong>
+                              <strong className="tabular-nums text-[var(--wj-text)]">{formatMetricPercent(metric.all_history_share_pct)}</strong>
                             </div>
                           </article>
                         ))}
@@ -2389,25 +2389,25 @@ export default function DailyAttentionPage() {
                   </section>
                 )}
 
-                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <section className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+                  <div className="flex flex-col gap-2 border-b border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <Factory className="h-5 w-5 text-blue-700" />
-                        <h3 className="font-bold text-slate-950">{analysisCopy.affectedTargets}</h3>
+                        <Factory className="h-5 w-5 text-[var(--wj-accent-strong)]" />
+                        <h3 className="font-bold text-[var(--wj-text)]">{analysisCopy.affectedTargets}</h3>
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">{analysisCopy.affectedTargetsDescription}</p>
+                      <p className="mt-1 text-xs text-[var(--wj-muted)]">{analysisCopy.affectedTargetsDescription}</p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold tabular-nums text-slate-700 ring-1 ring-inset ring-slate-200">
+                    <span className="rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-semibold tabular-nums text-[var(--wj-text)] ring-1 ring-inset ring-[var(--wj-border)]">
                       {formatMetricNumber(impactedTargets.length)}
                     </span>
                   </div>
                   {impactedTargets.length === 0 ? (
-                    <div className="px-5 py-10 text-center text-sm text-slate-500">{analysisCopy.noTargets}</div>
+                    <div className="px-5 py-10 text-center text-sm text-[var(--wj-muted)]">{analysisCopy.noTargets}</div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="min-w-[900px] w-full text-left text-sm">
-                        <thead className="bg-white text-xs uppercase tracking-wide text-slate-500">
+                        <thead className="bg-[var(--wj-surface-solid)] text-xs uppercase tracking-wide text-[var(--wj-muted)]">
                           <tr>
                             <th className="px-5 py-3 font-semibold">{analysisCopy.machine}</th>
                             <th className="px-5 py-3 font-semibold">{analysisCopy.modelPart}</th>
@@ -2415,7 +2415,7 @@ export default function DailyAttentionPage() {
                             <th className="px-5 py-3 font-semibold">{analysisCopy.historicalSignals}</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-[var(--wj-border)]">
                           {impactedTargets.map(({ target, signals }) => {
                             const compactModel = target.model_name ? compactModelLabel([target.model_name], lang) : '';
                             const compactIdentity = [compactModel, target.part_no]
@@ -2430,20 +2430,20 @@ export default function DailyAttentionPage() {
                             ].filter(Boolean).join(' · ');
                             const compactMachine = compactMachineLabel(target.machine_name, null, lang);
                             return (
-                              <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
-                              <td className="whitespace-nowrap px-5 py-2.5 font-semibold text-slate-900" title={target.machine_name}>
+                              <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-[var(--wj-surface-solid)]">
+                              <td className="whitespace-nowrap px-5 py-2.5 font-semibold text-[var(--wj-text)]" title={target.machine_name}>
                                 {compactMachine}
-                                {target.sequence != null && <span className="ml-2 text-xs font-normal text-slate-400">#{target.sequence}</span>}
+                                {target.sequence != null && <span className="ml-2 text-xs font-normal text-[var(--wj-muted)]">#{target.sequence}</span>}
                               </td>
                               <td className="max-w-[320px] px-5 py-2.5">
-                                <div className="truncate whitespace-nowrap font-medium text-slate-900" title={fullIdentity}>{compactIdentity}</div>
+                                <div className="truncate whitespace-nowrap font-medium text-[var(--wj-text)]" title={fullIdentity}>{compactIdentity}</div>
                               </td>
-                              <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatMetricNumber(target.planned_quantity)}</td>
+                              <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-[var(--wj-text)]">{formatMetricNumber(target.planned_quantity)}</td>
                               <td className="px-5 py-2.5">
                                 <div className="flex flex-wrap gap-1.5">
                                   {signals.map(({ metric, label }) => (
-                                    <span key={`${metric.dimension}-${metric.metric_key}`} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">
-                                      <span className={`h-1.5 w-1.5 rounded-full ${metric.dimension === 'problem' ? 'bg-blue-500' : 'bg-violet-500'}`} />
+                                    <span key={`${metric.dimension}-${metric.metric_key}`} className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wj-bg-strong)] px-2.5 py-1 text-xs text-[var(--wj-text)]">
+                                      <span className={`h-1.5 w-1.5 rounded-full ${metric.dimension === 'problem' ? 'bg-[var(--wj-accent-strong)]' : 'bg-violet-500'}`} />
                                       {label || '-'}
                                       <strong className="tabular-nums">{formatMetricNumber(metric.evidence_count)}</strong>
                                     </span>
@@ -2459,26 +2459,26 @@ export default function DailyAttentionPage() {
                   )}
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <section className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm sm:p-6">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-bg-strong)] text-[var(--wj-text)]">
                       <ShieldCheck className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-slate-950">{analysisCopy.analysisBasis}</h3>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
-                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.allHistory}</span>
-                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.matchBasis}</span>
-                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.trendRule}</span>
+                      <h3 className="font-bold text-[var(--wj-text)]">{analysisCopy.analysisBasis}</h3>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-[var(--wj-muted)]">
+                        <span className="rounded-full bg-[var(--wj-bg-strong)] px-3 py-1.5">{analysisCopy.allHistory}</span>
+                        <span className="rounded-full bg-[var(--wj-bg-strong)] px-3 py-1.5">{analysisCopy.matchBasis}</span>
+                        <span className="rounded-full bg-[var(--wj-bg-strong)] px-3 py-1.5">{analysisCopy.trendRule}</span>
                       </div>
-                      <div className="mt-4 grid gap-4 text-sm leading-6 text-slate-600 lg:grid-cols-2">
+                      <div className="mt-4 grid gap-4 text-sm leading-6 text-[var(--wj-muted)] lg:grid-cols-2">
                         <div className="space-y-2">
                           <p className="flex gap-2">
-                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-[var(--wj-warning)]" />
                             <span>{analysisCopy.noCurrentDefect}</span>
                           </p>
                           <p className="flex gap-2">
-                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-[var(--wj-warning)]" />
                             <span>
                               {analysisCopy.sampleRule
                                 .replace('{denominator}', formatMetricNumber(deterministic.trend_policy.min_window_denominator))
@@ -2487,18 +2487,18 @@ export default function DailyAttentionPage() {
                           </p>
                           {localizedText(report?.disclaimer, lang) && (
                             <p className="flex gap-2">
-                              <Database className="mt-1 h-4 w-4 shrink-0 text-blue-600" />
+                              <Database className="mt-1 h-4 w-4 shrink-0 text-[var(--wj-accent-strong)]" />
                               <span>{localizedText(report?.disclaimer, lang)}</span>
                             </p>
                           )}
                         </div>
                         {narrative && narrative.caveats[lang === 'zh' ? 'zh' : 'ko'].length > 0 && (
                           <div>
-                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{analysisCopy.caveats}</div>
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--wj-muted)]">{analysisCopy.caveats}</div>
                             <ul className="space-y-2">
                               {narrative.caveats[lang === 'zh' ? 'zh' : 'ko'].map((caveat, index) => (
                                 <li key={`${caveat}-${index}`} className="flex gap-2">
-                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--wj-bg-strong)]" />
                                   <span>{caveat}</span>
                                 </li>
                               ))}
@@ -2516,17 +2516,17 @@ export default function DailyAttentionPage() {
           <DeepAnalysisPanel canRequest={canRequestDeepAnalysis} kind="quality_weekly" language={narrativeLanguage} />
 
           <div className="flex items-start gap-3 px-1">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--wj-contrast-surface)] text-[var(--wj-on-contrast)]">
               <FolderOpen className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-950">{analysisCopy.rawTitle}</h2>
-              <p className="mt-1 text-sm text-slate-500">{analysisCopy.rawDescription}</p>
+              <h2 className="text-xl font-bold text-[var(--wj-text)]">{analysisCopy.rawTitle}</h2>
+              <p className="mt-1 text-sm text-[var(--wj-muted)]">{analysisCopy.rawDescription}</p>
             </div>
           </div>
 
           {rawHistoryModels.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('no_data')}</div>
+            <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-6 py-12 text-center text-[var(--wj-muted)]">{t('no_data')}</div>
           ) : (
             <div className="space-y-2">
               {rawHistoryModels.map((model) => {
@@ -2536,29 +2536,29 @@ export default function DailyAttentionPage() {
                 const partNos = Array.from(new Set(model.items.flatMap((item) => item.part_nos)));
                 const typeSummary = model.phenomenonGroups.slice(0, 3).map((group) => group.phenomenon).join(' · ');
                 return (
-                  <details key={modelKey} className="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <details key={modelKey} className="group overflow-hidden rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
                     <summary className="cursor-pointer list-none px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
                       <span className="flex flex-wrap items-center justify-between gap-2">
                         <span className="min-w-0">
-                          <span className="block font-semibold text-slate-900">{compactModelLabel(model.modelNames, lang)}</span>
-                          <span className="mt-0.5 block text-xs text-slate-600">
+                          <span className="block font-semibold text-[var(--wj-text)]">{compactModelLabel(model.modelNames, lang)}</span>
+                          <span className="mt-0.5 block text-xs text-[var(--wj-muted)]">
                             {typeSummary || t('quality.daily_attention_no_history')}
                             {model.phenomenonGroups.length > 3 ? ` +${model.phenomenonGroups.length - 3}` : ''}
                           </span>
-                          <span className="mt-0.5 block text-xs text-slate-500">
+                          <span className="mt-0.5 block text-xs text-[var(--wj-muted)]">
                             {machineNames.map((name) => compactMachineLabel(name, null, lang)).join(' · ')} · {partNos.join(', ') || '-'}
                           </span>
                         </span>
-                        <span className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
-                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '类型' : '유형'} {model.phenomenonGroups.length}</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '记录' : '이력'} {model.reportCount}</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '照片' : '사진'} {model.photoCount}</span>
-                          <ChevronDown className="ml-1 h-4 w-4 text-slate-500 group-open:rotate-180" aria-hidden="true" />
+                        <span className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--wj-muted)]">
+                          <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1">{lang === 'zh' ? '类型' : '유형'} {model.phenomenonGroups.length}</span>
+                          <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1">{lang === 'zh' ? '记录' : '이력'} {model.reportCount}</span>
+                          <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1">{lang === 'zh' ? '照片' : '사진'} {model.photoCount}</span>
+                          <ChevronDown className="ml-1 h-4 w-4 text-[var(--wj-muted)] group-open:rotate-180" aria-hidden="true" />
                         </span>
                       </span>
                     </summary>
-                    <div className="space-y-3 border-t border-slate-200 px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <div className="space-y-3 border-t border-[var(--wj-border)] px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--wj-muted)]">
                         <span>{lang === 'zh' ? '按计划机台打印' : '계획 호기별 인쇄'}</span>
                         {model.items.map((item) => (
                           <Button
@@ -2574,7 +2574,7 @@ export default function DailyAttentionPage() {
                         ))}
                       </div>
                       {model.phenomenonGroups.length === 0 ? (
-                        <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">{t('quality.daily_attention_no_history')}</div>
+                        <div className="rounded-lg bg-[var(--wj-surface-solid)] px-3 py-3 text-sm text-[var(--wj-muted)]">{t('quality.daily_attention_no_history')}</div>
                       ) : (
                         <div className="space-y-2">
                           {model.phenomenonGroups.map((group) => {
@@ -2582,17 +2582,17 @@ export default function DailyAttentionPage() {
                             const photos = group.reports.flatMap((report) => report.images.map((image, index) => ({ report, image, index })));
                             const photoCount = photos.length;
                             return (
-                              <details key={group.phenomenon} className="overflow-hidden rounded-lg border border-slate-200">
-                                <summary className="cursor-pointer bg-slate-50 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                              <details key={group.phenomenon} className="overflow-hidden rounded-lg border border-[var(--wj-border)]">
+                                <summary className="cursor-pointer bg-[var(--wj-surface-solid)] px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
                                   <span className="inline-flex flex-wrap items-center gap-2 align-middle">
                                     {preview && <img src={preview} alt="" loading="lazy" className="h-9 w-9 rounded object-cover" />}
-                                    <span className="font-semibold text-slate-900">{group.phenomenon}</span>
-                                    <span className="text-xs text-slate-500">
+                                    <span className="font-semibold text-[var(--wj-text)]">{group.phenomenon}</span>
+                                    <span className="text-xs text-[var(--wj-muted)]">
                                       {lang === 'zh' ? '记录' : '이력'} {group.totalCount} · {lang === 'zh' ? '照片' : '사진'} {photoCount} · {formatSectionCounts(group.sectionCounts)}
                                     </span>
                                   </span>
                                 </summary>
-                                <div className="space-y-3 border-t border-slate-200 p-3">
+                                <div className="space-y-3 border-t border-[var(--wj-border)] p-3">
                                   {photos.length > 0 ? (
                                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                                       {photos.map(({ report, image, index }) => (
@@ -2602,13 +2602,13 @@ export default function DailyAttentionPage() {
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           aria-label={`${formatReportDate(report.report_dt)} ${report.model || ''} ${report.part_no || ''} ${group.phenomenon} ${lang === 'zh' ? '照片' : '사진'} ${index + 1}`}
-                                          className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                                          className="overflow-hidden rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                                         >
                                           <figure>
-                                            <div className="aspect-[4/3] bg-slate-50 p-1.5">
+                                            <div className="aspect-[4/3] bg-[var(--wj-surface-solid)] p-1.5">
                                               <img src={image} alt="" loading="lazy" className="h-full w-full object-contain" />
                                             </div>
-                                            <figcaption className="border-t border-slate-100 px-2.5 py-1.5 text-xs font-medium tabular-nums text-slate-600">
+                                            <figcaption className="border-t border-[var(--wj-border)] px-2.5 py-1.5 text-xs font-medium tabular-nums text-[var(--wj-muted)]">
                                               {formatReportDate(report.report_dt)}
                                             </figcaption>
                                           </figure>
@@ -2616,13 +2616,13 @@ export default function DailyAttentionPage() {
                                       ))}
                                     </div>
                                   ) : (
-                                    <p className="text-sm text-slate-500">{t('quality.daily_attention_no_image')}</p>
+                                    <p className="text-sm text-[var(--wj-muted)]">{t('quality.daily_attention_no_image')}</p>
                                   )}
-                                  <details className="overflow-hidden rounded-lg border border-slate-200">
-                                    <summary className="cursor-pointer bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                                  <details className="overflow-hidden rounded-lg border border-[var(--wj-border)]">
+                                    <summary className="cursor-pointer bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-medium text-[var(--wj-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
                                       {lang === 'zh' ? '原始记录' : '원본 기록'} {group.reports.length}{lang === 'zh' ? '条' : '건'}
                                     </summary>
-                                    <div className="divide-y divide-slate-100 border-t border-slate-200">
+                                    <div className="divide-y divide-[var(--wj-border)] border-t border-[var(--wj-border)]">
                                       {group.reports.map((report) => (
                                         <details key={report.id} className="px-3 py-2">
                                           <summary className="cursor-pointer text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
@@ -2630,16 +2630,16 @@ export default function DailyAttentionPage() {
                                               {report.images.length > 0 ? (
                                                 <img src={report.images[0]} alt="" loading="lazy" className="h-10 w-10 rounded object-cover" />
                                               ) : (
-                                                <span className="inline-flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-[10px] text-slate-400">
+                                                <span className="inline-flex h-10 w-10 items-center justify-center rounded bg-[var(--wj-bg-strong)] text-[10px] text-[var(--wj-muted)]">
                                                   {t('quality.daily_attention_no_image')}
                                                 </span>
                                               )}
-                                              <span className="font-medium text-slate-800">{formatReportDate(report.report_dt)}</span>
-                                              <span className="text-slate-600">{report.model || '-'} · {report.part_no || '-'}</span>
-                                              <span className="text-xs text-slate-500">{normalizeSection(report.section)} · {lang === 'zh' ? '照片' : '사진'} {report.images.length}</span>
+                                              <span className="font-medium text-[var(--wj-text)]">{formatReportDate(report.report_dt)}</span>
+                                              <span className="text-[var(--wj-muted)]">{report.model || '-'} · {report.part_no || '-'}</span>
+                                              <span className="text-xs text-[var(--wj-muted)]">{normalizeSection(report.section)} · {lang === 'zh' ? '照片' : '사진'} {report.images.length}</span>
                                             </span>
                                           </summary>
-                                          <div className="mt-2 space-y-2 pl-4 text-sm text-slate-600">
+                                          <div className="mt-2 space-y-2 pl-4 text-sm text-[var(--wj-muted)]">
                                             {report.recorded_phenomenon && report.recorded_phenomenon !== report.phenomenon && (
                                               <p>{lang === 'zh' ? '记录原文' : '기록 원문'}: {report.recorded_phenomenon}</p>
                                             )}
@@ -2648,7 +2648,7 @@ export default function DailyAttentionPage() {
                                             {report.images.length > 0 && (
                                               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                                 {report.images.map((image, index) => (
-                                                  <img key={`${report.id}-${index}`} src={image} alt={`${report.phenomenon || noPhenomenonLabel} ${index + 1}`} loading="lazy" className="max-h-64 w-full rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+                                                  <img key={`${report.id}-${index}`} src={image} alt={`${report.phenomenon || noPhenomenonLabel} ${index + 1}`} loading="lazy" className="max-h-64 w-full rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] object-contain" />
                                                 ))}
                                               </div>
                                             )}
@@ -2679,19 +2679,19 @@ export default function DailyAttentionPage() {
       />
 
       {printSelection && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-5 py-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--wj-nav-surface)] p-4">
+          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[var(--wj-surface-solid)] shadow-2xl">
+            <div className="border-b border-[var(--wj-border)] px-5 py-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">{printPickerTitle}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{printPickerDescription}</p>
-                  <p className="mt-2 text-sm font-medium text-slate-800">
+                  <h2 className="text-lg font-semibold text-[var(--wj-text)]">{printPickerTitle}</h2>
+                  <p className="mt-1 text-sm text-[var(--wj-muted)]">{printPickerDescription}</p>
+                  <p className="mt-2 text-sm font-medium text-[var(--wj-text)]">
                     {printSelection.item.machine_name} / {printSelection.item.part_nos.join(', ')}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                  <span className="rounded-full bg-[var(--wj-bg-strong)] px-3 py-1 text-sm font-medium text-[var(--wj-text)]">
                     {selectedCountLabel}: {printSelection.selectedIds.length} / {printSelection.images.length}
                   </span>
                   <Button type="button" variant="secondary" onClick={() => setAllPrintImages(true)}>
@@ -2706,7 +2706,7 @@ export default function DailyAttentionPage() {
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {printSelection.images.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+                <div className="rounded-lg border border-dashed border-[var(--wj-border)] px-4 py-8 text-center text-sm text-[var(--wj-muted)]">
                   {noSelectableImagesLabel}
                 </div>
               ) : (
@@ -2718,34 +2718,34 @@ export default function DailyAttentionPage() {
                         key={image.id}
                         className={`overflow-hidden rounded-xl border transition ${
                           isSelected
-                            ? 'border-blue-400 bg-blue-50/60 shadow-sm'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
+                            ? 'border-[var(--wj-accent)] bg-[var(--wj-bg-strong)] shadow-sm'
+                            : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)] hover:border-[var(--wj-border)]'
                         }`}
                       >
-                        <div className="relative aspect-[4/3] bg-slate-100">
+                        <div className="relative aspect-[4/3] bg-[var(--wj-bg-strong)]">
                           <img src={image.imageUrl} alt={image.phenomenon} className="h-full w-full object-cover" />
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => togglePrintImage(image.id)}
-                            className="absolute left-3 top-3 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            className="absolute left-3 top-3 h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                           />
                         </div>
                         <div className="space-y-1 px-4 py-3 text-sm">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="font-semibold text-slate-900">{image.phenomenon || noPhenomenonLabel}</div>
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            <div className="font-semibold text-[var(--wj-text)]">{image.phenomenon || noPhenomenonLabel}</div>
+                            <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-0.5 text-xs font-medium text-[var(--wj-text)]">
                               {normalizeSection(image.section)}
                             </span>
                           </div>
                           {image.recordedPhenomenon && image.recordedPhenomenon !== image.phenomenon && (
-                            <div className="break-words text-xs leading-5 text-slate-500">
+                            <div className="break-words text-xs leading-5 text-[var(--wj-muted)]">
                               {lang === 'zh' ? '记录原文' : '기록 원문'}: {image.recordedPhenomenon}
                             </div>
                           )}
-                          <div className="text-slate-600">{dayjs(image.reportDt).format('YYYY-MM-DD')}</div>
-                          <div className="text-slate-600">{image.partNo || '-'}</div>
-                          <div className="line-clamp-2 text-slate-700">{image.disposition || image.actionResult || '-'}</div>
+                          <div className="text-[var(--wj-muted)]">{dayjs(image.reportDt).format('YYYY-MM-DD')}</div>
+                          <div className="text-[var(--wj-muted)]">{image.partNo || '-'}</div>
+                          <div className="line-clamp-2 text-[var(--wj-text)]">{image.disposition || image.actionResult || '-'}</div>
                         </div>
                       </label>
                     );
@@ -2754,7 +2754,7 @@ export default function DailyAttentionPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--wj-border)] px-5 py-4">
               <Button type="button" variant="secondary" onClick={() => setPrintSelection(null)}>
                 {closeLabel}
               </Button>

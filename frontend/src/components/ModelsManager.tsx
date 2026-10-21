@@ -92,7 +92,7 @@ export default function ModelsManager() {
       </div>
       <div className="overflow-x-auto rounded border">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-100">
+          <thead className="bg-[var(--wj-bg-strong)]">
             <tr>
               <th className="px-3 py-2 text-left">Part No</th>
               <th className="px-3 py-2 text-left">Model</th>
@@ -139,11 +139,11 @@ export default function ModelsManager() {
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
                   <Label htmlFor="part_no">Part No</Label>
-                  <Input id="part_no" value={form.part_no || ''} onChange={(e) => setForm({ ...form, part_no: e.target.value })} className={errors.part_no ? 'border-red-500' : ''} />
+                  <Input id="part_no" value={form.part_no || ''} onChange={(e) => setForm({ ...form, part_no: e.target.value })} className={errors.part_no ? 'border-[var(--wj-danger-border)]' : ''} />
                 </div>
                 <div>
                   <Label htmlFor="model_code">Model</Label>
-                  <Input id="model_code" value={form.model_code || ''} onChange={(e) => setForm({ ...form, model_code: e.target.value })} className={errors.model_code ? 'border-red-500' : ''} />
+                  <Input id="model_code" value={form.model_code || ''} onChange={(e) => setForm({ ...form, model_code: e.target.value })} className={errors.model_code ? 'border-[var(--wj-danger-border)]' : ''} />
                 </div>
                 <div>
                   <Label htmlFor="desc">Description</Label>

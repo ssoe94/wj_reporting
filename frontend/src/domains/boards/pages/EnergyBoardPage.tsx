@@ -1,3 +1,4 @@
+import { ThemeSwitch } from '@/components/layout/ThemeSwitch';
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -484,6 +485,7 @@ export function EnergyBoardPage() {
           <div><span>{copy.businessDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatDateTime(latestTimestamp, language)}</strong></div>
           <em>{copy.refreshCycle}</em>
+          <ThemeSwitch compact />
           <div className={styles.language} aria-label="Language">
             <button className={language === "ko" ? styles.activeLanguage : ""} onClick={() => setLanguage("ko")} type="button">KOR</button>
             <button className={language === "zh" ? styles.activeLanguage : ""} onClick={() => setLanguage("zh")} type="button">中文</button>

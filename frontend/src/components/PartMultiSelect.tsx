@@ -76,19 +76,19 @@ export default function PartMultiSelect({ onAdd }: Props) {
               placeholder={t('search_placeholder')}
               className="pl-8 !outline-none !ring-0 !focus:outline-none !focus:ring-0 !focus-visible:outline-none !focus-visible:ring-0"
             />
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">PN</span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--wj-muted)] text-xs">PN</span>
             {keyword.trim() && (
-              <ul className="absolute z-50 mt-1 left-0 right-0 max-h-60 overflow-auto border rounded bg-white p-2 text-sm space-y-1 shadow-lg">
+              <ul className="absolute z-50 mt-1 left-0 right-0 max-h-60 overflow-auto border rounded bg-[var(--wj-surface-solid)] p-2 text-sm space-y-1 shadow-lg">
                 {results.map(r=> (
-                  <li key={r.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-gray-50" title={`${r.part_no}${r.description ? ` - ${r.description}` : ''}`}>
+                  <li key={r.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-[var(--wj-surface-solid)]" title={`${r.part_no}${r.description ? ` - ${r.description}` : ''}`}>
                     <input type="checkbox" checked={selected.some(it=>it.id===r.id)} onChange={()=>toggle(r)} />
-                    <span className="font-mono text-xs bg-gray-100 px-1 rounded" title={r.part_no}>{r.part_no}</span>
-                    <span className="text-gray-500 text-xs truncate" title={r.description || ''}>{r.description}</span>
+                    <span className="font-mono text-xs bg-[var(--wj-bg-strong)] px-1 rounded" title={r.part_no}>{r.part_no}</span>
+                    <span className="text-[var(--wj-muted)] text-xs truncate" title={r.description || ''}>{r.description}</span>
                   </li>
                 ))}
                 {!results.length && (
                   <li className="text-center text-xs py-4">
-                    <button type="button" className="text-blue-600 underline" onClick={addManual}>"{keyword.trim()}" {t('add_directly')}</button>
+                    <button type="button" className="text-[var(--wj-accent-strong)] underline" onClick={addManual}>"{keyword.trim()}" {t('add_directly')}</button>
                   </li>
                 )}
               </ul>
@@ -99,7 +99,7 @@ export default function PartMultiSelect({ onAdd }: Props) {
         {selected.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 text-xs">
             {selected.map(p=> (
-              <span key={p.id} className="border rounded px-1 py-0.5 bg-orange-50 text-gray-700 font-mono">
+              <span key={p.id} className="border rounded px-1 py-0.5 bg-[var(--wj-warning-bg)] text-[var(--wj-text)] font-mono">
                 {p.part_no}
               </span>
             ))}
@@ -120,7 +120,7 @@ export default function PartMultiSelect({ onAdd }: Props) {
                     id="modal-part-no" 
                     value={modalPartNo} 
                     disabled 
-                    className="bg-gray-50" 
+                    className="bg-[var(--wj-surface-solid)]"
                   />
                 </div>
                 <div>

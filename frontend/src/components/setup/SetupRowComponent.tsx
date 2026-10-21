@@ -100,21 +100,21 @@ export default function SetupRowComponent({
 
   return (
     <tr>
-      <td className="border border-gray-300 px-3 py-2">
+      <td className="border border-[var(--wj-border)] px-3 py-2">
         <MachineSelector
           selectedMachine={row.machine_no}
           onMachineChange={handleMachineChange}
-          className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
+          className="w-40 px-2 py-1 border border-[var(--wj-border)] rounded text-sm"
         />
       </td>
-      <td className="border border-gray-300 px-3 py-2 text-sm">
+      <td className="border border-[var(--wj-border)] px-3 py-2 text-sm">
         <NewModelSelector
           value={model}
           onChange={handleModelChange}
           onAddNewModel={(modelCode) => onAddNewModel(row.id, modelCode)}
         />
       </td>
-      <td className="border border-gray-300 px-3 py-2 text-sm">
+      <td className="border border-[var(--wj-border)] px-3 py-2 text-sm">
         <NewPartNoSelector
           model={model}
           value={part}
@@ -122,16 +122,16 @@ export default function SetupRowComponent({
           onAddNewPart={(partNo) => onAddNewPart(row.id, partNo)}
         />
       </td>
-      <td className="border border-gray-300 px-2 py-2">
+      <td className="border border-[var(--wj-border)] px-2 py-2">
         <Input type="number" min="1" value={row.target_cycle_time || ''} onChange={(e) => onRowChange(row.id, 'target_cycle_time', parseInt(e.target.value) || null)} placeholder={t('ct_table.target_ct_placeholder')} className="w-[8.5rem] text-center" />
       </td>
-      <td className="border border-gray-300 px-2 py-2">
+      <td className="border border-[var(--wj-border)] px-2 py-2">
         <Input type="number" min="1" value={row.standard_cycle_time || ''} onChange={(e) => onRowChange(row.id, 'standard_cycle_time', parseInt(e.target.value) || null)} placeholder={t('ct_table.standard_ct_placeholder')} className="w-[8.5rem] text-center" />
       </td>
-      <td className="border border-gray-300 px-2 py-2">
-        <Input type="text" value={row.avg_cycle_time ?? ''} readOnly placeholder={t('ct_table.avg_ct_placeholder')} className="w-[8.5rem] text-center bg-gray-100" />
+      <td className="border border-[var(--wj-border)] px-2 py-2">
+        <Input type="text" value={row.avg_cycle_time ?? ''} readOnly placeholder={t('ct_table.avg_ct_placeholder')} className="w-[8.5rem] text-center bg-[var(--wj-bg-strong)]" />
       </td>
-      <td className="border border-gray-300 px-2 py-2">
+      <td className="border border-[var(--wj-border)] px-2 py-2">
         <Input
           type="number"
           min="0"
@@ -143,8 +143,8 @@ export default function SetupRowComponent({
           required
         />
       </td>
-      <td className="border border-gray-300 px-3 py-2 text-center">
-        <Button type="button" variant="ghost" size="sm" onClick={() => onRowRemove(row.id)} className="text-red-600 hover:text-red-800">
+      <td className="border border-[var(--wj-border)] px-3 py-2 text-center">
+        <Button type="button" variant="ghost" size="sm" onClick={() => onRowRemove(row.id)} className="text-[var(--wj-danger)] hover:text-[var(--wj-danger)]">
           <Trash2 className="w-4 h-4" />
         </Button>
       </td>

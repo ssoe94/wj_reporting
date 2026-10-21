@@ -208,24 +208,24 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
   return (
     <>
       <Dialog open={Boolean(selection)} onClose={onClose} className="relative z-[90]">
-        <DialogBackdrop className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" />
+        <DialogBackdrop className="fixed inset-0 bg-[var(--wj-nav-surface)] backdrop-blur-sm" />
         <div className="fixed inset-0 overflow-y-auto p-2 sm:p-4">
           <div className="flex min-h-full items-center justify-center">
-            <DialogPanel className="flex max-h-[calc(100dvh-1rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-950/10 sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl">
+            <DialogPanel className="flex max-h-[calc(100dvh-1rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-[var(--wj-surface-solid)] shadow-2xl ring-1 ring-[var(--wj-border)] sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl">
               {selection && (
                 <>
-                  <header className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-4 py-4 text-white sm:px-6 sm:py-5">
+                  <header className="border-b border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-4 text-[var(--wj-text)] sm:px-6 sm:py-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-300">{copy.eyebrow}</div>
-                        <DialogTitle className="mt-1 break-keep text-xl font-bold leading-8 text-white sm:text-2xl">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--wj-accent-strong)]">{copy.eyebrow}</div>
+                        <DialogTitle className="mt-1 break-keep text-xl font-bold leading-8 text-[var(--wj-text)] sm:text-2xl">
                           {selection.metricLabel} {copy.titleSuffix}
                         </DialogTitle>
-                        <div className="mt-3 flex min-w-0 items-start gap-2 text-sm font-semibold text-slate-100">
-                          <Factory className="h-4 w-4 shrink-0 text-cyan-300" />
+                        <div className="mt-3 flex min-w-0 items-start gap-2 text-sm font-semibold text-[var(--wj-muted)]">
+                          <Factory className="h-4 w-4 shrink-0 text-[var(--wj-accent-strong)]" />
                           <span className="min-w-0 break-words" title={selection.targetLabel}>{copy.currentTarget}: {selection.targetLabel}</span>
                         </div>
-                        <div className="mt-2 inline-flex max-w-full items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100 ring-1 ring-inset ring-white/15">
+                        <div className="mt-2 inline-flex max-w-full items-center rounded-full bg-[var(--wj-surface-solid)] px-3 py-1 text-xs font-semibold text-[var(--wj-muted)] ring-1 ring-inset ring-[var(--wj-border)]">
                           {isPartSpecLoading
                             ? copy.masterColorLoading
                             : isPartSpecError
@@ -238,7 +238,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                       <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-full bg-white/10 p-2 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                        className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-text)] transition hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
                         aria-label={copy.close}
                       >
                         <X className="h-5 w-5" />
@@ -249,15 +249,15 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                   <div className="flex-1 overflow-y-auto">
                     <div className="space-y-4 px-4 py-4 sm:px-6 sm:py-5">
                       <section className="grid gap-3 lg:grid-cols-2">
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                        <div className="rounded-2xl border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-sm leading-6 text-[var(--wj-warning)]">
                           <div className="flex gap-2">
-                            <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-amber-700" />
+                            <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-[var(--wj-warning)]" />
                             <span>{copy.attributionWarning}</span>
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
+                        <div className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-sm leading-6 text-[var(--wj-accent-strong)]">
                           <div className="flex gap-2">
-                            <Camera className="mt-1 h-4 w-4 shrink-0 text-blue-700" />
+                            <Camera className="mt-1 h-4 w-4 shrink-0 text-[var(--wj-accent-strong)]" />
                             <span>{copy.colorWarning}</span>
                           </div>
                         </div>
@@ -277,7 +277,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                         ))}
                       </section>
 
-                      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-center lg:justify-between">
+                      <section className="flex flex-col gap-3 rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex flex-wrap gap-2" role="group" aria-label={copy.caseFilters}>
                           {([
                             ['all', copy.all, selection.cases.length],
@@ -289,21 +289,21 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                               type="button"
                               onClick={() => setCaseFilter(value)}
                               aria-pressed={caseFilter === value}
-                              className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                              className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-accent)] ${
                                 caseFilter === value
-                                  ? 'bg-slate-950 text-white ring-slate-950'
-                                  : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-100'
+                                  ? 'bg-[var(--wj-contrast-surface)] text-[var(--wj-on-contrast)] ring-[var(--wj-border)]'
+                                  : 'bg-[var(--wj-surface-solid)] text-[var(--wj-text)] ring-[var(--wj-border)] hover:bg-[var(--wj-bg-strong)]'
                               }`}
                             >
                               {label} {count}
                             </button>
                           ))}
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-200">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[var(--wj-surface-solid)] px-3 py-1.5 text-xs font-semibold text-[var(--wj-text)] ring-1 ring-inset ring-[var(--wj-border)]">
                             <input
                               type="checkbox"
                               checked={photosOnly}
                               onChange={(event) => setPhotosOnly(event.target.checked)}
-                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              className="h-4 w-4 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                             />
                             {copy.photosOnly}
                           </label>
@@ -311,20 +311,20 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                         <div className="w-full lg:max-w-md">
                           <label className="relative block">
                             <span className="sr-only">{copy.searchPlaceholder}</span>
-                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--wj-muted)]" />
                             <input
                               value={query}
                               onChange={(event) => setQuery(event.target.value)}
                               placeholder={copy.searchPlaceholder}
-                              className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                              className="h-10 w-full rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] pl-9 pr-3 text-sm text-[var(--wj-text)] outline-none transition placeholder:text-[var(--wj-muted)] focus:border-[var(--wj-accent)] focus:ring-2 focus:ring-[var(--wj-border)]"
                             />
                           </label>
-                          <p className="mt-1.5 text-[11px] leading-4 text-slate-500">{copy.searchBasis}</p>
+                          <p className="mt-1.5 text-[11px] leading-4 text-[var(--wj-muted)]">{copy.searchBasis}</p>
                         </div>
                       </section>
 
                       {visibleCases.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-12 text-center text-sm text-slate-500">
+                        <div className="rounded-2xl border border-dashed border-[var(--wj-border)] px-4 py-12 text-center text-sm text-[var(--wj-muted)]">
                           {copy.noCases}
                         </div>
                       ) : (
@@ -335,38 +335,38 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                             const reportDate = dayjs(item.reportDt).format('YYYY-MM-DD');
                             const historicalSpec = effectivePartSpec(partSpecs, [item.partNo], reportDate);
                             return (
-                              <article key={item.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs">
+                              <article key={item.id} className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3 text-xs">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`rounded-full px-2.5 py-1 font-bold ${exact ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                    <span className={`rounded-full px-2.5 py-1 font-bold ${exact ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]' : 'bg-[var(--wj-warning-bg)] text-[var(--wj-warning)]'}`}>
                                       {exact ? copy.exact : copy.related}
                                     </span>
-                                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+                                    <span className="rounded-full bg-[var(--wj-surface-solid)] px-2.5 py-1 font-semibold text-[var(--wj-muted)] ring-1 ring-inset ring-[var(--wj-border)]">
                                       {item.section || '-'}
                                     </span>
                                     {item.judgement && (
-                                      <span className="rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700 ring-1 ring-inset ring-rose-200">
+                                      <span className="rounded-full bg-[var(--wj-danger-bg)] px-2.5 py-1 font-semibold text-[var(--wj-danger)] ring-1 ring-inset ring-[var(--wj-danger-border)]">
                                         {item.judgement}
                                       </span>
                                     )}
                                   </div>
-                                  <time className="font-semibold tabular-nums text-slate-600">{reportDate}</time>
+                                  <time className="font-semibold tabular-nums text-[var(--wj-muted)]">{reportDate}</time>
                                 </div>
 
                                 <div className="grid gap-4 p-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                                   <div className="space-y-3">
                                     <div className="grid gap-2 text-sm sm:grid-cols-2 md:grid-cols-1">
-                                      <div className="rounded-xl bg-slate-50 px-3 py-2">
-                                        <div className="text-[11px] font-semibold text-slate-500">{copy.historicalModel}</div>
-                                        <div className="mt-0.5 break-words font-bold text-slate-900">{item.model || '-'}</div>
+                                      <div className="rounded-xl bg-[var(--wj-surface-solid)] px-3 py-2">
+                                        <div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.historicalModel}</div>
+                                        <div className="mt-0.5 break-words font-bold text-[var(--wj-text)]">{item.model || '-'}</div>
                                       </div>
-                                      <div className="rounded-xl bg-slate-50 px-3 py-2">
-                                        <div className="text-[11px] font-semibold text-slate-500">{copy.historicalPart}</div>
-                                        <div className="mt-0.5 break-all font-bold text-slate-900">{item.partNo || '-'}</div>
+                                      <div className="rounded-xl bg-[var(--wj-surface-solid)] px-3 py-2">
+                                        <div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.historicalPart}</div>
+                                        <div className="mt-0.5 break-all font-bold text-[var(--wj-text)]">{item.partNo || '-'}</div>
                                       </div>
-                                      <div className="rounded-xl bg-slate-50 px-3 py-2 sm:col-span-2 md:col-span-1">
-                                        <div className="text-[11px] font-semibold text-slate-500">{copy.historicalColor}</div>
-                                        <div className="mt-0.5 break-words font-bold text-slate-900">
+                                      <div className="rounded-xl bg-[var(--wj-surface-solid)] px-3 py-2 sm:col-span-2 md:col-span-1">
+                                        <div className="text-[11px] font-semibold text-[var(--wj-muted)]">{copy.historicalColor}</div>
+                                        <div className="mt-0.5 break-words font-bold text-[var(--wj-text)]">
                                           {isPartSpecLoading
                                             ? copy.masterColorLoading
                                             : isPartSpecError
@@ -378,20 +378,20 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">{copy.recordedText}</div>
-                                      <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-900">{item.rawPhenomenon || '-'}</p>
+                                      <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--wj-muted)]">{copy.recordedText}</div>
+                                      <p className="mt-1 break-words text-sm font-semibold leading-6 text-[var(--wj-text)]">{item.rawPhenomenon || '-'}</p>
                                     </div>
                                     {item.canonicalLabels.length > 0 && (
                                       <div className="flex flex-wrap gap-1.5">
                                         {item.canonicalLabels.map((label) => (
-                                          <span key={label} className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+                                          <span key={label} className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-1 text-[11px] font-semibold text-[var(--wj-accent-strong)] ring-1 ring-inset ring-[var(--wj-border)]">
                                             {label}
                                           </span>
                                         ))}
                                       </div>
                                     )}
-                                    <div className="border-t border-slate-100 pt-3 text-sm leading-6 text-slate-600">
-                                      <span className="font-semibold text-slate-700">{copy.action}: </span>
+                                    <div className="border-t border-[var(--wj-border)] pt-3 text-sm leading-6 text-[var(--wj-muted)]">
+                                      <span className="font-semibold text-[var(--wj-text)]">{copy.action}: </span>
                                       {actionText || copy.noAction}
                                     </div>
                                   </div>
@@ -403,7 +403,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                                           key={`${item.id}-${imageIndex}`}
                                           type="button"
                                           onClick={() => setActiveImage({ caseId: item.id, index: imageIndex })}
-                                          className="group relative aspect-[4/3] min-h-36 overflow-hidden rounded-xl bg-slate-100 outline-none ring-blue-500 focus-visible:ring-2"
+                                          className="group relative aspect-[4/3] min-h-36 overflow-hidden rounded-xl bg-[var(--wj-bg-strong)] outline-none ring-[var(--wj-accent)] focus-visible:ring-2"
                                           aria-label={`${item.model || item.partNo} ${imageIndex + 1}/${item.images.length}`}
                                         >
                                           <img
@@ -412,7 +412,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                                             loading="lazy"
                                             className="h-full min-h-36 w-full object-contain transition duration-200 group-hover:scale-[1.02]"
                                           />
-                                          <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-2 py-1 text-[11px] font-semibold text-white">
+                                          <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-[var(--wj-contrast-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--wj-on-contrast)]">
                                             <ZoomIn className="h-3.5 w-3.5" />
                                             {imageIndex + 1}/{item.images.length}
                                           </span>
@@ -420,7 +420,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                                       ))}
                                     </div>
                                   ) : (
-                                    <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
+                                    <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] text-sm text-[var(--wj-muted)]">
                                       <ImageOff className="mb-2 h-6 w-6" />
                                       {copy.noImage}
                                     </div>
@@ -441,28 +441,28 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
       </Dialog>
 
       <Dialog open={Boolean(activeImageUrl)} onClose={() => setActiveImage(null)} className="relative z-[110]">
-        <DialogBackdrop className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm" />
+        <DialogBackdrop className="fixed inset-0 bg-[var(--wj-nav-surface)] backdrop-blur-sm" />
         <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-6">
-          <DialogPanel className="relative flex h-full max-h-[calc(100dvh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-950 text-white shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+          <DialogPanel className="relative flex h-full max-h-[calc(100dvh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[var(--wj-contrast-surface)] text-[var(--wj-on-contrast)] shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
             {activeCase && activeImage && activeImageUrl && (
               <>
-                <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-3 sm:px-5">
+                <div className="flex items-start justify-between gap-4 border-b border-[var(--wj-border)] px-4 py-3 sm:px-5">
                   <div className="min-w-0">
-                    <DialogTitle className="truncate text-sm font-bold text-white sm:text-base">
+                    <DialogTitle className="truncate text-sm font-bold text-[var(--wj-on-contrast)] sm:text-base">
                       {activeCase.model || activeCase.partNo} · {activeImage.index + 1}/{activeCase.images.length}
                     </DialogTitle>
-                    <p className="mt-1 truncate text-xs text-slate-300">{activeCase.partNo} · {activeCase.rawPhenomenon}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--wj-on-contrast-muted)]">{activeCase.partNo} · {activeCase.rawPhenomenon}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setActiveImage(null)}
-                    className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    className="rounded-full bg-[var(--wj-surface-solid)] p-2 text-[var(--wj-text)] hover:bg-[var(--wj-surface-solid)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)]"
                     aria-label={copy.closeImage}
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
-                <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black p-2 sm:p-4">
+                <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[var(--wj-surface-solid)] p-2 sm:p-4">
                   <img
                     src={activeImageUrl}
                     alt={`${activeCase.model || activeCase.partNo} · ${activeCase.rawPhenomenon} · ${activeImage.index + 1}`}
@@ -473,7 +473,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                       <button
                         type="button"
                         onClick={() => moveImage(-1)}
-                        className="absolute left-2 rounded-full bg-slate-950/75 p-2.5 text-white shadow-lg hover:bg-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:left-4"
+                        className="absolute left-2 rounded-full bg-[var(--wj-contrast-surface)] p-2.5 text-[var(--wj-on-contrast)] shadow-lg hover:bg-[var(--wj-contrast-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)] sm:left-4"
                         aria-label={copy.previousImage}
                       >
                         <ChevronLeft className="h-6 w-6" />
@@ -481,7 +481,7 @@ export default function DailyAttentionEvidenceDialog({ lang, selection, onClose 
                       <button
                         type="button"
                         onClick={() => moveImage(1)}
-                        className="absolute right-2 rounded-full bg-slate-950/75 p-2.5 text-white shadow-lg hover:bg-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:right-4"
+                        className="absolute right-2 rounded-full bg-[var(--wj-contrast-surface)] p-2.5 text-[var(--wj-on-contrast)] shadow-lg hover:bg-[var(--wj-contrast-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wj-border)] sm:right-4"
                         aria-label={copy.nextImage}
                       >
                         <ChevronRight className="h-6 w-6" />

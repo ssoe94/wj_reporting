@@ -314,13 +314,13 @@ export default function UserApproval() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-md border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-3 text-sm text-[var(--wj-danger)]">
           {error}
         </div>
       )}
 
       {actionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-md border border-[var(--wj-success-border)] bg-[var(--wj-success-bg)] px-4 py-3 text-sm text-[var(--wj-success)]">
           {actionSuccess}
         </div>
       )}
@@ -328,55 +328,55 @@ export default function UserApproval() {
       {/* 승인 대기 요청 목록 */}
       <div>
         <div className="mb-4 flex items-center gap-2">
-          <Users className="h-6 w-6 text-orange-600" />
-          <h2 className="text-2xl font-bold text-orange-700">승인 대기 중인 가입 요청 ({pendingRequests.length})</h2>
+          <Users className="h-6 w-6 text-[var(--wj-warning)]" />
+          <h2 className="text-2xl font-bold text-[var(--wj-warning)]">승인 대기 중인 가입 요청 ({pendingRequests.length})</h2>
         </div>
 
-        <div className="bg-white rounded-lg border border-orange-100 overflow-hidden shadow-sm">
+        <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-warning-border)] overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gradient-to-r from-orange-50 to-amber-50">
+            <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+              <thead className="bg-gradient-to-r from-[var(--wj-warning-bg)] to-[var(--wj-warning-bg)]">
                 <tr>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">요청자</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">부서/사유</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">신청일시</th>
-                  <th className="px-4 py-3.5 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">관리</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">요청자</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">부서/사유</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">신청일시</th>
+                  <th className="px-4 py-3.5 text-center text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">관리</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[var(--wj-border)]">
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-500">
+                    <td colSpan={4} className="py-8 text-center text-[var(--wj-muted)]">
                       정보를 불러오는 중입니다…
                     </td>
                   </tr>
                 ) : pendingRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-400">
+                    <td colSpan={4} className="py-8 text-center text-[var(--wj-muted)]">
                       대기 중인 가입 요청이 없습니다.
                     </td>
                   </tr>
                 ) : (
                   pendingRequests.map((req) => (
-                    <tr key={req.id} className="hover:bg-orange-50/20">
+                    <tr key={req.id} className="hover:bg-[var(--wj-warning-bg)]">
                       <td className="px-4 py-3">
-                        <div className="font-semibold text-gray-900">{req.full_name}</div>
-                        <div className="text-gray-600 underline text-xs">{req.email}</div>
+                        <div className="font-semibold text-[var(--wj-text)]">{req.full_name}</div>
+                        <div className="text-[var(--wj-muted)] underline text-xs">{req.email}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-gray-700 font-medium">{req.department}</div>
-                        <div className="text-gray-500 text-xs mt-0.5 line-clamp-1" title={req.reason}>
+                        <div className="text-[var(--wj-text)] font-medium">{req.department}</div>
+                        <div className="text-[var(--wj-muted)] text-xs mt-0.5 line-clamp-1" title={req.reason}>
                           {req.reason || '-'}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
+                      <td className="px-4 py-3 text-[var(--wj-muted)] text-xs">
                         {new Date(req.created_at).toLocaleString()}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-2">
                           <Button
                             size="sm"
-                            className="bg-green-600 text-white hover:bg-green-700 h-8 px-3"
+                            className="bg-[var(--wj-success)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-success)] h-8 px-3"
                             onClick={() => {
                               setApprovalPermissions(createEmptyPermissions());
                               setApprovalModal({ open: true, request: req });
@@ -387,7 +387,7 @@ export default function UserApproval() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-3"
+                            className="text-[var(--wj-danger)] hover:text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] h-8 px-3"
                             onClick={() => handleRejectRequest(req.id)}
                           >
                             거부
@@ -405,31 +405,31 @@ export default function UserApproval() {
 
       <div>
         <div className="mb-4 flex items-center gap-2">
-          <User className="h-6 w-6 text-gray-600" />
-          <h2 className="text-2xl font-bold text-gray-800">등록된 사용자 목록 ({userProfiles.length}명)</h2>
+          <User className="h-6 w-6 text-[var(--wj-muted)]" />
+          <h2 className="text-2xl font-bold text-[var(--wj-text)]">등록된 사용자 목록 ({userProfiles.length}명)</h2>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+        <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
+            <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+              <thead className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)]">
                 <tr>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">사용자</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">부서</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">권한 요약</th>
-                  <th className="px-4 py-3.5 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">작업</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">사용자</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">부서</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">권한 요약</th>
+                  <th className="px-4 py-3.5 text-center text-xs font-bold text-[var(--wj-text)] uppercase tracking-wider">작업</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[var(--wj-border)]">
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-500">
+                    <td colSpan={4} className="py-8 text-center text-[var(--wj-muted)]">
                       정보를 불러오는 중입니다…
                     </td>
                   </tr>
                 ) : userProfiles.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-500">
+                    <td colSpan={4} className="py-8 text-center text-[var(--wj-muted)]">
                       등록된 사용자가 없습니다.
                     </td>
                   </tr>
@@ -437,24 +437,24 @@ export default function UserApproval() {
                   userProfiles.map((profile) => (
                     <tr
                       key={profile.id}
-                      className={`transition-colors duration-150 ${profile.is_active ? 'hover:bg-blue-50/30' : 'bg-gray-50 opacity-70'}`}
+                      className={`transition-colors duration-150 ${profile.is_active ? 'hover:bg-[var(--wj-bg-strong)]' : 'bg-[var(--wj-surface-solid)] opacity-70'}`}
                     >
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 font-semibold text-gray-900">
+                        <div className="flex items-center gap-2 font-semibold text-[var(--wj-text)]">
                           <span>{profile.first_name || profile.username}</span>
                           {!profile.is_active && (
-                            <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-bold text-gray-600">
+                            <span className="rounded-full bg-[var(--wj-bg-strong)] px-2 py-0.5 text-[10px] font-bold text-[var(--wj-muted)]">
                               사용 중지
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-500">아이디: {profile.username}</div>
-                        <div className="text-gray-600 underline text-xs">{profile.email || '-'}</div>
+                        <div className="text-xs text-[var(--wj-muted)]">아이디: {profile.username}</div>
+                        <div className="text-[var(--wj-muted)] underline text-xs">{profile.email || '-'}</div>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 font-medium">
+                      <td className="px-4 py-3 text-[var(--wj-text)] font-medium">
                         {profile.department || '-'}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">
+                      <td className="px-4 py-3 text-[var(--wj-text)]">
                         {getPermissionSummary(profile)}
                       </td>
                       <td className="px-4 py-3">
@@ -462,7 +462,7 @@ export default function UserApproval() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            className="text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] hover:bg-[var(--wj-bg-strong)]"
                             onClick={() => setResetPasswordModal({ open: true, user: profile })}
                             disabled={!profile.is_active}
                             title="비밀번호 리셋"
@@ -472,7 +472,7 @@ export default function UserApproval() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            className="text-[var(--wj-success)] hover:text-[var(--wj-success)] hover:bg-[var(--wj-success-bg)]"
                             onClick={() => openEditUserModal(profile)}
                             title="사용자 정보 수정"
                           >
@@ -482,8 +482,8 @@ export default function UserApproval() {
                             size="sm"
                             variant="ghost"
                             className={profile.is_active
-                              ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
-                              : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}
+                              ? 'text-[var(--wj-danger)] hover:text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)]'
+                              : 'text-[var(--wj-success)] hover:text-[var(--wj-success)] hover:bg-[var(--wj-success-bg)]'}
                             onClick={() => setDeleteUserModal({ open: true, user: profile })}
                             title={profile.is_active ? '계정 사용 중지' : '계정 다시 활성화'}
                           >
@@ -508,62 +508,62 @@ export default function UserApproval() {
             <CardContent className="pt-6">
               <div className="mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-blue-600" />
+                  <UserPlus className="h-5 w-5 text-[var(--wj-accent-strong)]" />
                   <h3 className="text-lg font-semibold">사용자 추가</h3>
                 </div>
-                <button onClick={() => setCreateUserModal(false)} className="text-gray-400 hover:text-gray-600" aria-label="닫기">
+                <button onClick={() => setCreateUserModal(false)} className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]" aria-label="닫기">
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-[var(--wj-text)]">
                   이름
                   <input
                     value={createUserForm.first_name}
                     onChange={(event) => setCreateUserForm((current) => ({ ...current, first_name: event.target.value }))}
-                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                     placeholder="사용자 이름"
                     autoComplete="name"
                   />
                 </label>
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-[var(--wj-text)]">
                   아이디
                   <input
                     value={createUserForm.username}
                     onChange={(event) => setCreateUserForm((current) => ({ ...current, username: event.target.value }))}
-                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                     placeholder="로그인 아이디"
                     autoComplete="off"
                   />
                 </label>
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-[var(--wj-text)]">
                   이메일 주소
                   <input
                     type="email"
                     value={createUserForm.email}
                     onChange={(event) => setCreateUserForm((current) => ({ ...current, email: event.target.value }))}
-                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                     placeholder="name@njwanjia.com"
                     autoComplete="email"
                   />
                 </label>
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-[var(--wj-text)]">
                   부서
                   <input
                     value={createUserForm.department}
                     onChange={(event) => setCreateUserForm((current) => ({ ...current, department: event.target.value }))}
-                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                     placeholder="부서"
                   />
                 </label>
               </div>
 
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="mt-4 rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-sm text-[var(--wj-warning)]">
                 생성 완료 후 초기 비밀번호가 표시됩니다. 사용자는 첫 로그인 직후 본인 비밀번호로 반드시 변경해야 합니다.
               </div>
 
               <div className="mt-5">
-                <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-gray-400">초기 권한 설정</h4>
+                <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-[var(--wj-muted)]">초기 권한 설정</h4>
                 <PermissionCheckboxList
                   permissions={createUserForm.permissions}
                   canGrantHr={canGrantHr}
@@ -596,7 +596,7 @@ export default function UserApproval() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-green-600" />
+                  <Shield className="h-5 w-5 text-[var(--wj-success)]" />
                   <h3 className="text-lg font-semibold">사용자 가입 승인</h3>
                 </div>
                 <button
@@ -605,7 +605,7 @@ export default function UserApproval() {
                     setNewPassword(null);
                     setError(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -613,14 +613,14 @@ export default function UserApproval() {
 
               {!newPassword ? (
                 <>
-                  <div className="mb-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                    <div className="text-sm font-bold text-gray-900">{approvalModal.request?.full_name}</div>
-                    <div className="text-xs text-gray-600">{approvalModal.request?.email}</div>
-                    <div className="text-xs text-gray-500 mt-1">{approvalModal.request?.department}</div>
+                  <div className="mb-4 bg-[var(--wj-surface-solid)] p-3 rounded-lg border border-[var(--wj-border)]">
+                    <div className="text-sm font-bold text-[var(--wj-text)]">{approvalModal.request?.full_name}</div>
+                    <div className="text-xs text-[var(--wj-muted)]">{approvalModal.request?.email}</div>
+                    <div className="text-xs text-[var(--wj-muted)] mt-1">{approvalModal.request?.department}</div>
                   </div>
 
                   <div className="mb-6">
-                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">초기 권한 설정</h4>
+                    <h4 className="text-xs font-black text-[var(--wj-muted)] uppercase tracking-widest mb-3">초기 권한 설정</h4>
                     <PermissionCheckboxList
                       permissions={approvalPermissions}
                       canGrantHr={canGrantHr}
@@ -639,7 +639,7 @@ export default function UserApproval() {
                     <Button
                       onClick={() => handleApproveRequest(approvalModal.request!.id, approvalPermissions)}
                       disabled={actionLoading}
-                      className="bg-green-600 text-white hover:bg-green-700"
+                      className="bg-[var(--wj-success)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-success)]"
                     >
                       {actionLoading ? '승인 처리 중...' : '확인 및 승인'}
                     </Button>
@@ -647,27 +647,27 @@ export default function UserApproval() {
                 </>
               ) : (
                 <div className="space-y-6">
-                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center">
-                    <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <div className="p-4 bg-[var(--wj-success-bg)] border border-[var(--wj-success-border)] rounded-lg text-center">
+                    <div className="w-12 h-12 bg-[var(--wj-success-bg)] text-[var(--wj-success)] rounded-full flex items-center justify-center mx-auto mb-3">
                       <Shield className="h-6 w-6" />
                     </div>
-                    <h4 className="text-green-900 font-bold mb-1">승인 완료</h4>
-                    <p className="text-sm text-green-700">임시 비밀번호가 생성되었습니다.</p>
+                    <h4 className="text-[var(--wj-success)] font-bold mb-1">승인 완료</h4>
+                    <p className="text-sm text-[var(--wj-success)]">임시 비밀번호가 생성되었습니다.</p>
                   </div>
 
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-xs font-bold text-blue-900 mb-2 uppercase tracking-tight">임시 비밀번호</p>
-                    <code className="block p-3 bg-white border border-blue-300 rounded-lg text-blue-700 font-mono text-lg text-center break-all shadow-sm">
+                  <div className="p-4 bg-[var(--wj-bg-strong)] border border-[var(--wj-border)] rounded-xl">
+                    <p className="text-xs font-bold text-[var(--wj-accent-strong)] mb-2 uppercase tracking-tight">임시 비밀번호</p>
+                    <code className="block p-3 bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-lg text-[var(--wj-accent-strong)] font-mono text-lg text-center break-all shadow-sm">
                       {newPassword}
                     </code>
-                    <p className="text-[10px] text-blue-600 mt-3 leading-relaxed">
+                    <p className="text-[10px] text-[var(--wj-accent-strong)] mt-3 leading-relaxed">
                       * 이 비밀번호를 사용자에게 안전하게 전달하세요.<br />
                       * 사용자는 최초 로그인 시 비밀번호를 변경해야 합니다.
                     </p>
                   </div>
 
                   <Button
-                    className="w-full bg-gray-900 text-white hover:bg-black"
+                    className="w-full bg-[var(--wj-contrast-surface)] text-[var(--wj-on-contrast)] hover:bg-[var(--wj-contrast-surface)]"
                     onClick={() => {
                       setApprovalModal({ open: false, request: null });
                       setNewPassword(null);
@@ -689,7 +689,7 @@ export default function UserApproval() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Key className="h-5 w-5 text-blue-600" />
+                  <Key className="h-5 w-5 text-[var(--wj-accent-strong)]" />
                   <h3 className="text-lg font-semibold">비밀번호 리셋</h3>
                 </div>
                 <button
@@ -698,7 +698,7 @@ export default function UserApproval() {
                     setNewPassword(null);
                     setError(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -706,19 +706,19 @@ export default function UserApproval() {
 
               {!newPassword ? (
                 <div className="mb-6">
-                  <p className="text-sm text-gray-600 mb-2">
+                  <p className="text-sm text-[var(--wj-muted)] mb-2">
                     <span className="font-semibold">{resetPasswordModal.user.first_name || resetPasswordModal.user.username}</span>님의 비밀번호를 리셋하시겠습니까?
                   </p>
-                  <p className="text-xs text-gray-400">리셋 시 무작위로 생성된 임시 비밀번호가 부여됩니다.</p>
+                  <p className="text-xs text-[var(--wj-muted)]">리셋 시 무작위로 생성된 임시 비밀번호가 부여됩니다.</p>
                 </div>
               ) : (
                 <div className="mb-6">
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-xs font-semibold text-blue-900 mb-2 uppercase tracking-widest">새 임시 비밀번호</p>
-                    <code className="block p-4 bg-white border border-blue-300 rounded text-blue-700 font-mono text-lg text-center break-all">
+                  <div className="p-4 bg-[var(--wj-bg-strong)] border border-[var(--wj-border)] rounded-lg">
+                    <p className="text-xs font-semibold text-[var(--wj-accent-strong)] mb-2 uppercase tracking-widest">새 임시 비밀번호</p>
+                    <code className="block p-4 bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded text-[var(--wj-accent-strong)] font-mono text-lg text-center break-all">
                       {newPassword}
                     </code>
-                    <p className="text-[10px] text-blue-600 mt-3 leading-relaxed">
+                    <p className="text-[10px] text-[var(--wj-accent-strong)] mt-3 leading-relaxed">
                       이 비밀번호를 사용자에게 전달하세요. 사용자는 로그인 후 비밀번호를 변경해야 합니다.
                     </p>
                   </div>
@@ -741,7 +741,7 @@ export default function UserApproval() {
                   <Button
                     onClick={() => handleResetPassword(resetPasswordModal.user!.user)}
                     disabled={actionLoading}
-                    className="bg-blue-600 text-white hover:bg-blue-700"
+                    className="bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)]"
                   >
                     {actionLoading ? '처리 중...' : '리셋 실행'}
                   </Button>
@@ -759,7 +759,7 @@ export default function UserApproval() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Edit className="h-5 w-5 text-green-600" />
+                  <Edit className="h-5 w-5 text-[var(--wj-success)]" />
                   <h3 className="text-lg font-semibold">사용자 정보 수정</h3>
                 </div>
                 <button
@@ -768,7 +768,7 @@ export default function UserApproval() {
                     setEditUserForm(null);
                     setError(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                   aria-label="닫기"
                 >
                   <X className="h-5 w-5" />
@@ -776,52 +776,52 @@ export default function UserApproval() {
               </div>
 
               <div className="mb-6">
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-[var(--wj-muted)] mb-4">
                   <span className="font-semibold">{editUserModal.user.first_name || editUserModal.user.username}</span>님의 계정 정보와 권한을 수정합니다.
                 </p>
 
                 <div className="mb-5 grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-semibold text-[var(--wj-text)]">
                     이름
                     <input
                       value={editUserForm.first_name}
                       onChange={(event) => setEditUserForm((current) => current && ({ ...current, first_name: event.target.value }))}
-                      className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                       placeholder="사용자 이름"
                     />
                   </label>
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-semibold text-[var(--wj-text)]">
                     아이디
                     <input
                       value={editUserForm.username}
                       onChange={(event) => setEditUserForm((current) => current && ({ ...current, username: event.target.value }))}
-                      className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                       placeholder="로그인 아이디"
                       autoComplete="off"
                     />
                   </label>
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-semibold text-[var(--wj-text)]">
                     이메일 주소
                     <input
                       type="email"
                       value={editUserForm.email}
                       onChange={(event) => setEditUserForm((current) => current && ({ ...current, email: event.target.value }))}
-                      className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                       placeholder="name@njwanjia.com"
                     />
                   </label>
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-semibold text-[var(--wj-text)]">
                     부서
                     <input
                       value={editUserForm.department}
                       onChange={(event) => setEditUserForm((current) => current && ({ ...current, department: event.target.value }))}
-                      className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="mt-1 w-full rounded-md border border-[var(--wj-border)] px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                       placeholder="부서를 입력하세요"
                     />
                   </label>
                 </div>
 
-                <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-gray-400">권한 설정</h4>
+                <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-[var(--wj-muted)]">권한 설정</h4>
                 <PermissionCheckboxList
                   permissions={editUserForm.permissions}
                   canGrantHr={canGrantHr}
@@ -845,7 +845,7 @@ export default function UserApproval() {
                 <Button
                   onClick={() => handleUpdateUser(editUserModal.user!.id)}
                   disabled={actionLoading || !editUserForm.username.trim()}
-                  className="bg-green-600 text-white hover:bg-green-700"
+                  className="bg-[var(--wj-success)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-success)]"
                 >
                   {actionLoading ? '저장 중...' : '정보 저장'}
                 </Button>
@@ -863,8 +863,8 @@ export default function UserApproval() {
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
                   {deleteUserModal.user.is_active
-                    ? <UserX className="h-5 w-5 text-red-600" />
-                    : <UserCheck className="h-5 w-5 text-emerald-600" />}
+                    ? <UserX className="h-5 w-5 text-[var(--wj-danger)]" />
+                    : <UserCheck className="h-5 w-5 text-[var(--wj-success)]" />}
                   <h3 className="text-lg font-semibold">
                     {deleteUserModal.user.is_active ? '계정 사용 중지' : '계정 다시 활성화'}
                   </h3>
@@ -874,21 +874,21 @@ export default function UserApproval() {
                     setDeleteUserModal({ open: false, user: null });
                     setError(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
               <div className="mb-6">
-                <p className="text-sm text-gray-700 mb-4">
+                <p className="text-sm text-[var(--wj-text)] mb-4">
                   <span className="font-semibold">{deleteUserModal.user.first_name || deleteUserModal.user.username}</span>님의 계정을
                   {deleteUserModal.user.is_active ? ' 사용 중지하시겠습니까?' : ' 다시 활성화하시겠습니까?'}
                 </p>
                 <div className={deleteUserModal.user.is_active
-                  ? 'rounded-lg border border-amber-200 bg-amber-50 p-4'
-                  : 'rounded-lg border border-emerald-200 bg-emerald-50 p-4'}>
-                  <p className={deleteUserModal.user.is_active ? 'text-sm text-amber-800' : 'text-sm text-emerald-800'}>
+                  ? 'rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] p-4'
+                  : 'rounded-lg border border-[var(--wj-success-border)] bg-[var(--wj-success-bg)] p-4'}>
+                  <p className={deleteUserModal.user.is_active ? 'text-sm text-[var(--wj-warning)]' : 'text-sm text-[var(--wj-success)]'}>
                     {deleteUserModal.user.is_active
                       ? '즉시 로그인이 차단되지만 기존 작업 이력과 계정 정보는 안전하게 보존됩니다. 필요하면 다시 활성화할 수 있습니다.'
                       : '활성화하면 이 사용자가 다시 로그인할 수 있습니다.'}
@@ -911,8 +911,8 @@ export default function UserApproval() {
                   onClick={() => handleToggleUserActive(deleteUserModal.user!)}
                   disabled={actionLoading}
                   className={deleteUserModal.user.is_active
-                    ? 'bg-red-600 text-white hover:bg-red-700'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'}
+                    ? 'bg-[var(--wj-danger)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-danger)]'
+                    : 'bg-[var(--wj-success)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-success)]'}
                 >
                   {actionLoading
                     ? '처리 중...'
@@ -945,16 +945,16 @@ function PermissionCheckboxList({
 
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors shadow-sm bg-white">
+      <label className="flex items-center gap-3 p-3 rounded-xl border border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)] cursor-pointer transition-colors shadow-sm bg-[var(--wj-surface-solid)]">
         <input
           type="checkbox"
           checked={permissions.is_admin}
           onChange={(e) => handleChange('is_admin', e.target.checked)}
-          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+          className="w-4 h-4 text-[var(--wj-accent-strong)] rounded focus:ring-2 focus:ring-[var(--wj-accent)]"
         />
         <div>
-          <div className="font-bold text-gray-900 text-sm">관리자</div>
-          <div className="text-xs text-gray-500">일반 업무 관리 · 인사 권한은 별도 지정</div>
+          <div className="font-bold text-[var(--wj-text)] text-sm">관리자</div>
+          <div className="text-xs text-[var(--wj-muted)]">일반 업무 관리 · 인사 권한은 별도 지정</div>
         </div>
       </label>
 
@@ -966,28 +966,28 @@ function PermissionCheckboxList({
         { id: 'can_edit_sales', label: '영업/재고 편집 권한' },
         { id: 'can_edit_development', label: '개발/ECO 편집 권한' },
       ] as Array<{ id: keyof EditablePermissions; label: string }>).map((permission) => (
-        <label key={permission.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors bg-white/50">
+        <label key={permission.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)] cursor-pointer transition-colors bg-[var(--wj-surface-solid)]">
           <input
             type="checkbox"
             checked={permissions[permission.id]}
             onChange={(event) => handleChange(permission.id, event.target.checked)}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            className="w-4 h-4 text-[var(--wj-accent-strong)] rounded focus:ring-2 focus:ring-[var(--wj-accent)]"
           />
-          <div className="font-semibold text-gray-700 text-xs">{permission.label}</div>
+          <div className="font-semibold text-[var(--wj-text)] text-xs">{permission.label}</div>
         </label>
       ))}
-      <label className="flex items-start gap-3 p-3 rounded-lg border border-blue-100 bg-blue-50/50">
+      <label className="flex items-start gap-3 p-3 rounded-lg border border-[var(--wj-border)] bg-[var(--wj-bg-strong)]">
         <input
           type="checkbox"
           checked={permissions.can_manage_hr}
           disabled={!canGrantHr || target?.is_superuser || (target?.is_active === false && !target.can_manage_hr)}
           onChange={(event) => handleChange('can_manage_hr', event.target.checked)}
-          className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="mt-0.5 w-4 h-4 text-[var(--wj-accent-strong)] rounded focus:ring-2 focus:ring-[var(--wj-accent)] disabled:opacity-50"
         />
         <div>
-          <div className="font-semibold text-gray-800 text-sm">인사관리 권한</div>
-          <div className="text-xs text-gray-600 mt-1">인원 배치 · 급여 업로드 · 인건비 조회 및 집계</div>
-          <div className="text-xs text-gray-500 mt-1">{target?.is_superuser ? 'superuser는 자동 적용됩니다.' : target?.is_active === false ? '사용 중지 계정은 인사 페이지에 접근할 수 없습니다.' : canGrantHr ? '부여·해제는 superuser만 가능합니다.' : 'superuser에게 권한 지정을 요청하세요.'}</div>
+          <div className="font-semibold text-[var(--wj-text)] text-sm">인사관리 권한</div>
+          <div className="text-xs text-[var(--wj-muted)] mt-1">인원 배치 · 급여 업로드 · 인건비 조회 및 집계</div>
+          <div className="text-xs text-[var(--wj-muted)] mt-1">{target?.is_superuser ? 'superuser는 자동 적용됩니다.' : target?.is_active === false ? '사용 중지 계정은 인사 페이지에 접근할 수 없습니다.' : canGrantHr ? '부여·해제는 superuser만 가능합니다.' : 'superuser에게 권한 지정을 요청하세요.'}</div>
         </div>
       </label>
     </div>

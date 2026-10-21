@@ -75,14 +75,14 @@ export default function TestRecordModal({ setup, onClose, onSuccess }: TestRecor
     <Dialog open={true} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <Dialog.Panel className="bg-[var(--wj-surface-solid)] rounded-lg shadow-xl w-full max-w-md">
           <div className="flex items-center justify-between p-6 border-b">
-            <Dialog.Title className="text-lg font-semibold text-gray-900">
+            <Dialog.Title className="text-lg font-semibold text-[var(--wj-text)]">
               {t('test_modal.title')}
             </Dialog.Title>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
             >
               <X className="w-5 h-5" />
             </button>
@@ -90,8 +90,8 @@ export default function TestRecordModal({ setup, onClose, onSuccess }: TestRecor
 
           <div className="p-6">
             {/* 셋업 정보 */}
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <div className="text-sm text-gray-600 space-y-1">
+            <div className="mb-6 p-4 bg-[var(--wj-surface-solid)] rounded-lg">
+              <div className="text-sm text-[var(--wj-muted)] space-y-1">
                 <p><strong>{t('test_modal.machine_label')}:</strong> {setup.machine_no}번기</p>
                 <p><strong>{t('test_modal.part_no_label')}:</strong> {setup.part_no}</p>
                 <p><strong>{t('test_modal.target_ct_label')}:</strong> {setup.target_cycle_time}초</p>

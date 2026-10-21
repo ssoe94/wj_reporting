@@ -419,24 +419,24 @@ export default function QualityReportHistory({
         />
         {openCalendar === type && (
           <div className="absolute left-0 top-full z-20 mt-2">
-            <div className="w-[280px] rounded-lg border bg-white shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 px-3 py-2 border-b flex items-center justify-between">
+            <div className="w-[280px] rounded-lg border bg-[var(--wj-surface-solid)] shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-3 py-2 border-b flex items-center justify-between">
                 <button 
                   type="button" 
                   onClick={() => setCurrentMonth(dayjs(currentMonth).subtract(1, 'month').toDate())}
-                  className="p-1 rounded hover:bg-white/50 transition-colors"
+                  className="p-1 rounded hover:bg-[var(--wj-surface-solid)] transition-colors"
                 >
-                  <ChevronLeft className="w-4 h-4 text-gray-600" />
+                  <ChevronLeft className="w-4 h-4 text-[var(--wj-muted)]" />
                 </button>
-                <span className="text-sm font-semibold text-gray-800">
+                <span className="text-sm font-semibold text-[var(--wj-text)]">
                   {dayjs(currentMonth).format(lang === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}
                 </span>
                 <button 
                   type="button" 
                   onClick={() => setCurrentMonth(dayjs(currentMonth).add(1, 'month').toDate())}
-                  className="p-1 rounded hover:bg-white/50 transition-colors"
+                  className="p-1 rounded hover:bg-[var(--wj-surface-solid)] transition-colors"
                 >
-                  <ChevronRight className="w-4 h-4 text-gray-600" />
+                  <ChevronRight className="w-4 h-4 text-[var(--wj-muted)]" />
                 </button>
               </div>
               <div className="p-3">
@@ -462,7 +462,7 @@ export default function QualityReportHistory({
                   }}
                 />
               </div>
-              <div className="bg-gray-50 border-t px-3 py-2 flex items-center justify-between">
+              <div className="bg-[var(--wj-surface-solid)] border-t px-3 py-2 flex items-center justify-between">
                 <Button
                   type="button"
                   size="sm"
@@ -736,15 +736,15 @@ export default function QualityReportHistory({
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 bg-gradient-to-r from-indigo-50 to-white">
-        <FolderOpen className="w-5 h-5 text-indigo-600" />
-        <h2 className="text-base font-semibold text-gray-800">{t('quality.history_title')}</h2>
+    <div className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
+      <div className="flex items-center gap-2 border-b border-[var(--wj-border)] px-4 py-3 bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-surface-solid)]">
+        <FolderOpen className="w-5 h-5 text-[var(--wj-accent-strong)]" />
+        <h2 className="text-base font-semibold text-[var(--wj-text)]">{t('quality.history_title')}</h2>
       </div>
       <div className="p-4 space-y-4">
         {reportScopeKey && (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-sm text-[var(--wj-accent-strong)]">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--wj-accent-strong)]" aria-hidden="true" />
             <strong className="min-w-0 flex-1">
               {t(`quality.import_scope_${reportScope?.kind || 'all'}`, { count: scopedReportIds.length.toLocaleString() })}
             </strong>
@@ -754,28 +754,28 @@ export default function QualityReportHistory({
           </div>
         )}
         {/* 검색 / 정렬 */}
-        <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+        <section className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-slate-800">
+                <h3 className="text-sm font-semibold text-[var(--wj-text)]">
                   {lang === 'zh' ? '搜索与排序' : '검색 및 정렬'}
                 </h3>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                <span className="rounded-full bg-[var(--wj-surface-solid)] px-2 py-0.5 text-xs font-medium text-[var(--wj-muted)] ring-1 ring-[var(--wj-border)]">
                   {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
                 </span>
                 {activeFilterCount > 0 && (
-                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                  <span className="rounded-full bg-[var(--wj-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--wj-accent-strong)]">
                     {lang === 'zh' ? `${activeFilterCount} 个筛选条件` : `필터 ${activeFilterCount}개 적용`}
                   </span>
                 )}
                 {isFetching && (
-                  <span className="text-xs font-medium text-indigo-600" role="status">
+                  <span className="text-xs font-medium text-[var(--wj-accent-strong)]" role="status">
                     {lang === 'zh' ? '正在更新…' : '조회 중…'}
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-[var(--wj-muted)]">
                 {lang === 'zh'
                   ? '可同时搜索型号、Part No.、不良现象和处理方式。'
                   : '모델, Part No., 불량 현상과 처리 방식을 한 번에 검색합니다.'}
@@ -787,7 +787,7 @@ export default function QualityReportHistory({
               variant="ghost"
               onClick={resetSearchView}
               disabled={!hasCustomizedView}
-              className="shrink-0 gap-1.5 text-slate-600"
+              className="shrink-0 gap-1.5 text-[var(--wj-muted)]"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
               {lang === 'zh' ? '重置' : '초기화'}
@@ -802,12 +802,12 @@ export default function QualityReportHistory({
                 applyKeywordSearch();
               }}
             >
-              <Label htmlFor="quality-history-keyword" className="mb-1.5 block text-xs font-semibold text-slate-600">
+              <Label htmlFor="quality-history-keyword" className="mb-1.5 block text-xs font-semibold text-[var(--wj-muted)]">
                 {lang === 'zh' ? '综合搜索' : '통합 검색'}
               </Label>
               <div className="flex min-w-0 gap-2">
                 <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--wj-muted)]" aria-hidden="true" />
                   <Input
                     id="quality-history-keyword"
                     type="search"
@@ -824,7 +824,7 @@ export default function QualityReportHistory({
             </form>
 
             <div className="min-w-0">
-              <Label htmlFor="quality-history-section" className="mb-1.5 block text-xs font-semibold text-slate-600">
+              <Label htmlFor="quality-history-section" className="mb-1.5 block text-xs font-semibold text-[var(--wj-muted)]">
                 {lang === 'zh' ? '报告部门' : '보고 부서'}
               </Label>
               <select
@@ -834,7 +834,7 @@ export default function QualityReportHistory({
                   setFilters((previous) => ({ ...previous, section: event.target.value }));
                   setPage(1);
                 }}
-                className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 text-sm text-[var(--wj-text)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
               >
                 <option value="">{lang === 'zh' ? '全部部门' : '전체 부서'}</option>
                 <option value="LQC_INJ">LQC - {t('quality.section_injection')}</option>
@@ -846,7 +846,7 @@ export default function QualityReportHistory({
             </div>
 
             <div className="min-w-0">
-              <Label htmlFor="quality-history-ordering" className="mb-1.5 block text-xs font-semibold text-slate-600">
+              <Label htmlFor="quality-history-ordering" className="mb-1.5 block text-xs font-semibold text-[var(--wj-muted)]">
                 {lang === 'zh' ? '排序方式' : '정렬 기준'}
               </Label>
               <div className="relative">
@@ -857,18 +857,18 @@ export default function QualityReportHistory({
                     setOrdering(event.target.value as ReportOrdering);
                     setPage(1);
                   }}
-                  className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full appearance-none rounded-md border border-gray-200 bg-white py-2 pl-3 pr-10 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full appearance-none rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] py-2 pl-3 pr-10 text-sm text-[var(--wj-text)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                 >
                   <option value="-report_dt,-id">{lang === 'zh' ? '报告日期：最新优先' : '보고일 최신순'}</option>
                   <option value="report_dt,id">{lang === 'zh' ? '报告日期：最早优先' : '보고일 오래된순'}</option>
                   <option value="-created_at,-id">{lang === 'zh' ? '登记时间：最新优先' : '최근 등록순'}</option>
                 </select>
-                <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--wj-muted)]" aria-hidden="true" />
               </div>
             </div>
 
             <div className="min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-600">
+              <span className="mb-1.5 block text-xs font-semibold text-[var(--wj-muted)]">
                 {lang === 'zh' ? '其他条件' : '추가 조건'}
               </span>
               <Button
@@ -886,9 +886,9 @@ export default function QualityReportHistory({
           </div>
 
           {showAdvancedFilters && (
-            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-[var(--wj-border)] pt-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-4">
-            <span className="text-xs font-semibold text-gray-500">
+            <span className="text-xs font-semibold text-[var(--wj-muted)]">
               {lang === 'zh' ? '查询期间' : '조회 기간'}
             </span>
             <Button
@@ -1054,7 +1054,7 @@ export default function QualityReportHistory({
                     <div className="flex flex-col">
                       <span className="font-mono font-medium">{option.model_code}</span>
                       {option.description ? (
-                        <span className="text-xs text-gray-500">{option.description}</span>
+                        <span className="text-xs text-[var(--wj-muted)]">{option.description}</span>
                       ) : null}
                     </div>
                   </li>
@@ -1238,7 +1238,7 @@ export default function QualityReportHistory({
                     <div className="flex flex-col">
                       <span className="font-mono font-medium">{option.part_no}</span>
                       {(option.model_code || option.description) && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-[var(--wj-muted)]">
                           {[option.model_code, option.description].filter(Boolean).join(' - ')}
                         </span>
                       )}
@@ -1268,12 +1268,12 @@ export default function QualityReportHistory({
             />
             <label
               className={`mt-2 inline-flex items-center gap-2 text-sm ${
-                hasPartFilter ? 'text-gray-600' : 'text-gray-400 cursor-not-allowed'
+                hasPartFilter ? 'text-[var(--wj-muted)]' : 'text-[var(--wj-muted)] cursor-not-allowed'
               }`}
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                 checked={filters.includeSimilar}
                 disabled={!hasPartFilter}
                 onChange={(e) => {
@@ -1297,20 +1297,20 @@ export default function QualityReportHistory({
         </section>
         <div ref={listTopRef} className="scroll-mt-24" aria-hidden="true" />
         {canEditQuality && (
-          <div className={`sticky top-2 z-10 flex flex-col gap-2 rounded-xl border px-3 py-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center ${selectedVisibleCount > 0 ? 'border-rose-200 bg-rose-50/95' : 'border-slate-200 bg-white/95'}`}>
+          <div className={`sticky top-2 z-10 flex flex-col gap-2 rounded-xl border px-3 py-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center ${selectedVisibleCount > 0 ? 'border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)]' : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)]'}`}>
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-700 hover:bg-white">
+              <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-semibold text-[var(--wj-text)] hover:bg-[var(--wj-surface-solid)]">
                 <input
                   ref={selectAllToolbarRef}
                   type="checkbox"
                   checked={allVisibleSelected}
                   disabled={visibleReportIds.length === 0 || reportMutationInFlight}
                   onChange={toggleVisibleReports}
-                  className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                 />
                 <span>{lang === 'zh' ? '选择本页' : '현재 페이지 선택'}</span>
               </label>
-              <p className="min-w-0 flex-1 truncate text-right text-sm text-slate-600 sm:text-left" aria-live="polite">
+              <p className="min-w-0 flex-1 truncate text-right text-sm text-[var(--wj-muted)] sm:text-left" aria-live="polite">
                 {lang === 'zh'
                   ? `已选 ${selectedVisibleCount.toLocaleString()} / ${visibleReportIds.length.toLocaleString()} 条`
                   : `${selectedVisibleCount.toLocaleString()} / ${visibleReportIds.length.toLocaleString()}건 선택`}
@@ -1323,7 +1323,7 @@ export default function QualityReportHistory({
                 size="sm"
                 disabled={selectedVisibleCount === 0 || reportMutationInFlight}
                 onClick={() => setSelectedReportIds(new Set())}
-                className="min-w-0 text-slate-600"
+                className="min-w-0 text-[var(--wj-muted)]"
               >
                 {lang === 'zh' ? '取消选择' : '선택 해제'}
               </Button>
@@ -1333,7 +1333,7 @@ export default function QualityReportHistory({
                 variant="danger"
                 disabled={selectedVisibleCount === 0 || reportMutationInFlight}
                 onClick={requestSelectedDelete}
-                className="min-w-0 bg-rose-600 text-white hover:bg-rose-700 disabled:bg-slate-300"
+                className="min-w-0 bg-[var(--wj-danger)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-danger)] disabled:bg-[var(--wj-bg-strong)]"
               >
                 <Trash2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {lang === 'zh' ? '删除所选' : '선택 삭제'}
@@ -1344,15 +1344,15 @@ export default function QualityReportHistory({
         {/* 모바일 카드 목록 */}
         <div className="space-y-3 xl:hidden" aria-busy={isFetching}>
           {isLoading ? (
-            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-10 text-center text-sm text-gray-500">
+            <div className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
               {t('loading')}...
             </div>
           ) : isError ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-10 text-center text-sm text-red-600">
+            <div className="rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-10 text-center text-sm text-[var(--wj-danger)]">
               {t('error_loading_data')}
             </div>
           ) : reports.length === 0 ? (
-            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-10 text-center text-sm text-gray-500">
+            <div className="rounded-xl border border-[var(--wj-accent)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-sm text-[var(--wj-muted)]">
               {t('no_data')}
             </div>
           ) : (
@@ -1362,33 +1362,33 @@ export default function QualityReportHistory({
               return (
                 <article
                   key={r.id}
-                  className={`min-w-0 overflow-hidden rounded-xl border bg-white shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-indigo-400 ring-2 ring-indigo-200' : 'border-indigo-200'}`}
+                  className={`min-w-0 overflow-hidden rounded-xl border bg-[var(--wj-surface-solid)] shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-[var(--wj-accent)] ring-2 ring-[var(--wj-accent)]' : 'border-[var(--wj-accent)]'}`}
                 >
-                  <div className="flex items-start justify-between gap-3 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3 border-b border-[var(--wj-accent)] bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] px-4 py-3">
                     <div className="flex min-w-0 items-start gap-2">
                       {canEditQuality && (
-                        <label className="-ml-2 -mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-white/70">
+                        <label className="-ml-2 -mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-[var(--wj-surface-solid)]">
                           <input
                             type="checkbox"
                             checked={selectedReportIds.has(r.id)}
                             disabled={reportMutationInFlight}
                             onChange={() => toggleReportSelection(r.id)}
                             aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
-                            className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                           />
                         </label>
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-500">{t('date')}</p>
-                        <p className="mt-0.5 text-sm font-semibold text-gray-900">
+                        <p className="text-xs font-medium text-[var(--wj-muted)]">{t('date')}</p>
+                        <p className="mt-0.5 text-sm font-semibold text-[var(--wj-text)]">
                           {(r.report_dt || '').slice(0, 10)}
                         </p>
                       </div>
                     </div>
                     <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
                       r.judgement === 'OK'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-red-100 text-red-800'
+                        ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]'
+                        : 'bg-[var(--wj-danger-bg)] text-[var(--wj-danger)]'
                     }`}>
                       {r.judgement || '-'}
                     </span>
@@ -1404,23 +1404,23 @@ export default function QualityReportHistory({
                         [t('quality.defect_rate'), r.defect_rate],
                       ].map(([label, value]) => (
                         <div key={String(label)} className="min-w-0">
-                          <dt className="text-xs font-medium text-gray-500">{label}</dt>
-                          <dd className="mt-1 break-words text-sm font-medium text-gray-800">
+                          <dt className="text-xs font-medium text-[var(--wj-muted)]">{label}</dt>
+                          <dd className="mt-1 break-words text-sm font-medium text-[var(--wj-text)]">
                             {value ?? '-'}
                           </dd>
                         </div>
                       ))}
                     </dl>
 
-                    <div className="min-w-0 border-t border-gray-100 pt-3">
-                      <p className="text-xs font-medium text-gray-500">{t('quality.defect_phenomenon')}</p>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-900">
+                    <div className="min-w-0 border-t border-[var(--wj-border)] pt-3">
+                      <p className="text-xs font-medium text-[var(--wj-muted)]">{t('quality.defect_phenomenon')}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--wj-text)]">
                         {r.phenomenon || '-'}
                       </p>
                     </div>
 
-                    <div className="border-t border-gray-100 pt-3">
-                      <p className="text-xs font-medium text-gray-500">{t('quality.image_upload')}</p>
+                    <div className="border-t border-[var(--wj-border)] pt-3">
+                      <p className="text-xs font-medium text-[var(--wj-muted)]">{t('quality.image_upload')}</p>
                       {images.length > 0 ? (
                         <button
                           type="button"
@@ -1428,40 +1428,40 @@ export default function QualityReportHistory({
                             setSelectedImages(images.map(resolveImageUrl));
                             setCurrentImageIndex(0);
                           }}
-                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2 text-left transition-colors hover:bg-indigo-50"
+                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-[var(--wj-accent)] bg-[var(--wj-accent-soft)]/50 p-2 text-left transition-colors hover:bg-[var(--wj-accent-soft)]"
                           aria-label={`${t('quality.image_upload')} ${images.length}`}
                         >
                           <span className="relative shrink-0">
                             <img
                               src={resolveImageUrl(images[0])}
                               alt=""
-                              className="h-12 w-12 rounded-md border border-indigo-200 object-cover"
+                              className="h-12 w-12 rounded-md border border-[var(--wj-accent)] object-cover"
                               onError={(event) => {
                                 event.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
                               }}
                             />
                             {images.length > 1 && (
-                              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[11px] font-bold text-white">
+                              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--wj-accent-strong)] px-1 text-[11px] font-bold text-[var(--wj-on-accent)]">
                                 {images.length}
                               </span>
                             )}
                           </span>
-                          <span className="min-w-0 flex-1 text-sm font-medium text-indigo-700">
+                          <span className="min-w-0 flex-1 text-sm font-medium text-[var(--wj-accent-strong)]">
                             {t('quality.view_detail')}
                           </span>
-                          <Eye className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
+                          <Eye className="h-5 w-5 shrink-0 text-[var(--wj-accent-strong)]" aria-hidden="true" />
                         </button>
                       ) : (
-                        <p className="mt-1 text-sm text-gray-400">-</p>
+                        <p className="mt-1 text-sm text-[var(--wj-muted)]">-</p>
                       )}
                     </div>
 
-                    <div className="border-t border-gray-100 pt-3">
-                      <p className="mb-2 text-xs font-medium text-gray-500">{t('quality.action_result')}</p>
+                    <div className="border-t border-[var(--wj-border)] pt-3">
+                      <p className="mb-2 text-xs font-medium text-[var(--wj-muted)]">{t('quality.action_result')}</p>
                       {renderActionResult(r, 'mobile')}
                     </div>
 
-                    <div className={`grid gap-2 border-t border-gray-100 pt-3 ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div className={`grid gap-2 border-t border-[var(--wj-border)] pt-3 ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}>
                       <Button
                         type="button"
                         variant="secondary"
@@ -1477,7 +1477,7 @@ export default function QualityReportHistory({
                           variant="secondary"
                           onClick={() => handleDeleteReport(r.id)}
                           disabled={reportMutationInFlight}
-                          className="min-w-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          className="min-w-0 text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] hover:text-[var(--wj-danger)]"
                         >
                           <Trash2 className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
                           <span className="truncate">{t('quality.delete_report')}</span>
@@ -1492,10 +1492,10 @@ export default function QualityReportHistory({
         </div>
 
         {/* 데스크톱 테이블 */}
-        <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block" aria-busy={isFetching}>
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--wj-accent)] shadow-sm xl:block" aria-busy={isFetching}>
           <table className="w-full min-w-[1380px] table-fixed text-sm">
-            <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
-              <tr className="border-b border-indigo-200">
+            <thead className="bg-gradient-to-r from-[var(--wj-accent-soft)] to-[var(--wj-bg-strong)] whitespace-nowrap">
+              <tr className="border-b border-[var(--wj-accent)]">
                 {canEditQuality && (
                   <th className="w-12 px-2 py-3 text-center">
                     <input
@@ -1505,34 +1505,34 @@ export default function QualityReportHistory({
                       disabled={visibleReportIds.length === 0 || isDeleting}
                       onChange={toggleVisibleReports}
                       aria-label={lang === 'zh' ? '选择当前页全部报告' : '현재 페이지 보고서 전체 선택'}
-                      className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                     />
                   </th>
                 )}
-                <th className="w-[112px] px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
-                <th className="w-[104px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.section')}</th>
-                <th className="w-[110px] px-3 py-3 text-center font-semibold text-gray-700">{t('model')}</th>
-                <th className="w-[142px] px-3 py-3 text-center font-semibold text-gray-700">{t('part_no')}</th>
-                <th className="w-[86px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.lot_size')}</th>
-                <th className="w-[76px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.defect_rate')}</th>
-                <th className="w-[86px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.judgement')}</th>
-                <th className="px-2 py-3 text-center font-semibold text-gray-700">{t('quality.defect_phenomenon')}</th>
-                <th className="w-[88px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.image_upload')}</th>
-                <th className="px-2 py-3 text-center font-semibold text-gray-700">{t('quality.action_result')}</th>
-                <th className="w-[88px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.actions')}</th>
+                <th className="w-[112px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('date')}</th>
+                <th className="w-[104px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.section')}</th>
+                <th className="w-[110px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('model')}</th>
+                <th className="w-[142px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('part_no')}</th>
+                <th className="w-[86px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.lot_size')}</th>
+                <th className="w-[76px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.defect_rate')}</th>
+                <th className="w-[86px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.judgement')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.defect_phenomenon')}</th>
+                <th className="w-[88px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.image_upload')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.action_result')}</th>
+                <th className="w-[88px] px-3 py-3 text-center font-semibold text-[var(--wj-text)]">{t('quality.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-indigo-100 bg-white">
+            <tbody className="divide-y divide-indigo-100 bg-[var(--wj-surface-solid)]">
               {isLoading ? (
-                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-gray-500">{t('loading')}...</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-[var(--wj-muted)]">{t('loading')}...</td></tr>
               ) : isError ? (
-                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-red-500">{t('error_loading_data')}</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-[var(--wj-danger)]">{t('error_loading_data')}</td></tr>
               ) : reports.length === 0 ? (
-                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-[var(--wj-muted)]">{t('no_data')}</td></tr>
               ) : (
                 reports.map((r: QualityReport) => {
                   return (
-                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-indigo-50' : 'hover:bg-indigo-50/50'}`}>
+                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-[var(--wj-accent-soft)]' : 'hover:bg-[var(--wj-accent-soft)]/50'}`}>
                       {canEditQuality && (
                         <td className="px-2 py-3 text-center">
                           <input
@@ -1541,18 +1541,18 @@ export default function QualityReportHistory({
                             disabled={reportMutationInFlight}
                             onChange={() => toggleReportSelection(r.id)}
                             aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
-                            className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            className="h-5 w-5 rounded border-[var(--wj-border)] text-[var(--wj-accent-strong)] focus:ring-[var(--wj-accent)]"
                           />
                         </td>
                       )}
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{(r.report_dt || '').slice(0, 10)}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.section}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.model}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.part_no}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.lot_qty}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.defect_rate}</td>
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.judgement}</td>
-                      <td className="px-2 py-3 text-center text-gray-700">
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{(r.report_dt || '').slice(0, 10)}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.section}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.model}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.part_no}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.lot_qty}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.defect_rate}</td>
+                      <td className="px-3 py-3 text-center text-[var(--wj-text)] whitespace-nowrap">{r.judgement}</td>
+                      <td className="px-2 py-3 text-center text-[var(--wj-text)]">
                         <div className="whitespace-pre-wrap break-words text-left leading-6" title={r.phenomenon || '-'}>
                           {r.phenomenon || '-'}
                         </div>
@@ -1561,7 +1561,7 @@ export default function QualityReportHistory({
                         {(() => {
                           const images = getReportImages(r);
                           if (images.length === 0) {
-                            return <span className="text-gray-400 text-xs">-</span>;
+                            return <span className="text-[var(--wj-muted)] text-xs">-</span>;
                           }
                           
                           return (
@@ -1576,14 +1576,14 @@ export default function QualityReportHistory({
                                 <img
                                   src={resolveImageUrl(images[0])}
                                   alt="Thumbnail"
-                                  className="w-12 h-12 object-cover rounded border border-indigo-200 hover:border-indigo-400 transition-all cursor-pointer"
+                                  className="w-12 h-12 object-cover rounded border border-[var(--wj-accent)] hover:border-[var(--wj-accent)] transition-all cursor-pointer"
                                   onError={(e) => {
                                     console.error('Image load error:', images[0]);
                                     e.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
                                   }}
                                 />
                                 {images.length > 1 && (
-                                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                                  <span className="absolute -top-1 -right-1 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
                                     {images.length}
                                   </span>
                                 )}
@@ -1599,7 +1599,7 @@ export default function QualityReportHistory({
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => setSelectedReport(r)}
-                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            className="p-2 text-[var(--wj-accent-strong)] hover:bg-[var(--wj-accent-soft)] rounded-lg transition-colors"
                             title={t('quality.view_detail')}
                           >
                             <Eye className="w-4 h-4" />
@@ -1607,7 +1607,7 @@ export default function QualityReportHistory({
                           {canEditQuality && (
                             <button
                               onClick={() => handleDeleteReport(r.id)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              className="p-2 text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] rounded-lg transition-colors"
                               title={t('quality.delete_report')}
                               disabled={reportMutationInFlight}
                             >
@@ -1626,10 +1626,10 @@ export default function QualityReportHistory({
         {/* 페이지네이션 */}
         <nav
           aria-label={lang === 'zh' ? '报告列表分页' : '보고 이력 페이지 이동'}
-          className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2 sm:px-3"
+          className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-2.5 py-2 sm:px-3"
         >
-          <p className="shrink-0 whitespace-nowrap text-xs font-medium text-slate-600">
-            <strong className="font-semibold text-slate-900">{totalCount.toLocaleString()}</strong>
+          <p className="shrink-0 whitespace-nowrap text-xs font-medium text-[var(--wj-muted)]">
+            <strong className="font-semibold text-[var(--wj-text)]">{totalCount.toLocaleString()}</strong>
             {lang === 'zh' ? ' 条结果' : '건의 결과'}
           </p>
 
@@ -1648,15 +1648,15 @@ export default function QualityReportHistory({
             </Button>
 
             <span
-              className="min-w-[72px] whitespace-nowrap rounded-lg bg-white px-2.5 py-2 text-center text-sm font-semibold text-slate-800 ring-1 ring-slate-200"
+              className="min-w-[72px] whitespace-nowrap rounded-lg bg-[var(--wj-surface-solid)] px-2.5 py-2 text-center text-sm font-semibold text-[var(--wj-text)] ring-1 ring-[var(--wj-border)]"
               aria-live="polite"
             >
-              {page} <span className="font-normal text-slate-400">/</span> {totalPages}
+              {page} <span className="font-normal text-[var(--wj-muted)]">/</span> {totalPages}
             </span>
 
             {totalPages > 1 && (
               <div className="hidden items-center gap-1.5 md:flex">
-                <label htmlFor="quality-history-page-input" className="text-xs font-medium text-slate-500">
+                <label htmlFor="quality-history-page-input" className="text-xs font-medium text-[var(--wj-muted)]">
                   {lang === 'zh' ? '页码' : '페이지'}
                 </label>
                 <div className="w-16 shrink-0">
@@ -1721,14 +1721,14 @@ export default function QualityReportHistory({
                 setSelectedImages([]);
                 setCurrentImageIndex(0);
               }}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors z-10"
+              className="absolute -top-12 right-0 text-[var(--wj-on-contrast)] hover:text-[var(--wj-muted)] transition-colors z-10"
             >
               <X className="w-8 h-8" />
             </button>
 
             {/* 이미지 카운터 */}
             {selectedImages.length > 1 && (
-              <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 text-white text-sm">
+              <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 text-[var(--wj-on-contrast)] text-sm">
                 {currentImageIndex + 1} / {selectedImages.length}
               </div>
             )}
@@ -1749,7 +1749,7 @@ export default function QualityReportHistory({
                     e.stopPropagation();
                     setCurrentImageIndex(prev => prev - 1);
                   }}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-3 transition-all"
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/80 text-[var(--wj-on-contrast)] rounded-full p-3 transition-all"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -1762,7 +1762,7 @@ export default function QualityReportHistory({
                     e.stopPropagation();
                     setCurrentImageIndex(prev => prev + 1);
                   }}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-3 transition-all"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/80 text-[var(--wj-on-contrast)] rounded-full p-3 transition-all"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
@@ -1781,8 +1781,8 @@ export default function QualityReportHistory({
                     }}
                     className={`w-16 h-16 rounded border-2 overflow-hidden transition-all ${
                       idx === currentImageIndex
-                        ? 'border-indigo-500 scale-110'
-                        : 'border-gray-400 opacity-60 hover:opacity-100'
+                        ? 'border-[var(--wj-accent)] scale-110'
+                        : 'border-[var(--wj-border)] opacity-60 hover:opacity-100'
                     }`}
                   >
                     <img
@@ -1805,15 +1805,15 @@ export default function QualityReportHistory({
           onClick={() => setSelectedReport(null)}
         >
           <div
-            className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-[var(--wj-surface-solid)] rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 헤더 */}
-            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
+            <div className="sticky top-0 bg-[var(--wj-bg-strong)] text-[var(--wj-text)] px-6 py-4 flex items-center justify-between rounded-t-lg">
               <h3 className="text-lg font-semibold">{t('quality.detail_title')}</h3>
               <button
                 onClick={() => setSelectedReport(null)}
-                className="text-white hover:text-gray-200 transition-colors"
+                className="text-[var(--wj-text)] hover:text-[var(--wj-muted)] transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1824,34 +1824,34 @@ export default function QualityReportHistory({
               {/* 기본 정보 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.report_datetime')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.report_dt.replace('T', ' ').slice(0, 16)}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.section')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.section}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('model')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.model}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('part_no')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.part_no}
                   </div>
                 </div>
@@ -1860,34 +1860,34 @@ export default function QualityReportHistory({
               {/* 수량 정보 */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.lot_size')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.lot_qty || '-'}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.inspection_qty')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {(selectedReport as any).inspection_qty || '-'}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.defect_qty')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {(selectedReport as any).defect_qty || '-'}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.defect_rate')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {selectedReport.defect_rate}
                   </div>
                 </div>
@@ -1895,13 +1895,13 @@ export default function QualityReportHistory({
 
               {/* 판정 결과 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                   {t('quality.judgement')}
                 </label>
                 <div className={`inline-block px-4 py-2 rounded-full font-semibold ${
                   selectedReport.judgement === 'OK' 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
+                    ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]'
+                    : 'bg-[var(--wj-danger-bg)] text-[var(--wj-danger)]'
                 }`}>
                   {selectedReport.judgement}
                 </div>
@@ -1910,10 +1910,10 @@ export default function QualityReportHistory({
               {/* 불량 현상 */}
               {(selectedReport as any).phenomenon && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.defect_phenomenon')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border whitespace-pre-wrap">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border whitespace-pre-wrap">
                     {(selectedReport as any).phenomenon}
                   </div>
                 </div>
@@ -1922,10 +1922,10 @@ export default function QualityReportHistory({
               {/* 처리 방식 */}
               {(selectedReport as any).disposition && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.disposition')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border whitespace-pre-wrap">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border whitespace-pre-wrap">
                     {(selectedReport as any).disposition}
                   </div>
                 </div>
@@ -1934,10 +1934,10 @@ export default function QualityReportHistory({
               {/* 처리 결과 */}
               {(selectedReport.action_result || canEditQuality) && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                     {t('quality.action_result')}
                   </label>
-                  <div className="text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                  <div className="text-[var(--wj-text)] bg-[var(--wj-surface-solid)] px-3 py-2 rounded border">
                     {renderActionResult(selectedReport, 'detail')}
                   </div>
                 </div>
@@ -1950,7 +1950,7 @@ export default function QualityReportHistory({
                 
                 return (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-[var(--wj-text)] mb-2">
                       {t('quality.image_upload')}
                     </label>
                     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -1959,7 +1959,7 @@ export default function QualityReportHistory({
                           <img
                             src={resolveImageUrl(img)}
                             alt={`Image ${idx + 1}`}
-                            className="w-full h-48 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-indigo-400 transition-all"
+                            className="w-full h-48 object-cover rounded-lg border-2 border-[var(--wj-border)] cursor-pointer hover:border-[var(--wj-accent)] transition-all"
                             onClick={() => {
                               setSelectedImages(images.map(resolveImageUrl));
                               setCurrentImageIndex(idx);
@@ -1970,7 +1970,7 @@ export default function QualityReportHistory({
                             }}
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all rounded-lg flex items-center justify-center">
-                            <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <Eye className="w-8 h-8 text-[var(--wj-on-contrast)] opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
                         </div>
                       ))}
@@ -1981,7 +1981,7 @@ export default function QualityReportHistory({
             </div>
 
             {/* 푸터 - 액션 버튼 */}
-            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 rounded-b-lg border-t">
+            <div className="sticky bottom-0 bg-[var(--wj-surface-solid)] px-6 py-4 flex items-center justify-end gap-3 rounded-b-lg border-t">
               <Button
                 variant="secondary"
                 onClick={() => setSelectedReport(null)}
@@ -1993,7 +1993,7 @@ export default function QualityReportHistory({
                   variant="danger"
                   onClick={() => handleDeleteReport(selectedReport.id)}
                   disabled={reportMutationInFlight}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-[var(--wj-danger)] hover:bg-[var(--wj-danger)] text-[var(--wj-on-accent)]"
                 >
                   {isDeleting ? (
                     <span className="flex items-center gap-2">
@@ -2020,24 +2020,24 @@ export default function QualityReportHistory({
         }}
         className="relative z-[90]"
       >
-        <DialogBackdrop className="fixed inset-0 bg-slate-950/55 backdrop-blur-sm" />
+        <DialogBackdrop className="fixed inset-0 bg-[var(--wj-nav-surface)] backdrop-blur-sm" />
         <div className="fixed inset-0 overflow-y-auto p-4 sm:p-6">
           <div className="flex min-h-full items-center justify-center">
-            <DialogPanel className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-slate-900/10 sm:p-6">
+            <DialogPanel className="w-full max-w-md rounded-2xl bg-[var(--wj-surface-solid)] p-5 shadow-2xl ring-1 ring-[var(--wj-border)] sm:p-6">
               <div className="flex items-start gap-3">
-                <span className="rounded-xl bg-rose-100 p-2.5 text-rose-700">
+                <span className="rounded-xl bg-[var(--wj-danger-bg)] p-2.5 text-[var(--wj-danger)]">
                   <AlertTriangle className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <DialogTitle className="text-lg font-bold text-slate-950">
+                  <DialogTitle className="text-lg font-bold text-[var(--wj-text)]">
                     {lang === 'zh' ? '删除所选报告' : '선택한 보고서 삭제'}
                   </DialogTitle>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                  <p className="mt-2 text-sm leading-6 text-[var(--wj-muted)]">
                     {lang === 'zh'
                       ? `将永久删除所选 ${pendingDeleteIds?.length || 0} 条报告。此操作无法撤销。`
                       : `선택한 보고서 ${pendingDeleteIds?.length || 0}건을 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다.`}
                   </p>
-                  <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+                  <p className="mt-2 rounded-lg bg-[var(--wj-surface-solid)] px-3 py-2 text-xs leading-5 text-[var(--wj-muted)]">
                     {lang === 'zh'
                       ? '为避免影响共享图片，Cloudinary 原始文件会保留。'
                       : '공유 사진 손상을 막기 위해 Cloudinary 원본 파일은 보존합니다.'}
@@ -2059,7 +2059,7 @@ export default function QualityReportHistory({
                   variant="danger"
                   disabled={reportMutationInFlight}
                   onClick={() => void confirmReportDelete()}
-                  className="bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60"
+                  className="bg-[var(--wj-danger)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-danger)] disabled:cursor-wait disabled:opacity-60"
                 >
                   <Trash2 className={`mr-2 h-4 w-4 ${isDeleting ? 'animate-pulse' : ''}`} aria-hidden="true" />
                   {isDeleting

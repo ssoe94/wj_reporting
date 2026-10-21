@@ -208,8 +208,8 @@ export default function UnifiedPartSelector({
 
           if ('isAddNew' in option) {
             return (
-              <li {...restProps} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-                <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+              <li {...restProps} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+                <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                   <Plus className="h-3 w-3" />
                   <span>"{option.searchQuery}" {t('add_new_part_prompt')}</span>
                 </div>
@@ -222,13 +222,13 @@ export default function UnifiedPartSelector({
               <div className="flex flex-col w-full">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-medium">{option.part_no}</span>
-                  <span className="text-xs text-gray-500 bg-gray-100 px-1 rounded">
+                  <span className="text-xs text-[var(--wj-muted)] bg-[var(--wj-bg-strong)] px-1 rounded">
                     {option.source_system === 'injection' ? '사출' :
                       option.source_system === 'assembly' ? '가공' :
                         option.source_system === 'quality' ? '품질' : '통합'}
                   </span>
                 </div>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-[var(--wj-muted)]">
                   {option.model_code}{option.description ? ` - ${option.description}` : ''}
                 </span>
               </div>
@@ -240,16 +240,16 @@ export default function UnifiedPartSelector({
       {/* 새 Part 생성 모달 */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--wj-muted)]">
               {lang === 'zh' ? '必填: Part No / Model Code' : '필수: Part No / Model Code'}
             </p>
 
             <div className="space-y-3">
               <input
                 placeholder="Part No"
-                className="w-full border rounded px-3 py-2 bg-green-50 border-green-300"
+                className="w-full border rounded px-3 py-2 bg-[var(--wj-success-bg)] border-[var(--wj-success-border)]"
                 value={newPartForm.part_no}
                 onChange={(e) => setNewPartForm(prev => ({ ...prev, part_no: e.target.value }))}
               />
@@ -275,7 +275,7 @@ export default function UnifiedPartSelector({
                 {t('cancel')}
               </button>
               <button
-                className="px-3 py-1 bg-blue-600 text-white text-sm rounded"
+                className="px-3 py-1 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] text-sm rounded"
                 onClick={handleCreateNewPart}
               >
                 {t('save')}

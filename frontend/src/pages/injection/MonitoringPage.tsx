@@ -537,16 +537,16 @@ export default function InjectionMonitoringPage() {
     const outputValue = Math.round(slot.totalActual).toLocaleString();
     const outputUnit = ` ${t('monitoring.unit_label')}`;
     return (
-      <div className="bg-white p-3 border border-gray-200 rounded shadow-md text-xs space-y-1">
-        <div className="font-semibold text-gray-900">{slot.label}</div>
-        <div className="text-gray-700">
+      <div className="bg-[var(--wj-surface-solid)] p-3 border border-[var(--wj-border)] rounded shadow-md text-xs space-y-1">
+        <div className="font-semibold text-[var(--wj-text)]">{slot.label}</div>
+        <div className="text-[var(--wj-text)]">
           {outputLabel}: {outputValue}
           {outputUnit}
         </div>
-        <div className="text-gray-700">
+        <div className="text-[var(--wj-text)]">
           {t('monitoring.cumulative_label')}: {slot.totalCumulative.toLocaleString()}
         </div>
-        <div className="text-gray-700">
+        <div className="text-[var(--wj-text)]">
           {t('monitoring.avg_temperature')}: {slot.avgTemperature !== null ? `${slot.avgTemperature.toFixed(1)}°C` : "-"}
         </div>
       </div>
@@ -565,7 +565,7 @@ export default function InjectionMonitoringPage() {
           <AlertTitle>MES Data Error</AlertTitle>
           <AlertDescription>
             <p>MES ??? ??? ??????. MES ??? ?? ?? API ?? ??? ??????.</p>
-            <p className="text-xs text-gray-500 mt-2">Details: {error.message}</p>
+            <p className="text-xs text-[var(--wj-muted)] mt-2">Details: {error.message}</p>
           </AlertDescription>
         </Alert>
       </div>
@@ -613,14 +613,14 @@ export default function InjectionMonitoringPage() {
     ? format(new Date(updateProgress.lastSlot), 'yyyy-MM-dd HH:mm', { locale: lang === 'ko' ? ko : zhCN })
     : null;
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+    <div className="p-4 md:p-6 bg-[var(--wj-surface-solid)] min-h-screen">
       <div className="mx-auto max-w-7xl w-full">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">{t('monitoring.title')}</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <h1 className="text-2xl font-bold text-[var(--wj-text)]">{t('monitoring.title')}</h1>
+            <p className="text-sm text-[var(--wj-muted)] mt-1">
               {t('monitoring.last_updated')}: {format(new Date(data.timestamp), 'yyyy-MM-dd HH:mm:ss', { locale: lang === 'ko' ? ko : zhCN })}
-              <span className="mx-2 text-gray-300">|</span>
+              <span className="mx-2 text-[var(--wj-muted)]">|</span>
               {t('monitoring.auto_refresh')}
             </p>
           </div>
@@ -630,8 +630,8 @@ export default function InjectionMonitoringPage() {
               onClick={handleUpdate}
               disabled={isUpdating}
               className={`px-4 py-2 rounded-lg transition-colors w-48 text-center whitespace-nowrap ${isUpdating
-                ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'bg-[var(--wj-bg-strong)] text-[var(--wj-muted)] cursor-not-allowed'
+                : 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)]'
                 }`}
             >
               {isUpdating ? t('monitoring.updating_button') : t('monitoring.update_button')}
@@ -645,30 +645,30 @@ export default function InjectionMonitoringPage() {
               <div className="flex items-center gap-3">
                 {updateProgress.status === 'running' ? (
                   <span className="relative flex h-3 w-3">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-70 animate-ping"></span>
-                    <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-600"></span>
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--wj-accent-soft)] opacity-70 animate-ping"></span>
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--wj-accent-strong)]"></span>
                   </span>
                 ) : (
                   <div className={`h-3 w-3 rounded-full ${progressTone.dot}`}></div>
                 )}
                 <div className="space-y-0.5">
                   <p className={`text-sm font-semibold ${progressTone.text}`}>{progressTitle}</p>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-[var(--wj-muted)]">
                     {progressSubtitle}
                   </p>
                 </div>
               </div>
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-[var(--wj-muted)]">
                 {progressSteps.total > 0 ? `${progressPercent}%` : ''}
               </div>
             </div>
-            <div className="mt-3 h-2 w-full rounded-full bg-white/80 overflow-hidden">
+            <div className="mt-3 h-2 w-full rounded-full bg-[var(--wj-surface-solid)] overflow-hidden">
               <div
                 className={`h-full bg-gradient-to-r ${progressTone.bar} transition-all duration-700 ease-out ${updateProgress.status === 'running' ? 'animate-pulse' : ''}`}
                 style={{ width: `${progressPercent}%` }}
               ></div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600">
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--wj-muted)]">
               {progressSteps.total > 0 && (
                 <span>
                   {t('monitoring.update_progress_steps')}: {progressSteps.completed}/{progressSteps.total}
@@ -680,57 +680,57 @@ export default function InjectionMonitoringPage() {
                 </span>
               )}
               {updateProgress.status === 'failed' && updateProgress.error && (
-                <span className="text-red-600">{updateProgress.error}</span>
+                <span className="text-[var(--wj-danger)]">{updateProgress.error}</span>
               )}
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-            <div className="text-xs text-gray-500">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] shadow-sm p-4">
+            <div className="text-xs text-[var(--wj-muted)]">
               {viewMode === 'day' ? t('monitoring.summary_latest_output_day') : t('monitoring.summary_latest_output')}
             </div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">
+            <div className="mt-2 text-2xl font-semibold text-[var(--wj-text)]">
               {summaryStats.latestOutput.toLocaleString()}
-              <span className="text-sm text-gray-500 ml-1">{t('monitoring.unit_label')}</span>
+              <span className="text-sm text-[var(--wj-muted)] ml-1">{t('monitoring.unit_label')}</span>
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-            <div className="text-xs text-gray-500">{t('monitoring.summary_cumulative_total')}</div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] shadow-sm p-4">
+            <div className="text-xs text-[var(--wj-muted)]">{t('monitoring.summary_cumulative_total')}</div>
+            <div className="mt-2 text-2xl font-semibold text-[var(--wj-text)]">
               {summaryStats.totalCumulative.toLocaleString()}
-              <span className="text-sm text-gray-500 ml-1">{t('monitoring.unit_label')}</span>
+              <span className="text-sm text-[var(--wj-muted)] ml-1">{t('monitoring.unit_label')}</span>
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-            <div className="text-xs text-gray-500">{t('monitoring.summary_avg_temp')}</div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] shadow-sm p-4">
+            <div className="text-xs text-[var(--wj-muted)]">{t('monitoring.summary_avg_temp')}</div>
+            <div className="mt-2 text-2xl font-semibold text-[var(--wj-text)]">
               {summaryStats.avgTemperature !== null ? `${summaryStats.avgTemperature.toFixed(1)}°C` : '-'}
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-            <div className="text-xs text-gray-500">{t('monitoring.summary_active_machines')}</div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] shadow-sm p-4">
+            <div className="text-xs text-[var(--wj-muted)]">{t('monitoring.summary_active_machines')}</div>
+            <div className="mt-2 text-2xl font-semibold text-[var(--wj-text)]">
               {summaryStats.activeMachines}/{data.machines.length}
             </div>
           </div>
         </div>
 
-        <div className="bg-white shadow-sm rounded-lg border border-gray-200 p-4 mb-6">
+        <div className="bg-[var(--wj-surface-solid)] shadow-sm rounded-lg border border-[var(--wj-border)] p-4 mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800">{t('monitoring.chart_title')}</h2>
-              <p className="text-xs text-gray-500">{t('monitoring.chart_hint')}</p>
+              <h2 className="text-lg font-semibold text-[var(--wj-text)]">{t('monitoring.chart_title')}</h2>
+              <p className="text-xs text-[var(--wj-muted)]">{t('monitoring.chart_hint')}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-              <div className="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 p-1">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--wj-muted)]">
+              <div className="inline-flex items-center rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-1">
                 <button
                   type="button"
                   onClick={() => setViewMode('hour')}
                   className={`px-3 py-1 rounded-md text-xs font-semibold transition ${viewMode === 'hour'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-[var(--wj-surface-solid)] text-[var(--wj-text)] shadow-sm'
+                    : 'text-[var(--wj-muted)] hover:text-[var(--wj-text)]'
                     }`}
                 >
                   {t('monitoring.view_hour')}
@@ -739,8 +739,8 @@ export default function InjectionMonitoringPage() {
                   type="button"
                   onClick={() => setViewMode('day')}
                   className={`px-3 py-1 rounded-md text-xs font-semibold transition ${viewMode === 'day'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-[var(--wj-surface-solid)] text-[var(--wj-text)] shadow-sm'
+                    : 'text-[var(--wj-muted)] hover:text-[var(--wj-text)]'
                     }`}
                 >
                   {t('monitoring.view_day')}
@@ -779,12 +779,12 @@ export default function InjectionMonitoringPage() {
           </div>
         </div>
 
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div className="bg-[var(--wj-surface-solid)] shadow-lg rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
-              <thead className="bg-white sticky top-0 z-10">
+              <thead className="bg-[var(--wj-surface-solid)] sticky top-0 z-10">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[170px]">
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-[var(--wj-muted)] uppercase tracking-wider border-r border-[var(--wj-border)] min-w-[170px]">
                     {t('monitoring.machine_header')}
                   </th>
                   {displaySlots.map(({ slot, index }) => {
@@ -800,13 +800,13 @@ export default function InjectionMonitoringPage() {
                       <th
                         key={`${slot.time}-${index}`}
                         scope="col"
-                        className="px-2 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider border-r border-slate-200 min-w-[140px] bg-slate-50/80 backdrop-blur"
+                        className="px-2 py-3 text-center text-xs font-medium text-[var(--wj-muted)] uppercase tracking-wider border-r border-[var(--wj-border)] min-w-[140px] bg-[var(--wj-surface-solid)] backdrop-blur"
                       >
                         <div className="flex flex-col items-center gap-1">
                           {viewMode === 'hour' && (
-                            <span className="text-[11px] font-semibold text-slate-500">{rangeDate}</span>
+                            <span className="text-[11px] font-semibold text-[var(--wj-muted)]">{rangeDate}</span>
                           )}
-                          <span className="px-2.5 py-1 rounded-full bg-white text-slate-700 text-[11px] font-bold tracking-tight shadow-sm border border-slate-200">
+                          <span className="px-2.5 py-1 rounded-full bg-[var(--wj-surface-solid)] text-[var(--wj-text)] text-[11px] font-bold tracking-tight shadow-sm border border-[var(--wj-border)]">
                             {rangeLabel}
                           </span>
                         </div>
@@ -815,7 +815,7 @@ export default function InjectionMonitoringPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-[var(--wj-surface-solid)] divide-y divide-[var(--wj-border)]">
                 {data.machines.map((machine) => {
                   const machineNumStr = machine.machine_number.toString();
                   const setup = data.setup_data_map?.[machineNumStr];
@@ -825,14 +825,14 @@ export default function InjectionMonitoringPage() {
                   const tempData = data.oil_temperature_matrix[machineNumStr]?.slice().reverse() || [];
 
                   return (
-                    <tr key={machine.machine_number} className="hover:bg-gray-50">
-                      <td className="px-4 py-4 whitespace-nowrap border-r border-gray-200 text-center">
-                        <div className="text-sm font-medium text-gray-900">
+                    <tr key={machine.machine_number} className="hover:bg-[var(--wj-surface-solid)]">
+                      <td className="px-4 py-4 whitespace-nowrap border-r border-[var(--wj-border)] text-center">
+                        <div className="text-sm font-medium text-[var(--wj-text)]">
                           {`${machine.machine_number}${t('호기')} - ${getMachineTonnageLabel(machine)}`}
                         </div>
                         {setup ? (
-                          <div className="text-xs text-gray-600 mt-1 space-y-0.5">
-                            <div className="font-bold text-blue-700">{setup.part_no}</div>
+                          <div className="text-xs text-[var(--wj-muted)] mt-1 space-y-0.5">
+                            <div className="font-bold text-[var(--wj-accent-strong)]">{setup.part_no}</div>
                             <div>
                               <span className="font-semibold">{t('monitoring.target_uph')}:</span> {targetUPH ? Math.round(targetUPH) : '-'}
                             </div>
@@ -844,7 +844,7 @@ export default function InjectionMonitoringPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="text-xs text-gray-400 mt-1">{t('monitoring.no_setup_data')}</div>
+                          <div className="text-xs text-[var(--wj-muted)] mt-1">{t('monitoring.no_setup_data')}</div>
                         )}
                       </td>
                       {displaySlots.map(({ slot, index }) => {
@@ -870,17 +870,17 @@ export default function InjectionMonitoringPage() {
                                 </div>
                                 <div className={`${textClass} text-sm`}>
                                   {Math.round(actual).toLocaleString()}
-                                  <span className="ml-1 text-xs text-gray-600">{t('monitoring.unit_label')}</span>
+                                  <span className="ml-1 text-xs text-[var(--wj-muted)]">{t('monitoring.unit_label')}</span>
                                 </div>
                                 <div className={`${tempClass} text-xs`}>
                                   {t('monitoring.temp_label')}: {temperature !== null ? temperature.toFixed(1) : '-'}°C
                                 </div>
-                                <div className="text-xs text-emerald-700">
+                                <div className="text-xs text-[var(--wj-success)]">
                                   {t('monitoring.power_usage')}: {powerUsage.toFixed(2)} {t('monitoring.power_unit')}
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-gray-300 text-lg">{t('monitoring.no_data_char')}</span>
+                              <span className="text-[var(--wj-muted)] text-lg">{t('monitoring.no_data_char')}</span>
                             )}
                           </td>
                         );
@@ -895,57 +895,57 @@ export default function InjectionMonitoringPage() {
         <Dialog open={!!selectedSlot} onClose={() => setSelectedSlot(null)} className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
           {selectedSlot && (
-            <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-6xl p-6 space-y-4 max-h-[85vh] overflow-hidden">
+            <Dialog.Panel className="relative bg-[var(--wj-surface-solid)] rounded-lg w-full max-w-6xl p-6 space-y-4 max-h-[85vh] overflow-hidden">
               <div className="flex items-start justify-between">
                 <div>
-                  <Dialog.Title className="text-lg font-semibold text-gray-900">{t('monitoring.raw_data_title')}</Dialog.Title>
-                  <p className="text-sm text-gray-500">
+                  <Dialog.Title className="text-lg font-semibold text-[var(--wj-text)]">{t('monitoring.raw_data_title')}</Dialog.Title>
+                  <p className="text-sm text-[var(--wj-muted)]">
                     {t('monitoring.raw_data_subtitle')}: {format(new Date(selectedSlot.time), viewMode === 'day' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm', { locale: lang === 'ko' ? ko : zhCN })}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedSlot(null)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="overflow-auto border border-gray-200 rounded-lg">
+              <div className="overflow-auto border border-[var(--wj-border)] rounded-lg">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 sticky top-0 z-10">
+                  <thead className="bg-[var(--wj-surface-solid)] sticky top-0 z-10">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.machine_header')}
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('part_no')}
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('quality.model_code')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.target_uph')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.interval_output')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.cumulative_label')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.temp_label')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.power_usage')}
                       </th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-[var(--wj-muted)] uppercase tracking-wider">
                         {t('monitoring.personnel')}
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-[var(--wj-border)] bg-[var(--wj-surface-solid)]">
                     {selectedSlotRows.map((row) => {
                       const machineLabel = (row.machine.machine_number === 7
                         ? `${row.machine.machine_number}${t('호기')} - ${getMachineTonnageLabel(row.machine)}`
@@ -953,21 +953,21 @@ export default function InjectionMonitoringPage() {
                       ).replace('??', t('??'));
                       return (
                         <tr key={row.machine.machine_number}>
-                          <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{machineLabel}</td>
-                          <td className="px-3 py-2 text-gray-600">{row.setup?.part_no || '-'}</td>
-                          <td className="px-3 py-2 text-gray-600">{row.setup?.model_code || '-'}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">
+                          <td className="px-3 py-2 text-[var(--wj-text)] whitespace-nowrap">{machineLabel}</td>
+                          <td className="px-3 py-2 text-[var(--wj-muted)]">{row.setup?.part_no || '-'}</td>
+                          <td className="px-3 py-2 text-[var(--wj-muted)]">{row.setup?.model_code || '-'}</td>
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">
                             {row.targetUPH ? Math.round(row.targetUPH).toLocaleString() : '-'}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-700">{row.actual.toLocaleString()}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{row.cumulative.toLocaleString()}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">{row.actual.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">{row.cumulative.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">
                             {row.temperature !== null ? row.temperature.toFixed(1) : '-'}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-700">
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">
                             {row.powerUsage !== undefined ? `${row.powerUsage.toFixed(2)} ${t('monitoring.power_unit')}` : '-'}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-700">
+                          <td className="px-3 py-2 text-right text-[var(--wj-text)]">
                             {row.setup?.personnel_count ?? '-'}
                           </td>
                         </tr>

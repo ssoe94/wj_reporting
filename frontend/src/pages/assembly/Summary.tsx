@@ -77,12 +77,12 @@ export default function AssemblySummaryPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('assembly_production_summary')}</h1>
+        <h1 className="text-2xl font-bold text-[var(--wj-text)]">{t('assembly_production_summary')}</h1>
       </div>
 
       {isLoading ? (
         <div className="flex justify-center items-center h-64">
-          <div className="text-gray-500">{t('loading')}</div>
+          <div className="text-[var(--wj-muted)]">{t('loading')}</div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -92,7 +92,7 @@ export default function AssemblySummaryPage() {
             <div className="lg:col-span-2 grid grid-cols-2 gap-4">
               {stats.map((stat, index) => (
                 <Card key={index} className="p-3">
-                  <CardHeader className="text-gray-600 pb-1 text-sm">{stat.title}</CardHeader>
+                  <CardHeader className="text-[var(--wj-muted)] pb-1 text-sm">{stat.title}</CardHeader>
                   <CardContent className="pt-0">
                     <p className={`text-lg font-bold ${stat.color.replace('bg-', 'text-')}`}>
                       {stat.value.toLocaleString()}{stat.unit}
@@ -107,15 +107,15 @@ export default function AssemblySummaryPage() {
               {/* 달성률 */}
               <Card className="p-4">
                 <div className="text-center">
-                  <h3 className="text-sm font-medium text-gray-900 mb-1">{performanceStats[0].title}</h3>
+                  <h3 className="text-sm font-medium text-[var(--wj-text)] mb-1">{performanceStats[0].title}</h3>
                   <div className={`text-2xl font-bold ${performanceStats[0].color}`}>
                     {performanceStats[0].value.toFixed(1)}{performanceStats[0].unit}
                   </div>
                   <div className="mt-2">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-[var(--wj-bg-strong)] rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full ${performanceStats[0].value >= 100 ? 'bg-green-500' :
-                            performanceStats[0].value >= 80 ? 'bg-yellow-500' : 'bg-red-500'
+                        className={`h-2 rounded-full ${performanceStats[0].value >= 100 ? 'bg-[var(--wj-success)]' :
+                            performanceStats[0].value >= 80 ? 'bg-[var(--wj-warning)]' : 'bg-[var(--wj-danger)]'
                           }`}
                         style={{ width: `${Math.min(performanceStats[0].value, 100)}%` }}
                       ></div>
@@ -127,15 +127,15 @@ export default function AssemblySummaryPage() {
               {/* 불량률 (불량 분류 포함) */}
               <Card className="p-4 relative">
                 <div className="text-center">
-                  <h3 className="text-sm font-medium text-gray-900 mb-1">{performanceStats[1].title}</h3>
+                  <h3 className="text-sm font-medium text-[var(--wj-text)] mb-1">{performanceStats[1].title}</h3>
                   <div className={`text-2xl font-bold ${performanceStats[1].color}`}>
                     {performanceStats[1].value.toFixed(1)}{performanceStats[1].unit}
                   </div>
                   <div className="mt-2">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-[var(--wj-bg-strong)] rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full ${performanceStats[1].value <= 2 ? 'bg-green-500' :
-                            performanceStats[1].value <= 5 ? 'bg-yellow-500' : 'bg-red-500'
+                        className={`h-2 rounded-full ${performanceStats[1].value <= 2 ? 'bg-[var(--wj-success)]' :
+                            performanceStats[1].value <= 5 ? 'bg-[var(--wj-warning)]' : 'bg-[var(--wj-danger)]'
                           }`}
                         style={{ width: `${Math.min(performanceStats[1].value * 10, 100)}%` }}
                       ></div>
@@ -146,10 +146,10 @@ export default function AssemblySummaryPage() {
                   <div className="mt-3 space-y-1">
                     {defectBreakdown.map((defect, index) => (
                       <div key={index} className="flex justify-between items-center text-xs">
-                        <span className="text-gray-600">{defect.type.replace(t('nav_machining') + ' ', '')}</span>
+                        <span className="text-[var(--wj-muted)]">{defect.type.replace(t('nav_machining') + ' ', '')}</span>
                         <div className="flex items-center gap-1">
                           <span className="font-medium">{defect.value}{t('pieces_unit')}</span>
-                          <span className="text-gray-500">
+                          <span className="text-[var(--wj-muted)]">
                             ({summary?.total_defect_qty && summary.total_defect_qty > 0
                               ? `${((defect.value / summary.total_defect_qty) * 100).toFixed(1)}%`
                               : '0%'

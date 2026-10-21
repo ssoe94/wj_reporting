@@ -1,3 +1,4 @@
+import { ThemeSwitch } from '@/components/layout/ThemeSwitch';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -2240,6 +2241,7 @@ export function MouldManagementPage() {
             </span>
             <strong>{boardQuery.dataUpdatedAt ? shortTime(boardQuery.dataUpdatedAt) : "-"}</strong>
           </div>
+          <ThemeSwitch compact />
           <div className={styles.languageSwitch} aria-label="Language">
             <button aria-pressed={language === "ko"} className={language === "ko" ? styles.languageActive : ""} onClick={() => setLanguage("ko")} type="button">한국어</button>
             <button aria-pressed={language === "zh"} className={language === "zh" ? styles.languageActive : ""} onClick={() => setLanguage("zh")} type="button">中文</button>

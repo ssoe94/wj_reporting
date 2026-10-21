@@ -81,55 +81,55 @@ export default function ReportForm({ initialData, onSave, onCancel }: Props) {
   return (
     <div className="grid grid-cols-2 gap-3 text-sm">
       {/* Other Fields */}
-      <label className="text-gray-500">{t('report_date')}</label>
+      <label className="text-[var(--wj-muted)]">{t('report_date')}</label>
       <Input type="date" value={f.date ?? ''} onChange={(e) => set('date', e.target.value)} />
-      <label className="text-gray-500">{t('machine')}</label>
+      <label className="text-[var(--wj-muted)]">{t('machine')}</label>
       <Input type="number" value={f.machine_no ?? ''} onChange={(e) => set('machine_no', +e.target.value)} />
-      <label className="text-gray-500">{t('model')}</label>
+      <label className="text-[var(--wj-muted)]">{t('model')}</label>
       <Input value={f.model ?? ''} onChange={(e) => set('model', e.target.value)} />
-      <label className="text-gray-500">Part No</label>
+      <label className="text-[var(--wj-muted)]">Part No</label>
       <Input value={f.part_no ?? ''} onChange={(e) => set('part_no', e.target.value)} />
-      <label className="text-gray-500">{t('plan_qty')}</label>
+      <label className="text-[var(--wj-muted)]">{t('plan_qty')}</label>
       <Input type="number" value={f.plan_qty ?? ''} onChange={(e) => set('plan_qty', +e.target.value)} />
-      <label className="text-gray-500">{t('actual_qty')}</label>
+      <label className="text-[var(--wj-muted)]">{t('actual_qty')}</label>
       <Input type="number" value={f.actual_qty ?? ''} onChange={(e) => set('actual_qty', +e.target.value)} />
-      <label className="text-gray-500">{t('reported_defect')}</label>
+      <label className="text-[var(--wj-muted)]">{t('reported_defect')}</label>
       <Input type="number" value={f.reported_defect ?? ''} onChange={(e) => set('reported_defect', +e.target.value)} />
-      <label className="text-gray-500">{t('actual_defect')}</label>
+      <label className="text-[var(--wj-muted)]">{t('actual_defect')}</label>
       <Input type="number" value={f.actual_defect ?? ''} onChange={(e) => set('actual_defect', +e.target.value)} />
 
       {/* Time Fields with Comparison UI */}
-      <label className="text-gray-500">{t('start_dt')}</label>
+      <label className="text-[var(--wj-muted)]">{t('start_dt')}</label>
       <Input type="datetime-local" value={f.start_datetime?.slice(0, 16) ?? ''} onChange={(e) => set('start_datetime', e.target.value)} />
 
-      <label className="text-gray-500">{t('end_dt')}</label>
+      <label className="text-[var(--wj-muted)]">{t('end_dt')}</label>
       <Input type="datetime-local" value={f.end_datetime?.slice(0, 16) ?? ''} onChange={(e) => set('end_datetime', e.target.value)} />
 
-      <label className="text-gray-500">{t('total_time')}</label>
+      <label className="text-[var(--wj-muted)]">{t('total_time')}</label>
       <div className="flex items-center gap-2">
         <Input type="number" value={f.total_time ?? ''} onChange={(e) => set('total_time', +e.target.value)} />
-        <span className="text-xs text-gray-500 whitespace-nowrap">
+        <span className="text-xs text-[var(--wj-muted)] whitespace-nowrap">
           ({initialValues.total_time} → {currentTotalTime})
         </span>
       </div>
 
-      <label className="text-gray-500">{t('idle_time')}</label>
+      <label className="text-[var(--wj-muted)]">{t('idle_time')}</label>
       <div className="flex items-center gap-2">
         <Input type="number" value={idleTime} onChange={(e) => setIdleTime(e.target.value === '' ? '' : +e.target.value)} />
-        <span className="text-xs text-gray-500 whitespace-nowrap">
+        <span className="text-xs text-[var(--wj-muted)] whitespace-nowrap">
           ({initialValues.idle_time} → {currentIdleTime})
         </span>
       </div>
 
-      <label className="text-gray-500">{t('run_time')}</label>
+      <label className="text-[var(--wj-muted)]">{t('run_time')}</label>
       <div className="flex items-center gap-2">
-        <Input type="number" value={currentOperationTime} disabled className="bg-gray-100" />
-        <span className="text-xs text-gray-500 whitespace-nowrap">
+        <Input type="number" value={currentOperationTime} disabled className="bg-[var(--wj-bg-strong)]" />
+        <span className="text-xs text-[var(--wj-muted)] whitespace-nowrap">
           ({initialValues.operation_time} → {currentOperationTime})
         </span>
       </div>
 
-      <label className="text-gray-500">{t('header_note')}</label>
+      <label className="text-[var(--wj-muted)]">{t('header_note')}</label>
       <Textarea value={f.note ?? ''} onChange={(e) => set('note', e.target.value)} className="col-span-2 md:col-span-1" />
 
       {/* Action Buttons */}

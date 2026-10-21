@@ -1,3 +1,4 @@
+import { ThemeSwitch } from '@/components/layout/ThemeSwitch';
 import { useAuth } from '@/contexts/AuthContext';
 import { getInspectionCapabilities, getInspectionKanban } from '@/pages/quality/inspection-requests/api';
 import { IntegrationTrialSection } from '@/pages/quality/inspection-requests/TrialPresentation';
@@ -132,7 +133,7 @@ export function InspectionBoardPage() {
       <Link to="/boards" className="inspection-board-brand" aria-label={copy.back}><img src="/logo-transparent.png" alt="" /><span>WJ DATA CENTER<small>万佳数据平台</small></span></Link>
       <h1>{copy.title}</h1>
       <div className="inspection-board-date"><span>{copy.date} <strong>{businessDate}</strong></span><small>{copy.refreshed} {time(refreshedAt)} · {copy.autoRefresh}</small></div>
-      <nav className="inspection-board-controls" aria-label={language === 'ko' ? '화면 설정' : '画面设置'}>
+      <nav className="inspection-board-controls" aria-label={language === 'ko' ? '화면 설정' : '画面设置'}><ThemeSwitch compact />
         <button type="button" aria-pressed={language === 'ko'} onClick={() => setLanguage('ko')}>KOR</button>
         <button type="button" aria-pressed={language === 'zh'} onClick={() => setLanguage('zh')}>中文</button>
         <button type="button" data-testid="inspection-motion-toggle" aria-label={copy.reduceMotion} title={copy.reduceMotion} aria-pressed={!motion} onClick={() => setReduceMotion(value => !value)}><Pause size={17} /></button>

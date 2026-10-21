@@ -53,12 +53,12 @@ export default function QualityPage() {
     <div className={`mx-auto w-full space-y-5 py-5 md:py-6 ${isHistoryView ? 'max-w-[1680px]' : 'max-w-7xl px-4 md:px-8'}`}>
       <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="rounded-xl bg-blue-600 p-2 text-white shadow-sm">
+          <span className="rounded-xl bg-[var(--wj-accent-strong)] p-2 text-[var(--wj-on-accent)] shadow-sm">
             <ClipboardList className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-slate-950">{t('brand_quality')}</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
+            <h1 className="text-2xl font-bold text-[var(--wj-text)]">{t('brand_quality')}</h1>
+            <p className="mt-0.5 text-sm text-[var(--wj-muted)]">
               {lang === 'zh' ? '登记、Excel 导入与最近履历集中管理' : '등록, Excel 가져오기, 최근 이력을 한곳에서 관리합니다.'}
             </p>
           </div>
@@ -66,7 +66,7 @@ export default function QualityPage() {
 
         <nav
           aria-label={lang === 'zh' ? '品质管理页面' : '품질 관리 화면'}
-          className={`grid w-full rounded-xl border border-blue-200 bg-white/80 p-1 shadow-sm sm:w-auto ${canEditQuality ? 'grid-cols-3' : 'grid-cols-1'}`}
+          className={`grid w-full rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-1 shadow-sm sm:w-auto ${canEditQuality ? 'grid-cols-3' : 'grid-cols-1'}`}
         >
           {canEditQuality && (
             <button
@@ -75,8 +75,8 @@ export default function QualityPage() {
               aria-current={isWorkspaceView ? 'page' : undefined}
               className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 isWorkspaceView
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+                  ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
+                  : 'text-[var(--wj-muted)] hover:bg-[var(--wj-bg-strong)] hover:text-[var(--wj-accent-strong)]'
               }`}
             >
               <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -89,8 +89,8 @@ export default function QualityPage() {
             aria-current={isHistoryView ? 'page' : undefined}
             className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
               isHistoryView
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
+                ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
+                : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
             }`}
           >
             <History className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -103,8 +103,8 @@ export default function QualityPage() {
               aria-current={isReviewView ? 'page' : undefined}
               className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 isReviewView
-                  ? 'bg-violet-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'
+                  ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] shadow-sm'
+                  : 'text-[var(--wj-muted)] hover:bg-[var(--wj-accent-soft)] hover:text-[var(--wj-accent-strong)]'
               }`}
             >
               <BrainCircuit className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -114,7 +114,7 @@ export default function QualityPage() {
         </nav>
       </header>
 
-      <div className="flex justify-end"><Link className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50" to="/quality/analysis">{lang === 'zh' ? '查看独立不良分析报告 →' : '불량 통계 분석 보고서 보기 →'}</Link></div>
+      <div className="flex justify-end"><Link className="inline-flex items-center gap-2 rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-2 text-sm font-semibold text-[var(--wj-accent-strong)] hover:bg-[var(--wj-bg-strong)]" to="/quality/analysis">{lang === 'zh' ? '查看独立不良分析报告 →' : '불량 통계 분석 보고서 보기 →'}</Link></div>
 
       {canEditQuality && (
         <motion.div
@@ -122,16 +122,16 @@ export default function QualityPage() {
           initial={false}
           animate={{ opacity: isWorkspaceView ? 1 : 0 }}
         >
-          <section className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm" aria-labelledby="quality-registration-workspace-title">
-            <div className="flex items-center gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50 px-4 py-4 md:px-5">
-              <span className="rounded-xl bg-blue-600 p-2.5 text-white shadow-sm">
+          <section className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm" aria-labelledby="quality-registration-workspace-title">
+            <div className="flex items-center gap-3 border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-bg-strong)] via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)] px-4 py-4 md:px-5">
+              <span className="rounded-xl bg-[var(--wj-accent-strong)] p-2.5 text-[var(--wj-on-accent)] shadow-sm">
                 <FileText className="h-5 w-5" aria-hidden="true" />
               </span>
               <div>
-                <h2 id="quality-registration-workspace-title" className="text-lg font-bold text-slate-950">
+                <h2 id="quality-registration-workspace-title" className="text-lg font-bold text-[var(--wj-text)]">
                   {lang === 'zh' ? '品质报告登记' : '품질 보고 등록'}
                 </h2>
-                <p className="mt-0.5 text-sm text-slate-500">
+                <p className="mt-0.5 text-sm text-[var(--wj-muted)]">
                   {lang === 'zh' ? '直接输入单件报告，或从 Excel 批量登记。' : '개별 보고서를 직접 입력하거나 Excel로 여러 건을 등록합니다.'}
                 </p>
               </div>

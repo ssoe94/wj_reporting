@@ -9,9 +9,8 @@
   overflow: hidden;
   padding: 14px;
   background:
-    radial-gradient(circle at 14% 0%, rgba(46, 132, 177, 0.15), transparent 28%),
-    linear-gradient(145deg, #edf4f7 0%, #f7f9fa 48%, #eaf1f4 100%);
-  color: #173246;
+    var(--wj-surface-solid);
+  color: var(--wj-text);
 }
 
 .workspace,
@@ -35,8 +34,8 @@
 .topbar,
 .kpis article,
 .panel {
-  border: 1px solid rgba(79, 123, 148, 0.2);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--wj-border);
+  background: var(--wj-surface-solid);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 12px 30px rgba(37, 75, 96, 0.08);
 }
 
@@ -64,9 +63,9 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 18px;
-  background: #176f9f;
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(23, 111, 159, 0.25);
+  background: var(--wj-accent-soft);
+  color: var(--wj-text);
+  box-shadow: var(--wj-shadow-soft);
 }
 
 .logo svg {
@@ -83,7 +82,7 @@
 }
 
 .heading p {
-  color: #1a759f;
+  color: var(--wj-accent-strong);
   font-size: 0.82rem;
   font-weight: 900;
   letter-spacing: 0.16em;
@@ -100,7 +99,7 @@
 .heading > div > span {
   display: block;
   margin-top: 6px;
-  color: #617887;
+  color: var(--wj-muted);
   font-size: clamp(0.82rem, 0.95vw, 1.02rem);
 }
 
@@ -117,9 +116,9 @@
   min-height: 58px;
   align-content: center;
   padding: 7px 12px;
-  border: 1px solid rgba(79, 123, 148, 0.16);
+  border: 1px solid var(--wj-border);
   border-radius: 13px;
-  background: #f5f9fb;
+  background: var(--wj-surface-solid);
 }
 
 .meta span,
@@ -128,7 +127,7 @@
 }
 
 .meta span {
-  color: #718592;
+  color: var(--wj-muted);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -141,8 +140,8 @@
 .meta em {
   padding: 8px 11px;
   border-radius: 999px;
-  background: #e4f2ec;
-  color: #237453;
+  background: var(--wj-success-bg);
+  color: var(--wj-success);
   font-size: 0.78rem;
   font-style: normal;
   font-weight: 850;
@@ -155,9 +154,9 @@
   grid-template-columns: 1fr 1fr;
   gap: 3px;
   padding: 3px;
-  border: 1px solid rgba(79, 123, 148, 0.18);
+  border: 1px solid var(--wj-border);
   border-radius: 13px;
-  background: #eef4f7;
+  background: var(--wj-accent-soft);
 }
 
 .language button {
@@ -165,16 +164,16 @@
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: #718592;
+  color: var(--wj-muted);
   font-size: 0.78rem;
   font-weight: 850;
   cursor: pointer;
 }
 
 .language .activeLanguage {
-  background: #fff;
-  color: #176f9f;
-  box-shadow: 0 4px 10px rgba(35, 76, 99, 0.1);
+  background: var(--wj-surface-solid);
+  color: var(--wj-accent-strong);
+  box-shadow: var(--wj-shadow-soft);
 }
 
 .action {
@@ -182,17 +181,17 @@
   width: 48px;
   height: 58px;
   place-items: center;
-  border: 1px solid rgba(79, 123, 148, 0.2);
+  border: 1px solid var(--wj-border);
   border-radius: 13px;
-  background: #fff;
-  color: #335c74;
+  background: var(--wj-surface-solid);
+  color: var(--wj-muted);
   cursor: pointer;
 }
 
 .action:hover,
 .action:focus-visible {
-  border-color: #176f9f;
-  color: #176f9f;
+  border-color: var(--wj-control-border);
+  color: var(--wj-accent-strong);
   outline: 0;
 }
 
@@ -219,9 +218,9 @@
   z-index: 4;
   top: 8px;
   right: 8px;
-  border: 1px solid #e1bc75;
-  background: #fff7e7;
-  color: #8a5b13;
+  border: 1px solid var(--wj-warning-border);
+  background: var(--wj-warning-bg);
+  color: var(--wj-warning);
 }
 
 .error {
@@ -229,16 +228,16 @@
   z-index: 4;
   top: 58px;
   right: 8px;
-  border: 1px solid #e7aaa6;
-  background: #fff0ef;
-  color: #9d3d37;
+  border: 1px solid var(--wj-danger-border);
+  background: var(--wj-danger-bg);
+  color: var(--wj-danger);
 }
 
 .loading {
   height: 100%;
   display: grid;
   place-items: center;
-  color: #5d7483;
+  color: var(--wj-muted);
 }
 
 .kpis {
@@ -261,7 +260,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #657b89;
+  color: var(--wj-muted);
   font-size: 0.8rem;
   font-weight: 800;
 }
@@ -272,7 +271,7 @@
 }
 
 .kpis strong {
-  color: #15364b;
+  color: var(--wj-text);
   font-size: clamp(1.65rem, 2.15vw, 2.4rem);
   font-weight: 900;
   letter-spacing: -0.045em;
@@ -281,7 +280,7 @@
 
 .kpis strong small {
   margin-left: 3px;
-  color: #6c8290;
+  color: var(--wj-muted);
   font-size: 0.92rem;
   font-weight: 750;
   letter-spacing: 0;
@@ -289,7 +288,7 @@
 
 .kpis em {
   overflow: hidden;
-  color: #7a8e9a;
+  color: var(--wj-muted);
   font-size: 0.76rem;
   font-style: normal;
   font-weight: 700;
@@ -298,16 +297,16 @@
 }
 
 .kpis .primaryKpi {
-  border-color: rgba(23, 111, 159, 0.36);
-  background: linear-gradient(145deg, #176f9f, #135d87);
-  color: #fff;
+  border-color: var(--wj-border);
+  background: var(--wj-surface-solid);
+  color: var(--wj-text);
 }
 
 .primaryKpi > span,
 .primaryKpi strong,
 .primaryKpi strong small,
 .primaryKpi em {
-  color: #fff !important;
+  color: var(--wj-text) !important;
 }
 
 .primaryKpi em {
@@ -315,7 +314,7 @@
 }
 
 .rising {
-  color: #b56d12 !important;
+  color: var(--wj-warning) !important;
 }
 
 .mainGrid {
@@ -338,7 +337,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 15px;
-  border-bottom: 1px solid rgba(79, 123, 148, 0.14);
+  border-bottom: 1px solid var(--wj-border);
 }
 
 .panel h2 {
@@ -349,7 +348,7 @@
 
 .panel p {
   margin-top: 4px;
-  color: #748895;
+  color: var(--wj-muted);
   font-size: 0.78rem;
 }
 
@@ -420,7 +419,7 @@
 }
 
 .shiftRow + .shiftRow {
-  border-top: 1px solid rgba(79, 123, 148, 0.11);
+  border-top: 1px solid var(--wj-border);
 }
 
 .shiftRow > strong {
@@ -441,8 +440,8 @@
   overflow: hidden;
   padding: 0 7px;
   border-radius: 8px;
-  background: #edf3f6;
-  color: #4f6878;
+  background: var(--wj-accent-soft);
+  color: var(--wj-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
@@ -451,11 +450,11 @@
   position: absolute;
   inset: 0 auto 0 0;
   max-width: 100%;
-  background: rgba(23, 111, 159, 0.2);
+  background: var(--wj-accent-soft);
 }
 
 .shiftBars .previousBar {
-  background: rgba(209, 138, 36, 0.2);
+  background: var(--wj-warning-bg);
 }
 
 .shiftBars b,
@@ -465,8 +464,8 @@
 
 .shiftPanel footer {
   padding: 3px 9px;
-  border-top: 1px solid rgba(79, 123, 148, 0.11);
-  color: #7b8e9a;
+  border-top: 1px solid var(--wj-border);
+  color: var(--wj-muted);
   font-size: 0.73rem;
   font-weight: 750;
 }
@@ -522,12 +521,12 @@
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid #d5e1e7;
-  border-color: color-mix(in srgb, var(--machine-accent) 34%, #dce6eb);
+  border: 1px solid var(--wj-border);
+  border-color: color-mix(in srgb, var(--machine-accent) 34%, var(--wj-border));
   border-left: 4px solid var(--machine-accent);
   border-radius: 11px;
-  background: #f9fbfc;
-  background: color-mix(in srgb, var(--machine-accent) 6%, #fff);
+  background: var(--wj-surface-solid);
+  background: color-mix(in srgb, var(--machine-accent) 6%, var(--wj-surface-solid));
 }
 
 .machineCardEfficient { --machine-accent: #15966d; }
@@ -548,7 +547,7 @@
 
 .machineCard > header strong {
   overflow: hidden;
-  color: #19384c;
+  color: var(--wj-text);
   font-size: 0.82rem;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -556,7 +555,7 @@
 }
 
 .machineCard > header span {
-  color: #718592;
+  color: var(--wj-muted);
   font-size: 0.65rem;
   font-weight: 750;
   white-space: nowrap;
@@ -605,7 +604,7 @@
 .machineGauge > strong {
   position: relative;
   margin-bottom: 11px;
-  color: #1b3b50;
+  color: var(--wj-text);
   font-size: clamp(1.05rem, 0.98vw, 1.4rem);
   font-weight: 900;
   letter-spacing: -0.04em;
@@ -615,7 +614,7 @@
 .machineGauge > span {
   position: absolute;
   bottom: 2px;
-  color: #748895;
+  color: var(--wj-muted);
   font-size: 0.63rem;
   font-weight: 800;
 }
@@ -628,7 +627,7 @@
 }
 
 .machineEfficiency > span {
-  color: #6b808e;
+  color: var(--wj-muted);
   font-size: 0.66rem;
   font-weight: 800;
 }
@@ -653,7 +652,7 @@
   justify-self: start;
   padding: 2px 5px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--machine-accent) 15%, #fff);
+  background: color-mix(in srgb, var(--machine-accent) 15%, var(--wj-surface-solid));
   color: var(--machine-accent);
   font-size: 0.62rem;
   font-style: normal;
@@ -734,21 +733,21 @@
   display: block;
   height: 100%;
   min-height: 11px;
-  border: 1px solid rgba(23, 79, 108, 0.08);
+  border: 1px solid var(--wj-border);
   border-radius: 3px;
 }
 
 .heatCell:hover,
 .futureCell:hover {
   z-index: 2;
-  border-color: #176f9f;
-  box-shadow: 0 0 0 2px rgba(23, 111, 159, 0.2);
+  border-color: var(--wj-border);
+  box-shadow: var(--wj-shadow-soft);
   transform: scale(1.12);
 }
 
 .futureCell {
   border-style: dashed;
-  background: #f4f6f7;
+  background: var(--wj-bg-strong);
 }
 
 @keyframes spin {

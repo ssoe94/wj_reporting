@@ -36,27 +36,27 @@ function formatNumber(value?: number | null) {
 const SummaryCard = ({ snapshot, t }: { snapshot: FinishedGoodsSnapshot; t: (key: string) => string }) => {
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-        <p className="text-xs text-gray-500 mb-1">{t('finished_goods_io_summary_slot')}</p>
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] p-4 shadow-sm">
+        <p className="text-xs text-[var(--wj-muted)] mb-1">{t('finished_goods_io_summary_slot')}</p>
         <p className="text-lg font-semibold">{snapshot.slot_display}</p>
-        <p className="text-xs text-gray-500 mt-2">{t('finished_goods_io_summary_window')}</p>
-        <p className="text-sm text-gray-700">
+        <p className="text-xs text-[var(--wj-muted)] mt-2">{t('finished_goods_io_summary_window')}</p>
+        <p className="text-sm text-[var(--wj-text)]">
           {formatDate(snapshot.range_start)} ~ {formatDate(snapshot.range_end)}
         </p>
       </div>
-      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-        <p className="text-xs text-gray-500 mb-1">{t('finished_goods_io_record_count')}</p>
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] p-4 shadow-sm">
+        <p className="text-xs text-[var(--wj-muted)] mb-1">{t('finished_goods_io_record_count')}</p>
         <p className="text-lg font-semibold">{snapshot.record_count.toLocaleString()}</p>
-        <p className="text-xs text-gray-500 mt-3">{t('finished_goods_io_total_in')}</p>
-        <p className="text-sm text-gray-700">{formatNumber(snapshot.total_in)}</p>
+        <p className="text-xs text-[var(--wj-muted)] mt-3">{t('finished_goods_io_total_in')}</p>
+        <p className="text-sm text-[var(--wj-text)]">{formatNumber(snapshot.total_in)}</p>
       </div>
-      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-        <p className="text-xs text-gray-500 mb-1">{t('finished_goods_io_total_out')}</p>
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg border border-[var(--wj-border)] p-4 shadow-sm">
+        <p className="text-xs text-[var(--wj-muted)] mb-1">{t('finished_goods_io_total_out')}</p>
         <p className="text-lg font-semibold">{formatNumber(snapshot.total_out)}</p>
-        <p className="text-xs text-gray-500 mt-3">{t('finished_goods_io_net_change')}</p>
+        <p className="text-xs text-[var(--wj-muted)] mt-3">{t('finished_goods_io_net_change')}</p>
         <p
           className={`text-sm font-semibold ${
-            snapshot.net_change >= 0 ? 'text-green-600' : 'text-red-600'
+            snapshot.net_change >= 0 ? 'text-[var(--wj-success)]' : 'text-[var(--wj-danger)]'
           }`}
         >
           {formatNumber(snapshot.net_change)}
@@ -101,18 +101,18 @@ export default function FinishedGoodsIOPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">{t('finished_goods_io_title')}</h1>
-        <p className="text-sm text-gray-600 mt-1">{t('finished_goods_io_description')}</p>
+        <h1 className="text-2xl font-semibold text-[var(--wj-text)]">{t('finished_goods_io_title')}</h1>
+        <p className="text-sm text-[var(--wj-muted)] mt-1">{t('finished_goods_io_description')}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1">
+        <div className="inline-flex rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-1">
           {slotOrder.map((slot) => (
             <button
               key={slot}
               type="button"
               className={`px-4 py-2 text-sm font-medium rounded-md transition ${
-                selectedSlot === slot ? 'bg-white shadow border border-gray-200' : 'text-gray-500'
+                selectedSlot === slot ? 'bg-[var(--wj-surface-solid)] shadow border border-[var(--wj-border)]' : 'text-[var(--wj-muted)]'
               }`}
               onClick={() => setSelectedSlot(slot)}
             >
@@ -131,21 +131,21 @@ export default function FinishedGoodsIOPage() {
       </div>
 
       {isLoading ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500">
+        <div className="bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-lg p-6 text-center text-[var(--wj-muted)]">
           {t('loading')}
         </div>
       ) : !snapshot ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500">
+        <div className="bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-lg p-6 text-center text-[var(--wj-muted)]">
           {t('finished_goods_io_no_data')}
         </div>
       ) : (
         <>
           <SummaryCard snapshot={snapshot} t={t} />
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+              <table className="min-w-full divide-y divide-[var(--wj-border)]">
+                <thead className="bg-[var(--wj-surface-solid)] text-xs uppercase tracking-wide text-[var(--wj-muted)]">
                   <tr>
                     <th className="px-4 py-2 text-left">{t('finished_goods_io_col_material_code')}</th>
                     <th className="px-4 py-2 text-left">{t('finished_goods_io_col_material_name')}</th>
@@ -159,38 +159,38 @@ export default function FinishedGoodsIOPage() {
                     <th className="px-4 py-2 text-center">{t('finished_goods_io_col_last_out')}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
+                <tbody className="divide-y divide-[var(--wj-border)] text-sm">
                   {rows.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-center text-gray-500" colSpan={10}>
+                      <td className="px-4 py-6 text-center text-[var(--wj-muted)]" colSpan={10}>
                         {t('finished_goods_io_no_data')}
                       </td>
                     </tr>
                   ) : (
                     rows.map((row) => (
-                      <tr key={row.id} className="hover:bg-gray-50 transition">
-                        <td className="px-4 py-2 font-medium text-gray-900">{row.material_code}</td>
-                        <td className="px-4 py-2 text-gray-700">{row.material_name}</td>
-                        <td className="px-4 py-2 text-gray-600">{row.specification || '-'}</td>
-                        <td className="px-4 py-2 text-right font-medium text-green-700">
+                      <tr key={row.id} className="hover:bg-[var(--wj-surface-solid)] transition">
+                        <td className="px-4 py-2 font-medium text-[var(--wj-text)]">{row.material_code}</td>
+                        <td className="px-4 py-2 text-[var(--wj-text)]">{row.material_name}</td>
+                        <td className="px-4 py-2 text-[var(--wj-muted)]">{row.specification || '-'}</td>
+                        <td className="px-4 py-2 text-right font-medium text-[var(--wj-success)]">
                           {formatNumber(row.total_in)}
                         </td>
-                        <td className="px-4 py-2 text-right font-medium text-red-600">
+                        <td className="px-4 py-2 text-right font-medium text-[var(--wj-danger)]">
                           {formatNumber(row.total_out)}
                         </td>
                         <td
                           className={`px-4 py-2 text-right font-semibold ${
-                            row.net_change >= 0 ? 'text-green-700' : 'text-red-600'
+                            row.net_change >= 0 ? 'text-[var(--wj-success)]' : 'text-[var(--wj-danger)]'
                           }`}
                         >
                           {formatNumber(row.net_change)}
                         </td>
-                        <td className="px-4 py-2 text-center text-gray-600">{row.unit || '-'}</td>
-                        <td className="px-4 py-2 text-center text-gray-600">
+                        <td className="px-4 py-2 text-center text-[var(--wj-muted)]">{row.unit || '-'}</td>
+                        <td className="px-4 py-2 text-center text-[var(--wj-muted)]">
                           {row.record_count.toLocaleString()}
                         </td>
-                        <td className="px-4 py-2 text-center text-gray-600">{formatDate(row.last_in_time)}</td>
-                        <td className="px-4 py-2 text-center text-gray-600">{formatDate(row.last_out_time)}</td>
+                        <td className="px-4 py-2 text-center text-[var(--wj-muted)]">{formatDate(row.last_in_time)}</td>
+                        <td className="px-4 py-2 text-center text-[var(--wj-muted)]">{formatDate(row.last_out_time)}</td>
                       </tr>
                     ))
                   )}

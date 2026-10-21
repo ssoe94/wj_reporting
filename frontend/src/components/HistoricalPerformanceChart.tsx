@@ -56,7 +56,7 @@ export default function HistoricalPerformanceChart({ data, onBarClick }: Props) 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+        <div className="bg-[var(--wj-surface-solid)] p-3 border border-[var(--wj-border)] rounded shadow-lg">
           <p className="font-medium">{`${label}`}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} style={{ color: entry.color }}>

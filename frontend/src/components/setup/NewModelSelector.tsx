@@ -56,8 +56,8 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
         const { key, ...rest } = props as any;
         if ('isAddNew' in option) {
           return (
-            <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
-              <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
+            <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-accent-soft)] border-t border-[var(--wj-border)]">
+              <div className="flex items-center justify-center gap-2 text-[var(--wj-accent-strong)] font-medium py-2 text-sm">
                 <Plus className="h-3 w-3" />
                 <span>{`"${option.model_code}" ${t('add_new_model_prompt')}`}</span>
               </div>
@@ -69,7 +69,7 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
           <li key={key} {...rest}>
             <div className="flex flex-col">
               <span className="font-mono font-medium">{spec.model_code}</span>
-              <span className="text-sm text-gray-600">{spec.description}</span>
+              <span className="text-sm text-[var(--wj-muted)]">{spec.description}</span>
             </div>
           </li>
         );

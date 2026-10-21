@@ -285,12 +285,12 @@ function ResultMetric({
   tone: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+    <div className="rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-xs font-semibold text-[var(--wj-muted)]">
         <Icon className={`h-4 w-4 ${tone}`} aria-hidden="true" />
         {label}
       </div>
-      <strong className="mt-1 block text-2xl tabular-nums text-slate-950">{value.toLocaleString()}</strong>
+      <strong className="mt-1 block text-2xl tabular-nums text-[var(--wj-text)]">{value.toLocaleString()}</strong>
     </div>
   );
 }
@@ -788,20 +788,20 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
   return (
     <div className="space-y-6">
       <section className={embedded
-        ? 'border-t border-slate-200 bg-gradient-to-br from-cyan-50/35 via-white to-blue-50/40'
-        : 'overflow-hidden rounded-2xl border border-cyan-100 bg-gradient-to-br from-white via-cyan-50/35 to-blue-50/50 shadow-sm'}>
+        ? 'border-t border-[var(--wj-border)] bg-gradient-to-br from-[var(--wj-bg-strong)] via-[var(--wj-surface-solid)] to-[var(--wj-bg-strong)]'
+        : 'overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-gradient-to-br from-[var(--wj-surface-solid)] via-[var(--wj-bg-strong)] to-[var(--wj-bg-strong)] shadow-sm'}>
         <div className="p-4 md:p-5">
           <div className="flex flex-wrap items-start gap-3">
-            <span className="rounded-lg bg-cyan-600 p-2 text-white shadow-sm">
+            <span className="rounded-lg bg-[var(--wj-accent-strong)] p-2 text-[var(--wj-on-accent)] shadow-sm">
               <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
               {embedded ? (
-                <h3 className="text-base font-bold text-slate-950">{c.title}</h3>
+                <h3 className="text-base font-bold text-[var(--wj-text)]">{c.title}</h3>
               ) : (
-                <h2 className="text-base font-bold text-slate-950">{c.title}</h2>
+                <h2 className="text-base font-bold text-[var(--wj-text)]">{c.title}</h2>
               )}
-              <p className="mt-0.5 text-xs leading-5 text-slate-500">{c.description}</p>
+              <p className="mt-0.5 text-xs leading-5 text-[var(--wj-muted)]">{c.description}</p>
             </div>
           </div>
 
@@ -854,33 +854,33 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                 selectFile(event.dataTransfer.files?.[0] || null);
               }
             }}
-            className={`mt-4 flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3.5 text-left disabled:cursor-not-allowed disabled:opacity-70 ${dragging ? 'border-solid border-blue-600 bg-blue-50 ring-4 ring-blue-200' : 'border-dashed border-cyan-200 bg-white/80 hover:border-cyan-400 hover:bg-white'}`}
+            className={`mt-4 flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3.5 text-left disabled:cursor-not-allowed disabled:opacity-70 ${dragging ? 'border-solid border-[var(--wj-accent)] bg-[var(--wj-bg-strong)] ring-4 ring-[var(--wj-border)]' : 'border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] hover:border-[var(--wj-accent)] hover:bg-[var(--wj-surface-solid)]'}`}
           >
-            <span className={`rounded-full p-2.5 ${dragging ? 'bg-blue-600 text-white' : 'bg-cyan-50 text-cyan-700'}`}>
+            <span className={`rounded-full p-2.5 ${dragging ? 'bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)]' : 'bg-[var(--wj-bg-strong)] text-[var(--wj-accent-strong)]'}`}>
               {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
             </span>
             <span className="min-w-0 flex-1">
-              <strong className="block break-words text-sm text-slate-900">{dragging ? c.dropReady : file?.name || pendingWorkflow?.filename || c.drop}</strong>
-              <span className="mt-1 block text-xs text-slate-500">
+              <strong className="block break-words text-sm text-[var(--wj-text)]">{dragging ? c.dropReady : file?.name || pendingWorkflow?.filename || c.drop}</strong>
+              <span className="mt-1 block text-xs text-[var(--wj-muted)]">
                 {file ? `${formatBytes(file.size)} · ${c.fileHelp}` : c.fileHelp}
               </span>
             </span>
           </button>
 
           {selectedSheetName && (
-            <p className="mt-3 rounded-lg border border-blue-200 bg-white/80 px-3 py-2 text-xs font-semibold text-blue-800">
+            <p className="mt-3 rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold text-[var(--wj-accent-strong)]">
               {interpolate(c.selectedSheet, { sheet: selectedSheetName })}
             </p>
           )}
 
           {uploading && (
             <div className="mt-4">
-              <div className="mb-1 flex flex-wrap justify-between gap-2 text-xs font-semibold text-blue-700">
+              <div className="mb-1 flex flex-wrap justify-between gap-2 text-xs font-semibold text-[var(--wj-accent-strong)]">
                 <span>{phaseLabel}</span>
                 {overallProgressText && <span className="tabular-nums">{overallProgressText}</span>}
               </div>
               <div
-                className="h-2 overflow-hidden rounded-full bg-blue-100"
+                className="h-2 overflow-hidden rounded-full bg-[var(--wj-accent-soft)]"
                 role="progressbar"
                 aria-label={c.overallProgressLabel}
                 aria-valuemin={0}
@@ -889,14 +889,14 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                 aria-valuetext={overallProgressText || phaseLabel}
               >
                 <div
-                  className={`h-full rounded-full bg-blue-600 transition-[width] ${workflowProgress ? '' : 'animate-pulse'}`}
+                  className={`h-full rounded-full bg-[var(--wj-accent-strong)] transition-[width] ${workflowProgress ? '' : 'animate-pulse'}`}
                   style={{
                     width: workflowProgress ? `${workflowPercent}%` : '55%',
                   }}
                 />
               </div>
               {phase === 'uploading' && progress && (
-                <p className="mt-1 text-right text-xs tabular-nums text-slate-500">
+                <p className="mt-1 text-right text-xs tabular-nums text-[var(--wj-muted)]">
                   {interpolate(c.currentChunkUpload, {
                     uploaded: formatBytes(progress.uploadedBytes),
                     total: formatBytes(progress.totalBytes),
@@ -905,7 +905,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                 </p>
               )}
               {preview && (
-                <p className="mt-2 text-xs text-slate-600">
+                <p className="mt-2 text-xs text-[var(--wj-muted)]">
                   {interpolate(c.deltaSummary, {
                     newRows: preview.new_count,
                     updatedRows: preview.update_result_count ?? 0,
@@ -920,11 +920,11 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
           )}
 
           {errorMessage && !uploading && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
-              <XCircle className="h-5 w-5 shrink-0 text-rose-600" />
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] px-4 py-3 text-sm text-[var(--wj-danger)]" role="alert">
+              <XCircle className="h-5 w-5 shrink-0 text-[var(--wj-danger)]" />
               <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{errorMessage}</span>
               {(file || pendingWorkflow) && (
-                <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] disabled:cursor-not-allowed disabled:opacity-50">
                   <RefreshCw className="h-4 w-4" />
                   {pendingWorkflow
                     ? file
@@ -948,16 +948,16 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
           {editableFailedRows.length > 0 && (
             <div
               ref={failedRowsSectionRef}
-              className="scroll-mt-6 rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 md:p-6"
+              className="scroll-mt-6 rounded-2xl border border-[var(--wj-danger-border)] bg-[var(--wj-danger-bg)] p-5 shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--wj-danger-border)] md:p-6"
               tabIndex={-1}
             >
               <div className="flex items-start gap-3">
-                <span className="rounded-xl bg-rose-600 p-2.5 text-white shadow-sm">
+                <span className="rounded-xl bg-[var(--wj-danger)] p-2.5 text-[var(--wj-on-accent)] shadow-sm">
                   <AlertTriangle className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-950">{c.fixRequiredTitle}</h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                  <h2 className="text-lg font-bold text-[var(--wj-text)]">{c.fixRequiredTitle}</h2>
+                  <p className="mt-1 text-sm leading-6 text-[var(--wj-muted)]">
                     {interpolate(c.fixRequiredDescription, { count: editableFailedRows.length })}
                   </p>
                 </div>
@@ -985,35 +985,35 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
               </div>
             </div>
           )}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm md:p-6">
+          <div className="rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-5 shadow-sm md:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   {resultAllFailed ? (
-                    <XCircle className="h-5 w-5 text-rose-600" aria-hidden="true" />
+                    <XCircle className="h-5 w-5 text-[var(--wj-danger)]" aria-hidden="true" />
                   ) : resultHasFailures ? (
-                    <AlertTriangle className="h-5 w-5 text-amber-600" aria-hidden="true" />
+                    <AlertTriangle className="h-5 w-5 text-[var(--wj-warning)]" aria-hidden="true" />
                   ) : (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+                    <CheckCircle2 className="h-5 w-5 text-[var(--wj-success)]" aria-hidden="true" />
                   )}
-                  <h2 id="quality-import-result-title" className="text-lg font-bold text-slate-950">{c.resultTitle}</h2>
+                  <h2 id="quality-import-result-title" className="text-lg font-bold text-[var(--wj-text)]">{c.resultTitle}</h2>
                 </div>
-                <p className="mt-1 break-all text-sm text-slate-600">{result.filename}</p>
+                <p className="mt-1 break-all text-sm text-[var(--wj-muted)]">{result.filename}</p>
                 {resultHasFailures && (
-                  <p className={`mt-2 text-sm font-semibold ${resultAllFailed ? 'text-rose-700' : 'text-amber-700'}`}>
+                  <p className={`mt-2 text-sm font-semibold ${resultAllFailed ? 'text-[var(--wj-danger)]' : 'text-[var(--wj-warning)]'}`}>
                     {resultAllFailed ? c.allFailed : c.partialSuccess}
                   </p>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setCompletionModalOpen(true)} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                <button type="button" onClick={() => setCompletionModalOpen(true)} className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--wj-accent-strong)] hover:bg-[var(--wj-bg-strong)]">
                   {c.reopenSummary}
                 </button>
-                <button type="button" disabled={correctionInFlight} onClick={completeAndOpenHistory} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-wait disabled:opacity-50">
+                <button type="button" disabled={correctionInFlight} onClick={completeAndOpenHistory} className="rounded-lg bg-[var(--wj-accent-strong)] px-3 py-2 text-sm font-semibold text-[var(--wj-on-accent)] shadow-sm hover:bg-[var(--wj-accent-strong)] disabled:cursor-wait disabled:opacity-50">
                   {primaryResultActionLabel}
                 </button>
                 {hasNonEditableFailures && (file || pendingWorkflow) && (
-                  <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--wj-danger)] hover:bg-[var(--wj-danger-bg)] disabled:cursor-not-allowed disabled:opacity-50">
                     <RefreshCw className="h-4 w-4" />
                     {c.retry}
                   </button>
@@ -1036,7 +1036,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
             </div>
 
             {result.warnings.length > 0 && (
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="mt-4 rounded-xl border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-sm text-[var(--wj-warning)]">
                 <strong className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{c.workbookWarnings}</strong>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   {result.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
@@ -1050,17 +1050,17 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
               type="button"
               aria-expanded={detailsExpanded}
               onClick={() => setDetailsExpanded((current) => !current)}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-2 text-sm font-semibold text-[var(--wj-text)] shadow-sm hover:bg-[var(--wj-surface-solid)]"
             >
               {detailsExpanded ? c.hideDetails : c.showDetails}
             </button>
           </div>
 
           {detailsExpanded && (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm">
               <div className="overflow-x-auto">
                 <table className="min-w-[1080px] w-full border-collapse text-left">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <thead className="bg-[var(--wj-surface-solid)] text-xs font-semibold uppercase tracking-wide text-[var(--wj-muted)]">
                   <tr>
                     <th className="px-4 py-3">{c.source}</th>
                     <th className="px-4 py-3">{c.status}</th>
@@ -1071,31 +1071,31 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                     <th className="px-4 py-3 text-right">{c.action}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[var(--wj-border)]">
                   {tableResultRows.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">{c.noRows}</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-[var(--wj-muted)]">{c.noRows}</td></tr>
                   ) : tableResultRows.map((row) => (
-                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : row.status === 'updated' ? 'bg-blue-50/30' : 'hover:bg-blue-50/30'}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
-                        <strong className="block text-slate-900">{row.sheet_name}</strong>
-                        <span className="text-xs text-slate-500">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
+                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-[var(--wj-danger-bg)]' : row.status === 'changed' ? 'bg-[var(--wj-accent-soft)]/30' : row.status === 'updated' ? 'bg-[var(--wj-bg-strong)]' : 'hover:bg-[var(--wj-bg-strong)]'}>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--wj-text)]">
+                        <strong className="block text-[var(--wj-text)]">{row.sheet_name}</strong>
+                        <span className="text-xs text-[var(--wj-muted)]">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
                       </td>
                       <td className="px-4 py-3"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${statusStyle(row.status)}`}>{statusLabel(row.status, c)}</span></td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
+                      <td className="px-4 py-3 text-sm text-[var(--wj-text)]">
                         <span className="block whitespace-nowrap">{row.report_date || c.unknown}</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">{row.section || c.unknown}</span>
-                        {row.report_id && <span className="mt-0.5 block text-xs font-semibold text-blue-700">{c.reportNumber.replace('{id}', String(row.report_id))}</span>}
+                        <span className="mt-0.5 block text-xs text-[var(--wj-muted)]">{row.section || c.unknown}</span>
+                        {row.report_id && <span className="mt-0.5 block text-xs font-semibold text-[var(--wj-accent-strong)]">{c.reportNumber.replace('{id}', String(row.report_id))}</span>}
                       </td>
-                      <td className="max-w-sm px-4 py-3 text-sm text-slate-700">
-                        <strong className="block truncate text-slate-900">{row.model || c.unknown}</strong>
-                        <span className="block truncate font-mono text-xs text-blue-700">{row.part_no || c.unknown}</span>
+                      <td className="max-w-sm px-4 py-3 text-sm text-[var(--wj-text)]">
+                        <strong className="block truncate text-[var(--wj-text)]">{row.model || c.unknown}</strong>
+                        <span className="block truncate font-mono text-xs text-[var(--wj-accent-strong)]">{row.part_no || c.unknown}</span>
                         <p className="mt-1 line-clamp-2 leading-5">{row.phenomenon || '-'}</p>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                        <span className="font-semibold text-violet-700">{row.images_saved.toLocaleString()}</span>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--wj-muted)]">
+                        <span className="font-semibold text-[var(--wj-accent-strong)]">{row.images_saved.toLocaleString()}</span>
                         <span> / {row.images_found.toLocaleString()}</span>
                       </td>
-                      <td className="max-w-sm px-4 py-3 text-sm text-slate-600">
+                      <td className="max-w-sm px-4 py-3 text-sm text-[var(--wj-muted)]">
                         {row.message && (
                           <p className="whitespace-pre-wrap break-words">
                             {row.status === 'failed'
@@ -1104,13 +1104,13 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                           </p>
                         )}
                         {row.warnings.length > 0 && (
-                          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-amber-700">
+                          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[var(--wj-warning)]">
                             {row.warnings.map((warning, warningIndex) => <li key={`${warning}-${warningIndex}`}>{warning}</li>)}
                           </ul>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : row.status === 'changed' ? 'changed' : row.status === 'updated' ? 'all' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
+                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : row.status === 'changed' ? 'changed' : row.status === 'updated' ? 'all' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-xs font-semibold text-[var(--wj-accent-strong)] hover:bg-[var(--wj-bg-strong)] disabled:cursor-not-allowed disabled:opacity-40">
                           <Eye className="h-3.5 w-3.5" />{c.viewReport}
                         </button>
                       </td>

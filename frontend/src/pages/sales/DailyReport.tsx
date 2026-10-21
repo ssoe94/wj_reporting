@@ -215,21 +215,21 @@ export default function DailyReportPage() {
         <div className="xl:col-span-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
             {/* 1행 - 총 품목수 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">총 품목수</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">총 품목수</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="text-2xl font-bold text-[var(--wj-accent-strong)]">
                   {summaryData.today.total_items.toLocaleString()}
                 </div>
               )}
             </div>
 
             {/* 1행 - 총 수량 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">총 수량</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">총 수량</h3>
               {summaryData && (
                 <div className="space-y-1">
-                  <div className="text-2xl font-bold text-green-600">
+                  <div className="text-2xl font-bold text-[var(--wj-success)]">
                     {formatQuantity(summaryData.today.total_quantity)}
                   </div>
                 </div>
@@ -237,40 +237,40 @@ export default function DailyReportPage() {
             </div>
 
             {/* 2행 - 총 사용 带车수 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">총 사용 带车수</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">총 사용 带车수</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-purple-600">
+                <div className="text-2xl font-bold text-[var(--wj-accent-strong)]">
                   {summaryData.today.total_carts.toLocaleString()}
                 </div>
               )}
             </div>
 
             {/* 2행 - 제품창고 수량 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">제품창고 수량</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">제품창고 수량</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-green-500">
+                <div className="text-2xl font-bold text-[var(--wj-success)]">
                   {formatQuantity(summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '成品仓库')?.total_quantity || 0)}
                 </div>
               )}
             </div>
 
             {/* 3행 - 반제품창고 수량 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">반제품창고 수량</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">반제품창고 수량</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-green-400">
+                <div className="text-2xl font-bold text-[var(--wj-success)]">
                   {formatQuantity(summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '半成品仓库')?.total_quantity || 0)}
                 </div>
               )}
             </div>
 
             {/* 3행 - 제품창고 带车수 */}
-            <div className="bg-white p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">제품창고 带车수</h3>
+            <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg flex flex-col justify-center h-full">
+              <h3 className="text-sm font-medium text-[var(--wj-muted)] mb-2">제품창고 带车수</h3>
               {summaryData && (
-                <div className="text-2xl font-bold text-purple-500">
+                <div className="text-2xl font-bold text-[var(--wj-accent-strong)]">
                   {summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '成品仓库')?.cart_count || 0}
                 </div>
               )}
@@ -280,7 +280,7 @@ export default function DailyReportPage() {
 
         {/* 오른쪽: 달력 */}
         <div className="xl:col-span-2">
-          <div className="bg-white p-4 rounded-lg shadow-lg h-fit">
+          <div className="bg-[var(--wj-surface-solid)] p-4 rounded-lg shadow-lg h-fit">
             <DailyReportCalendar 
               onDateSelect={setSelectedDate}
               selectedDate={selectedDate}
@@ -308,13 +308,13 @@ export default function DailyReportPage() {
             onlyStaff
             onClick={handleCreateSnapshot}
             disabled={isCreating}
-            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md"
+            className="px-4 py-2 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] rounded-md"
           >
             {isCreating ? '생성 중...' : '스냅샷 생성'}
           </PermissionButton>
           <Button 
             variant="ghost"
-            className="border border-gray-300 hover:bg-gray-50"
+            className="border border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)]"
           >
             비교하기
           </Button>
@@ -322,15 +322,15 @@ export default function DailyReportPage() {
       </div>
 
              {/* 탭 및 데이터 테이블 */}
-       <div className="bg-white rounded-lg shadow-lg">
+       <div className="bg-[var(--wj-surface-solid)] rounded-lg shadow-lg">
         {/* 탭 */}
-        <div className="flex justify-between items-center border-b border-gray-200">
+        <div className="flex justify-between items-center border-b border-[var(--wj-border)]">
           <div className="flex">
             <button
               className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
                 activeTab === 'finished'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-[var(--wj-accent)] text-[var(--wj-accent-strong)]'
+                  : 'border-transparent text-[var(--wj-muted)] hover:text-[var(--wj-text)]'
               }`}
               onClick={() => setActiveTab('finished')}
             >
@@ -339,8 +339,8 @@ export default function DailyReportPage() {
             <button
               className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
                 activeTab === 'semi'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-[var(--wj-accent)] text-[var(--wj-accent-strong)]'
+                  : 'border-transparent text-[var(--wj-muted)] hover:text-[var(--wj-text)]'
               }`}
               onClick={() => setActiveTab('semi')}
             >
@@ -350,7 +350,7 @@ export default function DailyReportPage() {
           
           {/* 스냅샷 업데이트 시간 */}
           {'snapshot_created_at' in (currentData || {}) && (currentData as any)?.snapshot_created_at && (
-            <div className="px-6 py-3 text-sm text-gray-600">
+            <div className="px-6 py-3 text-sm text-[var(--wj-muted)]">
               스냅샷 업데이트: {format(new Date((currentData as any).snapshot_created_at), 'yyyy-MM-dd HH:mm')}
             </div>
           )}
@@ -358,11 +358,11 @@ export default function DailyReportPage() {
 
         {/* 테이블 */}
         <div className="overflow-x-auto">
-          <table className="w-full table-fixed divide-y divide-gray-200 text-sm">
-            <thead className="bg-slate-100 whitespace-nowrap">
+          <table className="w-full table-fixed divide-y divide-[var(--wj-border)] text-sm">
+            <thead className="bg-[var(--wj-bg-strong)] whitespace-nowrap">
                <tr>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-32"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-32"
                    onClick={() => handleSort('material_code')}
                  >
                    <div className="flex items-center justify-center">
@@ -371,7 +371,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-40"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-40"
                    onClick={() => handleSort('specification')}
                  >
                    <div className="flex items-center justify-center">
@@ -380,7 +380,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-24"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-24"
                    onClick={() => handleSort('warehouse_name')}
                  >
                    <div className="flex items-center justify-center">
@@ -389,7 +389,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-24"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-24"
                    onClick={() => handleSort('qc_status')}
                  >
                    <div className="flex items-center justify-center">
@@ -398,7 +398,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-24"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-24"
                    onClick={() => handleSort('total_quantity')}
                  >
                    <div className="flex items-center justify-center">
@@ -407,7 +407,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-16"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-16"
                    onClick={() => handleSort('unit')}
                  >
                    <div className="flex items-center justify-center">
@@ -416,7 +416,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-20"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-20"
                    onClick={() => handleSort('cart_count')}
                  >
                    <div className="flex items-center justify-center">
@@ -425,7 +425,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-24"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-24"
                    onClick={() => handleSort('prev_quantity')}
                  >
                    <div className="flex items-center justify-center">
@@ -434,7 +434,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-24"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-24"
                    onClick={() => handleSort('quantity_change')}
                  >
                    <div className="flex items-center justify-center">
@@ -443,7 +443,7 @@ export default function DailyReportPage() {
                    </div>
                  </th>
                  <th 
-                   className="px-3 py-2 text-center cursor-pointer hover:bg-slate-200 transition-colors w-20"
+                   className="px-3 py-2 text-center cursor-pointer hover:bg-[var(--wj-bg-strong)] transition-colors w-20"
                    onClick={() => handleSort('cart_count_change')}
                  >
                    <div className="flex items-center justify-center">
@@ -463,13 +463,13 @@ export default function DailyReportPage() {
                </tr>
              ) : currentError ? (
                <tr>
-                 <td colSpan={11} className="text-center py-4 text-red-600">
+                 <td colSpan={11} className="text-center py-4 text-[var(--wj-danger)]">
                    {currentError}
                  </td>
                </tr>
              ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-4 text-gray-500">
+                  <td colSpan={11} className="text-center py-4 text-[var(--wj-muted)]">
                     데이터가 없습니다.
                   </td>
                 </tr>
@@ -499,7 +499,7 @@ export default function DailyReportPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => openCartModal(item)}
-                        className="h-8 px-2 text-xs border border-gray-300"
+                        className="h-8 px-2 text-xs border border-[var(--wj-border)]"
                       >
                         查看
                       </Button>
@@ -515,7 +515,7 @@ export default function DailyReportPage() {
       {/* 대차 상세 정보 모달 */}
       {showCartModal && selectedItem && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">
                 {selectedItem.material_code} - {selectedItem.warehouse_name} 带车 상세
@@ -524,7 +524,7 @@ export default function DailyReportPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowCartModal(false)}
-                className="h-8 px-3 border border-gray-300"
+                className="h-8 px-3 border border-[var(--wj-border)]"
               >
                 닫기
               </Button>
@@ -549,8 +549,8 @@ export default function DailyReportPage() {
               <div className="border-t pt-4">
                 <h4 className="font-medium mb-2">带车 상세 정보 ({selectedItem.cart_details.length}개)</h4>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-[var(--wj-border)] text-sm">
+                    <thead className="bg-[var(--wj-surface-solid)]">
                       <tr>
                         <th className="px-3 py-2 text-left">标识码</th>
                         <th className="px-3 py-2 text-left">标签码</th>
@@ -562,7 +562,7 @@ export default function DailyReportPage() {
                     </thead>
                     <tbody>
                       {selectedItem.cart_details.map((cart: any, index: number) => (
-                        <tr key={index} className="border-t border-gray-100">
+                        <tr key={index} className="border-t border-[var(--wj-border)]">
                           <td className="px-3 py-2">{cart.qr_code || '-'}</td>
                           <td className="px-3 py-2">{cart.label_code || '-'}</td>
                           <td className="px-3 py-2 text-right font-medium">

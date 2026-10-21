@@ -67,13 +67,13 @@ export default function InjectionSetupPanel() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'TESTING':
-        return <Clock className="h-4 w-4 text-blue-600" />;
+        return <Clock className="h-4 w-4 text-[var(--wj-accent-strong)]" />;
       case 'APPROVED':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-[var(--wj-success)]" />;
       case 'REJECTED':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-[var(--wj-danger)]" />;
       default:
-        return <AlertCircle className="h-4 w-4 text-yellow-600" />;
+        return <AlertCircle className="h-4 w-4 text-[var(--wj-warning)]" />;
     }
   };
 
@@ -95,10 +95,10 @@ export default function InjectionSetupPanel() {
   if (isLoading) {
     return (
       <div id="cycle-time" className="space-y-4">
-        <div className="h-8 w-1/4 animate-pulse rounded bg-slate-200" />
+        <div className="h-8 w-1/4 animate-pulse rounded bg-[var(--wj-bg-strong)]" />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           {[...Array(4)].map((_, index) => (
-            <div key={index} className="h-32 animate-pulse rounded-2xl bg-slate-200" />
+            <div key={index} className="h-32 animate-pulse rounded-2xl bg-[var(--wj-bg-strong)]" />
           ))}
         </div>
       </div>
@@ -109,11 +109,11 @@ export default function InjectionSetupPanel() {
     <div id="cycle-time" className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-[var(--wj-accent-strong)]">
             C/T setup
           </div>
-          <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900">{t('setup.page_title')}</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="mt-3 text-2xl font-black tracking-tight text-[var(--wj-text)]">{t('setup.page_title')}</h2>
+          <p className="mt-1 text-sm text-[var(--wj-muted)]">
             사출기별 C/T, 인원, 테스트 기록과 변경 이력을 대시보드 안에서 관리합니다.
           </p>
         </div>
@@ -126,7 +126,7 @@ export default function InjectionSetupPanel() {
             setShowHistory(true);
             setIsInitialLoad(false);
           }}
-          className="flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600"
+          className="flex items-center gap-2 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)]"
           variant="primary"
           size="sm"
         >

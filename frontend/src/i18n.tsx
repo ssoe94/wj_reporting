@@ -937,6 +937,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     'quality.image_drag_drop': '이미지를 드래그하여 놓거나 클릭하여 업로드하세요',
   },
   zh: {
+    lite_mode: '轻量模式',
     machine: '注塑机',
     line: '产线',
     in_production: '生产中',
@@ -1076,7 +1077,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     nav_overview: '综合',
     nav_injection: '注塑',
     nav_machining: '加工',
-    nav_sales: '销售',
+    nav_sales: '营业',
     nav_development: '开发',
     nav_production: '生产计划',
     nav_production_dashboard: '生产现状仪表板',

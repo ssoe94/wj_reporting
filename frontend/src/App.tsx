@@ -1,4 +1,4 @@
-﻿import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { createBrowserRouter, RouterProvider, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LangProvider } from "./i18n";
@@ -35,6 +35,8 @@ import PasswordChangeModal from './components/PasswordChangeModal';
 import MesConnectionDialog from './components/MesConnectionDialog';
 import LogoutFeedback from './components/LogoutFeedback';
 import PageTransition from './components/common/PageTransition';
+import { AppThemeProvider } from './contexts/AppThemeProvider';
+import { ThemeSwitch } from './components/layout/ThemeSwitch';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
@@ -124,7 +126,7 @@ function HomeRedirect() {
 function RouteLoading() {
   return (
     <div className="flex min-h-64 items-center justify-center" role="status">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-b-blue-600" />
+      <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--wj-border)] border-b-blue-600" />
       <span className="sr-only">Loading</span>
     </div>
   );
@@ -337,7 +339,7 @@ function AppContent() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [mesConnectionOpen, setMesConnectionOpen] = useState(false);
   const [isLiteMode, setIsLiteMode] = useState(() =>
-    typeof window !== 'undefined' && localStorage.getItem('lite') === '1'
+    (() => { try { return localStorage.getItem('lite') === '1'; } catch { return false; } })()
   );
   const { lang, setLang, t } = useLang();
   const { user, authSessionId, logout, isLoggingOut, isAuthenticated, isLoading } = useAuth();
@@ -419,11 +421,10 @@ function AppContent() {
   const toggleLiteMode = () => {
     const newLiteMode = !isLiteMode;
     setIsLiteMode(newLiteMode);
-    if (newLiteMode) {
-      localStorage.setItem('lite', '1');
-    } else {
-      localStorage.removeItem('lite');
-    }
+    try {
+      if (newLiteMode) localStorage.setItem('lite', '1');
+      else localStorage.removeItem('lite');
+    } catch { /* The current tab still supports lightweight mode. */ }
   };
 
   // Close the user dropdown when clicking outside.
@@ -536,7 +537,7 @@ function AppContent() {
   if (isLoading && !isPublicRoutePath(pathname)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-[var(--wj-accent)]"></div>
       </div>
     );
   }
@@ -553,7 +554,7 @@ function AppContent() {
 
   if (isAuthenticated && user && passwordChangeRequired) {
     return (
-      <div className="min-h-screen bg-slate-100">
+      <div className="min-h-screen bg-[var(--wj-bg-strong)]">
         <PasswordChangeModal
           isOpen
           isRequired
@@ -642,7 +643,7 @@ function AppContent() {
                 }}
                 className="main-user-menu__trigger"
               >
-                {user.username}{user.department ? ` (${user.department})` : ''}
+                <span className="main-user-menu__name">{user.username}{user.department ? ` (${user.department})` : ''}</span>
                 <ChevronDown aria-hidden="true" className={userDropdownOpen ? 'is-open' : ''} />
               </button>
               {userDropdownOpen && (
@@ -701,6 +702,7 @@ function AppContent() {
           </nav>
           {/* language selector bottom */}
           <div className="main-sidebar__footer">
+            <ThemeSwitch />
             <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
                 <button
                   aria-pressed={lang === 'ko'}
@@ -784,6 +786,7 @@ function AppContent() {
                 />
               </nav>
               <div className="main-sidebar__footer main-sidebar__footer--mobile">
+                <ThemeSwitch />
                 <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
                   <button
                     aria-pressed={lang === 'ko'}
@@ -931,7 +934,7 @@ function AppContent() {
   );
 }
 
-const appRouter = createBrowserRouter([{ path: "*", element: <AppContent /> }], { basename: "/" });
+const appRouter = createBrowserRouter([{ path: "*", element: <AppThemeProvider><AppContent /><LogoutFeedback /></AppThemeProvider> }], { basename: "/" });
 
 export default function App() {
   return (
@@ -939,7 +942,6 @@ export default function App() {
       <LangProvider>
         <AuthProvider>
           <RouterProvider router={appRouter} />
-          <LogoutFeedback />
         </AuthProvider>
       </LangProvider>
     </QueryClientProvider>

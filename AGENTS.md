@@ -91,6 +91,8 @@ The AI runtime is tiered (current contract: `docs/ai/2026-09-21-chatgpt-daily-an
 
 ## Design and accessibility
 
+- 현장 칸반(/field)은 이번 A/B 라이트·다크 적용에서 제외하고 기존 팔레트를 유지한다. 현장 경로와 `parseFieldTerminalUser`로 판별한 현장 단말 계정은 저장된 다크 설정과 무관하게 기존 라이트 화면을 사용한다.
+
 ### Production plan material workflow: compact minimal (owner update, 2026-10-08)
 
 For `PlanWorkflowPanel`, this direction overrides earlier broad-panel or Product
@@ -105,9 +107,9 @@ Apple-style design is not the reference for this screen.
 
 Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) when available for requested Apple-style design or gesture/motion implementation and review. Routine wording, spacing, accessibility, or backend changes do not require it. It is a community interpretation of Apple WWDC design principles, not an Apple product or official certification. Do not substitute the removed `dickwu/apple-design-skill` package.
 
-- Keep the current system Korean/Chinese fonts, readable 14–16px working text, spacing and page structure. For colors, use the pre-Apple-design code (`4e58aff`) and captured screens as the baseline. The user rejected the white/gray redesign, uniform muted teal and the subsequent excessive pastel coloring. Do not invent a new palette or spread decorative colors across cards. Development tasks use a navy header, a solid pale gray-blue work area and white cards; semantic status colors remain distinct.
+- Owner update, 2026-10-21: use the selected A Silver/Cyan light and B Black/Mint dark modes in [design/profile.md](design/profile.md). C Gold/Ink is discarded. This replaces the earlier color baseline (`4e58aff`) and earlier palette experiments. Keep current system Korean/Chinese fonts and readable 14–16px working text; use compact spacing, matching table columns and vertical middle alignment. Explanatory paragraphs use justified full lines with a start-aligned last line. Keep semantic statuses and chart meanings separate from brand colors.
 - Sidebar group labels are 16px/650 and child links are 14px/450; selection uses a soft fill without a left stripe or outlined box (except explicit increased-contrast mode).
-- `/boards/overview` keeps its 3×3 layout and original light palette. Its logo is an image-only light/dark toggle; do not add a mode badge to the logo. Default display hours use Asia/Shanghai: light 08:00–20:00, dark otherwise. A manual choice survives reload only until the next 08:00/20:00 boundary, independently of production business dates and observed weather.
+- `/boards/overview` keeps its 3×3 layout, using the selected light/dark role palettes. Its logo is an image-only light/dark toggle; do not add a mode badge to the logo. Default display hours use Asia/Shanghai: light 08:00–20:00, dark otherwise. A manual choice survives reload only until the next 08:00/20:00 boundary, independently of production business dates and observed weather.
 - Board dark colors are scoped `--board-*` tokens, including charts, weather, AI and empty/error states. Chinese card and central titles use weight 900. Preserve shared date/place, clock/temperature and description/observation alignment, and the centered translucent caption below the globe.
 - The overview header has no bottom graphic/freshness row. Keep its generated-at time in the status strip and refresh-failure feedback in the existing refresh control. The user-approved crystal artwork retains reduced-motion support; other panel rotation controls remain available.
 - Reserve semantic colors for real statuses. Keep chart meaning, warnings, focus and high-contrast field/board workflows legible.

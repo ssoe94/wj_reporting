@@ -60,7 +60,7 @@ const SetupHistory = ({ getStatusText }: SetupHistoryProps) => {
   return (
     <div className="space-y-6">
       {isLoading ? (
-        <div className="p-6 text-center text-gray-500">{t('loading')}</div>
+        <div className="p-6 text-center text-[var(--wj-muted)]">{t('loading')}</div>
       ) : (
         <SetupHistoryTimeline
           setups={setups}

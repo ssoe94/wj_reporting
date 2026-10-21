@@ -76,10 +76,10 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
           <Card key={index} className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">{stat.title}</p>
-                <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
+                <p className="text-sm text-[var(--wj-muted)] mb-1">{stat.title}</p>
+                <p className="text-2xl font-semibold text-[var(--wj-text)]">{stat.value}</p>
               </div>
-              <div className={`${stat.color} p-3 rounded-lg text-white`}>
+              <div className={`${stat.color} p-3 rounded-lg text-[var(--wj-on-contrast)]`}>
                 {stat.icon}
               </div>
             </div>
@@ -91,7 +91,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
       <Card className="p-6">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.active_machines_title')}</h3>
+            <h3 className="text-lg font-semibold text-[var(--wj-text)]">{t('dashboard.active_machines_title')}</h3>
           </div>
           <Button
             variant="secondary"
@@ -133,7 +133,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                       <span className="font-semibold">{machine.id}{t('dashboard.machine_id_unit')} - {machine.ton}T</span>
                     </div>
                     <div className="flex-grow flex items-center justify-center">
-                      <span className="text-gray-500 text-[10px]">{t('dashboard.no_setup')}</span>
+                      <span className="text-[var(--wj-muted)] text-[10px]">{t('dashboard.no_setup')}</span>
                     </div>
                   </button>
                 );
@@ -151,11 +151,11 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                     {isActive && <span className="text-xs font-medium">{t('dashboard.active_label')}</span>}
                   </div>
                   <div className="text-xs">
-                    <div className="truncate"><span className="text-gray-500">{t('dashboard.model_label')}</span> : {modelLabel}</div>
-                    <div className="truncate"><span className="text-gray-500">{t('dashboard.part_label')}</span> : {partNo}</div>
+                    <div className="truncate"><span className="text-[var(--wj-muted)]">{t('dashboard.model_label')}</span> : {modelLabel}</div>
+                    <div className="truncate"><span className="text-[var(--wj-muted)]">{t('dashboard.part_label')}</span> : {partNo}</div>
                     {targetCycleTime !== null ? (
                       <div>
-                        <span className="text-gray-500">{t('dashboard.target_ct_label')}</span> : {targetCycleTime}{t('unit.seconds')}
+                        <span className="text-[var(--wj-muted)]">{t('dashboard.target_ct_label')}</span> : {targetCycleTime}{t('unit.seconds')}
                         {meanCycleTime !== null && (
                           <span style={{ color: targetCycleTime > meanCycleTime ? 'red' : 'green' }}>
                             {' ('}
@@ -168,17 +168,17 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                       </div>
                     ) : (
                       <div>
-                        <span className="text-gray-500">{t('dashboard.cycletime_label')}</span> : -
+                        <span className="text-[var(--wj-muted)]">{t('dashboard.cycletime_label')}</span> : -
                       </div>
                     )}
                     {meanCycleTime !== null && (
                         <div>
-                            <span className="text-gray-500">平均设定C/T</span> : {meanCycleTime}{t('unit.seconds')}
+                            <span className="text-[var(--wj-muted)]">平均设定C/T</span> : {meanCycleTime}{t('unit.seconds')}
                         </div>
                     )}
                     {setup && setup.personnel_count !== null && (
                       <div>
-                        <span className="text-gray-500">{t('dashboard.personnel_label')}</span> : {setup.personnel_count}{t('people_unit')}
+                        <span className="text-[var(--wj-muted)]">{t('dashboard.personnel_label')}</span> : {setup.personnel_count}{t('people_unit')}
                       </div>
                     )}
                   </div>

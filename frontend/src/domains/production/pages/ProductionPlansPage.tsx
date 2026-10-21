@@ -1,3 +1,4 @@
+import { chartLabelColor } from '@/domains/appearance/contrast';
 import { PlanMasterGapsModal } from "../components/PlanMasterGapsModal";
 import { PlanWorkflowPanel } from "../components/PlanWorkflowPanel";
 import { buildCavityEditPartNos } from "../cavity-edit-payload";
@@ -1865,6 +1866,7 @@ export function ProductionPlansPage() {
               key={`${record.id ?? index}-${record.part_no}-${record.lot_no}-segment`}
               style={{
                 backgroundColor: getPlanSegmentColor(index, planType, record, cavityColorMap),
+                color: chartLabelColor(getPlanSegmentColor(index, planType, record, cavityColorMap)),
                 flexGrow: Math.max(quantity, 1),
                 minWidth: share > 0.12 ? 54 : 18,
               }}

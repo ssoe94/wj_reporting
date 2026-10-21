@@ -55,7 +55,7 @@
 .injection-board-card__footer-with-quality .injection-quality .injection-quality__failure,
 .injection-quality__state--failed,
 .injection-quality__freshness--error {
-  color: var(--color-danger, #b91c1c);
+  color: var(--color-danger, var(--wj-danger));
   font-weight: 800;
 }
 
@@ -214,7 +214,7 @@
   padding: 0.1em 0.7em;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--q-first-bg) 0%, var(--q-first-bg) 18%, var(--q-periodic-bg) 82%, var(--q-periodic-bg) 100%);
+  background: var(--wj-surface-solid);
   color: var(--q-none-fg);
   transition: filter 120ms ease;
 }

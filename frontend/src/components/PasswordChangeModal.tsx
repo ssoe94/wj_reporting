@@ -88,57 +88,57 @@ export default function PasswordChangeModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <div className="fixed inset-0 bg-[var(--wj-surface-solid)] bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg p-6 w-full max-w-md mx-4">
         <h3 className="text-lg font-semibold mb-4">
           {isRequired ? t('password_change_required') : t('password_change')}
         </h3>
         
         {isRequired && (
-          <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded">
-            <p className="text-sm text-yellow-800">{t('temp_password_notice')}</p>
+          <div className="mb-4 p-3 bg-[var(--wj-warning-bg)] border border-[var(--wj-warning-border)] rounded">
+            <p className="text-sm text-[var(--wj-warning)]">{t('temp_password_notice')}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('current_password')}</label>
+            <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">{t('current_password')}</label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('new_password_label')}</label>
+            <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">{t('new_password_label')}</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
               required
               minLength={8}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('new_password_confirm')}</label>
+            <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">{t('new_password_confirm')}</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
               required
               minLength={8}
             />
           </div>
 
           {error && (
-            <div className="p-3 bg-red-100 border border-red-400 rounded">
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="p-3 bg-[var(--wj-danger-bg)] border border-[var(--wj-danger-border)] rounded">
+              <p className="text-sm text-[var(--wj-danger)]">{error}</p>
             </div>
           )}
 

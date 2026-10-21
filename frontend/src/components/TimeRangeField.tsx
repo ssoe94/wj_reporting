@@ -456,9 +456,9 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
 
   // 일반모드용 기존 UI (Grid 사용)
   const standardDialogPanel = (
-    <div className="w-full md:w-[740px] bg-white rounded-2xl shadow-xl border max-h-[80vh] overflow-hidden">
-      <div className={`sticky top-0 z-10 bg-white p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-red-600' : 'text-gray-500'}`}>{summary}
-        <button type="button" className="float-right text-gray-400 hover:text-gray-600" onClick={() => setOpen(false)}>✕</button>
+    <div className="w-full md:w-[740px] bg-[var(--wj-surface-solid)] rounded-2xl shadow-xl border max-h-[80vh] overflow-hidden">
+      <div className={`sticky top-0 z-10 bg-[var(--wj-surface-solid)] p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-[var(--wj-danger)]' : 'text-[var(--wj-muted)]'}`}>{summary}
+        <button type="button" className="float-right text-[var(--wj-muted)] hover:text-[var(--wj-muted)]" onClick={() => setOpen(false)}>✕</button>
       </div>
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-auto">
         {/* Start */}
@@ -472,9 +472,9 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
           </div>
           <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
-              <button type="button" onClick={() => setSMonth(dayjs(sMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <button type="button" onClick={() => setSMonth(dayjs(sMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-[var(--wj-bg-strong)]"><ChevronLeft className="w-4 h-4" /></button>
               <div className="text-sm font-semibold">{dayjs(sMonth).format(locale === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
-              <button type="button" onClick={() => setSMonth(dayjs(sMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+              <button type="button" onClick={() => setSMonth(dayjs(sMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-[var(--wj-bg-strong)]"><ChevronRight className="w-4 h-4" /></button>
             </div>
             <DayPicker
               mode="single"
@@ -510,9 +510,9 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
           </div>
           <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
-              <button type="button" onClick={() => setEMonth(dayjs(eMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <button type="button" onClick={() => setEMonth(dayjs(eMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-[var(--wj-bg-strong)]"><ChevronLeft className="w-4 h-4" /></button>
               <div className="text-sm font-semibold">{dayjs(eMonth).format(locale === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
-              <button type="button" onClick={() => setEMonth(dayjs(eMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+              <button type="button" onClick={() => setEMonth(dayjs(eMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-[var(--wj-bg-strong)]"><ChevronRight className="w-4 h-4" /></button>
             </div>
             <DayPicker
               mode="single"
@@ -538,7 +538,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
           </div>
         </div>
       </div>
-      <div className="sticky bottom-0 bg-white border-t p-3 flex justify-between items-center gap-2">
+      <div className="sticky bottom-0 bg-[var(--wj-surface-solid)] border-t p-3 flex justify-between items-center gap-2">
         <Button type="button" variant="ghost" onClick={() => { const n = dayjs(); setSDate(n.toDate()); setSHour(n.format('HH')); setSMin(n.format('mm')); const e = n.add(1, 'hour'); setEDate(e.toDate()); setEHour(e.format('HH')); setEMin(e.format('mm')); }}>Reset</Button>
         <div className="flex gap-2">
           <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{L.cancel}</Button>
@@ -552,11 +552,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   if (isLightweightMode) {
     return (
       <div className="space-y-3">
-        <div className="text-xs text-gray-500 mb-2">{L.summary}</div>
+        <div className="text-xs text-[var(--wj-muted)] mb-2">{L.summary}</div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
               {L.startDateTime}
             </label>
             <input
@@ -566,12 +566,12 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               onChange={(e) => handleDirectInputChange('start', e.target.value)}
               onBlur={() => applyDirectInput('start')}
               placeholder={L.inputPlaceholder}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--wj-accent)]"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
               {L.endDateTime}
             </label>
             <input
@@ -581,17 +581,17 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               onChange={(e) => handleDirectInputChange('end', e.target.value)}
               onBlur={() => applyDirectInput('end')}
               placeholder={L.inputPlaceholder}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--wj-accent)]"
             />
           </div>
         </div>
 
-        <div className="text-xs text-gray-500 space-y-1">
+        <div className="text-xs text-[var(--wj-muted)] space-y-1">
           <div>{summary}</div>
           {directInputError ? (
-            <div className="text-red-600 font-semibold">{directInputError}</div>
+            <div className="text-[var(--wj-danger)] font-semibold">{directInputError}</div>
           ) : (
-            <div className="text-blue-600">{L.inputHint}</div>
+            <div className="text-[var(--wj-accent-strong)]">{L.inputHint}</div>
           )}
         </div>
       </div>
@@ -605,16 +605,16 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
         // 모달 사용 모드
         <>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs text-gray-500">{L.summary}</span>
+            <span className="text-xs text-[var(--wj-muted)]">{L.summary}</span>
             <button
               type="button"
               onClick={() => setUseDirectInput(true)}
-              className="text-xs text-blue-600 hover:text-blue-800"
+              className="text-xs text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)]"
             >
               {L.useDirectInput}
             </button>
           </div>
-          <button type="button" className="w-full text-left px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50"
+          <button type="button" className="w-full text-left px-3 py-2 rounded-md border border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)]"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
             aria-expanded={open}
@@ -626,11 +626,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
         // 직접 입력 모드
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">{L.summary}</span>
+            <span className="text-xs text-[var(--wj-muted)]">{L.summary}</span>
             <button
               type="button"
               onClick={() => setUseDirectInput(false)}
-              className="text-xs text-blue-600 hover:text-blue-800"
+              className="text-xs text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)]"
             >
               {L.useModal}
             </button>
@@ -638,7 +638,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                 {L.startDateTime}
               </label>
               <input
@@ -648,12 +648,12 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
                 onChange={(e) => handleDirectInputChange('start', e.target.value)}
                 onBlur={() => applyDirectInput('start')}
                 placeholder={L.inputPlaceholder}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--wj-accent)]"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--wj-text)] mb-1">
                 {L.endDateTime}
               </label>
               <input
@@ -663,17 +663,17 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
                 onChange={(e) => handleDirectInputChange('end', e.target.value)}
                 onBlur={() => applyDirectInput('end')}
                 placeholder={L.inputPlaceholder}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--wj-accent)]"
               />
             </div>
           </div>
 
-          <div className="text-xs text-gray-500 space-y-1">
+          <div className="text-xs text-[var(--wj-muted)] space-y-1">
             <div>{summary}</div>
             {directInputError ? (
-              <div className="text-red-600 font-semibold">{directInputError}</div>
+              <div className="text-[var(--wj-danger)] font-semibold">{directInputError}</div>
             ) : (
-              <div className="text-blue-600">{L.inputHint}</div>
+              <div className="text-[var(--wj-accent-strong)]">{L.inputHint}</div>
             )}
           </div>
         </div>

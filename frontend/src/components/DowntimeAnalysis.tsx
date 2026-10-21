@@ -62,12 +62,12 @@ const renderAngleTick = (props: any) => {
 function DowntimeAnalysisSkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
-      <div className="h-72 rounded-2xl bg-gray-200" />
+      <div className="h-72 rounded-2xl bg-[var(--wj-bg-strong)]" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="h-56 rounded-2xl bg-gray-200" />
-        <div className="h-56 rounded-2xl bg-gray-200" />
+        <div className="h-56 rounded-2xl bg-[var(--wj-bg-strong)]" />
+        <div className="h-56 rounded-2xl bg-[var(--wj-bg-strong)]" />
       </div>
-      <div className="h-72 rounded-2xl bg-gray-200" />
+      <div className="h-72 rounded-2xl bg-[var(--wj-bg-strong)]" />
     </div>
   );
 }
@@ -219,7 +219,7 @@ export default function DowntimeAnalysis() {
   return (
     <Card>
       <CardHeader className="flex items-center justify-between">
-        <button onClick={toggleChart} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-100">
+        <button onClick={toggleChart} className="rounded-md border px-3 py-1 text-sm hover:bg-[var(--wj-bg-strong)]">
           {chartMode === 'pie' ? t('detail_view') : t('donut_view')}
         </button>
       </CardHeader>
@@ -309,13 +309,13 @@ export default function DowntimeAnalysis() {
           <div className="mt-4 min-h-[300px]">
             <div className="flex items-center mb-2">
               <span className="font-semibold">{selectedDate} {t('downtime_detail')}</span>
-              <button className="ml-4 text-xs text-blue-600 hover:underline" onClick={() => setSelectedDate(null)}>
+              <button className="ml-4 text-xs text-[var(--wj-accent-strong)] hover:underline" onClick={() => setSelectedDate(null)}>
                 {t('close')}
               </button>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-[var(--wj-surface-solid)]">
                   <tr>
                     <th className="px-4 py-2 text-left w-24">{t('date')}</th>
                     <th className="px-4 py-2 text-left w-16">{t('machine_no')}</th>
@@ -326,7 +326,7 @@ export default function DowntimeAnalysis() {
                 </thead>
                 <tbody>
                   {selectedRecords.map((r, idx) => (
-                    <tr key={idx} className="border-t border-gray-200 hover:bg-gray-50">
+                    <tr key={idx} className="border-t border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)]">
                       <td className="px-4 py-2 w-24">{r.date}</td>
                       <td className="px-4 py-2 w-16">{r.machine_no}</td>
                       <td className="px-4 py-2 w-32">{r.model || '-'}</td>

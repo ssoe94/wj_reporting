@@ -6,8 +6,8 @@ export default function EcoPage(){
   return (
     <div className="p-4">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('ecoTitle')}</h1>
-        <p className="text-gray-600 mt-2">{t('eco_desc')}</p>
+        <h1 className="text-2xl font-bold text-[var(--wj-text)]">{t('ecoTitle')}</h1>
+        <p className="text-[var(--wj-muted)] mt-2">{t('eco_desc')}</p>
       </div>
       <EcoManager />
     </div>

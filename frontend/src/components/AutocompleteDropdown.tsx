@@ -15,11 +15,11 @@ interface AutocompleteDropdownProps {
 
 const getTypeIcon = (type: string) => {
   switch (type) {
-    case 'eco_no': return <Hash className="w-4 h-4 text-blue-500" />;
-    case 'eco_model': return <Package className="w-4 h-4 text-green-500" />;
-    case 'part_no': return <Package className="w-4 h-4 text-orange-500" />;
-    case 'customer': return <Building className="w-4 h-4 text-purple-500" />;
-    default: return <Search className="w-4 h-4 text-gray-400" />;
+    case 'eco_no': return <Hash className="w-4 h-4 text-[var(--wj-accent-strong)]" />;
+    case 'eco_model': return <Package className="w-4 h-4 text-[var(--wj-success)]" />;
+    case 'part_no': return <Package className="w-4 h-4 text-[var(--wj-warning)]" />;
+    case 'customer': return <Building className="w-4 h-4 text-[var(--wj-accent-strong)]" />;
+    default: return <Search className="w-4 h-4 text-[var(--wj-muted)]" />;
   }
 };
 
@@ -85,11 +85,11 @@ export default function AutocompleteDropdown({
   return (
     <div
       ref={dropdownRef}
-      className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto"
+      className="absolute top-full left-0 right-0 z-50 mt-1 bg-[var(--wj-surface-solid)] border border-[var(--wj-border)] rounded-lg shadow-lg max-h-[70vh] overflow-y-auto"
     >
       {/* Global Header */}
-      <div className="sticky top-0 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between z-10">
-        <span className="text-sm font-medium text-gray-700">
+      <div className="sticky top-0 bg-[var(--wj-surface-solid)] border-b border-[var(--wj-border)] px-4 py-2 flex items-center justify-between z-10">
+        <span className="text-sm font-medium text-[var(--wj-text)]">
           {lang === 'ko' 
             ? `자동완성 결과 (${suggestions.length}개)`
             : `自动完成结果 (${suggestions.length}个)`
@@ -98,7 +98,7 @@ export default function AutocompleteDropdown({
         {suggestions.length > 0 && (
           <button
             onClick={() => onSelectAll(suggestions)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            className="text-xs text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] font-medium"
           >
             {lang === 'ko' ? '전체선택' : '全部选择'}
           </button>
@@ -107,9 +107,9 @@ export default function AutocompleteDropdown({
 
       {/* Loading State */}
       {isLoading && (
-        <div className="px-4 py-3 text-center text-gray-500 text-sm">
+        <div className="px-4 py-3 text-center text-[var(--wj-muted)] text-sm">
           <div className="inline-flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-4 h-4 border-2 border-[var(--wj-accent)] border-t-transparent rounded-full animate-spin"></div>
             {lang === 'ko' ? '검색 중...' : '搜索中...'}
           </div>
         </div>
@@ -119,15 +119,15 @@ export default function AutocompleteDropdown({
       {!isLoading && (
         <div className="max-h-[calc(70vh-80px)] overflow-y-auto">
           {Object.entries(groupedSuggestions).map(([type, items]) => (
-            <div key={type} className="border-b border-gray-200 last:border-b-0">
+            <div key={type} className="border-b border-[var(--wj-border)] last:border-b-0">
               {/* Group Header */}
-              <div className="sticky top-0 bg-gray-100 px-4 py-1 flex items-center justify-between z-0">
-                <span className="text-xs font-bold text-gray-600 uppercase">
+              <div className="sticky top-0 bg-[var(--wj-bg-strong)] px-4 py-1 flex items-center justify-between z-0">
+                <span className="text-xs font-bold text-[var(--wj-muted)] uppercase">
                   {getTypeLabel(type, lang)} ({items.length})
                 </span>
                 <button
                   onClick={() => onSelectAll(items)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  className="text-xs text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] font-medium"
                 >
                   {lang === 'ko' ? '이 그룹 전체선택' : '选择该组'}
                 </button>
@@ -143,38 +143,38 @@ export default function AutocompleteDropdown({
                   <div
                     key={suggestion.id}
                     onClick={() => onToggleItem(suggestion)}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--wj-bg-strong)] cursor-pointer border-b border-[var(--wj-border)] last:border-b-0 transition-colors"
                   >
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
                       isSelected 
-                        ? 'bg-blue-600 border-blue-600' 
-                        : 'border-gray-300 hover:border-blue-400'
+                        ? 'bg-[var(--wj-accent-strong)] border-[var(--wj-accent)]'
+                        : 'border-[var(--wj-border)] hover:border-[var(--wj-accent)]'
                     }`}>
-                      {isSelected && <Check className="w-3 h-3 text-white" />}
+                      {isSelected && <Check className="w-3 h-3 text-[var(--wj-on-accent)]" />}
                     </div>
                     {getTypeIcon(suggestion.type)}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className={`font-medium truncate ${
-                          isSelected ? 'text-blue-700' : 'text-gray-900'
+                          isSelected ? 'text-[var(--wj-accent-strong)]' : 'text-[var(--wj-text)]'
                         } ${suggestion.type === 'part_no' ? 'font-mono text-sm' : ''}`}>
                           {suggestion.label}
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           suggestion.type === 'part_no' 
-                            ? 'bg-purple-100 text-purple-700'
+                            ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'
                             : suggestion.type === 'eco_no'
-                            ? 'bg-blue-100 text-blue-700'
+                            ? 'bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)]'
                             : suggestion.type === 'eco_model'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-200 text-gray-600'
+                            ? 'bg-[var(--wj-success-bg)] text-[var(--wj-success)]'
+                            : 'bg-[var(--wj-bg-strong)] text-[var(--wj-muted)]'
                         }`}>
                           {getTypeLabel(suggestion.type, lang)}
                         </span>
                       </div>
                       {suggestion.description && (
                         <div className={`text-sm truncate mt-1 ${
-                          isSelected ? 'text-blue-600' : 'text-gray-500'
+                          isSelected ? 'text-[var(--wj-accent-strong)]' : 'text-[var(--wj-muted)]'
                         }`}>
                           {suggestion.description}
                         </div>
@@ -190,8 +190,8 @@ export default function AutocompleteDropdown({
 
       {/* Footer with selected items count */}
       {selectedItems.length > 0 && (
-        <div className="sticky bottom-0 bg-blue-50 border-t border-blue-200 px-4 py-2">
-          <div className="text-sm text-blue-700">
+        <div className="sticky bottom-0 bg-[var(--wj-bg-strong)] border-t border-[var(--wj-border)] px-4 py-2">
+          <div className="text-sm text-[var(--wj-accent-strong)]">
             <span className="font-medium">{selectedItems.length}{lang === 'ko' ? '개' : '个'}</span> {lang === 'ko' ? '선택됨' : '已选择'}
           </div>
         </div>

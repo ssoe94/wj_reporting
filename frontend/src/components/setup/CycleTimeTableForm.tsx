@@ -194,25 +194,25 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
   return (
     <Card className="p-6">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('ct_table.title_ct_personnel')}</h2>
-        <p className="text-gray-600">{t('ct_table.description')}</p>
+        <h2 className="text-xl font-semibold text-[var(--wj-text)] mb-2">{t('ct_table.title_ct_personnel')}</h2>
+        <p className="text-[var(--wj-muted)]">{t('ct_table.description')}</p>
       </div>
       <div className="mb-6">
         <Label htmlFor="setup_date">{t('ct_table.setup_date_label')}</Label>
         <Input id="setup_date" type="date" value={setupDate} onChange={(e) => setSetupDate(e.target.value)} className="w-48" />
       </div>
       <div className="overflow-x-auto mb-2 text-sm">
-        <table className="w-full border-collapse border border-gray-300">
+        <table className="w-full border-collapse border border-[var(--wj-border)]">
           <thead>
-            <tr className="bg-gray-50">
-              <th className="border border-gray-300 px-3 py-2 text-center w-40">{t('ct_table.machine_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-64">{t('ct_table.model_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-64">{t('ct_table.part_no_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-[8.5rem]">{t('ct_table.target_ct_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-[8.5rem]">{t('ct_table.standard_ct_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-[8.5rem]">{t('ct_table.avg_ct_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-[8.5rem]">{t('ct_table.personnel_header')}</th>
-              <th className="border border-gray-300 px-3 py-2 text-center w-12">{t('ct_table.action_header')}</th>
+            <tr className="bg-[var(--wj-surface-solid)]">
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-40">{t('ct_table.machine_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-64">{t('ct_table.model_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-64">{t('ct_table.part_no_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-[8.5rem]">{t('ct_table.target_ct_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-[8.5rem]">{t('ct_table.standard_ct_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-[8.5rem]">{t('ct_table.avg_ct_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-[8.5rem]">{t('ct_table.personnel_header')}</th>
+              <th className="border border-[var(--wj-border)] px-3 py-2 text-center w-12">{t('ct_table.action_header')}</th>
             </tr>
           </thead>
           <tbody>

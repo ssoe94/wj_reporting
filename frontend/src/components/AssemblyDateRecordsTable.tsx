@@ -29,21 +29,21 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
   const SkeletonRow = () => (
     <tr className="animate-pulse">
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
-      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-[var(--wj-bg-strong)] rounded"></div></td>
     </tr>
   );
 
   const SkeletonTable = () => (
     <table className="min-w-full text-sm rounded-md border-separate border-spacing-0 mt-4">
-      <thead className="bg-green-600 text-white">
+      <thead className="bg-[var(--wj-success)] text-[var(--wj-on-accent)]">
         <tr>
           <th className="px-2 py-1">{t('assembly_line_no')}</th>
           <th className="px-2 py-1">{t('model')}</th>
@@ -247,7 +247,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
   if (!date) return null;
   if (isLoading || isFetching) return <SkeletonTable />;
-  if (!enrichedList.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
+  if (!enrichedList.length) return <p className="text-[var(--wj-muted)] text-sm">{t('no_data')}</p>;
 
   const totalPlan = enrichedList.reduce((sum: number, r) => sum + (r.plan_qty || 0), 0);
   const totalActual = enrichedList.reduce((sum: number, r) => sum + (r.actual_qty || 0), 0);
@@ -260,7 +260,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   return (
     <>
       <table className="min-w-full text-sm rounded-md border-separate border-spacing-0 mt-4">
-        <thead className="bg-green-600 text-white">
+        <thead className="bg-[var(--wj-success)] text-[var(--wj-on-accent)]">
           <tr>
             <th className="px-2 py-1">{t('assembly_line_no')}</th>
             <th className="px-2 py-1">{t('model')}</th>
@@ -277,7 +277,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
           {enrichedList.map((r) => (
             <tr
               key={r.id}
-              className="border-t border-gray-200 last:border-b-0 hover:bg-green-50 cursor-pointer"
+              className="border-t border-[var(--wj-border)] last:border-b-0 hover:bg-[var(--wj-success-bg)] cursor-pointer"
               onClick={() => { setDetail(r); setEditing(false); }}
             >
               <td className="px-2 py-1 text-center">{r.line_no}</td>
@@ -289,12 +289,12 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 {(r.__totalDefectQty || 0).toLocaleString()}
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${(r.achievement_rate || 0) >= 100 ? 'text-green-600' : (r.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600'}`}>
+                <span className={`${(r.achievement_rate || 0) >= 100 ? 'text-[var(--wj-success)]' : (r.achievement_rate || 0) >= 80 ? 'text-[var(--wj-warning)]' : 'text-[var(--wj-danger)]'}`}>
                   {r.achievement_rate}%
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${(r.__defectRate || 0) <= 2 ? 'text-green-600' : (r.__defectRate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600'}`}>
+                <span className={`${(r.__defectRate || 0) <= 2 ? 'text-[var(--wj-success)]' : (r.__defectRate || 0) <= 5 ? 'text-[var(--wj-warning)]' : 'text-[var(--wj-danger)]'}`}>
                   {`${(r.__defectRate || 0).toFixed(1)}%`}
                 </span>
               </td>
@@ -312,7 +312,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             </tr>
           ))}
         </tbody>
-        <tfoot className="bg-green-100 font-semibold">
+        <tfoot className="bg-[var(--wj-success-bg)] font-semibold">
           <tr>
             <td className="px-2 py-1 text-center" colSpan={3}>{t('sum')}</td>
             <td className="px-2 py-1 text-right">{totalPlan.toLocaleString()}</td>
@@ -328,7 +328,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
       {detail && (
         <Dialog open={!!detail} onClose={() => setDetail(null)} className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-          <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-5xl p-4 space-y-3 max-h-[80vh] overflow-y-auto text-sm">
+          <Dialog.Panel className="relative bg-[var(--wj-surface-solid)] rounded-lg w-full max-w-5xl p-4 space-y-3 max-h-[80vh] overflow-y-auto text-sm">
             {!editing ? (
               <>
                 <Dialog.Title className="text-lg font-bold">
@@ -341,23 +341,23 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       const s = (detail as any)?.supply_type || '';
                       const label = s === 'JIT' ? 'JIT' : (s === 'CSK' ? 'CSKD' : (s || 'N/A'));
                       return (
-                        <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs inline-flex items-center gap-1">
+                        <span className="px-2 py-1 rounded-full bg-[var(--wj-bg-strong)] text-[var(--wj-accent-strong)] text-xs inline-flex items-center gap-1">
                           <Tag className="w-3 h-3" /> {t('supply_type')}: {label}
                         </span>
                       );
                     })()}
-                    <span className="px-2 py-1 rounded-full bg-gray-50 text-gray-700 text-xs inline-flex items-center gap-1">
+                    <span className="px-2 py-1 rounded-full bg-[var(--wj-surface-solid)] text-[var(--wj-text)] text-xs inline-flex items-center gap-1">
                       {t('report_date')}: {detail.date}
                     </span>
                   </div>
                   <div className="inline-flex items-center gap-2">
-                    <span className="px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs inline-flex items-center gap-1">
+                    <span className="px-2 py-1 rounded-md bg-[var(--wj-success-bg)] text-[var(--wj-success)] text-xs inline-flex items-center gap-1">
                       <Percent className="w-3 h-3" /> {t('achievement_rate')}: {detail.achievement_rate}%
                     </span>
-                    <span className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs inline-flex items-center gap-1">
+                    <span className="px-2 py-1 rounded-md bg-[var(--wj-warning-bg)] text-[var(--wj-warning)] text-xs inline-flex items-center gap-1">
                       <Percent className="w-3 h-3" /> {t('defect_rate')}: {detailDefectRate.toFixed(1)}%
                     </span>
-                    <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs inline-flex items-center gap-1">
+                    <span className="px-2 py-1 rounded-md bg-[var(--wj-accent-soft)] text-[var(--wj-accent-strong)] text-xs inline-flex items-center gap-1">
                       <Gauge className="w-3 h-3" /> {t('uph')}: {detail.uph || '-'}
                     </span>
                   </div>
@@ -366,44 +366,44 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 {/* Info cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-blue-700 bg-blue-50">{t('basic_info')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-accent-strong)] bg-[var(--wj-bg-strong)]">{t('basic_info')}</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                      <span className="text-gray-500">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
-                      <span className="text-gray-500">{t('model')}</span><span>{detail.model}</span>
-                      <span className="text-gray-500">{t('part_no')}</span>
+                      <span className="text-[var(--wj-muted)]">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
+                      <span className="text-[var(--wj-muted)]">{t('model')}</span><span>{detail.model}</span>
+                      <span className="text-[var(--wj-muted)]">{t('part_no')}</span>
                       <span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handlePartNoClick(detail.part_no, e);
                           }}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          className="text-[var(--wj-accent-strong)] hover:text-[var(--wj-accent-strong)] hover:underline font-medium"
                           title={t('part_no_history_tooltip')}
                         >
                           {detail.part_no}
                         </button>
                       </span>
-                      <span className="text-gray-500">{t('supply_type')}</span><span>{(detail as any)?.supply_type || '-'}</span>
-                      <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note || '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('supply_type')}</span><span>{(detail as any)?.supply_type || '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('header_note')}</span><span className="col-span-1">{detail.note || '-'}</span>
                     </div>
                   </div>
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-emerald-700 bg-emerald-50">{t('production_summary')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-success)] bg-[var(--wj-success-bg)]">{t('production_summary')}</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                      <span className="text-gray-500">{t('plan_qty_summary')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('actual_qty_summary')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('injection_defect_summary')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('processing_defect_summary')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('incoming_defect_summary')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('total_defect_summary')}</span><span className="font-mono text-right">{detailTotalDefectQty.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('total_time_summary')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('minutes_unit')}` : '-'}</span>
-                      <span className="text-gray-500">{t('operation_time_summary')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('minutes_unit')}` : '-'}</span>
-                      <span className="text-gray-500">{t('idle_time_summary')}</span><span className="font-mono text-right">{detail.idle_time ? `${detail.idle_time}${t('minutes_unit')}` : '-'}</span>
-                      <span className="text-gray-500">{t('workers_summary')}</span><span className="font-mono text-right">{detail.workers}{t('people_unit')}</span>
-                      <span className="text-gray-500">{t('achievement_rate_summary')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
-                      <span className="text-gray-500">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detailDefectRate.toFixed(1)}%</span>
-                      <span className="text-gray-500">{t('analysis_metric_uph')}</span><span className="font-mono text-right">{detail.uph || '-'}</span>
-                      <span className="text-gray-500">{t('analysis_metric_upph')}</span><span className="font-mono text-right">{detail.upph || '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('plan_qty_summary')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('actual_qty_summary')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('injection_defect_summary')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('processing_defect_summary')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('incoming_defect_summary')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('total_defect_summary')}</span><span className="font-mono text-right">{detailTotalDefectQty.toLocaleString()}</span>
+                      <span className="text-[var(--wj-muted)]">{t('total_time_summary')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('operation_time_summary')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('idle_time_summary')}</span><span className="font-mono text-right">{detail.idle_time ? `${detail.idle_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('workers_summary')}</span><span className="font-mono text-right">{detail.workers}{t('people_unit')}</span>
+                      <span className="text-[var(--wj-muted)]">{t('achievement_rate_summary')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
+                      <span className="text-[var(--wj-muted)]">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detailDefectRate.toFixed(1)}%</span>
+                      <span className="text-[var(--wj-muted)]">{t('analysis_metric_uph')}</span><span className="font-mono text-right">{detail.uph || '-'}</span>
+                      <span className="text-[var(--wj-muted)]">{t('analysis_metric_upph')}</span><span className="font-mono text-right">{detail.upph || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -412,20 +412,20 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* 왼쪽 열: 사출불량 (전체 높이) */}
                   <div className="rounded-lg shadow-sm md:row-span-2">
-                    <div className="px-3 py-2 font-semibold text-amber-700 bg-amber-50">{t('assembly_injection_defect')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-warning)] bg-[var(--wj-warning-bg)]">{t('assembly_injection_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {
                           const inc = (detail as any)?.incoming_defects_detail || {};
                           const items = ['scratch', 'black_dot', 'eaten_meat', 'air_mark', 'deform', 'short_shot', 'broken_pillar', 'flow_mark', 'sink_mark', 'whitening', 'other'];
                           return items.map(k => (
-                            <tr key={k} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
+                            <tr key={k} className="odd:bg-[var(--wj-surface-solid)]">
+                              <td className="px-3 py-1 text-[var(--wj-text)]">{t(`def_${k}`)}</td>
                               <td className="px-3 py-1 text-right font-mono">{Number(inc[k] || 0)}</td>
                             </tr>
                           ));
                         })()}
-                        <tr className="bg-gray-100">
+                        <tr className="bg-[var(--wj-bg-strong)]">
                           <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                           <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
                             const inc = (detail as any)?.incoming_defects_detail || {};
@@ -439,7 +439,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
                   {/* 오른쪽 열 상단: 가공불량 */}
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-cyan-700 bg-cyan-50">{t('processing_defect')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-accent-strong)] bg-[var(--wj-bg-strong)]">{t('processing_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {
@@ -447,22 +447,22 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           if (pr.length === 0) {
                             return (
                               <tr>
-                                <td className="px-3 py-2 text-center text-gray-500" colSpan={2}>{t('no_data')}</td>
+                                <td className="px-3 py-2 text-center text-[var(--wj-muted)]" colSpan={2}>{t('no_data')}</td>
                               </tr>
                             );
                           }
                           return pr.map((item: any, idx: number) => {
                             const amount = safeNumber(item.quantity);
                             return (
-                              <tr key={idx} className="odd:bg-gray-50">
-                                <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                              <tr key={idx} className="odd:bg-[var(--wj-surface-solid)]">
+                                <td className="px-3 py-1 text-[var(--wj-text)]">{item.type ?? item.defect_type ?? '-'}</td>
                                 <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
                               </tr>
                             );
                           });
                         })()}
                         {(detail as any)?.processing_defects_dynamic?.length > 0 && (
-                          <tr className="bg-gray-100">
+                          <tr className="bg-[var(--wj-bg-strong)]">
                             <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                             <td className="px-3 py-1 text-right font-mono font-semibold">
                               {((detail as any)?.processing_defects_dynamic || []).reduce((sum: number, item: any) => sum + safeNumber(item.quantity), 0).toLocaleString()}
@@ -475,7 +475,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
                   {/* 오른쪽 열 하단: 외주불량 */}
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-purple-700 bg-purple-50">{t('assembly_outsourcing_defect')}</div>
+                    <div className="px-3 py-2 font-semibold text-[var(--wj-accent-strong)] bg-[var(--wj-accent-soft)]">{t('assembly_outsourcing_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {
@@ -483,22 +483,22 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           if (out.length === 0) {
                             return (
                               <tr>
-                                <td className="px-3 py-2 text-center text-gray-500" colSpan={2}>{t('no_data')}</td>
+                                <td className="px-3 py-2 text-center text-[var(--wj-muted)]" colSpan={2}>{t('no_data')}</td>
                               </tr>
                             );
                           }
                           return out.map((item: any, idx: number) => {
                             const amount = safeNumber(item.quantity);
                             return (
-                              <tr key={idx} className="odd:bg-gray-50">
-                                <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                              <tr key={idx} className="odd:bg-[var(--wj-surface-solid)]">
+                                <td className="px-3 py-1 text-[var(--wj-text)]">{item.type ?? item.defect_type ?? '-'}</td>
                                 <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
                               </tr>
                             );
                           });
                         })()}
                         {(detail as any)?.outsourcing_defects_dynamic?.length > 0 && (
-                          <tr className="bg-gray-100">
+                          <tr className="bg-[var(--wj-bg-strong)]">
                             <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                             <td className="px-3 py-1 text-right font-mono font-semibold">
                               {((detail as any)?.outsourcing_defects_dynamic || []).reduce((sum: number, item: any) => sum + safeNumber(item.quantity), 0).toLocaleString()}
@@ -552,7 +552,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} {t('line_unit')} {t('edit')}
                 </Dialog.Title>
                 {loadingEdit && (
-                  <div className="py-10 text-center text-gray-500 text-sm">Loading…</div>
+                  <div className="py-10 text-center text-[var(--wj-muted)] text-sm">Loading…</div>
                 )}
                 {!loadingEdit && (
                   <AssemblyReportForm

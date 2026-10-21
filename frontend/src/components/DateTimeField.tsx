@@ -50,16 +50,16 @@ export default function DateTimeField({ value, onChange, locale, minuteStep = 5 
     : dayjs(toLocalIso(date, hh, mm)).locale(dayjsLocale).format('M월 D일(ddd) HH:mm');
 
   const dialogPanel = (
-    <div className="w-[340px] bg-white rounded-lg shadow-xl border overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 border-b flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700">{summary}</span>
-        <button type="button" className="text-gray-400 hover:text-gray-600 transition-colors" onClick={()=> setOpen(false)}>✕</button>
+    <div className="w-[340px] bg-[var(--wj-surface-solid)] rounded-lg shadow-xl border overflow-hidden">
+      <div className="bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-accent-soft)] px-4 py-2.5 border-b flex items-center justify-between">
+        <span className="text-sm font-medium text-[var(--wj-text)]">{summary}</span>
+        <button type="button" className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)] transition-colors" onClick={()=> setOpen(false)}>✕</button>
       </div>
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between px-2">
-          <button type="button" onClick={()=> setMonth(dayjs(month).subtract(1,'month').toDate())} className="p-1.5 rounded hover:bg-gray-100 transition-colors"><ChevronLeft className="w-4 h-4 text-gray-600"/></button>
-          <div className="text-sm font-semibold text-gray-800">{dayjs(month).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
-          <button type="button" onClick={()=> setMonth(dayjs(month).add(1,'month').toDate())} className="p-1.5 rounded hover:bg-gray-100 transition-colors"><ChevronRight className="w-4 h-4 text-gray-600"/></button>
+          <button type="button" onClick={()=> setMonth(dayjs(month).subtract(1,'month').toDate())} className="p-1.5 rounded hover:bg-[var(--wj-bg-strong)] transition-colors"><ChevronLeft className="w-4 h-4 text-[var(--wj-muted)]"/></button>
+          <div className="text-sm font-semibold text-[var(--wj-text)]">{dayjs(month).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
+          <button type="button" onClick={()=> setMonth(dayjs(month).add(1,'month').toDate())} className="p-1.5 rounded hover:bg-[var(--wj-bg-strong)] transition-colors"><ChevronRight className="w-4 h-4 text-[var(--wj-muted)]"/></button>
         </div>
         <DayPicker
           mode="single"
@@ -83,12 +83,12 @@ export default function DateTimeField({ value, onChange, locale, minuteStep = 5 
           }}
         />
         <div className="flex items-center justify-center gap-2 pt-2 border-t">
-          <select className="h-9 px-2 w-20 border rounded text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={hh} onChange={(e)=> setHh(e.target.value)}>{hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}</select>
-          <span className="text-gray-400">:</span>
-          <select className="h-9 px-2 w-20 border rounded text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={mm} onChange={(e)=> setMm(e.target.value)}>{minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}</select>
+          <select className="h-9 px-2 w-20 border rounded text-sm font-mono focus:ring-2 focus:ring-[var(--wj-accent)] focus:border-[var(--wj-accent)]" value={hh} onChange={(e)=> setHh(e.target.value)}>{hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}</select>
+          <span className="text-[var(--wj-muted)]">:</span>
+          <select className="h-9 px-2 w-20 border rounded text-sm font-mono focus:ring-2 focus:ring-[var(--wj-accent)] focus:border-[var(--wj-accent)]" value={mm} onChange={(e)=> setMm(e.target.value)}>{minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}</select>
         </div>
       </div>
-      <div className="bg-gray-50 border-t px-4 py-2.5 flex justify-between items-center">
+      <div className="bg-[var(--wj-surface-solid)] border-t px-4 py-2.5 flex justify-between items-center">
         <Button type="button" size="sm" variant="ghost" onClick={()=>{ const n=dayjs(); setDate(n.toDate()); setHh(n.format('HH')); setMm(n.format('mm')); }}>{L.now}</Button>
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="secondary" onClick={()=> setOpen(false)}>{L.cancel}</Button>
@@ -140,7 +140,7 @@ export default function DateTimeField({ value, onChange, locale, minuteStep = 5 
       <button 
         ref={inputRef}
         type="button" 
-        className="w-full text-left px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 transition-colors text-sm"
+        className="w-full text-left px-3 py-2 rounded-md border border-[var(--wj-border)] hover:bg-[var(--wj-surface-solid)] transition-colors text-sm"
         onClick={()=> setOpen(true)}
       >
         {summary}

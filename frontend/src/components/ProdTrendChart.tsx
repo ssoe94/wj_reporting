@@ -52,7 +52,7 @@ export default function ProdTrendChart() {
   }, [reports]);
 
   if (!dailyData.length) {
-    return <p className="text-gray-500 text-sm">No data</p>;
+    return <p className="text-[var(--wj-muted)] text-sm">No data</p>;
   }
 
   const chartColors = {

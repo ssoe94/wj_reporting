@@ -13,10 +13,10 @@
   min-height: 0;
   padding: 0.36rem 0.48rem;
   overflow: hidden;
-  border: 1px solid var(--board-border, #cadbe9);
+  border: 1px solid var(--board-border, var(--wj-border));
   border-left: 0.2rem solid var(--briefing-accent);
   border-radius: 0.52rem;
-  background: var(--board-surface-raised, #ffffff);
+  background: var(--board-surface-raised, var(--wj-surface-solid));
   color: var(--briefing-ink);
   font-family: inherit;
   font-optical-sizing: auto;
@@ -64,7 +64,7 @@
 }
 
 .machine strong {
-  color: var(--board-heading, #082653);
+  color: var(--board-heading, var(--wj-text));
   font-size: 1.32rem;
   font-weight: 780;
   letter-spacing: -0.035em;
@@ -80,7 +80,7 @@
 
 .product {
   padding-left: 0.48rem;
-  border-left: 1px solid var(--board-border, #d8e2ec);
+  border-left: 1px solid var(--board-border, var(--wj-border));
 }
 
 .product > strong {
@@ -103,7 +103,7 @@
   align-items: center;
   gap: 0.2rem;
   padding: 0.22rem 0.35rem;
-  border: 1px solid var(--board-border, #c9dbe9);
+  border: 1px solid var(--board-border, var(--wj-border));
   border-radius: 0.32rem;
   background: var(--briefing-tint);
   color: var(--briefing-accent);
@@ -168,7 +168,7 @@
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  color: var(--briefing-ink, var(--board-blue, #245a91));
+  color: var(--briefing-ink, var(--board-blue, var(--wj-accent-strong)));
   scrollbar-color: var(--board-border-strong, #8aaed2) transparent;
   scrollbar-width: thin;
   white-space: nowrap;
@@ -184,7 +184,7 @@
 
 .horizontalViewport::-webkit-scrollbar-thumb {
   border-radius: 99px;
-  background: var(--board-border-strong, #8aaed2);
+  background: var(--board-border-strong, var(--wj-accent-soft));
 }
 
 .horizontalViewport > strong {
@@ -200,7 +200,7 @@
 }
 
 .horizontalReading[data-variant="ribbon"] .horizontalViewport {
-  color: var(--board-blue, #245a91);
+  color: var(--board-blue, var(--wj-accent-strong));
 }
 
 .horizontalReading[data-variant="ribbon"] .horizontalViewport > strong {
@@ -218,10 +218,10 @@
   place-items: center;
   padding: 0;
   transform: translateY(-50%);
-  border: 1px solid var(--board-border-strong, #8aaed2);
+  border: 1px solid var(--board-border-strong, var(--wj-border));
   border-radius: 0.25rem;
-  background: var(--briefing-tint, var(--board-blue-surface, #eef5fb));
-  color: var(--briefing-accent, var(--board-blue, #245a91));
+  background: var(--briefing-tint, var(--board-blue-surface, var(--wj-accent-soft)));
+  color: var(--briefing-accent, var(--board-blue, var(--wj-accent-strong)));
   cursor: pointer;
 }
 
@@ -236,14 +236,14 @@
 .horizontalViewport:focus-visible,
 .scrollButton:focus-visible,
 .flowViewport:focus-visible {
-  outline: 2px solid var(--briefing-accent, var(--board-blue, #245a91));
+  outline: 2px solid var(--briefing-accent, var(--board-blue, var(--wj-control-border)));
   outline-offset: 1px;
 }
 
 .flowViewport {
   min-width: 0;
   overflow: hidden;
-  color: var(--briefing-ink, var(--board-blue, #245a91));
+  color: var(--briefing-ink, var(--board-blue, var(--wj-accent-strong)));
   scrollbar-color: var(--board-border-strong, #8aaed2) transparent;
   scrollbar-width: thin;
   white-space: nowrap;
@@ -329,7 +329,7 @@
 
 .details > section + section {
   padding-left: 0.55rem;
-  border-left: 1px solid var(--board-border, #d8e2ec);
+  border-left: 1px solid var(--board-border, var(--wj-border));
 }
 
 .detailHeading {
@@ -436,7 +436,7 @@
 
 .historyStatus[data-state="pending"],
 .historyStatus[data-state="stale"] {
-  color: var(--board-orange, #a55614);
+  color: var(--board-orange, var(--wj-warning));
 }
 
 .historyStatus[data-state="pending"]::before,
@@ -445,7 +445,7 @@
   height: 0.24rem;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--board-orange, #d96805);
+  background: var(--board-orange, var(--wj-warning-bg));
   content: "";
 }
 
@@ -462,12 +462,12 @@
 @media (prefers-contrast: more) {
   .briefing {
     --briefing-muted: var(--board-text-high-contrast, #334e68);
-    border-color: var(--board-border-strong, #637b91);
+    border-color: var(--board-border-strong, var(--wj-border));
   }
 
   .mode,
   .product,
   .details > section + section {
-    border-color: var(--board-border-strong, #637b91);
+    border-color: var(--board-border-strong, var(--wj-border));
   }
 }

@@ -60,7 +60,7 @@ function FilterForm({ initial, text, apply }: { initial: HistoryFilters; text: T
   const [draft, setDraft] = useState(initial);
   const [invalid, setInvalid] = useState(false);
   const change = (key: keyof HistoryFilters, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
-  return <form className="rounded-lg border border-gray-200 bg-white p-4 space-y-3" onSubmit={event => {
+  return <form className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4 space-y-3" onSubmit={event => {
     event.preventDefault();
     if (!validHistoryFilters(draft)) { setInvalid(true); return; }
     setInvalid(false);
@@ -78,13 +78,13 @@ function FilterForm({ initial, text, apply }: { initial: HistoryFilters; text: T
       </select></label>
     </div>
     <div className="flex flex-wrap gap-2">
-      <button type="submit" className="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-blue-600">{text.search}</button>
+      <button type="submit" className="rounded-md bg-[var(--wj-accent-strong)] px-5 py-2 text-sm font-semibold text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] focus-visible:outline-2 focus-visible:outline-blue-600">{text.search}</button>
       {[7, 30].map(days => <button key={days} type="button" className={buttonClass} onClick={() => {
         const end = offsetDate(businessDate(), -1);
         setDraft(previous => ({ ...previous, start_date: offsetDate(end, 1 - days), end_date: end }));
       }}>{days === 7 ? text.week : text.month}</button>)}
     </div>
-    {invalid && <p role="alert" className="text-sm text-red-700">{text.invalid}</p>}
+    {invalid && <p role="alert" className="text-sm text-[var(--wj-danger)]">{text.invalid}</p>}
   </form>;
 }
 
@@ -95,24 +95,24 @@ function IdentifierDetails({ row, direction, text }: { row: HistoryRow; directio
     retry: false,
   });
   if (query.isPending) return <p role="status" className="p-4">{text.loading}</p>;
-  if (query.isError) return <div role="alert" className="p-4 text-red-700">{text.error} <button type="button" className={buttonClass} onClick={() => query.refetch()}>{text.retry}</button></div>;
+  if (query.isError) return <div role="alert" className="p-4 text-[var(--wj-danger)]">{text.error} <button type="button" className={buttonClass} onClick={() => query.refetch()}>{text.retry}</button></div>;
   return <div className="p-3 space-y-2" data-testid="identifier-details">
     <p className="font-semibold">{text.identifier} · {row.unit}</p>
-    {query.data.results.map((item, index) => <details key={index} className="rounded border border-gray-200 bg-white px-3 py-2">
+    {query.data.results.map((item, index) => <details key={index} className="rounded border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2">
       <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600">
         <span className="inline-flex flex-wrap items-baseline gap-x-5 gap-y-1">
           <strong>{item.qr_code || item.trolley_code || item.label_code || text.missing}</strong>
           {item.trolley_code && <span>{text.trolley}: {item.trolley_code}</span>}
           {item.label_code && <span>{text.label}: {item.label_code}</span>}
-          <span className="text-green-700">{text.in} {quantity(item.total_in)}</span>
-          <span className="text-red-700">{text.out} {quantity(item.total_out)}</span>
-          <span className="text-gray-500">{text.events}</span>
+          <span className="text-[var(--wj-success)]">{text.in} {quantity(item.total_in)}</span>
+          <span className="text-[var(--wj-danger)]">{text.out} {quantity(item.total_out)}</span>
+          <span className="text-[var(--wj-muted)]">{text.events}</span>
         </span>
       </summary>
-      <table className="mt-3 w-full text-sm"><thead className="text-gray-500"><tr>
+      <table className="mt-3 w-full text-sm"><thead className="text-[var(--wj-muted)]"><tr>
         {[text.quantity, text.events, text.action, text.batch].map(title => <th key={title} scope="col" className="p-2 text-left font-medium">{title}</th>)}
-      </tr></thead><tbody>{item.events.map(event => <tr key={event.id} className="border-t border-gray-100">
-        <td className={`p-2 tabular-nums ${event.direction === 'in' ? 'text-green-700' : 'text-red-700'}`}>{text[event.direction]} {quantity(event.quantity)} {row.unit}</td>
+      </tr></thead><tbody>{item.events.map(event => <tr key={event.id} className="border-t border-[var(--wj-border)]">
+        <td className={`p-2 tabular-nums ${event.direction === 'in' ? 'text-[var(--wj-success)]' : 'text-[var(--wj-danger)]'}`}>{text[event.direction]} {quantity(event.quantity)} {row.unit}</td>
         <td className="p-2">{historyTime(event.occurred_at)}</td>
         <td className="p-2">{event.action_label || '—'}{event.storage_location && ` · ${event.storage_location}`}</td>
         <td className="p-2">{event.batch_no || '—'}</td>
@@ -123,19 +123,19 @@ function IdentifierDetails({ row, direction, text }: { row: HistoryRow; directio
 
 function DailyRows({ rows, text, direction }: { rows: HistoryRow[]; text: Text; direction: HistoryFilters['direction'] }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  return <tbody className="divide-y divide-gray-100">{rows.map(row => <Fragment key={row.id}>
-    <tr className="hover:bg-gray-50" data-testid="daily-row">
+  return <tbody className="divide-y divide-[var(--wj-border)]">{rows.map(row => <Fragment key={row.id}>
+    <tr className="hover:bg-[var(--wj-surface-solid)]" data-testid="daily-row">
       <td className="px-4 py-3"><button type="button" aria-expanded={expanded.has(row.id)} aria-controls={`history-detail-${row.id}`} aria-label={`${expanded.has(row.id) ? text.collapse : text.expand} ${row.business_date} ${row.material_code}`} className={buttonClass} onClick={() => setExpanded(previous => {
         const next = new Set(previous); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next;
       })}>{expanded.has(row.id) ? '−' : '+'}</button></td>
-      <td className="px-4 py-3">{row.business_date}<div className="text-gray-500">{row.warehouse_name}</div></td>
-      <td className="px-4 py-3"><div className="font-medium">{row.material_code}</div><div className="text-gray-600">{[row.material_name, row.specification].filter(Boolean).join(' · ')}</div></td>
-      <td className="px-4 py-3 text-right tabular-nums font-semibold text-green-700">{quantity(row.total_in)}</td>
-      <td className="px-4 py-3 text-right tabular-nums font-semibold text-red-700">{quantity(row.total_out)}</td>
+      <td className="px-4 py-3">{row.business_date}<div className="text-[var(--wj-muted)]">{row.warehouse_name}</div></td>
+      <td className="px-4 py-3"><div className="font-medium">{row.material_code}</div><div className="text-[var(--wj-muted)]">{[row.material_name, row.specification].filter(Boolean).join(' · ')}</div></td>
+      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--wj-success)]">{quantity(row.total_in)}</td>
+      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--wj-danger)]">{quantity(row.total_out)}</td>
       <td className="px-4 py-3">{row.unit || '—'}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{row.identifier_count}{row.missing_identifier_count > 0 && <div className="text-gray-500">{text.missing}: {row.missing_identifier_count}</div>}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{row.identifier_count}{row.missing_identifier_count > 0 && <div className="text-[var(--wj-muted)]">{text.missing}: {row.missing_identifier_count}</div>}</td>
     </tr>
-    {expanded.has(row.id) && <tr><td colSpan={7} id={`history-detail-${row.id}`} className="bg-gray-50"><IdentifierDetails row={row} text={text} direction={direction} /></td></tr>}
+    {expanded.has(row.id) && <tr><td colSpan={7} id={`history-detail-${row.id}`} className="bg-[var(--wj-surface-solid)]"><IdentifierDetails row={row} text={text} direction={direction} /></td></tr>}
   </Fragment>)}</tbody>;
 }
 
@@ -160,36 +160,36 @@ export default function MovementHistoryPage() {
   const rows = query.data?.pages.flatMap(page => page.results) ?? [];
   const errorCode = (query.error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error;
   const apply = (next: HistoryFilters) => setParams(new URLSearchParams({ ...next }));
-  return <main className="p-4 md:p-6 space-y-4 text-gray-900">
-    <div><h1 className="text-2xl font-semibold">{text.title}</h1><p className="mt-1 text-sm text-gray-600">{text.description}</p></div>
+  return <main className="p-4 md:p-6 space-y-4 text-[var(--wj-text)]">
+    <div><h1 className="text-2xl font-semibold">{text.title}</h1><p className="mt-1 text-sm text-[var(--wj-muted)]">{text.description}</p></div>
     <FilterForm key={JSON.stringify(filters)} initial={filters} text={text} apply={apply} />
-    <p className="text-sm text-gray-600">{text.source}</p>
-    {!valid && <p role="alert" className="text-sm text-red-700">{text.invalid}</p>}
-    {valid && query.isPending && <p role="status" className="rounded-lg border bg-white p-6 text-center">{text.loading}</p>}
-    {query.isError && <div role="alert" className="rounded-lg border border-red-200 bg-white p-4 text-sm text-red-700">
+    <p className="text-sm text-[var(--wj-muted)]">{text.source}</p>
+    {!valid && <p role="alert" className="text-sm text-[var(--wj-danger)]">{text.invalid}</p>}
+    {valid && query.isPending && <p role="status" className="rounded-lg border bg-[var(--wj-surface-solid)] p-6 text-center">{text.loading}</p>}
+    {query.isError && <div role="alert" className="rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] p-4 text-sm text-[var(--wj-danger)]">
       {errorCode === 'history_range_too_large' ? text.rangeError : errorCode === 'history_query_expired' ? text.expired : text.error} <button type="button" className={buttonClass} onClick={() => query.isFetchNextPageError && errorCode !== 'history_query_expired' ? query.fetchNextPage() : query.refetch()}>{text.retry}</button>
     </div>}
     {valid && data && <>
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-600" aria-live="polite">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--wj-muted)]" aria-live="polite">
         <span>{text.updated}: {historyTime(data.source.fetched_at)}</span>
       </div>
-      {data.source.missing_dates.length > 0 && <details className="rounded-lg border border-amber-200 bg-white p-3 text-sm text-amber-800"><summary className="cursor-pointer">{text.missingDates}: {data.source.missing_dates.length}</summary><p className="mt-2 break-words">{data.source.missing_dates.join(', ')}</p></details>}
-      {data.source.pending_dates.length > 0 && <details className="text-sm text-gray-600"><summary className="cursor-pointer">{text.pendingDates}: {data.source.pending_dates.length}</summary><p className="mt-2 break-words">{data.source.pending_dates.join(', ')}</p></details>}
-      {data.totals.length > 0 && <section aria-label={text.total} className="rounded-lg border border-gray-200 bg-white p-4">
+      {data.source.missing_dates.length > 0 && <details className="rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-surface-solid)] p-3 text-sm text-[var(--wj-warning)]"><summary className="cursor-pointer">{text.missingDates}: {data.source.missing_dates.length}</summary><p className="mt-2 break-words">{data.source.missing_dates.join(', ')}</p></details>}
+      {data.source.pending_dates.length > 0 && <details className="text-sm text-[var(--wj-muted)]"><summary className="cursor-pointer">{text.pendingDates}: {data.source.pending_dates.length}</summary><p className="mt-2 break-words">{data.source.pending_dates.join(', ')}</p></details>}
+      {data.totals.length > 0 && <section aria-label={text.total} className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4">
         <h2 className="mb-2 text-sm font-semibold">{text.total}{filters.direction !== 'all' && ` · ${text[filters.direction]}`}</h2>
         {data.totals.map(total => <div key={total.unit} className="flex flex-wrap gap-x-6 gap-y-1 text-sm tabular-nums">
           <span className="font-semibold">{total.unit || '—'}</span>
-          <span>{text.in}: <strong className="text-green-700">{quantity(total.total_in)}</strong></span>
-          <span>{text.out}: <strong className="text-red-700">{quantity(total.total_out)}</strong></span>
+          <span>{text.in}: <strong className="text-[var(--wj-success)]">{quantity(total.total_in)}</strong></span>
+          <span>{text.out}: <strong className="text-[var(--wj-danger)]">{quantity(total.total_out)}</strong></span>
           <span>{text.net}: <strong>{quantity(total.net_change)}</strong></span>
         </div>)}
       </section>}
-      {filters.direction !== 'all' && <p className="text-sm text-gray-600">{text.both}</p>}
-      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      {filters.direction !== 'all' && <p className="text-sm text-[var(--wj-muted)]">{text.both}</p>}
+      <section className="overflow-hidden rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)]">
         <div className="border-b px-4 py-3 text-sm">{text.rows}: <strong>{data.count.toLocaleString()}</strong> · {text.shown}: {rows.length.toLocaleString()}</div>
-        {rows.length === 0 ? <p className="p-8 text-center text-sm text-gray-600">{text.empty}</p> : <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={text.title}>
+        {rows.length === 0 ? <p className="p-8 text-center text-sm text-[var(--wj-muted)]">{text.empty}</p> : <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={text.title}>
           <table className="w-full text-sm whitespace-nowrap">
-            <thead className="bg-gray-50 text-gray-600"><tr>
+            <thead className="bg-[var(--wj-surface-solid)] text-[var(--wj-muted)]"><tr>
               {[text.expand, text.period, text.modelColumn, text.in, text.out, text.unit, text.identifiers].map((title, i) => <th key={title} scope="col" className={`px-4 py-3 font-semibold ${[3, 4, 6].includes(i) ? 'text-right' : 'text-left'}`}>{title}</th>)}
             </tr></thead>
             <DailyRows key={JSON.stringify(filters)} rows={rows} text={text} direction={filters.direction} />

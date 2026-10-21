@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLang } from '../i18n';
@@ -10,6 +10,7 @@ import { api } from '../lib/api';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { loginReturnPath } from '../domains/auth/login-return';
 import { X } from 'lucide-react';
+import { ThemeSwitch } from '../components/layout/ThemeSwitch';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -137,19 +138,18 @@ export default function LoginPage() {
             src="/logo-transparent.png"
             alt="WJ DATA CENTER"
           />
-          <h2>
-            {t('login_title')}
-          </h2>
-          <p>
-            {t('login_subtitle')}
-          </p>
+          <div className="main-login__identity"><strong>WJ DATA CENTER</strong><span>{t('brand_full')}</span></div>
+        </div>
+        <div className="main-login__heading">
+          <h1>{t('login_title')}</h1>
+          <p>{t('login_subtitle')}</p>
         </div>
         
         <Card className="main-login__card">
-          <CardContent className="p-6">
-            <form className="space-y-6" onSubmit={handleSubmit}>
+          <CardContent className="main-login__form-content">
+            <form className="main-login__form" onSubmit={handleSubmit}>
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                <div className="bg-[var(--wj-danger-bg)] border border-[var(--wj-danger-border)] text-[var(--wj-danger)] px-4 py-3 rounded">
                   {error}
                 </div>
               )}
@@ -196,7 +196,7 @@ export default function LoginPage() {
             </form>
             
             {/* Signup request */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="main-login__signup">
               <Button
                 ref={signupTriggerRef}
                 type="button"
@@ -212,6 +212,7 @@ export default function LoginPage() {
         
         {/* Language selector */}
         <div className="main-login__language">
+          <ThemeSwitch />
           <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
             <button
               aria-pressed={lang === 'ko'}
@@ -239,7 +240,7 @@ export default function LoginPage() {
                 <button
                   aria-label={lang === 'ko' ? '닫기' : '关闭'}
                   onClick={() => setShowSignupModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-[var(--wj-muted)] hover:text-[var(--wj-muted)]"
                 >
                   <X aria-hidden="true" className="h-5 w-5" />
                 </button>
@@ -247,7 +248,7 @@ export default function LoginPage() {
               
               <form onSubmit={handleSignupSubmit} className="space-y-4">
                 {signupError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                  <div className="bg-[var(--wj-danger-bg)] border border-[var(--wj-danger-border)] text-[var(--wj-danger)] px-4 py-3 rounded">
                     {signupError}
                   </div>
                 )}

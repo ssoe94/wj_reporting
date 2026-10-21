@@ -442,7 +442,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
               id="machineId"
               value={form.machineId}
               onChange={(e) => handleChange('machineId', e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+              className="block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)]"
             >
               <option value="">{t('quality.select_machine')}</option>
               {machines.map((m) => (
@@ -463,7 +463,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
               id="productionLine"
               value={form.productionLine}
               onChange={(e) => handleChange('productionLine', e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+              className="block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)]"
             >
               <option value="">{t('quality.select_line')}</option>
               <option value="A">A Line</option>
@@ -535,24 +535,24 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
   return (
     <>
       <section
-        className={embedded ? 'bg-white' : 'overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm'}
+        className={embedded ? 'bg-[var(--wj-surface-solid)]' : 'overflow-hidden rounded-2xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] shadow-sm'}
         aria-labelledby="quality-manual-report-title"
       >
-        <div className={`flex items-center gap-3 px-4 py-3.5 md:px-5 ${embedded ? 'border-b border-slate-100' : 'border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white'}`}>
-          <span className="rounded-lg bg-blue-600 p-2 text-white shadow-sm">
+        <div className={`flex items-center gap-3 px-4 py-3.5 md:px-5 ${embedded ? 'border-b border-[var(--wj-border)]' : 'border-b border-[var(--wj-border)] bg-gradient-to-r from-[var(--wj-bg-strong)] to-[var(--wj-surface-solid)]'}`}>
+          <span className="rounded-lg bg-[var(--wj-accent-strong)] p-2 text-[var(--wj-on-accent)] shadow-sm">
             <FileText className="h-4 w-4" aria-hidden="true" />
           </span>
           <div>
             {embedded ? (
-              <h3 id="quality-manual-report-title" className="text-base font-bold text-slate-950">
+              <h3 id="quality-manual-report-title" className="text-base font-bold text-[var(--wj-text)]">
                 {lang === 'zh' ? '直接登记' : '직접 등록'}
               </h3>
             ) : (
-              <h2 id="quality-manual-report-title" className="text-base font-bold text-slate-950">
+              <h2 id="quality-manual-report-title" className="text-base font-bold text-[var(--wj-text)]">
                 {t('nav_quality_report')}
               </h2>
             )}
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-[var(--wj-muted)]">
               {lang === 'zh' ? '单件不良可在此快速登记。' : '개별 불량 건을 빠르게 등록합니다.'}
             </p>
           </div>
@@ -577,7 +577,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                 id="section"
                 value={form.section}
                 onChange={(e) => handleChange('section', e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+                className="block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)]"
               >
                 <option value="LQC_INJ">LQC - {t('quality.section_injection')}</option>
                 <option value="LQC_ASM">LQC - {t('quality.section_assembly')}</option>
@@ -621,8 +621,8 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                   const { key, ...rest } = props as any;
                   if ((option as any).isAddModel) {
                     return (
-                      <li key={key} {...rest} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-                        <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+                      <li key={key} {...rest} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+                        <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                           <Plus className="h-3 w-3" />
                           <span>"{(option as any).model_code}" {t('add_new_part_prompt')}</span>
                         </div>
@@ -634,7 +634,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                     <li key={key} {...rest}>
                       <div className="flex flex-col">
                         <span className="font-mono font-medium">{spec.model_code}</span>
-                        {spec.description && <span className="text-sm text-gray-600">{spec.description}</span>}
+                        {spec.description && <span className="text-sm text-[var(--wj-muted)]">{spec.description}</span>}
                       </div>
                     </li>
                   );
@@ -670,8 +670,8 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                   const { key, ...rest } = props as any;
                   if ('isAddNew' in option && (option as any).isAddNew) {
                     return (
-                      <li key={key} {...rest} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-                        <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+                      <li key={key} {...rest} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+                        <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                           <Plus className="h-3 w-3" />
                           <span>"{(option as any).part_no}" {t('add_new_part_prompt')}</span>
                         </div>
@@ -683,7 +683,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                     <li key={key} {...rest}>
                       <div className="flex flex-col">
                         <span className="font-mono font-medium">{spec.part_no}</span>
-                        {spec.model_code && <span className="text-sm text-gray-600">{spec.model_code} - {spec.description}</span>}
+                        {spec.model_code && <span className="text-sm text-[var(--wj-muted)]">{spec.model_code} - {spec.description}</span>}
                       </div>
                     </li>
                   );
@@ -785,7 +785,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                 </div>
                 <div>
                   <Label htmlFor="defect_rate">{t('quality.defect_rate')}</Label>
-                  <Input id="defect_rate" value={insp === 0 && defect === 0 ? '' : `${rate}%`} disabled className="bg-gray-100" />
+                  <Input id="defect_rate" value={insp === 0 && defect === 0 ? '' : `${rate}%`} disabled className="bg-[var(--wj-bg-strong)]" />
                 </div>
                 <div>
                   <Label htmlFor="judgement">{t('quality.judgement')}</Label>
@@ -793,7 +793,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                     id="judgement"
                     value={form.judgement}
                     onChange={(e) => handleChange('judgement', e.target.value)}
-                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+                    className="block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)]"
                   >
                     <option value="OK">OK</option>
                     <option value="NG">NG</option>
@@ -825,7 +825,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2.5">
               <Label>{t('quality.image_upload')}</Label>
-              <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm">
+              <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-[var(--wj-accent-strong)] hover:bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] rounded-lg transition-colors text-sm">
                 <Plus className="w-4 h-4" />
                 <span>{t('quality.image_add')}</span>
                 <input
@@ -836,7 +836,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                   className="hidden"
                 />
               </label>
-              <span className="text-xs text-gray-500">{t('quality.image_max_info')}</span>
+              <span className="text-xs text-[var(--wj-muted)]">{t('quality.image_max_info')}</span>
             </div>
             
             {/* 드래그 앤 드롭 영역 */}
@@ -846,8 +846,8 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
               onDrop={handleDrop}
               className={`rounded-xl border-2 border-dashed p-3 transition-all ${
                 isDragging
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 bg-gray-50'
+                  ? 'border-[var(--wj-accent)] bg-[var(--wj-bg-strong)]'
+                  : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)]'
               }`}
             >
               {imageFiles.some(f => f !== null) ? (
@@ -859,16 +859,16 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
                         <img
                           src={imagePreviews[index]!}
                           alt={`Preview ${index + 1}`}
-                          className="h-24 w-full rounded-lg border border-gray-300 object-cover"
+                          className="h-24 w-full rounded-lg border border-[var(--wj-border)] object-cover"
                         />
                         <button
                           type="button"
                           onClick={() => handleImageRemove(index)}
-                          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-2 right-2 bg-[var(--wj-danger)] hover:bg-[var(--wj-danger)] text-[var(--wj-on-accent)] rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <X className="w-4 h-4" />
                         </button>
-                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-[var(--wj-on-contrast)] text-xs px-2 py-1 rounded">
                           {index + 1}
                         </div>
                       </div>
@@ -878,10 +878,10 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
               ) : (
                 /* 빈 상태 */
                 <div className="flex items-center gap-3 px-2 py-2 text-left sm:justify-center sm:text-center">
-                  <FileText className="h-8 w-8 shrink-0 text-gray-400" aria-hidden="true" />
+                  <FileText className="h-8 w-8 shrink-0 text-[var(--wj-muted)]" aria-hidden="true" />
                   <div>
-                    <p className="text-sm text-gray-600">{t('quality.image_drag_drop')}</p>
-                    <p className="mt-0.5 text-xs text-gray-400">{t('quality.image_max_info')}</p>
+                    <p className="text-sm text-[var(--wj-muted)]">{t('quality.image_drag_drop')}</p>
+                    <p className="mt-0.5 text-xs text-[var(--wj-muted)]">{t('quality.image_max_info')}</p>
                   </div>
                 </div>
               )}
@@ -894,7 +894,7 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
               permission="can_edit_quality"
               type="submit"
               disabled={isUploading}
-              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white transition-all duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--wj-accent-strong)] px-5 py-2.5 font-medium text-[var(--wj-on-accent)] transition-all duration-200 hover:bg-[var(--wj-accent-strong)] disabled:cursor-not-allowed disabled:bg-[var(--wj-bg-strong)]"
             >
               {isUploading ? (
                 <>
@@ -915,17 +915,17 @@ export default function QualityReportForm({ embedded = false }: QualityReportFor
       {/* Add Part Modal */}
       {showAddPartModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{t('quality.add_part_required_fields')}</p>
+            <p className="text-xs text-[var(--wj-muted)]">{t('quality.add_part_required_fields')}</p>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder={t('part_no')} className="border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300" value={newPartForm.part_no} onChange={(e) => setNewPartForm((f: any) => ({ ...f, part_no: e.target.value }))} />
-              <input placeholder={t('quality.model_code')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.model_code ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.model_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, model_code: e.target.value }))} />
-              <input placeholder={t('description')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.description ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.description} onChange={(e) => setNewPartForm((f: any) => ({ ...f, description: e.target.value }))} />
+              <input placeholder={t('part_no')} className="border rounded px-2 py-1 col-span-2 bg-[var(--wj-success-bg)] border-[var(--wj-success-border)]" value={newPartForm.part_no} onChange={(e) => setNewPartForm((f: any) => ({ ...f, part_no: e.target.value }))} />
+              <input placeholder={t('quality.model_code')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.model_code ? ' bg-[var(--wj-warning-bg)] border-[var(--wj-warning-border)]' : ''}`} value={newPartForm.model_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, model_code: e.target.value }))} />
+              <input placeholder={t('description')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.description ? ' bg-[var(--wj-warning-bg)] border-[var(--wj-warning-border)]' : ''}`} value={newPartForm.description} onChange={(e) => setNewPartForm((f: any) => ({ ...f, description: e.target.value }))} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-1 text-sm" onClick={() => setShowAddPartModal(false)}>{t('cancel')}</button>
-              <button className="px-3 py-1 bg-blue-600 text-white text-sm rounded" onClick={async () => {
+              <button className="px-3 py-1 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] text-sm rounded" onClick={async () => {
                 try {
                   const partNo = String(newPartForm.part_no || '').trim();
                   const modelCode = String(newPartForm.model_code || '').trim();

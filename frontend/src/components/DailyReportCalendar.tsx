@@ -104,21 +104,21 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
     
     if (dateData.email_sent) {
       return (
-        <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
-          <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+        <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--wj-accent-strong)] rounded-full flex items-center justify-center">
+          <div className="w-1.5 h-1.5 bg-[var(--wj-surface-solid)] rounded-full"></div>
         </div>
       );
     }
     
     if (dateData.has_summary) {
       return (
-        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></div>
+        <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--wj-success)] rounded-full"></div>
       );
     }
     
     if (dateData.has_snapshot) {
       return (
-        <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-500 rounded-full"></div>
+        <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--wj-warning)] rounded-full"></div>
       );
     }
     
@@ -126,12 +126,12 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
   };
 
   return (
-    <div className="bg-white rounded-lg border p-4">
+    <div className="bg-[var(--wj-surface-solid)] rounded-lg border p-4">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={previousMonth}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-2 hover:bg-[var(--wj-bg-strong)] rounded-lg transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -148,7 +148,7 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
         
         <button
           onClick={nextMonth}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-2 hover:bg-[var(--wj-bg-strong)] rounded-lg transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -159,7 +159,7 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
       {/* 요일 헤더 */}
       <div className="grid grid-cols-7 gap-1 mb-2">
         {(lang === 'zh' ? ['日','一','二','三','四','五','六'] : ['일','월','화','수','목','금','토']).map(day => (
-          <div key={day} className="text-center text-sm font-medium text-gray-600 py-2">
+          <div key={day} className="text-center text-sm font-medium text-[var(--wj-muted)] py-2">
             {day}
           </div>
         ))}
@@ -186,13 +186,13 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
                 className={`
                   relative h-12 rounded-lg border transition-all duration-200 text-sm font-medium
                   ${isSelected 
-                    ? 'bg-blue-100 border-blue-300 text-blue-800' 
+                    ? 'bg-[var(--wj-accent-soft)] border-[var(--wj-border)] text-[var(--wj-accent-strong)]'
                     : dateData?.has_snapshot 
                       ? getStatusColor(dateData.status)
-                      : 'bg-gray-50 border-gray-200 text-gray-400'
+                      : 'bg-[var(--wj-surface-solid)] border-[var(--wj-border)] text-[var(--wj-muted)]'
                   }
-                  ${isToday ? 'ring-2 ring-blue-400' : ''}
-                  ${dateData?.has_snapshot ? 'hover:bg-blue-50 cursor-pointer' : 'cursor-not-allowed'}
+                  ${isToday ? 'ring-2 ring-[var(--wj-accent)]' : ''}
+                  ${dateData?.has_snapshot ? 'hover:bg-[var(--wj-bg-strong)] cursor-pointer' : 'cursor-not-allowed'}
                   ${!isCurrentMonth ? 'opacity-50' : ''}
                 `}
               >
@@ -210,16 +210,16 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
       <div className="mt-4 pt-4 border-t">
         <div className="flex flex-wrap gap-4 text-xs">
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-[var(--wj-warning)] rounded-full"></div>
             <span>{lang === 'zh' ? '已生成快照' : '스냅샷 생성됨'}</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-[var(--wj-success)] rounded-full"></div>
             <span>{lang === 'zh' ? '已完成汇总' : '요약 완료'}</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
-              <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+            <div className="w-3 h-3 bg-[var(--wj-accent-strong)] rounded-full flex items-center justify-center">
+              <div className="w-1.5 h-1.5 bg-[var(--wj-surface-solid)] rounded-full"></div>
             </div>
             <span>{lang === 'zh' ? '已发送邮件' : '이메일 발송됨'}</span>
           </div>

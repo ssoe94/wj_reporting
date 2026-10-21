@@ -10,7 +10,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       <textarea
         ref={ref}
         className={cn(
-          "ui-input ui-textarea block w-full px-3 py-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 transition min-h-[80px]",
+          "ui-input ui-textarea block w-full px-3 py-2 placeholder-[var(--wj-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--wj-border)] transition min-h-[80px]",
           className
         )}
         {...props}

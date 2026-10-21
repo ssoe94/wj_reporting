@@ -486,9 +486,9 @@ export default function ProductionConsole({
         progress: `${liveSummary.achievementRate}%`,
       };
 
-  if (isLoading) return <Card><CardContent className="py-10 text-center text-slate-500">{lang === 'zh' ? '正在查询执行记录…' : '실행 기록을 불러오는 중…'}</CardContent></Card>;
+  if (isLoading) return <Card><CardContent className={kioskMode ? "py-10 text-center text-slate-500" : "py-10 text-center text-[var(--wj-muted)]"}>{lang === 'zh' ? '正在查询执行记录…' : '실행 기록을 불러오는 중…'}</CardContent></Card>;
   if (isError) return (
-    <Card className="border-amber-200"><CardContent className="space-y-3 py-6 text-sm text-amber-900">
+    <Card className={kioskMode ? "border-amber-200" : "border-[var(--wj-warning-border)]"}><CardContent className={kioskMode ? "space-y-3 py-6 text-sm text-amber-900" : "space-y-3 py-6 text-sm text-[var(--wj-warning)]"}>
       <p role="alert">{lang === 'zh' ? '执行记录查询失败，无法确认数量。未保存的输入仍保留在本页面。' : '실행 기록을 불러오지 못해 수량을 확인할 수 없습니다. 미저장 입력은 이 화면에 보존됩니다.'}</p>
       <Button type="button" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>{lang === 'zh' ? '重试' : '다시 조회'}</Button>
     </CardContent></Card>
@@ -498,7 +498,7 @@ export default function ProductionConsole({
     ? `${value}${planType === 'injection' ? (lang === 'zh' ? '号机' : '호기') : (lang === 'zh' ? '线' : '라인')}`
     : (lang === 'zh' ? '全部设备' : '전체 설비');
   const pendingScopeNotice = requestedDate !== selectedDate || requestedMachineFilter !== stationFilter ? (
-    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+    <div role="status" className={kioskMode ? "rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" : "rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-warning-bg)] p-3 text-sm text-[var(--wj-warning)]"}>
       <p>{lang === 'zh'
         ? `当前编辑：${selectedDate} · ${machineScopeLabel(stationFilter)}。未保存输入仍显示在下方。保存后将切换至查询范围：${requestedDate} · ${machineScopeLabel(requestedMachineFilter)}。`
         : `현재 작성: ${selectedDate} · ${machineScopeLabel(stationFilter)}. 미저장 입력은 아래에 보존됩니다. 저장을 마치면 조회 범위 ${requestedDate} · ${machineScopeLabel(requestedMachineFilter)}로 이동합니다.`}</p>
@@ -513,23 +513,23 @@ export default function ProductionConsole({
       <div className="flex h-[calc(100vh-96px)] min-h-[820px] flex-col gap-2">
         {pendingScopeNotice}
         <div className="grid grid-cols-3 gap-2">
-          <div className="border-2 border-slate-300 bg-sky-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">实绩</div>
-            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.actual}</div>
+          <div className={kioskMode ? "border-2 border-slate-300 bg-sky-50 px-4 py-3 text-center" : "border-2 border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-center"}>
+            <div className={kioskMode ? "text-lg font-bold text-slate-600" : "text-lg font-bold text-[var(--wj-muted)]"}>实绩</div>
+            <div className={kioskMode ? "mt-1 text-4xl font-black text-slate-900" : "mt-1 text-4xl font-black text-[var(--wj-text)]"}>{kioskSummaryValues.actual}</div>
           </div>
-          <div className="border-2 border-slate-300 bg-amber-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">计划</div>
-            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.planned}</div>
+          <div className={kioskMode ? "border-2 border-slate-300 bg-amber-50 px-4 py-3 text-center" : "border-2 border-[var(--wj-border)] bg-[var(--wj-warning-bg)] px-4 py-3 text-center"}>
+            <div className={kioskMode ? "text-lg font-bold text-slate-600" : "text-lg font-bold text-[var(--wj-muted)]"}>计划</div>
+            <div className={kioskMode ? "mt-1 text-4xl font-black text-slate-900" : "mt-1 text-4xl font-black text-[var(--wj-text)]"}>{kioskSummaryValues.planned}</div>
           </div>
-          <div className="border-2 border-slate-300 bg-emerald-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">达成率</div>
-            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.progress}</div>
+          <div className={kioskMode ? "border-2 border-slate-300 bg-emerald-50 px-4 py-3 text-center" : "border-2 border-[var(--wj-border)] bg-[var(--wj-success-bg)] px-4 py-3 text-center"}>
+            <div className={kioskMode ? "text-lg font-bold text-slate-600" : "text-lg font-bold text-[var(--wj-muted)]"}>达成率</div>
+            <div className={kioskMode ? "mt-1 text-4xl font-black text-slate-900" : "mt-1 text-4xl font-black text-[var(--wj-text)]"}>{kioskSummaryValues.progress}</div>
           </div>
         </div>
 
         <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-[22%_minmax(0,1.4fr)_minmax(360px,0.9fr)]">
-          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
-            <div className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3 text-center text-2xl font-black text-slate-900">今日生产计划</div>
+          <div className={kioskMode ? "flex min-h-0 flex-col border-2 border-slate-300 bg-white" : "flex min-h-0 flex-col border-2 border-[var(--wj-border)] bg-[var(--wj-surface-solid)]"}>
+            <div className={kioskMode ? "border-b-2 border-slate-300 bg-slate-100 px-4 py-3 text-center text-2xl font-black text-slate-900" : "border-b-2 border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3 text-center text-2xl font-black text-[var(--wj-text)]"}>今日生产计划</div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               <div className="flex flex-col gap-2">
                 {kioskPlanCards.map((item) => {
@@ -549,14 +549,18 @@ export default function ProductionConsole({
                           setSelectedKey(matchedRow.key);
                         }
                       }}
-                      className={`min-h-[156px] border-2 px-4 py-4 text-left ${
+                      className={kioskMode ? `min-h-[156px] border-2 px-4 py-4 text-left ${
                         isSelected
                           ? 'border-blue-700 bg-blue-100 text-slate-900'
                           : 'border-slate-300 bg-white text-slate-900'
+                      }` : `min-h-[156px] border-2 px-4 py-4 text-left ${
+                        isSelected
+                          ? 'border-[var(--wj-accent)] bg-[var(--wj-accent-soft)] text-[var(--wj-text)]'
+                          : 'border-[var(--wj-border)] bg-[var(--wj-surface-solid)] text-[var(--wj-text)]'
                       }`}
                     >
                       <div className="text-xl font-black leading-tight">{item.part_no || '-'}</div>
-                      <div className="mt-3 text-lg font-bold leading-snug text-slate-700">
+                      <div className={kioskMode ? "mt-3 text-lg font-bold leading-snug text-slate-700" : "mt-3 text-lg font-bold leading-snug text-[var(--wj-text)]"}>
                         {item.model_name || '-'}{item.part_spec ? ` - ${item.part_spec}` : ''}
                       </div>
                       <div className="mt-4 text-3xl font-black leading-none">计划 {Number(item.planned_quantity || 0).toLocaleString()}</div>
@@ -564,7 +568,7 @@ export default function ProductionConsole({
                   );
                 })}
                 {kioskPlanCards.length === 0 ? (
-                  <div className="border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-lg font-bold text-slate-500">
+                  <div className={kioskMode ? "border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-lg font-bold text-slate-500" : "border-2 border-dashed border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-4 py-10 text-center text-lg font-bold text-[var(--wj-muted)]"}>
                     暂无今日计划
                   </div>
                 ) : null}
@@ -572,33 +576,33 @@ export default function ProductionConsole({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
-            <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
-              <div className="text-2xl font-black text-slate-900">今日执行输入</div>
-              <div className="text-lg font-bold text-slate-700">达成率 {liveSummary.achievementRate}%   不良率 {liveSummary.defectRate}%</div>
+          <div className={kioskMode ? "flex min-h-0 flex-col border-2 border-slate-300 bg-white" : "flex min-h-0 flex-col border-2 border-[var(--wj-border)] bg-[var(--wj-surface-solid)]"}>
+            <div className={kioskMode ? "flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3" : "flex items-center justify-between border-b-2 border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3"}>
+              <div className={kioskMode ? "text-2xl font-black text-slate-900" : "text-2xl font-black text-[var(--wj-text)]"}>今日执行输入</div>
+              <div className={kioskMode ? "text-lg font-bold text-slate-700" : "text-lg font-bold text-[var(--wj-text)]"}>达成率 {liveSummary.achievementRate}%   不良率 {liveSummary.defectRate}%</div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
               <table className="min-w-full text-lg">
-                <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                <thead className={kioskMode ? "sticky top-0 bg-slate-100 text-slate-700" : "sticky top-0 bg-[var(--wj-bg-strong)] text-[var(--wj-text)]"}>
                   <tr>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">顺序</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">Part No.</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">型号 / Part</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">计划</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">良品</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">不良</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">状态</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">保存</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-center" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-center"}>顺序</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-left" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-left"}>Part No.</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-left" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-left"}>型号 / Part</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-right" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-right"}>计划</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-right" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-right"}>良品</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-right" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-right"}>不良</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-center" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-center"}>状态</th>
+                    <th className={kioskMode ? "border-b-2 border-slate-300 px-3 py-3 text-center" : "border-b-2 border-[var(--wj-border)] px-3 py-3 text-center"}>保存</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center text-slate-500">{t('loading')}</td>
+                      <td colSpan={8} className={kioskMode ? "px-4 py-16 text-center text-slate-500" : "px-4 py-16 text-center text-[var(--wj-muted)]"}>{t('loading')}</td>
                     </tr>
                   ) : tableRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center text-slate-500">{t('no_data')}</td>
+                      <td colSpan={8} className={kioskMode ? "px-4 py-16 text-center text-slate-500" : "px-4 py-16 text-center text-[var(--wj-muted)]"}>{t('no_data')}</td>
                     </tr>
                   ) : (
                     tableRows.map(({ row, displaySequence }) => {
@@ -607,46 +611,46 @@ export default function ProductionConsole({
                       return (
                         <tr
                           key={row.key}
-                          className={isSelected ? 'bg-blue-50' : 'bg-white'}
+                          className={kioskMode ? isSelected ? 'bg-blue-50' : 'bg-white' : isSelected ? 'bg-[var(--wj-bg-strong)]' : 'bg-[var(--wj-surface-solid)]'}
                           onClick={() => setSelectedKey(row.key)}
                         >
-                          <td className="border-b border-slate-200 px-3 py-3 text-center font-bold text-slate-700">{displaySequence}</td>
-                          <td className="border-b border-slate-200 px-3 py-3 font-mono text-xl font-black text-slate-900">{row.part_no || '-'}</td>
-                          <td className="border-b border-slate-200 px-3 py-3 text-slate-700">
-                            <div className="font-bold text-slate-900">{row.model_name || '-'}</div>
-                            <div className="mt-1 text-sm text-slate-500">{row.part_spec || '-'}</div>
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 text-center font-bold text-slate-700" : "border-b border-[var(--wj-border)] px-3 py-3 text-center font-bold text-[var(--wj-text)]"}>{displaySequence}</td>
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 font-mono text-xl font-black text-slate-900" : "border-b border-[var(--wj-border)] px-3 py-3 font-mono text-xl font-black text-[var(--wj-text)]"}>{row.part_no || '-'}</td>
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 text-slate-700" : "border-b border-[var(--wj-border)] px-3 py-3 text-[var(--wj-text)]"}>
+                            <div className={kioskMode ? "font-bold text-slate-900" : "font-bold text-[var(--wj-text)]"}>{row.model_name || '-'}</div>
+                            <div className={kioskMode ? "mt-1 text-sm text-slate-500" : "mt-1 text-sm text-[var(--wj-muted)]"}>{row.part_spec || '-'}</div>
                           </td>
-                          <td className="border-b border-slate-200 px-3 py-3 text-right text-xl font-black text-slate-900">{row.planned_quantity.toLocaleString()}</td>
-                          <td className="border-b border-slate-200 px-3 py-3">
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 text-right text-xl font-black text-slate-900" : "border-b border-[var(--wj-border)] px-3 py-3 text-right text-xl font-black text-[var(--wj-text)]"}>{row.planned_quantity.toLocaleString()}</td>
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3" : "border-b border-[var(--wj-border)] px-3 py-3"}>
                             <Input
                               type="number"
                               min="0"
                               value={row.actual_qty}
                               onChange={(event) => handleNumericChange(row.key, 'actual_qty', event.target.value)}
                               disabled={!canEdit}
-                              className="h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black"
+                              className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-right text-xl font-black"}
                             />
                           </td>
-                          <td className="border-b border-slate-200 px-3 py-3">
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3" : "border-b border-[var(--wj-border)] px-3 py-3"}>
                             <Input
                               type="number"
                               min="0"
                               value={row.defect_qty}
                               onChange={(event) => handleNumericChange(row.key, 'defect_qty', event.target.value)}
                               disabled={!canEdit}
-                              className="h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black"
+                              className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-right text-xl font-black"}
                             />
                           </td>
-                          <td className="border-b border-slate-200 px-3 py-3 text-center">
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 text-center" : "border-b border-[var(--wj-border)] px-3 py-3 text-center"}>
                             <span className={`inline-block px-3 py-2 text-base font-bold ${statusTone[derivedStatus]}`}>
                               {t(`console_status_${derivedStatus}`)}
                             </span>
                           </td>
-                          <td className="border-b border-slate-200 px-3 py-3 text-center">
+                          <td className={kioskMode ? "border-b border-slate-200 px-3 py-3 text-center" : "border-b border-[var(--wj-border)] px-3 py-3 text-center"}>
                             <Button
                               size="lg"
                               variant={dirtyMap[row.key] ? 'primary' : 'secondary'}
-                              className="rounded-none border-2 border-slate-300 px-4 shadow-none"
+                              className={kioskMode ? "rounded-none border-2 border-slate-300 px-4 shadow-none" : "rounded-none border-2 border-[var(--wj-border)] px-4 shadow-none"}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 void saveRow(row);
@@ -666,62 +670,62 @@ export default function ProductionConsole({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
-            <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
-              <div className="text-2xl font-black text-slate-900">当前计划详情</div>
-              {selectedRow && dirtyMap[selectedRow.key] ? <div className="text-base font-bold text-amber-700">待保存</div> : <div />}
+          <div className={kioskMode ? "flex min-h-0 flex-col border-2 border-slate-300 bg-white" : "flex min-h-0 flex-col border-2 border-[var(--wj-border)] bg-[var(--wj-surface-solid)]"}>
+            <div className={kioskMode ? "flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3" : "flex items-center justify-between border-b-2 border-[var(--wj-border)] bg-[var(--wj-bg-strong)] px-4 py-3"}>
+              <div className={kioskMode ? "text-2xl font-black text-slate-900" : "text-2xl font-black text-[var(--wj-text)]"}>当前计划详情</div>
+              {selectedRow && dirtyMap[selectedRow.key] ? <div className={kioskMode ? "text-base font-bold text-amber-700" : "text-base font-bold text-[var(--wj-warning)]"}>待保存</div> : <div />}
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {selectedRow ? (
                 <div className="space-y-4">
-                  <div className="border-2 border-slate-300 bg-slate-50 p-4">
-                    <div className="text-base font-bold text-slate-500">Part No.</div>
-                    <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.part_no || '-'}</div>
+                  <div className={kioskMode ? "border-2 border-slate-300 bg-slate-50 p-4" : "border-2 border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4"}>
+                    <div className={kioskMode ? "text-base font-bold text-slate-500" : "text-base font-bold text-[var(--wj-muted)]"}>Part No.</div>
+                    <div className={kioskMode ? "mt-2 text-2xl font-black text-slate-900" : "mt-2 text-2xl font-black text-[var(--wj-text)]"}>{selectedRow.part_no || '-'}</div>
                   </div>
-                  <div className="border-2 border-slate-300 bg-slate-50 p-4">
-                    <div className="text-base font-bold text-slate-500">型号 / Part</div>
-                    <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.model_name || '-'}</div>
-                    <div className="mt-1 text-lg font-bold text-slate-600">{selectedRow.part_spec || '-'}</div>
+                  <div className={kioskMode ? "border-2 border-slate-300 bg-slate-50 p-4" : "border-2 border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4"}>
+                    <div className={kioskMode ? "text-base font-bold text-slate-500" : "text-base font-bold text-[var(--wj-muted)]"}>型号 / Part</div>
+                    <div className={kioskMode ? "mt-2 text-2xl font-black text-slate-900" : "mt-2 text-2xl font-black text-[var(--wj-text)]"}>{selectedRow.model_name || '-'}</div>
+                    <div className={kioskMode ? "mt-1 text-lg font-bold text-slate-600" : "mt-1 text-lg font-bold text-[var(--wj-muted)]"}>{selectedRow.part_spec || '-'}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">计划数量 {selectedRow.planned_quantity.toLocaleString()}</div>
-                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">达成率 {selectedRow.progress.toFixed(1)}%</div>
+                    <div className={kioskMode ? "border-2 border-slate-300 p-3 text-lg font-bold text-slate-800" : "border-2 border-[var(--wj-border)] p-3 text-lg font-bold text-[var(--wj-text)]"}>计划数量 {selectedRow.planned_quantity.toLocaleString()}</div>
+                    <div className={kioskMode ? "border-2 border-slate-300 p-3 text-lg font-bold text-slate-800" : "border-2 border-[var(--wj-border)] p-3 text-lg font-bold text-[var(--wj-text)]"}>达成率 {selectedRow.progress.toFixed(1)}%</div>
                   </div>
                   <div className="grid gap-3">
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">开始时间</label>
-                      <Input type="datetime-local" value={toLocalInput(selectedRow.start_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                      <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>开始时间</label>
+                      <Input type="datetime-local" value={toLocalInput(selectedRow.start_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)} disabled={!canEdit} className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-base" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-base"} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">结束时间</label>
-                      <Input type="datetime-local" value={toLocalInput(selectedRow.end_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                      <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>结束时间</label>
+                      <Input type="datetime-local" value={toLocalInput(selectedRow.end_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)} disabled={!canEdit} className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-base" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-base"} />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="mb-1 block text-base font-bold text-slate-700">停机(分)</label>
-                        <Input type="number" min="0" value={selectedRow.idle_time} onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                        <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>停机(分)</label>
+                        <Input type="number" min="0" value={selectedRow.idle_time} onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)} disabled={!canEdit} className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-base" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-base"} />
                       </div>
                       <div>
-                        <label className="mb-1 block text-base font-bold text-slate-700">人员</label>
-                        <Input type="number" min="0" step="0.5" value={selectedRow.personnel_count} onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                        <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>人员</label>
+                        <Input type="number" min="0" step="0.5" value={selectedRow.personnel_count} onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)} disabled={!canEdit} className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-base" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-base"} />
                       </div>
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">运行 C/T</label>
-                      <Input type="number" min="0" step="0.1" value={selectedRow.operating_ct ?? ''} onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                      <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>运行 C/T</label>
+                      <Input type="number" min="0" step="0.1" value={selectedRow.operating_ct ?? ''} onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)} disabled={!canEdit} className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 text-base" : "h-12 rounded-none border-2 border-[var(--wj-border)] text-base"} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">备注</label>
-                      <Textarea rows={4} value={selectedRow.note || ''} onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)} disabled={!canEdit} className="rounded-none border-2 border-slate-300 text-base" />
+                      <label className={kioskMode ? "mb-1 block text-base font-bold text-slate-700" : "mb-1 block text-base font-bold text-[var(--wj-text)]"}>备注</label>
+                      <Textarea rows={4} value={selectedRow.note || ''} onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)} disabled={!canEdit} className={kioskMode ? "rounded-none border-2 border-slate-300 text-base" : "rounded-none border-2 border-[var(--wj-border)] text-base"} />
                     </div>
                   </div>
-                  <Button className="h-12 rounded-none border-2 border-slate-300 bg-slate-900 text-lg font-bold text-white shadow-none" onClick={() => void saveRow(selectedRow)} disabled={!canEdit || savingKey === selectedRow.key}>
+                  <Button className={kioskMode ? "h-12 rounded-none border-2 border-slate-300 bg-slate-900 text-lg font-bold text-white shadow-none" : "h-12 rounded-none border-2 border-[var(--wj-border)] bg-[var(--wj-contrast-surface)] text-lg font-bold text-[var(--wj-on-contrast)] shadow-none"} onClick={() => void saveRow(selectedRow)} disabled={!canEdit || savingKey === selectedRow.key}>
                     <Save className="mr-2 h-4 w-4" />
                     {savingKey === selectedRow.key ? t('saving') : '保存当前计划'}
                   </Button>
                 </div>
               ) : (
-                <div className="border-2 border-dashed border-slate-300 px-4 py-16 text-center text-lg font-bold text-slate-400">请选择计划</div>
+                <div className={kioskMode ? "border-2 border-dashed border-slate-300 px-4 py-16 text-center text-lg font-bold text-slate-400" : "border-2 border-dashed border-[var(--wj-border)] px-4 py-16 text-center text-lg font-bold text-[var(--wj-muted)]"}>请选择计划</div>
               )}
             </div>
           </div>
@@ -733,14 +737,14 @@ export default function ProductionConsole({
   return (
     <div className={kioskMode ? 'space-y-4' : 'space-y-6'}>
       {pendingScopeNotice}
-      <Card className="border-blue-100 shadow-sm">
+      <Card className={kioskMode ? "border-blue-100 shadow-sm" : "border-[var(--wj-border)] shadow-sm"}>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className={`${kioskMode ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-slate-900`}>
+              <h2 className={kioskMode ? `${kioskMode ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-slate-900` : `${kioskMode ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-[var(--wj-text)]`}>
                 {title || t('console_title')}
               </h2>
-              <p className="text-sm text-slate-500">{subtitle || t('console_subtitle')}</p>
+              <p className={kioskMode ? "text-sm text-slate-500" : "text-sm text-[var(--wj-muted)]"}>{subtitle || t('console_subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <Input
@@ -761,11 +765,11 @@ export default function ProductionConsole({
             {summaryCards.map((card) => {
               const Icon = card.icon;
               return (
-                <div key={card.label} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
+                <div key={card.label} className={kioskMode ? "rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4" : "rounded-2xl border border-[var(--wj-border)] bg-gradient-to-br from-[var(--wj-surface-solid)] to-[var(--wj-surface-solid)] p-4"}>
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{card.label}</p>
-                      <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">{card.value}</p>
+                      <p className={kioskMode ? "text-xs font-bold uppercase tracking-[0.2em] text-slate-400" : "text-xs font-bold uppercase tracking-[0.2em] text-[var(--wj-muted)]"}>{card.label}</p>
+                      <p className={kioskMode ? "mt-2 text-3xl font-black tracking-tight text-slate-900" : "mt-2 text-3xl font-black tracking-tight text-[var(--wj-text)]"}>{card.value}</p>
                     </div>
                     <div className={`rounded-2xl p-3 ${card.tone}`}>
                       <Icon className="h-5 w-5" />
@@ -777,16 +781,16 @@ export default function ProductionConsole({
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <div className={kioskMode ? "rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700" : "rounded-xl bg-[var(--wj-surface-solid)] px-4 py-3 text-sm text-[var(--wj-text)]"}>
               {t('console_pending_count')}: <span className="font-bold">{liveSummary.pendingCount}</span>
             </div>
-            <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className={kioskMode ? "rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700" : "rounded-xl bg-[var(--wj-bg-strong)] px-4 py-3 text-sm text-[var(--wj-accent-strong)]"}>
               {t('console_running_count')}: <span className="font-bold">{liveSummary.runningCount}</span>
             </div>
-            <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <div className={kioskMode ? "rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700" : "rounded-xl bg-[var(--wj-warning-bg)] px-4 py-3 text-sm text-[var(--wj-warning)]"}>
               {t('console_paused_count')}: <span className="font-bold">{liveSummary.pausedCount}</span>
             </div>
-            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className={kioskMode ? "rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700" : "rounded-xl bg-[var(--wj-success-bg)] px-4 py-3 text-sm text-[var(--wj-success)]"}>
               {t('console_completed_count')}: <span className="font-bold">{liveSummary.completedCount}</span>
             </div>
           </div>
@@ -794,24 +798,24 @@ export default function ProductionConsole({
       </Card>
 
       <div className={`${kioskMode ? 'gap-4' : 'gap-6'} grid xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]`}>
-        <Card className="border-slate-200 shadow-sm">
+        <Card className={kioskMode ? "border-slate-200 shadow-sm" : "border-[var(--wj-border)] shadow-sm"}>
           <CardHeader className="pb-3">
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">{t('console_work_table')}</h3>
-                <p className="text-sm text-slate-500">{t('console_work_table_hint')}</p>
+                <h3 className={kioskMode ? "text-lg font-bold text-slate-900" : "text-lg font-bold text-[var(--wj-text)]"}>{t('console_work_table')}</h3>
+                <p className={kioskMode ? "text-sm text-slate-500" : "text-sm text-[var(--wj-muted)]"}>{t('console_work_table_hint')}</p>
               </div>
-              <div className="text-sm text-slate-500">
-                {t('achievement_rate')}: <span className="font-bold text-slate-900">{liveSummary.achievementRate}%</span>
+              <div className={kioskMode ? "text-sm text-slate-500" : "text-sm text-[var(--wj-muted)]"}>
+                {t('achievement_rate')}: <span className={kioskMode ? "font-bold text-slate-900" : "font-bold text-[var(--wj-text)]"}>{liveSummary.achievementRate}%</span>
                 {' / '}
-                {t('quality.defect_rate')}: <span className="font-bold text-slate-900">{liveSummary.defectRate}%</span>
+                {t('quality.defect_rate')}: <span className={kioskMode ? "font-bold text-slate-900" : "font-bold text-[var(--wj-text)]"}>{liveSummary.defectRate}%</span>
               </div>
             </div>
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600">
+                <thead className={kioskMode ? "bg-slate-50 text-slate-600" : "bg-[var(--wj-surface-solid)] text-[var(--wj-muted)]"}>
                   <tr>
                     <th className="px-4 py-3 text-left">{planType === 'injection' ? t('machine') : t('line')}</th>
                     <th className="px-3 py-3 text-center">{t('console_sequence')}</th>
@@ -829,11 +833,11 @@ export default function ProductionConsole({
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-12 text-center text-slate-500">{t('loading')}</td>
+                      <td colSpan={11} className={kioskMode ? "px-4 py-12 text-center text-slate-500" : "px-4 py-12 text-center text-[var(--wj-muted)]"}>{t('loading')}</td>
                     </tr>
                   ) : tableRows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-12 text-center text-slate-500">{t('no_data')}</td>
+                      <td colSpan={11} className={kioskMode ? "px-4 py-12 text-center text-slate-500" : "px-4 py-12 text-center text-[var(--wj-muted)]"}>{t('no_data')}</td>
                     </tr>
                   ) : (
                     tableRows.map(({ row, displaySequence, isGroupStart, groupKey, groupLabel }) => {
@@ -842,19 +846,21 @@ export default function ProductionConsole({
                         <tr
                           key={row.key}
                           data-group={groupKey}
-                          className={`bg-white transition-colors hover:bg-slate-50 ${
+                          className={kioskMode ? `bg-white transition-colors hover:bg-slate-50 ${
                             isGroupStart ? 'border-t-4 border-t-slate-200' : 'border-t border-slate-100'
+                          }` : `bg-[var(--wj-surface-solid)] transition-colors hover:bg-[var(--wj-surface-solid)] ${
+                            isGroupStart ? 'border-t-4 border-t-slate-200' : 'border-t border-[var(--wj-border)]'
                           }`}
                           onClick={() => setSelectedKey(row.key)}
                         >
-                          <td className="px-4 py-3 font-semibold text-slate-800">{groupLabel}</td>
-                          <td className="px-3 py-3 text-center text-slate-600">{displaySequence}</td>
-                          <td className="px-3 py-3 font-mono text-slate-800">{row.part_no || '-'}</td>
-                          <td className="max-w-[180px] px-3 py-3 text-slate-600">
+                          <td className={kioskMode ? "px-4 py-3 font-semibold text-slate-800" : "px-4 py-3 font-semibold text-[var(--wj-text)]"}>{groupLabel}</td>
+                          <td className={kioskMode ? "px-3 py-3 text-center text-slate-600" : "px-3 py-3 text-center text-[var(--wj-muted)]"}>{displaySequence}</td>
+                          <td className={kioskMode ? "px-3 py-3 font-mono text-slate-800" : "px-3 py-3 font-mono text-[var(--wj-text)]"}>{row.part_no || '-'}</td>
+                          <td className={kioskMode ? "max-w-[180px] px-3 py-3 text-slate-600" : "max-w-[180px] px-3 py-3 text-[var(--wj-muted)]"}>
                             <div className="truncate">{row.model_name || '-'}</div>
                           </td>
-                          <td className="px-3 py-3 text-center text-slate-600">{row.lot_no || '-'}</td>
-                          <td className="px-3 py-3 text-right font-semibold text-slate-800">{row.planned_quantity.toLocaleString()}</td>
+                          <td className={kioskMode ? "px-3 py-3 text-center text-slate-600" : "px-3 py-3 text-center text-[var(--wj-muted)]"}>{row.lot_no || '-'}</td>
+                          <td className={kioskMode ? "px-3 py-3 text-right font-semibold text-slate-800" : "px-3 py-3 text-right font-semibold text-[var(--wj-text)]"}>{row.planned_quantity.toLocaleString()}</td>
                           <td className="w-[108px] px-3 py-3">
                             <Input
                               type="number"
@@ -875,7 +881,7 @@ export default function ProductionConsole({
                               className="h-9 text-right"
                             />
                           </td>
-                          <td className="px-3 py-3 text-right font-semibold text-slate-700">{row.progress.toFixed(1)}%</td>
+                          <td className={kioskMode ? "px-3 py-3 text-right font-semibold text-slate-700" : "px-3 py-3 text-right font-semibold text-[var(--wj-text)]"}>{row.progress.toFixed(1)}%</td>
                           <td className="px-3 py-3 text-center">
                             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[derivedStatus]}`}>
                               {t(`console_status_${derivedStatus}`)}
@@ -905,15 +911,15 @@ export default function ProductionConsole({
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm">
+        <Card className={kioskMode ? "border-slate-200 shadow-sm" : "border-[var(--wj-border)] shadow-sm"}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">{t('console_row_detail')}</h3>
-                <p className="text-sm text-slate-500">{t('console_row_detail_hint')}</p>
+                <h3 className={kioskMode ? "text-lg font-bold text-slate-900" : "text-lg font-bold text-[var(--wj-text)]"}>{t('console_row_detail')}</h3>
+                <p className={kioskMode ? "text-sm text-slate-500" : "text-sm text-[var(--wj-muted)]"}>{t('console_row_detail_hint')}</p>
               </div>
               {selectedRow && dirtyMap[selectedRow.key] && (
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                <span className={kioskMode ? "rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700" : "rounded-full bg-[var(--wj-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--wj-warning)]"}>
                   {t('console_unsaved')}
                 </span>
               )}
@@ -923,47 +929,47 @@ export default function ProductionConsole({
             {selectedRow ? (
               <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-slate-50 p-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('part_no')}</div>
-                    <div className="mt-2 font-mono text-base font-bold text-slate-900">{selectedRow.part_no || '-'}</div>
+                  <div className={kioskMode ? "rounded-xl bg-slate-50 p-4" : "rounded-xl bg-[var(--wj-surface-solid)] p-4"}>
+                    <div className={kioskMode ? "text-xs font-bold uppercase tracking-[0.2em] text-slate-400" : "text-xs font-bold uppercase tracking-[0.2em] text-[var(--wj-muted)]"}>{t('part_no')}</div>
+                    <div className={kioskMode ? "mt-2 font-mono text-base font-bold text-slate-900" : "mt-2 font-mono text-base font-bold text-[var(--wj-text)]"}>{selectedRow.part_no || '-'}</div>
                   </div>
-                  <div className="rounded-xl bg-slate-50 p-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                  <div className={kioskMode ? "rounded-xl bg-slate-50 p-4" : "rounded-xl bg-[var(--wj-surface-solid)] p-4"}>
+                    <div className={kioskMode ? "text-xs font-bold uppercase tracking-[0.2em] text-slate-400" : "text-xs font-bold uppercase tracking-[0.2em] text-[var(--wj-muted)]"}>
                       {planType === 'injection' ? t('machine') : t('line')}
                     </div>
-                    <div className="mt-2 text-base font-bold text-slate-900">{getMachineDisplayLabel(planType, selectedRow, t)}</div>
+                    <div className={kioskMode ? "mt-2 text-base font-bold text-slate-900" : "mt-2 text-base font-bold text-[var(--wj-text)]"}>{getMachineDisplayLabel(planType, selectedRow, t)}</div>
                   </div>
-                  <div className="col-span-2 rounded-xl bg-slate-50 p-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('model')}</div>
-                    <div className="mt-2 text-base font-bold text-slate-900">{selectedRow.model_name || '-'}</div>
-                    {selectedRow.part_spec ? <div className="mt-1 text-xs text-slate-500">{selectedRow.part_spec}</div> : null}
+                  <div className={kioskMode ? "col-span-2 rounded-xl bg-slate-50 p-4" : "col-span-2 rounded-xl bg-[var(--wj-surface-solid)] p-4"}>
+                    <div className={kioskMode ? "text-xs font-bold uppercase tracking-[0.2em] text-slate-400" : "text-xs font-bold uppercase tracking-[0.2em] text-[var(--wj-muted)]"}>{t('model')}</div>
+                    <div className={kioskMode ? "mt-2 text-base font-bold text-slate-900" : "mt-2 text-base font-bold text-[var(--wj-text)]"}>{selectedRow.model_name || '-'}</div>
+                    {selectedRow.part_spec ? <div className={kioskMode ? "mt-1 text-xs text-slate-500" : "mt-1 text-xs text-[var(--wj-muted)]"}>{selectedRow.part_spec}</div> : null}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('plan_qty')}: <span className="font-bold">{selectedRow.planned_quantity.toLocaleString()}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('achievement_rate')}: <span className="font-bold">{selectedRow.progress.toFixed(1)}%</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('console_target_ct')}: <span className="font-bold">{formatDisplayNumber(selectedRow.target_cycle_time, 's')}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('console_baseline_ct')}: <span className="font-bold">{formatDisplayNumber(selectedRow.baseline_ct, 's')}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('console_standard_ct')}: <span className="font-bold">{formatDisplayNumber(selectedRow.standard_cycle_time, 's')}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className={kioskMode ? "rounded-xl border border-slate-200 bg-white p-3" : "rounded-xl border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-3"}>
                     {t('console_mean_ct')}: <span className="font-bold">{formatDisplayNumber(selectedRow.mean_cycle_time, 's')}</span>
                   </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_start_time')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_start_time')}</label>
                     <Input
                       type="datetime-local"
                       value={toLocalInput(selectedRow.start_datetime)}
@@ -972,7 +978,7 @@ export default function ProductionConsole({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_end_time')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_end_time')}</label>
                     <Input
                       type="datetime-local"
                       value={toLocalInput(selectedRow.end_datetime)}
@@ -981,7 +987,7 @@ export default function ProductionConsole({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_idle_minutes')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_idle_minutes')}</label>
                     <Input
                       type="number"
                       min="0"
@@ -991,7 +997,7 @@ export default function ProductionConsole({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_personnel')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_personnel')}</label>
                     <Input
                       type="number"
                       min="0"
@@ -1002,7 +1008,7 @@ export default function ProductionConsole({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_operating_ct')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_operating_ct')}</label>
                     <Input
                       type="number"
                       min="0"
@@ -1013,13 +1019,13 @@ export default function ProductionConsole({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">{t('cavity')}</label>
+                    <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('cavity')}</label>
                     <Input value={selectedRow.cavity ?? 1} disabled />
                   </div>
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">{t('console_note')}</label>
+                  <label className={kioskMode ? "mb-1 block text-sm font-medium text-slate-700" : "mb-1 block text-sm font-medium text-[var(--wj-text)]"}>{t('console_note')}</label>
                   <Textarea
                     rows={4}
                     value={selectedRow.note || ''}
@@ -1034,7 +1040,7 @@ export default function ProductionConsole({
                 </Button>
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-16 text-center text-slate-500">
+              <div className={kioskMode ? "rounded-2xl border border-dashed border-slate-300 px-6 py-16 text-center text-slate-500" : "rounded-2xl border border-dashed border-[var(--wj-border)] px-6 py-16 text-center text-[var(--wj-muted)]"}>
                 {t('console_select_row_hint')}
               </div>
             )}

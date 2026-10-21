@@ -418,7 +418,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             value={formData.line_no}
             onChange={(e) => handleChange('line_no', e.target.value)}
             required
-            className="assembly-form-select block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+            className="assembly-form-select block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)] text-center"
           >
             <option value="">{t('line_select')}</option>
             <option value="Line A">Line A</option>
@@ -452,8 +452,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               const { key, ...rest } = props as any;
               if ((option as any).id === -1) {
                 return (
-                  <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
-                    <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
+                  <li key={key} {...rest} className="bg-[var(--wj-bg-strong)] hover:bg-[var(--wj-accent-soft)] border-t border-[var(--wj-border)]">
+                    <div className="flex items-center justify-center gap-2 text-[var(--wj-accent-strong)] font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>{t('add_new_part_spec')}</span>
                     </div>
@@ -464,7 +464,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <li key={key} {...rest}>
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{option.model_code}</span>
-                    <span className="text-sm text-gray-600">{option.description}</span>
+                    <span className="text-sm text-[var(--wj-muted)]">{option.description}</span>
                   </div>
                 </li>
               );
@@ -748,8 +748,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               const { key, ...rest } = props as any;
               if ('isAddNew' in option && option.isAddNew) {
                 return (
-                  <li key={key} {...rest} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
-                    <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
+                  <li key={key} {...rest} className="bg-[var(--wj-success-bg)] hover:bg-[var(--wj-success-bg)] border-t border-[var(--wj-success-border)]">
+                    <div className="flex items-center justify-center gap-2 text-[var(--wj-success)] font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>"{option.part_no}" {t('add_new_part_prompt')}</span>
                     </div>
@@ -761,7 +761,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <li key={key} {...rest}>
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{spec.part_no}</span>
-                    {spec.model_code && <span className="text-sm text-gray-600">{spec.model_code} - {spec.description}</span>}
+                    {spec.model_code && <span className="text-sm text-[var(--wj-muted)]">{spec.model_code} - {spec.description}</span>}
                   </div>
                 </li>
               );
@@ -775,7 +775,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             id="supply_type"
             value={formData.supply_type}
             onChange={(e) => handleChange('supply_type', e.target.value)}
-            className="assembly-form-select block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+            className="assembly-form-select block w-full rounded-md border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] px-3 py-2 text-[var(--wj-text)] focus:border-[var(--wj-accent)] focus:ring-[var(--wj-accent)] text-center"
           >
             <option value="JIT">{t('jit_online')}</option>
             <option value="CSK">CSKD</option>
@@ -789,7 +789,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       {/* 생산기록 / 불량기록 레이아웃 */}
       <div className={`grid grid-cols-1 gap-6 mt-2 items-stretch ${compact ? 'text-sm' : ''}`}>
         <Card className={`assembly-record-form__section-card h-full flex flex-col ${compact ? 'col-span-2' : ''}`}>
-          <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('production_record')}</CardHeader>
+          <CardHeader className={`font-semibold text-[var(--wj-accent-strong)] ${compact ? 'text-base' : ''}`}>{t('production_record')}</CardHeader>
           <CardContent className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* 수량/인원 기록 섹션 카드 */}
@@ -828,7 +828,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     </div>
                     <div className="flex flex-col">
                       <Label htmlFor="total_time">{t('total_time')}</Label>
-                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time || 0) + Number(formData.idle_time || 0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time || 0) + Number(formData.idle_time || 0))} disabled className={`text-center bg-[var(--wj-bg-strong)] ${compact ? 'h-8 text-sm px-2' : ''}`} />
                     </div>
                   </div>
                 </CardContent>
@@ -838,7 +838,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         </Card>
 
         <Card className={`assembly-record-form__section-card h-full flex flex-col ${compact ? 'col-span-3' : ''}`}>
-          <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('defect_record')}</CardHeader>
+          <CardHeader className={`font-semibold text-[var(--wj-accent-strong)] ${compact ? 'text-base' : ''}`}>{t('defect_record')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
             {/* 사출불량 (기존 입고불량에서 변경) */}
             <Card className="assembly-record-form__group-card">
@@ -850,7 +850,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 >
                   <span>{t('injection_defect')}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">{t('sum')}:</span>
+                    <span className="text-sm text-[var(--wj-muted)]">{t('sum')}:</span>
                     <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalIncoming)}`}>{totalIncoming}</span>
                   </div>
                 </button>
@@ -859,7 +859,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   {incomingDefectItems.map(it => (
                     <div key={it.key} className="flex flex-col">
-                      <Label className="text-gray-600">{it.key === 'other' ? t('def_incoming_other') : t(`def_${it.key}`)}</Label>
+                      <Label className="text-[var(--wj-muted)]">{it.key === 'other' ? t('def_incoming_other') : t(`def_${it.key}`)}</Label>
                       <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
                         onChange={(e) => { setIncomingDefectsDetail(prev => ({ ...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0) })); }} />
                     </div>
@@ -898,7 +898,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
 
       {/* 성과지표 + 비고를 한 카드로 가로 2컬럼 구성 */}
       <Card className="assembly-record-form__section-card">
-        <CardHeader className="font-semibold text-blue-700">{t('performance_indicators')}</CardHeader>
+        <CardHeader className="font-semibold text-[var(--wj-accent-strong)]">{t('performance_indicators')}</CardHeader>
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4">
             {/* 좌: 성과지표 50% */}
@@ -907,22 +907,22 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <div>
                   <Label>{t('analysis_metric_uph')}</Label>
                   <Input value={calculatedValues.uph} disabled className="assembly-record-form__metric-input text-center font-semibold" />
-                  <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
+                  <p className="text-xs text-[var(--wj-muted)] mt-1">{t('production_per_hour')}</p>
                 </div>
                 <div>
                   <Label>{t('analysis_metric_upph')}</Label>
                   <Input value={calculatedValues.upph} disabled className="assembly-record-form__metric-input text-center font-semibold" />
-                  <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
+                  <p className="text-xs text-[var(--wj-muted)] mt-1">{t('production_per_person_hour')}</p>
                 </div>
                 <div>
                   <Label>{t('operation_rate_percent')}</Label>
                   <Input value={calculatedValues.operationRate} disabled className="assembly-record-form__metric-input text-center font-semibold" />
-                  <p className="text-xs text-gray-500 mt-1">{t('operation_time_ratio')}</p>
+                  <p className="text-xs text-[var(--wj-muted)] mt-1">{t('operation_time_ratio')}</p>
                 </div>
                 <div>
                   <Label>{t('production_achievement_rate')}</Label>
                   <Input value={calculatedValues.achievementRate} disabled className="assembly-record-form__metric-input text-center font-semibold" />
-                  <p className="text-xs text-gray-500 mt-1">{t('production_vs_plan')}</p>
+                  <p className="text-xs text-[var(--wj-muted)] mt-1">{t('production_vs_plan')}</p>
                 </div>
               </div>
             </div>
@@ -942,7 +942,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <PermissionButton
                   permission="can_edit_assembly"
                   type="submit"
-                  className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+                  className="px-6 py-3 bg-[var(--wj-accent-strong)] text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
                   disabled={isLoading}
                 >
                   {!isLoading && <PlusCircle className="h-5 w-5 shrink-0" />}
@@ -960,9 +960,9 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       {/* Add Part Modal */}
       {showAddPartModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+          <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{t('quality.add_part_required_fields')}</p>
+            <p className="text-xs text-[var(--wj-muted)]">{t('quality.add_part_required_fields')}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -972,7 +972,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   <>
                     <input
                       placeholder={`Part No (${t('quality.part_no_placeholder')}…)`}
-                      className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300`}
+                      className={`border rounded px-2 py-1 col-span-2 bg-[var(--wj-success-bg)] border-[var(--wj-success-border)]`}
                       value={newPartForm.part_no}
                       onChange={(e) => setNewPartForm((f: any) => ({ ...f, part_no: e.target.value }))}
                     />

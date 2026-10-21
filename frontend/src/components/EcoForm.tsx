@@ -116,7 +116,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
                   id="change_reason" 
                   value={form.change_reason || ''} 
                   onChange={(e)=>setForm({...form, change_reason:e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   rows={3}
                 />
               </div>
@@ -126,7 +126,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
                   id="change_details" 
                   value={form.change_details || ''} 
                   onChange={(e)=>setForm({...form, change_details:e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--wj-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]"
                   rows={3}
                 />
               </div>
@@ -195,7 +195,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               })} />
               {rows.length>0 && (
                 <table className="min-w-full text-sm border mt-2">
-                  <thead className="bg-slate-100"><tr><th className="px-2 py-1 text-center">Part No</th><th className="px-2 py-1 text-center">Desc</th><th className="px-2 py-1">변경내용</th><th className="px-2 py-1">재고</th><th className="px-2 py-1">Status</th><th></th></tr></thead>
+                  <thead className="bg-[var(--wj-bg-strong)]"><tr><th className="px-2 py-1 text-center">Part No</th><th className="px-2 py-1 text-center">Desc</th><th className="px-2 py-1">변경내용</th><th className="px-2 py-1">재고</th><th className="px-2 py-1">Status</th><th></th></tr></thead>
                   <tbody>
                     {rows.map((row,i)=>(
                        <tr key={row.spec.id} className="border-t">

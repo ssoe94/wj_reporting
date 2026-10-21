@@ -92,7 +92,7 @@ export default function NewPartSpecModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
+      <div className="bg-[var(--wj-surface-solid)] rounded-lg w-[420px] p-6 space-y-4">
         <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
         <div className="grid grid-cols-1 gap-3">
           <input
@@ -127,7 +127,7 @@ export default function NewPartSpecModal({
             onChange={(e) => handleFormChange('valid_from', e.target.value)}
           />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-[var(--wj-danger)]">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
             {t('cancel')}
