@@ -62,17 +62,20 @@ def login(user,user_id,password):
 def remember(row):
     cart,_=LgentCart.objects.get_or_create(trolley_id=row['trolley_id'])
     known_photo=bool(cart.mirror_sha256 or cart.photo_sha256)
+    modified=client.modified_at(row)
+    recheck=bool(known_photo and modified and modified!=cart.lg_modified_at)
+    if recheck:cart.mirror_error='사진 변경 대조 대기'
     if not known_photo and cart.baseline.get('pic_url')!=row.get('pic_url'):
         cart.verified_save_at=None;cart.photo_sha256=''
     cart.baseline={key:value for key,value in row.items() if key!='file_stream_bytes'}
     cart.supplier_code='TT094'
-    cart.grade=str(row.get('last_grade') or '')[:8];cart.lg_modified_at=client.modified_at(row)
+    cart.grade=str(row.get('last_grade') or '')[:8];cart.lg_modified_at=modified
     # A metadata/URL change is a candidate, not proof of a new photograph.
     # Keep the prior photo date until mirror.copy compares the actual bytes.
     if not known_photo:cart.photo_file_at=client.photo_file_at(row.get('pic_url') or '')
     cart.checked_at=timezone.now()
     # Cache readers must never write back an older external-write lease.
-    cart.save(update_fields=['baseline','supplier_code','grade','lg_modified_at','photo_file_at','checked_at','verified_save_at','photo_sha256','updated_at'])
+    cart.save(update_fields=['baseline','supplier_code','grade','lg_modified_at','photo_file_at','checked_at','verified_save_at','photo_sha256','updated_at']+(['mirror_error'] if recheck else []))
     return cart
 
 
@@ -87,7 +90,7 @@ def public_cart(cart,stale_days=30):
             'dateSource':source,'ageDays':days,'alert':'unknown' if days is None else 'stale' if days>=stale_days else 'fresh',
             'hasPhoto':bool(cart.baseline.get('pic_url')),'photoKnown':cart.baseline.get('supplier_id')=='TT094',
             'photoVersion':cart_photo_version(cart),'lastHistoryAt':cart.last_history_at,
-            'photoCheckPending':bool(cart.baseline.get('pic_url') and (cart.mirror_sha256 or cart.photo_sha256) and not mirror.current(cart)),
+            'photoCheckPending':bool(cart.baseline.get('pic_url') and (cart.mirror_sha256 or cart.photo_sha256) and (not mirror.current(cart) or cart.mirror_error)),
             'photoCandidateAt':candidate.astimezone(client.TZ).isoformat() if candidate else '',
             'checkedAt':cart.checked_at.isoformat() if cart.checked_at else ''}
     if mirror.current(cart):result.update(media.mirror_urls(cart.mirror_key))

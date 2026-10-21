@@ -52,6 +52,8 @@ def page(user,cursor=None,force=False):
             else:
                 row={key:value for key,value in row.items() if key!='file_stream_bytes'}
                 fields.update(baseline=row,grade=str(row.get('last_grade') or '')[:8],lg_modified_at=client.modified_at(row))
+                if (cart.mirror_sha256 or cart.photo_sha256) and fields['lg_modified_at'] and fields['lg_modified_at']!=cart.lg_modified_at:
+                    fields['mirror_error']='사진 변경 대조 대기'
                 if not (cart.mirror_sha256 or cart.photo_sha256):
                     fields['photo_file_at']=client.photo_file_at(row.get('pic_url') or '')
                     if original.get('pic_url')!=row.get('pic_url'):fields.update(photo_sha256='',verified_save_at=None)

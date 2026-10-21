@@ -70,8 +70,8 @@ def copy(cart,token,force=False,*,max_seconds=27):
             reference=cart.mirror_sha256 or cart.photo_sha256
             photo_fields={'photo_checked_at':timezone.now()}
             if reference and digest!=reference:
-                photo_fields.update(photo_changed_at=client.photo_file_at(source) or timezone.now(),
-                    photo_file_at=client.photo_file_at(source),verified_save_at=None,photo_sha256='')
+                photo_fields.update(photo_changed_at=max(filter(None,(client.modified_at(row),client.photo_file_at(source))),default=timezone.now()),
+                    photo_file_at=client.photo_file_at(source),verified_save_at=None,photo_sha256=digest)
             changed=LgentCart.objects.filter(pk=cart.pk,baseline=row,save_attempt_id='',
                 mirror_sha256=cart.mirror_sha256,photo_sha256=cart.photo_sha256,verified_save_at=cart.verified_save_at).update(
                 mirror_key=key,mirror_sha256=digest,mirror_source_url=source,mirrored_at=timezone.now(),mirror_error='',**photo_fields)

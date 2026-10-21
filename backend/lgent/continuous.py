@@ -42,6 +42,8 @@ def run(seconds=240):
                     # stops the next page; expired tokens are never refreshed by password.
                     record.refresh_from_db()
                     if not record.auto_sync_enabled:break
+                    record.user.refresh_from_db()
+                    if not LgentAccess().has_permission(SimpleNamespace(user=record.user),SimpleNamespace(edit_action=False)):break
                     _,token=service.connection(record.user)
                     photo_cursor=state.get('_photoCursor')
                     if photo_cursor:

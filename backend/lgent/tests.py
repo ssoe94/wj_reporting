@@ -300,6 +300,19 @@ class LgentTests(TestCase):
         self.assertEqual(cart.photo_file_at,original);self.assertEqual(service.public_cart(cart)['dateSource'],'photo_file')
         self.assertIsNone(cart.photo_changed_at)
 
+    def test_modified_signal_rechecks_same_url_and_changes_cache_version_only_for_different_bytes(self):
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        version=service.cart_photo_version(self.cart)
+        self.cart=service.remember({**ROW,'update_time':'2026-10-21 13:22:20'})
+        self.assertTrue(service.public_cart(self.cart)['photoCheckPending']);self.assertTrue(mirror.pending().exists())
+        with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
+        self.assertEqual(service.cart_photo_version(self.cart),version);self.assertIsNone(self.cart.photo_changed_at)
+        self.cart=service.remember({**ROW,'update_time':'2026-10-21 13:23:20'})
+        output=io.BytesIO();Image.new('RGB',(32,40),'blue').save(output,'JPEG')
+        with patch('lgent.client.photo',return_value=output.getvalue()):mirror.copy(self.cart,'token')
+        self.assertNotEqual(service.cart_photo_version(self.cart),version);self.assertIsNotNone(self.cart.photo_changed_at)
+        self.assertTrue(service.public_cart(self.cart)['displayAt'].startswith('2026-10-21T13:23:20'))
+
     def test_same_photo_saved_again_keeps_original_photo_update_date(self):
         with patch('lgent.client.photo',return_value=self.raw):mirror.copy(self.cart,'token')
         original=service.public_cart(self.cart)['displayAt']

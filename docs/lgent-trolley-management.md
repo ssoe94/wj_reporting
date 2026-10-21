@@ -75,8 +75,8 @@ identify photos changed without a new inbound movement.
 A changed LG URL/metadata is only a photo-check candidate. Existing photo dates
 are retained until the raw LG SHA-256 is compared with the previous private copy
 (or the verified upload digest). Equal bytes reuse the existing Cloudinary asset
-and preserve the date. Different bytes set `photo_changed_at` from the LG photo
-filename (or the observation time if unavailable). The first copy establishes a
+and preserve the date. Different bytes set `photo_changed_at` from the later of LG metadata/file timestamps
+(or observation time if neither is available). The first copy establishes a
 baseline and is not counted as a change. LG metadata modification timestamps alone
 never advance the photo badge. `photo_checked_at` records comparisons separately.
 An identical-URL replacement without a metadata signal still needs an explicit LG
