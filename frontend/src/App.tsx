@@ -445,7 +445,7 @@ function AppContent() {
 
     const menu = userMenuRef.current;
     const trigger = userMenuTriggerRef.current;
-    const items = Array.from(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    const items = Array.from(menu?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]') ?? []);
     items[0]?.focus();
 
     const handleMenuKeyDown = (event: KeyboardEvent) => {
@@ -662,6 +662,10 @@ function AppContent() {
                   >
                     {t('password_change')}
                   </button>
+                  <button role="menuitemcheckbox" aria-checked={isLiteMode} onClick={toggleLiteMode}>
+                    <span>{t('lite_mode')}</span>
+                    <span aria-hidden="true">{isLiteMode ? '✓' : ''}</span>
+                  </button>
                   <button
                     disabled={isLoggingOut}
                     onClick={async () => {
@@ -719,16 +723,6 @@ function AppContent() {
                 >
                   中文
                 </button>
-            </div>
-            <div className="main-lite-mode">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isLiteMode}
-                  onChange={toggleLiteMode}
-                />
-                {t('lite_mode')}
-              </label>
             </div>
           </div>
         </aside>
@@ -804,16 +798,6 @@ function AppContent() {
                     中文
                   </button>
                 </div>
-                <div className="main-lite-mode">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={isLiteMode}
-                      onChange={toggleLiteMode}
-                    />
-                    {t('lite_mode')}
-                  </label>
-                </div>
                 {user ? (
                   <Button variant="ghost" size="sm" disabled={isLoggingOut} onClick={() => {
                     setSidebarOpen(false);
@@ -844,7 +828,7 @@ function AppContent() {
           <Suspense fallback={<RouteLoading />} key={locationKey}>
             <Routes location={routerLocation}>
             {/* Public routes */}
-            <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+            <Route path="/login" element={<PageTransition><LoginPage liteMode={isLiteMode} onLiteModeChange={toggleLiteMode} /></PageTransition>} />
             <Route path="/boards" element={<Suspense fallback={<RouteLoading />}><BoardHubPage /></Suspense>} />
             <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
             <Route path="/boards/inspection" element={<Suspense fallback={<RouteLoading />}><InspectionBoardPage /></Suspense>} />

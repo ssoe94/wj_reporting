@@ -11,6 +11,7 @@
   --wj-control-height: 36px;
   --wj-control-height-inner: 28px;
   --wj-control-radius: 6px;
+  --wj-shell-header-height: 56px;
   --wj-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "PingFang SC", "Microsoft YaHei", "Malgun Gothic", sans-serif;
   font-family: var(--wj-font-family);
   color: var(--wj-text);
@@ -70,6 +71,7 @@ textarea:focus-visible {
   z-index: 30;
   inset: 0 auto 0 0;
   width: 240px;
+  border-width: 0 1px 0 0;
   border-radius: 0;
 }
 
@@ -77,8 +79,8 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  height: 56px;
-  padding: 7px 16px;
+  height: var(--wj-shell-header-height);
+  padding: 0 16px;
 }
 
 .main-sidebar__brand {
@@ -206,7 +208,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   color: var(--wj-muted);
   font-size: 1rem;
   font-weight: 650;
@@ -216,8 +218,9 @@ textarea:focus-visible {
 }
 
 .main-navigation__group-label svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   stroke-width: 1.8;
 }
 
@@ -230,8 +233,8 @@ textarea:focus-visible {
   display: flex;
   min-height: 32px;
   align-items: center;
-  gap: 10px;
-  padding: 5px 12px 5px 20px;
+  gap: 8px;
+  padding: 5px 11px 5px 23px;
   border: 1px solid transparent;
   border-radius: 8px;
   color: var(--wj-muted);
@@ -243,9 +246,9 @@ textarea:focus-visible {
 }
 
 .main-navigation__link svg {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   color: var(--wj-muted);
   stroke-width: 1.8;
 }
@@ -271,11 +274,45 @@ textarea:focus-visible {
 .main-sidebar__footer {
   display: grid;
   flex: 0 0 auto;
-  gap: 9px;
-  padding: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
   border-top: 1px solid var(--wj-border);
-  background: var(--wj-surface-solid);
+  background: var(--wj-nav-surface);
 }
+
+/* Equal-width appearance controls share the same box and optical center. */
+.main-sidebar__footer > :is(.main-theme-switch, .main-language-switch) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: 38px;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--wj-border);
+  border-radius: 6px;
+  background: var(--wj-nav-surface);
+}
+
+.main-sidebar__footer :is(.main-theme-switch button, .main-language-switch__button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.main-sidebar__footer :is(.main-theme-switch button, .main-language-switch__button)[aria-pressed="true"] {
+  background: var(--wj-nav-selected);
+  color: var(--wj-accent-strong);
+  font-weight: 650;
+}
+
+.main-sidebar__footer .main-theme-switch svg { stroke-width: 1.8; }
 
 .main-language-switch {
   display: grid;
@@ -304,37 +341,42 @@ textarea:focus-visible {
   color: var(--wj-accent-strong);
 }
 
-.main-lite-mode label {
+.main-login__lite-mode label {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 7px;
   color: var(--wj-muted);
   cursor: pointer;
-  font-size: 0.76rem;
+  font-size: 13px;
   font-weight: 500;
 }
 
-.main-lite-mode input {
+.main-login__lite-mode input {
   width: 15px;
   height: 15px;
   accent-color: var(--wj-accent);
+  margin: 0;
 }
+
+.main-login__lite-mode { display: grid; gap: 4px; }
+.main-login__lite-mode label { min-height: 32px; }
+.main-login__lite-mode > span { color: var(--wj-muted); font-size: 12px; }
 
 .main-topbar {
   display: flex;
   position: sticky;
   z-index: 24;
   top: 0;
-  min-height: 56px;
+  min-height: var(--wj-shell-header-height);
   align-items: center;
   gap: 10px;
   margin: 0 0 0 240px;
   padding: 7px 16px;
-  border: 1px solid var(--wj-border);
+  border: 0;
+  border-bottom: 1px solid var(--wj-border);
   border-radius: 0;
   background: var(--wj-surface-solid);
-  box-shadow: var(--wj-highlight), var(--wj-shadow-soft);
+  box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -346,7 +388,7 @@ textarea:focus-visible {
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--wj-border);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--wj-surface-solid);
   color: var(--wj-accent-strong);
   box-shadow: var(--wj-highlight);
@@ -355,6 +397,7 @@ textarea:focus-visible {
 .main-topbar__home svg {
   width: 18px;
   height: 18px;
+  stroke-width: 1.8;
 }
 
 .main-topbar__separator {
@@ -386,7 +429,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 7px;
   border: 1px solid var(--wj-border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 7px 11px;
   background: var(--wj-surface-solid);
   color: var(--wj-muted);
@@ -443,6 +486,13 @@ textarea:focus-visible {
 .main-user-menu__popover button:hover {
   background: var(--wj-surface-muted);
   color: var(--wj-accent-strong);
+}
+
+.main-user-menu__popover [role="menuitemcheckbox"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .main-workspace {
@@ -736,7 +786,7 @@ textarea:focus-visible {
 
 .main-workspace:not(.main-workspace--standalone) .main-page-transition h1 {
   color: var(--wj-text);
-  font-size: clamp(1.5rem, 1.8vw, 1.75rem);
+  font-size: var(--wj-page-title-size, clamp(1.5rem, 1.8vw, 1.75rem));
   font-weight: 700;
   letter-spacing: -0.035em;
 }
@@ -1777,6 +1827,7 @@ section#new {
     margin: 0 8px;
     padding: 8px 11px;
     border-radius: var(--wj-radius-card);
+    border: 1px solid var(--wj-border);
   }
 
   .main-topbar__home {
@@ -1829,8 +1880,11 @@ section#new {
 
   .main-sidebar__footer--mobile {
     display: grid;
-    gap: 9px;
+    gap: 8px;
   }
+
+  .main-sidebar__footer > :is(.main-theme-switch, .main-language-switch) { height: 46px; }
+  .main-sidebar__footer :is(.main-theme-switch button, .main-language-switch__button) { height: 38px; }
 
   .main-sidebar__footer--mobile .ui-button {
     width: 100%;
@@ -2143,16 +2197,13 @@ section#new {
 .main-theme-switch button:hover{background:var(--wj-nav-hover)}
 .main-theme-switch button:focus-visible{outline:2px solid var(--wj-accent);outline-offset:2px}
 .main-theme-switch--compact button{min-width:32px;padding:5px}.main-theme-switch--compact button span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-.main-sidebar__footer:not(.main-sidebar__footer--mobile){grid-template-columns:minmax(0,1fr) auto;gap:10px}
-.main-sidebar__footer>.main-theme-switch{grid-column:1/-1}
-.main-lite-mode label{justify-content:flex-start;min-height:32px;font-size:11px}
 .main-brand-lockup__copy strong{position:relative;top:1px}
 .main-login__identity{display:grid;gap:4px;line-height:1.35}.main-login__identity strong{font-size:14px;font-weight:700;letter-spacing:.045em;position:relative;top:1px}.main-login__identity span{font-size:13px;color:var(--wj-muted)}
 .main-login__heading h1{margin:0 0 8px;font-size:26px;line-height:1.3}.main-login__heading p{font-size:14px;line-height:1.6}
 .main-login__form-content{padding:24px}.main-login__form{display:flex;flex-direction:column;gap:20px}.main-login__form label{font-size:14px;font-weight:600;color:var(--wj-text)}.main-login__form .ui-input{min-height:44px;font-size:15px;font-weight:400;margin-top:6px}.main-login__form .ui-button{min-height:44px}
 .main-login__signup{margin-top:20px;padding-top:20px;border-top:1px solid var(--wj-border)}.main-login__signup .ui-button{min-height:40px;font-size:14px}
 .main-login__language .main-theme-switch{flex:1}.main-login__language .main-language-switch{border-radius:6px}.main-login__language .main-language-switch__button{padding-inline:12px;border-radius:4px}
-.main-login__language .main-language-switch,.main-sidebar__footer .main-language-switch{border-color:var(--wj-border);background:var(--wj-bg-strong);border-radius:6px;box-shadow:none}
+.main-login__language .main-language-switch{border-color:var(--wj-border);background:var(--wj-bg-strong);border-radius:6px;box-shadow:none}
 .main-language-switch__button.is-active{box-shadow:none}
 .main-workspace:not(.main-workspace--standalone) table td,.main-workspace:not(.main-workspace--standalone) table th{vertical-align:middle}
 .main-workspace:not(.main-workspace--standalone) p:not([class*="text-center"]):not([class*="text-right"]),.main-workspace:not(.main-workspace--standalone) .prose li{text-align:justify;text-align-last:start;text-justify:auto;overflow-wrap:break-word}
