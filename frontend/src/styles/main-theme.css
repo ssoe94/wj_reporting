@@ -150,26 +150,27 @@ textarea:focus-visible {
   min-height: 0;
 }
 
-/* Cover only the scrollbar gutter; native dragging and wheel input pass through. */
-.main-navigation-scroll::after {
-  content: "";
+.main-navigation-scroll__thumb {
   position: absolute;
   top: 0;
-  right: 0;
-  bottom: 0;
-  width: 12px;
-  background: var(--wj-nav-surface);
-  pointer-events: none;
-  opacity: 1;
+  right: 3px;
+  width: 6px;
+  border-radius: 3px;
+  background: var(--wj-muted);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  opacity: 0;
   transition: opacity 240ms ease-out;
 }
 
-.main-navigation-scroll.is-scrolling::after {
-  opacity: 0;
+.main-navigation-scroll.is-scrolling .main-navigation-scroll__thumb {
+  opacity: 1;
+  pointer-events: auto;
   transition-duration: 160ms;
 }
 
-.main-navigation::-webkit-scrollbar { width: 6px; }
+.main-navigation::-webkit-scrollbar { display: none; width: 0; }
 .main-navigation::-webkit-scrollbar-track { background: transparent; }
 .main-navigation::-webkit-scrollbar-thumb {
   border-radius: 6px;
@@ -177,11 +178,13 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .main-navigation-scroll::after { transition: none; }
+  .main-navigation-scroll__thumb { transition: none; }
 }
 
 @media (forced-colors: active), (prefers-contrast: more) {
-  .main-navigation-scroll::after { display: none; }
+  .main-navigation-scroll__thumb { display: none; }
+  .main-navigation { scrollbar-width: thin !important; }
+  .main-navigation::-webkit-scrollbar { display: block; width: 6px; }
 }
 
 .main-navigation {
@@ -191,7 +194,7 @@ textarea:focus-visible {
   overflow-y: auto;
   padding: 12px;
   scrollbar-color: var(--wj-muted) transparent;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .main-navigation__groups {
