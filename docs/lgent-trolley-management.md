@@ -142,4 +142,5 @@ existing sync state; these never appear in workspace output. Authentication or
 identity/organization/supplier rejection blocks repeated logins until credentials
 change or a manual login succeeds. Transient failures back off for thirty minutes.
 Local synthetic tests cannot prove a real account's unattended LG login policy;
-after deployment, verify a cron renewal and resumed photo comparison counts.
+after deployment, verify `reauthenticated: 1` in the existing shared-cron summary
+and resumed photo comparison counts. This counter contains no account or token.

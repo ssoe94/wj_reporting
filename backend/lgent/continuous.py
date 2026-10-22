@@ -23,7 +23,7 @@ def enable(user,enabled):
 
 
 def run(seconds=240,*,min_interval_seconds=0):
-    deadline=time.monotonic()+seconds;summary={'profiles':0,'processed':0,'photoChanged':0,'errors':0}
+    deadline=time.monotonic()+seconds;summary={'profiles':0,'reauthenticated':0,'processed':0,'photoChanged':0,'errors':0}
     # One scheduled run across processes; web refresh uses its own small-page
     # lock and photo copies use per-cart locks. Never lock business rows here.
     with mirror.claim('server-sync:TT094') as acquired:
@@ -36,7 +36,7 @@ def run(seconds=240,*,min_interval_seconds=0):
             if record.encrypted_token and not decrypt_token(record.encrypted_token):
                 state=record.sync_state.copy();state.update(status='configuration_error',lastRunAt=timezone.now().isoformat())
                 _store(record,state);summary['errors']+=1;continue
-            autologin.renew_expired(record)
+            if autologin.renew_expired(record):summary['reauthenticated']+=1
             if not record.auto_sync_enabled:continue
             record.user.refresh_from_db()
             if not LgentAccess().has_permission(SimpleNamespace(user=record.user),SimpleNamespace(edit_action=False)):continue

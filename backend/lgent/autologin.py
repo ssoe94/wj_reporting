@@ -38,6 +38,7 @@ def renew_expired(record):
     target=LgentProfile.objects.filter(pk=record.pk,auto_sync_enabled=True,
         encrypted_token=record.encrypted_token,expires_at=record.expires_at,lg_user_id=record.lg_user_id,
         user__is_active=True,user__username=owner)
+    renewed=False
     try:
         fields=service.login_fields(record,user_id,password,expected_user_id=record.lg_user_id)
     except client.LgError as error:
@@ -49,5 +50,6 @@ def renew_expired(record):
         record.user.refresh_from_db()
         if not LgentAccess().has_permission(SimpleNamespace(user=record.user),SimpleNamespace(edit_action=False)):return
         state={key:value for key,value in state.items() if not key.startswith(PREFIX)}
-        target.update(**fields,sync_state=state)
+        renewed=bool(target.update(**fields,sync_state=state))
     record.refresh_from_db()
+    return renewed

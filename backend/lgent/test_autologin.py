@@ -27,6 +27,7 @@ class AutoLoginTests(TestCase):
                 return_value={'busy':False,'processed':2,'changed':1,'errors':0,'cursor':None}) as page:
             result=run(1)
         page.assert_called_once_with(self.user,'pending-page');self.assertEqual(result['processed'],2)
+        self.assertEqual(result['reauthenticated'],1)
         self.record.refresh_from_db();self.assertEqual(decrypt_token(self.record.encrypted_token),'renewed-token')
         self.assertGreater(self.record.expires_at,timezone.now())
         self.assertEqual([call.args[0] for call in upstream.call_args_list if 'payload' in call.kwargs],['/user/login'])
