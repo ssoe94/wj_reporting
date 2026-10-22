@@ -3,7 +3,7 @@ import time
 from types import SimpleNamespace
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from . import client,mirror,refresh,service
+from . import autologin,client,mirror,refresh,service
 from .models import LgentCart,LgentProfile
 from .security import LgentAccess,decrypt_token
 
@@ -23,7 +23,7 @@ def enable(user,enabled):
 
 
 def run(seconds=240,*,min_interval_seconds=0):
-    deadline=time.monotonic()+seconds;summary={'profiles':0,'processed':0,'photoChanged':0,'errors':0}
+    deadline=time.monotonic()+seconds;summary={'profiles':0,'reauthenticated':0,'processed':0,'photoChanged':0,'errors':0}
     # One scheduled run across processes; web refresh uses its own small-page
     # lock and photo copies use per-cart locks. Never lock business rows here.
     with mirror.claim('server-sync:TT094') as acquired:
@@ -32,11 +32,18 @@ def run(seconds=240,*,min_interval_seconds=0):
         for record in records:
             if time.monotonic()>=deadline:break
             if not LgentAccess().has_permission(SimpleNamespace(user=record.user),SimpleNamespace(edit_action=False)):continue
+            # Preserve a valid web token if this cron has a mismatched key.
+            if record.encrypted_token and not decrypt_token(record.encrypted_token):
+                state=record.sync_state.copy();state.update(status='configuration_error',lastRunAt=timezone.now().isoformat())
+                _store(record,state);summary['errors']+=1;continue
+            if autologin.renew_expired(record):summary['reauthenticated']+=1
+            if not record.auto_sync_enabled:continue
+            record.user.refresh_from_db()
+            if not LgentAccess().has_permission(SimpleNamespace(user=record.user),SimpleNamespace(edit_action=False)):continue
             state=record.sync_state.copy();state['lastRunAt']=timezone.now().isoformat()
             if not record.expires_at or record.expires_at<=timezone.now():
                 state['status']='connection_required';_store(record,state);continue
-            # An existing cron may use a different SECRET_KEY. Fail closed
-            # without erasing a token that still works on the web service.
+            # A successful renewal must also decrypt in this runtime.
             if not decrypt_token(record.encrypted_token):
                 state['status']='configuration_error';_store(record,state);summary['errors']+=1;continue
             previous=record.sync_state
@@ -49,7 +56,8 @@ def run(seconds=240,*,min_interval_seconds=0):
                 summary['profiles']+=1
                 while time.monotonic()<deadline:
                     # Re-read opt-in and session on every bounded page. Disabling
-                    # stops the next page; expired tokens are never refreshed by password.
+                    # stops the next page. Reauthentication happens only at the
+                    # next cron entry, never around photo-save/preflight calls.
                     record.refresh_from_db()
                     if not record.auto_sync_enabled:break
                     record.user.refresh_from_db()

@@ -72,4 +72,4 @@ if preview:
  call_command('runserver','127.0.0.1:8059',use_reloader=False)
  raise SystemExit(0)
 from django.test.runner import DiscoverRunner
-raise SystemExit(DiscoverRunner(verbosity=1).run_tests(sys.argv[1:] or ['lgent.tests','lgent.test_shipments']))
+raise SystemExit(DiscoverRunner(verbosity=1).run_tests(sys.argv[1:] or ['lgent.tests','lgent.test_shipments','lgent.test_autologin']))
