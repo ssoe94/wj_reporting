@@ -662,7 +662,11 @@ function AppContent() {
                   >
                     {t('password_change')}
                   </button>
-                  <button role="menuitemcheckbox" aria-checked={isLiteMode} onClick={toggleLiteMode}>
+                  <button role="menuitemcheckbox" aria-checked={isLiteMode} onClick={() => {
+                    toggleLiteMode();
+                    setUserDropdownOpen(false);
+                    userMenuTriggerRef.current?.focus();
+                  }}>
                     <span>{t('lite_mode')}</span>
                     <span aria-hidden="true">{isLiteMode ? '✓' : ''}</span>
                   </button>
