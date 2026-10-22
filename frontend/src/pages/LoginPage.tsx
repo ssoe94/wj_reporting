@@ -12,7 +12,7 @@ import { loginReturnPath } from '../domains/auth/login-return';
 import { X } from 'lucide-react';
 import { ThemeSwitch } from '../components/layout/ThemeSwitch';
 
-export default function LoginPage() {
+export default function LoginPage({ liteMode, onLiteModeChange }: { liteMode: boolean; onLiteModeChange: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -229,6 +229,13 @@ export default function LoginPage() {
               中文
             </button>
           </div>
+        </div>
+        <div className="main-login__lite-mode">
+          <label>
+            <input type="checkbox" checked={liteMode} onChange={onLiteModeChange} />
+            {t('lite_mode')}
+          </label>
+          <span>{lang === 'ko' ? '구형 단말용 · 라이트 화면과 간소한 효과' : '适用于旧设备 · 浅色界面与简化效果'}</span>
         </div>
         
         {/* Signup modal */}
