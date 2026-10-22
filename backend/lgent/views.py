@@ -41,7 +41,7 @@ class LoginView(LgentView):
 
 class LogoutView(LgentView):
     def post(self,request):
-        LgentProfile.objects.filter(user=request.user).update(encrypted_token='',expires_at=None,lg_user_id='',lg_user_name='')
+        LgentProfile.objects.filter(user=request.user).update(encrypted_token='',expires_at=None,lg_user_id='',lg_user_name='',auto_sync_enabled=False)
         return Response({'connected':False})
 
 

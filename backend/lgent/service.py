@@ -10,6 +10,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.views.decorators.debug import sensitive_variables
 from ai_core.models import AiJob
 from . import client,media,mirror,recognition
 from .models import LgentProfile,LgentCart,LgentPhoto,LgentSaveEvent
@@ -33,15 +34,32 @@ def connection(user):
     return value,token
 
 
+@sensitive_variables()
 def login(user,user_id,password):
+    record=profile(user,True)
+    fields=login_fields(record,user_id,password)
+    LgentProfile.objects.filter(pk=record.pk).update(**fields)
+    # Do not overwrite cron checkpoints from the pre-login network snapshot.
+    record.refresh_from_db()
+    cleaned={key:value for key,value in record.sync_state.items() if not key.startswith('_autoLogin')}
+    if cleaned!=record.sync_state:
+        LgentProfile.objects.filter(pk=record.pk,sync_state=record.sync_state).update(sync_state=cleaned)
+    return {'connected':True}
+
+
+@sensitive_variables()
+def login_fields(record,user_id,password,*,expected_user_id=None):
+    """Validate the same LG identity/permissions before persisting any token."""
     if not isinstance(user_id,str) or not isinstance(password,str) or not user_id.strip() or not password or len(user_id)>150 or len(password)>512:
         raise client.LgError('LG 아이디와 비밀번호를 입력하세요.','invalid_login',400)
-    record=profile(user,True)
     value=client.request('/user/login',payload={'UserId':user_id.strip(),'UserPassword':password,'DeviceId':str(record.device_id),'AppVersion':'1.6.72'})
     token=value.get('token') if isinstance(value,dict) else None
     info=value.get('user_info') if isinstance(value,dict) else None
     if not isinstance(token,str) or not token or not isinstance(info,dict):
         raise client.LgError('LG 아이디와 비밀번호를 확인하세요.','invalid_login',400)
+    actual_user_id=str(info.get('userId') or user_id.strip())
+    if expected_user_id is not None and actual_user_id!=expected_user_id:
+        raise client.LgError('자동 연결 LG 계정이 기존 연결과 다릅니다.','invalid_login',400)
     company=client.request('/user/current_com_code',token)
     orgs=client.rows(client.request('/common/org/'+quote(str(info.get('userId') or user_id.strip()),safe='')+'/AC_MWO_USER',token))
     if not any(str(row.get('orgCode'))=='ENT' for row in orgs):
@@ -52,11 +70,9 @@ def login(user,user_id,password):
     permission=client.request('/user/permission/MOBILE/'+client.MENU,token)
     if company not in ('LGENT','LGETA') or not isinstance(permission,str) or not permission:
         raise client.LgError('LG 회사·메뉴 권한을 확인할 수 없습니다.')
-    record=profile(user,True)
-    record.encrypted_token=encrypt_token(token);record.lg_user_id=str(info.get('userId') or user_id.strip())[:160]
-    record.lg_user_name=str(info.get('userName') or '')[:160];record.current_company=company
-    record.menu_permission=permission;record.expires_at=client.session_expiry(token);record.save()
-    return {'connected':True}
+    return {'encrypted_token':encrypt_token(token),'lg_user_id':actual_user_id[:160],
+            'lg_user_name':str(info.get('userName') or '')[:160],'current_company':company,
+            'menu_permission':permission,'expires_at':client.session_expiry(token),'updated_at':timezone.now()}
 
 
 def remember(row):

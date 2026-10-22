@@ -37,6 +37,12 @@ ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i')
 
+# Optional cron-only LG reauthentication. Secrets remain in the runtime; browser
+# connections and LG business writes never implicitly use these credentials.
+LGENT_AUTO_LOGIN_WJ_USERNAME = config('LGENT_AUTO_LOGIN_WJ_USERNAME', default='')
+LGENT_AUTO_LOGIN_USER_ID = config('LGENT_AUTO_LOGIN_USER_ID', default='')
+LGENT_AUTO_LOGIN_PASSWORD = config('LGENT_AUTO_LOGIN_PASSWORD', default='')
+
 def _parse_debug(value):
     if isinstance(value, bool):
         return value

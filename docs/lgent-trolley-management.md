@@ -6,7 +6,7 @@ Status: implemented and verified with disposable fixtures; not a claim of produc
 
 - Sales → 대차관리 / 台车管理, `/sales/trolleys`; Korean/Chinese follows the existing language switch.
 - WJ sales viewing permission is required; uploading, analysis, matching and saving require sales editing permission. Staff/superusers retain existing access conventions.
-- Each WJ user connects their own existing LG account. Passwords are forwarded to the fixed LG HTTPS API and never persisted. The LG token is encrypted using a dedicated key derived from the existing Django secret, expires locally after one hour, and is cleared on disconnect or LG authentication failure.
+- Each WJ user connects their own existing LG account. Typed passwords are forwarded to the fixed LG HTTPS API and never persisted. The LG token is encrypted using a dedicated key derived from the existing Django secret, follows JWT expiry (at most eight hours, one-hour fallback), and is cleared on disconnect or LG authentication failure. The optional cron-only credential configuration below can renew one explicitly bound account.
 - Synchronize discovers the latest 30 days of TT094 inbound history, in three-day requests, then refreshes up to five trolley records per request. Direct number lookup and verified photo recognition extend this cache. This is the discovered fleet, not proof of the company's entire fleet count.
 - Dates prefer explicit LG modification time, then this system's photo-save/readback verification, then the timestamp inferred from the LG photo filename. Unknown dates remain unknown. Inbound or query timestamps never substitute for a modification date. Filename dates are explicitly labelled estimates, in Asia/Shanghai.
 - Choose multiple photos, choose a directory including subdirectories, or drop files/directories. Up to 500 photos can be pending per user. The browser prepares a JPEG at most 1440 px long-side; the backend validates, normalizes and removes source metadata. Unsupported formats are reported for conversion to JPEG/PNG.
@@ -101,13 +101,45 @@ activation. Deployment is separate from proving that scheduled execution works;
 check shared-cron logs and profile progress after rollout. No Mac or open browser
 is needed for the server job.
 
-Each subscriber's own active encrypted LG connection and current WJ sales access
-are required. No password is stored, no expired token is silently renewed, and no
-unsubscribed user's connection is borrowed. Disabling stops the next bounded page.
-Expired LG sessions display a reconnect status. Signed cursors persist in the
+Each subscriber's own encrypted LG connection and current WJ sales access are
+required. Without the optional runtime credentials below, expired LG sessions
+display a reconnect status. No unsubscribed user's connection is borrowed.
+Disabling stops the next bounded page; explicit logout also disables subscription.
+Signed cursors persist in the
 profile's private sync state; workspace exposes only counts/status/times. Reported
 photo change/unchanged counts describe that server run, not lifetime turnover or
 all LG edits. Errors preserve prior business data. `checked_at` remains an attempt
 timestamp. A shared advisory lock avoids overlapping cron runs and metadata pages;
 compare-and-set updates preserve concurrent verified saves and durable write leases.
 LG save preflight/reconciliation continue to read LG live.
+
+### Optional scheduled reauthentication (2026-10-22)
+
+The administrator can supply `LGENT_AUTO_LOGIN_WJ_USERNAME` (the owning WJ login),
+`LGENT_AUTO_LOGIN_USER_ID` (the exact previously connected LG user ID), and
+`LGENT_AUTO_LOGIN_PASSWORD` through Render runtime environment variables. The
+existing `shared-secrets` environment group is shared by the backend and cron;
+do not overwrite `SECRET_KEY` or any worker/shared-secret token. Never add these
+values to the frontend, source, task messages, logs, or a checked-in `.env` file.
+Render changes must be deployed before they take effect. No new cron or DB
+migration is needed. Environment groups linked to unrelated jobs also expose
+their variables to those jobs; a dedicated backend/MES-cron group can narrow this
+scope if desired, but creating/linking groups is a separate configuration change.
+
+The existing cron renews only an expired, opted-in connection whose WJ owner and
+stored LG identity exactly match those settings. It reuses the issued device ID
+and rechecks ENT/TT094/company/menu permissions before storing the encrypted
+token. An explicit logout, manual replacement login, disable, or permission
+revocation wins over an in-flight renewal. Other users keep manual LG login;
+credentials do not create a new profile or grant staff access to this LG account.
+LG photo writes/preflight/reconciliation never use this path and are never
+automatically resent. A token expiry can pause reads until the next five-minute
+cron tick; existing thirty-minute round cadence/checkpoints remain in force.
+
+Passwords stay in Render runtime settings and are not saved in WJ's database.
+Only a private keyed configuration fingerprint and retry markers join the
+existing sync state; these never appear in workspace output. Authentication or
+identity/organization/supplier rejection blocks repeated logins until credentials
+change or a manual login succeeds. Transient failures back off for thirty minutes.
+Local synthetic tests cannot prove a real account's unattended LG login policy;
+after deployment, verify a cron renewal and resumed photo comparison counts.
