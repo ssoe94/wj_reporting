@@ -245,3 +245,21 @@ test("duplicate stations and mismatched station identities cannot be accepted as
   mismatched.machines[0].station_id = "imm02";
   assert.throws(() => parseFieldOperations(mismatched, BUSINESS_DATE));
 });
+
+
+test("required pace uses the server value only with fresh production, a plan, an actual and remaining time", () => {
+  const model = overviewFixture();
+  Object.assign(model.processes.injection, { requiredQuantityPerHour: 125.5, remainingBusinessMinutes: 60 });
+  assert.equal(getProcessEvidence(model, "injection").requiredQuantityPerHour, 125.5);
+  model.processes.injection.remainingBusinessMinutes = 0;
+  assert.equal(getProcessEvidence(model, "injection").requiredQuantityPerHour, null);
+  model.processes.injection.remainingBusinessMinutes = 60;
+  model.processes.injection.plannedQuantity = 0;
+  assert.equal(getProcessEvidence(model, "injection").requiredQuantityPerHour, null);
+  model.processes.injection.plannedQuantity = 100;
+  model.processes.injection.actualQuantity = null;
+  assert.equal(getProcessEvidence(model, "injection").requiredQuantityPerHour, null);
+  model.processes.injection.actualQuantity = 0;
+  model.warnings = ["injection_mes_data_stale"];
+  assert.equal(getProcessEvidence(model, "injection").requiredQuantityPerHour, null);
+});
