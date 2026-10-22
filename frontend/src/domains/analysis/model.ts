@@ -82,6 +82,8 @@ export function getProcessEvidence(model: OverviewBoardModel, key: ProductionPro
     actual,
     completionRate: canEvaluate && hasPlan && actual !== null ? process.completionRate : null,
     remainingQuantity: canEvaluate && hasPlan && actual !== null ? process.remainingQuantity : null,
+    requiredQuantityPerHour: canEvaluate && hasPlan && actual !== null && process.remainingBusinessMinutes !== null
+      && process.remainingBusinessMinutes > 0 ? process.requiredQuantityPerHour : null,
     gap: canEvaluate && hasPlan && actual !== null && process.plannedQuantity !== null ? actual - process.plannedQuantity : null,
   };
 }
@@ -160,4 +162,11 @@ export function parseFieldOperations(value: unknown, businessDate: string): Fiel
     throw new Error("Missing field reports cannot be counted as zero production or defects.");
   }
   return value as unknown as FieldOperationsData;
+}
+
+/** Secondary sources may contain legacy zero placeholders when collection fails. */
+export function getContextEvidence(model: OverviewBoardModel, key: string, refreshFailed = false) {
+  const source = model.freshness.sources?.find((item) => item.key === key);
+  const available = Boolean(source && !["missing", "error", "unavailable", "unknown"].includes(source.status));
+  return { source, available, current: available && source?.status === "ok" && !source.stale && !refreshFailed };
 }

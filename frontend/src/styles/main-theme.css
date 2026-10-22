@@ -73,6 +73,14 @@ textarea:focus-visible {
   border-radius: 0;
 }
 
+.main-sidebar--desktop .main-sidebar__brand {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 56px;
+  padding: 7px 16px;
+}
+
 .main-sidebar__brand {
   flex: 0 0 auto;
   padding: 16px;

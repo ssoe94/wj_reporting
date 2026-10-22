@@ -1,5 +1,5 @@
 import InspectionOverview from "@/domains/production/components/InspectionOverview";
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowUpRight, CalendarDays, ChartNoAxesCombined, ClipboardCheck, Database, Factory, RefreshCw } from "lucide-react";
@@ -11,29 +11,13 @@ import type { OverviewBoardModel } from "@/domains/boards/overview/types";
 import { getAnalysisOverview, getAnalysisSources, getFieldOperations } from "./api";
 import { getFieldStationPath, getPriorityEquipment, getProcessEvidence, resolveAnalysisDate } from "./model";
 import type { EquipmentReason, FieldOperationsData } from "./model";
+import { ContextPanels } from "./ContextPanels";
+import { ClosedPeriodSummary } from "./ClosedPeriodSummary";
+import { getClosedWeekSummary } from "@/domains/boards/overview/api";
+import { formatQuantity as quantity, formatTime as timestamp, type Translate } from "./presentation";
 import "./analysis.css";
 
-const ProductionComparisonChart = lazy(() => import("./ProductionComparisonChart").catch(() => ({
-  default: ({ lang }: { lang: string }) => <p className="analysis-notice" role="status">
-    {lang === "zh" ? "图表未能加载，请查看上方数值。" : "차트를 불러오지 못했습니다. 위 수치로 확인해 주세요."}
-  </p>,
-})));
-
-type Translate = (ko: string, zh: string) => string;
 type CopyProps = { tx: Translate; lang: string };
-
-function quantity(value: number | null | undefined, lang: string, decimals = 0) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? new Intl.NumberFormat(lang === "zh" ? "zh-CN" : "ko-KR", { maximumFractionDigits: decimals }).format(value)
-    : "—";
-}
-
-function timestamp(value: string | null | undefined, lang: string) {
-  if (!value || !Number.isFinite(new Date(value).getTime())) return "—";
-  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "ko-KR", {
-    timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(new Date(value));
-}
 
 function QueryState({ loading, error, hasData, onRetry, tx }: {
   loading: boolean; error: boolean; hasData: boolean; onRetry: () => void; tx: Translate;
@@ -52,42 +36,23 @@ function ProductionSummary({ model, refreshFailed, tx, lang }: CopyProps & { mod
   const rows = (["injection", "assembly"] as const).map((key) => ({
     key, label: key === "injection" ? tx("사출", "注塑") : tx("조립", "组装"), ...getProcessEvidence(model, key),
   }));
-  const chartRows = rows.filter((row) => !refreshFailed && row.canEvaluate && row.hasPlan && row.actual !== null).map((row) => ({
-    name: row.label, plan: row.process.plannedQuantity, actual: row.actual,
-  }));
   return <section className="analysis-panel analysis-production" aria-labelledby="analysis-production-title">
-    <div className="analysis-section-heading"><div><h2 id="analysis-production-title"><Factory size={19} aria-hidden="true" />{tx("공정별 계획과 관측 실적", "各工序计划与观测实绩")}</h2>
-      <p>{tx("같은 업무일로 비교합니다. 공정 간 수량은 합산하지 않습니다.", "按同一业务日比较，不合计不同工序的数量。")}</p></div><span className="analysis-unit">{tx("단위 ea", "单位 ea")}</span></div>
-    <div className="analysis-process-grid">{rows.map(({ key, label, process, hasPlan, actual, completionRate, gap, unavailable, canEvaluate, source }) => (
-      <article className="analysis-process-card" key={key}>
-        <div className="analysis-card-top"><h3>{label}</h3><span className={`analysis-badge ${!canEvaluate || refreshFailed ? "analysis-badge--warning" : ""}`}>
-          {refreshFailed ? tx("이전 수신 자료", "此前收到的资料") : unavailable ? tx("원천 확인 필요", "需核对数据源") : !canEvaluate ? tx("원천 상태 주의", "数据源状态需关注") : tx("원천 연결", "已连接数据源")}
-        </span></div>
-        <div className="analysis-quantity"><strong>{quantity(actual, lang)}</strong><span>/ {quantity(process.plannedQuantity, lang)} ea</span></div>
-        <p className="analysis-caption">{actual !== null && (!canEvaluate || refreshFailed) ? tx("마지막 관측 실적 / 계획", "最近观测实绩 / 计划") : tx("관측 실적 / 계획", "观测实绩 / 计划")}</p>
-        <dl className="analysis-process-metrics"><div><dt>{tx("계획 달성", "计划达成")}</dt><dd>{refreshFailed || completionRate === null ? "—" : `${quantity(completionRate, lang, 1)}%`}</dd></div>
-          <div><dt>{tx("실적 − 계획", "实绩 − 计划")}</dt><dd>{refreshFailed || gap === null ? "—" : `${gap > 0 ? "+" : ""}${quantity(gap, lang)} ea`}</dd></div></dl>
-        {canEvaluate && !refreshFailed ? null : <p className="analysis-inline-warning">{tx("원천 누락·지연·갱신 실패로 달성 및 차이 해석을 보류합니다.", "因数据源缺失、延迟或刷新失败，暂不判断达成与差距。")}</p>}
-        {!hasPlan && <p className="analysis-inline-warning">{tx("유효한 등록 계획을 확인할 수 없습니다. 휴무·미등록을 확인하세요.", "未能确认有效登记计划，请核对是否休息或漏登记。")}</p>}
-        <p className="analysis-basis">{key === "injection"
-          ? tx("MES 형합수 × Cavity를 계획 순서로 배분한 추정 실적입니다.", "按计划顺序分配 MES 模次 × 穴数所得的估算实绩。")
-          : tx("MES 귀속 실적과 아직 대사되지 않은 수기 보고를 반영합니다.", "反映 MES 归属实绩及尚未完成对账的手工报工。")}</p>
-        {key === "assembly" && process.reportingMix?.manualOpenQuantity !== null && process.reportingMix?.manualOpenQuantity !== undefined
-          && <p className="analysis-caption">{tx("확인된 수기 미대사분 (전체 실적과 별도)", "已知手工待对账数量（与整体实绩区分）")}: {quantity(process.reportingMix.manualOpenQuantity, lang)} ea</p>}
-        {key === "assembly" && process.reportingMix?.statusCounts && <p className="analysis-caption">{tx("계획행 검토 필요 / 수기 불일치", "计划行待核对 / 手工不一致")}: {quantity(process.reportingMix.statusCounts.needsReview, lang)} / {quantity(process.reportingMix.statusCounts.manualMismatch, lang)}{tx("건", "条")}</p>}
-        <p className="analysis-caption">{tx("원천 최신", "数据源最新时间")}: {timestamp(source?.sourceLatestAt, lang)} · UTC+8</p>
-      </article>
-    ))}</div>
-    {chartRows.length > 0 && <div className="analysis-chart" role="img" aria-label={tx("위 표의 공정별 계획과 관측 실적 비교, 단위 ea", "上表各工序计划与观测实绩对比，单位 ea")}>
-      <Suspense fallback={<div style={{ height: 235 }} role="status">{tx("차트 준비 중", "正在准备图表")}</div>}>
-        <ProductionComparisonChart rows={chartRows} lang={lang} />
-      </Suspense>
-    </div>}
-    <p className="analysis-caption">{tx("계획이 있고 실적을 확인할 수 있는 공정만 차트에 표시합니다. 계획 달성은 OEE 성능이나 검사 합격률이 아닙니다.", "图表仅显示有计划且实绩可用的工序。计划达成率不是 OEE 性能或检验合格率。")}</p>
+    <div className="analysis-section-heading"><h2 id="analysis-production-title"><Factory size={19} aria-hidden="true" />{tx("생산 진도", "生产进度")}</h2><span className="analysis-unit">ea</span></div>
+    <div className="analysis-table-wrap"><table className="analysis-table analysis-production-table"><thead><tr>
+      <th>{tx("공정 / 원천 시각", "工序 / 源时间")}</th><th className="is-number">{tx("관측 실적", "观测实绩")}</th><th className="is-number">{tx("계획", "计划")}</th><th className="is-number">{tx("계획 달성", "计划达成")}</th><th className="is-number">{tx("남은 수량", "剩余数量")}</th><th className="is-number">{tx("필요 속도 ea/h", "所需速度 ea/h")}</th>
+    </tr></thead><tbody>{rows.map(({ key, label, process, actual, completionRate, remainingQuantity, requiredQuantityPerHour, canEvaluate, source }) => {
+      const ready = canEvaluate && !refreshFailed;
+      return <tr key={key}><th scope="row">{label}<small>{timestamp(source?.sourceLatestAt, lang)}{!ready && tx(" · 확인 필요", " · 待核对")}</small></th>
+        <td className="is-number analysis-production-actual">{quantity(actual, lang)}</td><td className="is-number">{quantity(process.plannedQuantity, lang)}</td>
+        <td className="is-number">{ready && completionRate !== null ? `${quantity(completionRate, lang, 1)}%` : "—"}{ready && completionRate !== null && <div className="analysis-progress" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, completionRate))}%` }} /></div>}</td>
+        <td className="is-number">{quantity(ready ? remainingQuantity : null, lang)}</td><td className="is-number">{quantity(ready ? requiredQuantityPerHour : null, lang, 1)}</td></tr>;
+    })}</tbody></table></div>
+    <p className="analysis-caption">{tx("사출은 MES 형합수 × Cavity 추정값, 조립은 MES 귀속·미대사 수기 보고를 반영합니다. 공정 간 수량은 합산하지 않습니다. 필요 속도는 남은 24시간 업무일 기준입니다.", "注塑为 MES 模次 × 穴数估算，组装反映 MES 归属及手工待对账报工。不同工序不合计。所需速度以24小时业务日剩余时间为准。")}</p>
+    <p className="analysis-caption">{tx("조립 수기 미대사 (전체 실적과 별도)", "组装手工待对账（与整体实绩区分）")}: {quantity(model.processes.assembly.reportingMix?.manualOpenQuantity, lang)} ea · {tx("계획행 검토 / 수기 불일치", "计划行待核对 / 手工不一致")}: {quantity(model.processes.assembly.reportingMix?.statusCounts?.needsReview, lang)} / {quantity(model.processes.assembly.reportingMix?.statusCounts?.manualMismatch, lang)}{refreshFailed && tx(" · 갱신 실패, 이전 수신값", " · 刷新失败，保留此前资料")}</p>
   </section>;
 }
 
-function PrioritySection({ model, historical, refreshFailed, tx, lang }: CopyProps & { model: OverviewBoardModel; historical: boolean; refreshFailed: boolean }) {
+function PrioritySection({ model, historical, refreshFailed, tx, lang, expanded }: CopyProps & { model: OverviewBoardModel; historical: boolean; refreshFailed: boolean; expanded: boolean }) {
   const priorities = getPriorityEquipment(model);
   const reasonLabels: Record<EquipmentReason, string> = {
     source: tx("MES 원천 확인", "核对 MES 数据源"), unplanned: tx("가동 중 · 계획 미연결", "运行中 · 未关联计划"),
@@ -95,15 +60,16 @@ function PrioritySection({ model, historical, refreshFailed, tx, lang }: CopyPro
     behind: tx("24시간 기준 진도 차이", "与24小时进度有差距"),
   };
   return <section className="analysis-panel analysis-priority" aria-labelledby="analysis-priority-title">
-    <div className="analysis-section-heading"><div><h2 id="analysis-priority-title">{tx("실무 우선 확인", "现场优先核对")}</h2>
+    <div className="analysis-section-heading"><div><h2 id="analysis-priority-title">{tx("실무 우선 확인", "现场优先核对")} <span className="analysis-unit">{priorities.length}</span></h2>
       <p>{tx("확인 후보입니다. 정지 원인이나 담당자의 조치 완료를 판정하지 않습니다.", "以下为待核对项，不代表已确认停机原因或处理完成。")}</p></div></div>
     {refreshFailed ? <p className="analysis-notice analysis-notice--warning">{tx("갱신에 실패하여 우선 확인 판정을 보류합니다. 위 수량은 마지막 수신값입니다.", "刷新失败，暂停优先核对判断。上方数量为最近收到的值。")}</p> : priorities.length > 0 ? <div className="analysis-table-wrap"><table className="analysis-table"><caption className="analysis-sr-only">{tx("사출 설비 우선 확인 목록", "注塑设备优先核对列表")}</caption>
       <thead><tr><th>{tx("설비", "设备")}</th><th>{tx("확인 이유", "核对原因")}</th><th>{tx("현재 품번", "当前品号")}</th><th>{tx("실적 / 계획 ea", "实绩 / 计划 ea")}</th><th>{tx("현장 연결", "现场入口")}</th></tr></thead>
-      <tbody>{priorities.slice(0, 8).map(({ row, reason }) => <tr key={row.id}><th scope="row">{row.label}</th><td>{reasonLabels[reason]}</td>
+      <tbody>{priorities.slice(0, expanded ? undefined : 6).map(({ row, reason }) => <tr key={row.id}><th scope="row">{row.label}</th><td>{reasonLabels[reason]}</td>
         <td>{row.currentParts.map((part) => part.partNumber).filter(Boolean).join(", ") || "—"}</td>
         <td className="analysis-tabular">{quantity(reason === "source" ? null : row.actualQuantity, lang)} / {quantity(row.plannedQuantity, lang)}</td>
         <td><Link className="analysis-link" to={getFieldStationPath(row.machineNumber)}>{historical ? tx("현재 현장 화면", "当前现场画面") : tx("기록·확인", "记录·核对")}<ArrowUpRight size={14} aria-hidden="true" /></Link></td>
       </tr>)}</tbody></table></div> : <p className="analysis-notice">{tx("수신한 설비 자료에서 우선 확인 후보가 없습니다. 원천의 누락 여부는 아래에서 확인하세요.", "收到的设备数据中没有优先核对项，请在下方检查数据源是否缺失。")}</p>}
+    {!expanded && priorities.length > 6 && <p className="analysis-caption">{tx(`전체 ${priorities.length}호기 중 우선 6호기 표시 · 실무 확인에서 전체 표시`, `共${priorities.length}台，显示前6台 · 现场核对视图显示全部`)}</p>}
     <p className="analysis-caption">{tx("진도 차이는 08시부터 24시간 경과율과 비교하며 휴무·교대·계획정지를 반영하지 않습니다. 현장 링크는 현재 업무일 입력 화면으로 이동합니다.", "进度差按08时起24小时的经过比例比较，未扣除休息、班次或计划停机。现场入口打开当前业务日的输入画面。")}</p>
   </section>;
 }
@@ -139,7 +105,7 @@ function FieldSection({ data, expanded, historical, tx, lang }: CopyProps & { da
       <Link className="analysis-link" to="/field/imm01">{historical ? tx("현재 1호기 현장 화면", "当前1号机现场画面") : tx("1호기 현장 기록 열기", "打开1号机现场记录")}<ArrowUpRight size={14} aria-hidden="true" /></Link></div>
     <details className="analysis-disclosure" open={expanded ? true : undefined} key={expanded ? "operations" : "executive"}>
       <summary>{tx("설비별 기록과 현장 연결", "各设备记录与现场入口")}</summary>
-      <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>{tx("설비", "设备")}</th><th>{tx("기록 상태", "记录状态")}</th><th>{tx("구간 수", "区间数")}</th><th>{tx("신고 불량 ea", "申报不良 ea")}</th><th>{tx("최근 저장 UTC+8", "最近保存 UTC+8")}</th><th>{tx("현재 현장", "当前现场")}</th></tr></thead>
+      <div className="analysis-table-wrap"><table className="analysis-table analysis-field-table"><thead><tr><th>{tx("설비", "设备")}</th><th>{tx("기록 상태", "记录状态")}</th><th>{tx("구간 수", "区间数")}</th><th>{tx("신고 불량 ea", "申报不良 ea")}</th><th>{tx("최근 저장 UTC+8", "最近保存 UTC+8")}</th><th>{tx("현재 현장", "当前现场")}</th></tr></thead>
         <tbody>{data.machines.map((machine) => <tr key={machine.machine_number}><th scope="row">{machine.machine_number}{tx("호기", "号机")}</th><td>{machine.status === "reported" ? tx("기록 있음", "有记录") : machine.status === "invalid" ? tx("기록 확인 필요", "需核对记录") : tx("기록 없음", "无记录")}</td>
           <td>{quantity(machine.checkpoint_count, lang)}</td><td>{machine.checkpoint_count > 0 ? quantity(machine.reported_defect_qty, lang) : "—"}</td><td>{timestamp(machine.latest_reported_at, lang)}</td>
           <td><Link className="analysis-link" to={getFieldStationPath(machine.machine_number)}>{tx("열기", "打开")}<ArrowUpRight size={14} aria-hidden="true" /></Link></td></tr>)}</tbody></table></div>
@@ -199,7 +165,7 @@ export default function AnalysisDashboard() {
   const date = resolveAnalysisDate(searchParams.get("date"), currentDate);
   const historical = date !== currentDate;
   const [view, setView] = useState<"executive" | "operations">("executive");
-  const [showAdditionalSources, setShowAdditionalSources] = useState(false);
+
   const overview = useQuery({
     queryKey: ["analysis-production-overview", date, lang], queryFn: ({ signal }) => getAnalysisOverview(date, lang, signal),
     staleTime: 30_000, retry: 1, refetchInterval: historical ? false : 60_000, refetchOnWindowFocus: false,
@@ -211,9 +177,12 @@ export default function AnalysisDashboard() {
   const sources = useQuery({
     queryKey: ["analysis-additional-sources", date, lang],
     queryFn: ({ signal }) => getAnalysisSources(date, lang, signal),
-    enabled: showAdditionalSources,
     staleTime: 30_000, retry: 1, refetchOnWindowFocus: false,
-    refetchInterval: showAdditionalSources && !historical ? 60_000 : false,
+    refetchInterval: !historical ? 60_000 : false,
+  });
+  const closedWeek = useQuery({
+    queryKey: ["overview-closed-week", date], queryFn: () => getClosedWeekSummary(date),
+    staleTime: 60_000, retry: 1, refetchOnWindowFocus: false,
   });
   const setDate = (value: string) => {
     if (!value) return;
@@ -221,7 +190,7 @@ export default function AnalysisDashboard() {
     next.set("date", resolveAnalysisDate(value, currentDate));
     setSearchParams(next);
   };
-  const refreshing = overview.isFetching || field.isFetching || (showAdditionalSources && sources.isFetching);
+  const refreshing = overview.isFetching || field.isFetching || sources.isFetching || closedWeek.isFetching;
   const collectionItems = [
     [tx("근무 계획", "工作计划"), tx("휴일·설비별 교대·계획정지 시간을 연결해야 가동률과 계획 대비 속도를 비교할 수 있습니다.", "关联休息日、各设备班次和计划停机时间后，才能比较开机率与计划速度。")],
     [tx("품질과 OEE", "质量与 OEE"), tx("검사 대상 수량, 검사 확정 양품, 표준 CT·Cavity의 유효일이 필요합니다. 현재 신고 불량만으로 합격률을 만들지 않습니다.", "需要受检数量、检验确认良品及标准 CT、穴数的有效日期，不以现有不良申报推算合格率。")],
@@ -230,36 +199,31 @@ export default function AnalysisDashboard() {
     [tx("수집 신뢰도", "采集可信度"), tx("수집 성공 시각·예상 행/설비 범위·누락 구간, MES 확정/추정/수기 대사 상태와 연결키를 보존해야 합니다.", "需保留采集成功时间、预期行数与设备范围、缺失区间，以及 MES 确认、估算、手工对账状态及关联键。")],
   ];
   return <PageContainer className={`analysis-page analysis-view--${view}`}>
-    <PageHeader eyebrow="OPERATING INSIGHTS" icon={ChartNoAxesCombined} title={tx("운영 인사이트", "运营洞察")}
-      description={tx("생산 진도와 현장 기록을 같은 업무일로 연결해 다음 확인을 정합니다.", "以同一业务日连接生产进度与现场记录，明确下一步核对。")}
+    <PageHeader icon={ChartNoAxesCombined} title={tx("운영 인사이트", "运营洞察")}
+
       actions={<div className="analysis-date-controls"><label><CalendarDays size={16} aria-hidden="true" /><span className="analysis-sr-only">{tx("업무일", "业务日")}</span><input aria-label={tx("업무일", "业务日")} type="date" value={date} max={currentDate} onChange={(event) => setDate(event.target.value)} /></label>
         <button type="button" className="analysis-button" onClick={() => setDate(currentDate)}>{tx("오늘", "今天")}</button>
-        <button type="button" className="analysis-button" disabled={refreshing} onClick={() => { void overview.refetch(); void field.refetch(); if (showAdditionalSources) void sources.refetch(); }} aria-label={tx("자료 새로고침", "刷新数据")}><RefreshCw size={16} className={refreshing ? "analysis-spin" : ""} aria-hidden="true" /></button></div>} />
+        <button type="button" className="analysis-button" disabled={refreshing} onClick={() => { void overview.refetch(); void field.refetch(); void sources.refetch(); void closedWeek.refetch(); }} aria-label={tx("자료 새로고침", "刷新数据")}><RefreshCw size={16} className={refreshing ? "analysis-spin" : ""} aria-hidden="true" /></button></div>} />
     <div className="analysis-context"><div><strong>{date}</strong><span>{tx("중국 업무일 08:00 → 다음 날 08:00 · UTC+8", "中国业务日 08:00 → 次日08:00 · UTC+8")}</span>
       <span>{tx("생산 기준 시각", "生产参考时间")}: {timestamp(overview.data?.businessWindowDetails?.referenceTime ?? overview.data?.generatedAt, lang)}</span></div>
       <div className="ui-segmented-control" role="group" aria-label={tx("보기 선택", "选择视图")}><button type="button" aria-pressed={view === "executive"} className={view === "executive" ? "is-active" : ""} onClick={() => setView("executive")}>{tx("경영 요약", "管理摘要")}</button><button type="button" aria-pressed={view === "operations"} className={view === "operations" ? "is-active" : ""} onClick={() => setView("operations")}>{tx("실무 확인", "现场核对")}</button></div>
     </div>
-    <p className="analysis-notice"><a className="analysis-link" href="/reports/wj-development-review-20260906.html" target="_blank" rel="noopener noreferrer">{tx("회사 데이터·개발 방향 검토 보고서 · 2026.09.06", "公司数据与开发方向评审报告 · 2026.09.06（韩文）")} <ArrowUpRight size={15} aria-hidden="true" /></a></p>
     <QueryState loading={overview.isPending} error={overview.isError} hasData={Boolean(overview.data)} onRetry={() => { void overview.refetch(); }} tx={tx} />
-    {overview.data && <div className="analysis-production-sections"><ProductionSummary model={overview.data} refreshFailed={overview.isError} tx={tx} lang={lang} /><PrioritySection model={overview.data} historical={historical} refreshFailed={overview.isError} tx={tx} lang={lang} /></div>}
-    <InspectionOverview date={date} language={lang} />
+    {overview.data && <ProductionSummary model={overview.data} refreshFailed={overview.isError} tx={tx} lang={lang} />}
+    <div className="analysis-work-grid">
+      <div>{overview.data && <PrioritySection model={overview.data} historical={historical} refreshFailed={overview.isError} expanded={view === "operations"} tx={tx} lang={lang} />}</div>
+      <InspectionOverview date={date} language={lang} />
+    </div>
+    <ClosedPeriodSummary data={closedWeek.data} pending={closedWeek.isPending} failed={closedWeek.isError} tx={tx} lang={lang} />
     <section className="analysis-panel" aria-labelledby="analysis-field-title"><div className="analysis-section-heading"><div><h2 id="analysis-field-title"><ClipboardCheck size={19} aria-hidden="true" />{tx("현장 입력과 신고 불량", "现场输入与不良申报")}</h2><p>{tx("현장 단말에서 저장한 구간 기록만 집계합니다. 생산 집계와 별도 원천입니다.", "仅汇总现场终端已保存的区间记录，与生产汇总来自不同数据源。")}</p></div></div>
       <QueryState loading={field.isPending} error={field.isError} hasData={Boolean(field.data)} onRetry={() => { void field.refetch(); }} tx={tx} />
       {field.data && <FieldSection data={field.data} expanded={view === "operations"} historical={historical} tx={tx} lang={lang} />}
     </section>
-    {overview.data && <SourceSection model={overview.data} historical={false} tx={tx} lang={lang} />}
-    <section className="analysis-panel">
-      <button type="button" className="analysis-text-button" aria-expanded={showAdditionalSources} aria-controls="analysis-additional-sources"
-        onClick={() => setShowAdditionalSources((current) => !current)}>
-        {showAdditionalSources ? tx("부가 원천 상태 접기", "收起附加数据源状态") : tx("품질·에너지·재고·금형·날씨 원천 상태 보기", "查看品质、能源、库存、模具和天气数据源状态")}
-      </button>
-      <p className="analysis-caption">{tx("생산과 MES 원천을 먼저 표시합니다. 부가 원천은 펼칠 때 조회합니다.", "优先显示生产与 MES 数据源，展开时再查询附加数据源。")}</p>
-      <div id="analysis-additional-sources" hidden={!showAdditionalSources}>{showAdditionalSources && <>
-        <QueryState loading={sources.isPending} error={sources.isError} hasData={Boolean(sources.data)} onRetry={() => { void sources.refetch(); }} tx={tx} />
-        {sources.data && <SourceSection model={sources.data} historical={historical} tx={tx} lang={lang} additional />}
-      </>}</div>
-    </section>
+    <QueryState loading={sources.isPending} error={sources.isError} hasData={Boolean(sources.data)} onRetry={() => { void sources.refetch(); }} tx={tx} />
+    {sources.data && <ContextPanels model={sources.data} refreshFailed={sources.isError} tx={tx} lang={lang} />}
+    {(sources.data ?? overview.data) && <details className="analysis-source-disclosure"><summary>{tx("전체 원천 상태와 기준 시각", "全部数据源状态与参考时间")}</summary><SourceSection model={(sources.data ?? overview.data)!} historical={historical} tx={tx} lang={lang} /></details>}
     <section className="analysis-panel analysis-next"><details className="analysis-disclosure"><summary>{tx("더 나은 판단을 위해 연결할 데이터", "为改善判断需补充的数据")}</summary><dl>{collectionItems.map(([name, description]) => <div key={name}><dt>{name}</dt><dd>{description}</dd></div>)}</dl></details>
+    <p className="analysis-caption"><a className="analysis-link" href="/reports/wj-development-review-20260906.html" target="_blank" rel="noopener noreferrer">{tx("회사 데이터·개발 방향 검토 보고서 · 2026.09.06", "公司数据与开发方向评审报告 · 2026.09.06（韩文）")} <ArrowUpRight size={15} aria-hidden="true" /></a></p>
       <nav className="analysis-record-links" aria-label={tx("기존 상세 자료", "原有明细资料")}><span>{tx("상세 자료", "明细资料")}</span>
         <PermissionLink className="analysis-link" to={`/injection/dashboard?date=${date}#records`}>{tx("사출 수기일보", "注塑手工日报")}</PermissionLink>
         <PermissionLink className="analysis-link" to="/assembly#records">{tx("조립 보고", "组装报工")}</PermissionLink>

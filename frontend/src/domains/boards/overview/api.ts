@@ -513,6 +513,8 @@ function normalizeInventory(value: unknown): InventoryStatus {
       })
     : [];
   return {
+    snapshotDate: firstString(source, ["snapshot_date"]),
+    shippingSnapshotAt: firstString(shipping, ["snapshot_at"]),
     skuCount: firstNumber(finishedGoods, ["sku_count"]),
     finishedAndSemifinishedQuantity: firstNumber(finishedGoods, ["total_quantity", "quantity", "qty", "stock"]),
     totalCarts: firstNumber(finishedGoods, ["total_carts", "carts"]),

@@ -239,6 +239,8 @@ export type QualityAiSummary = {
 };
 
 export type InventoryStatus = {
+  snapshotDate?: string | null;
+  shippingSnapshotAt?: string | null;
   skuCount: number | null;
   finishedAndSemifinishedQuantity: number | null;
   totalCarts: number | null;
