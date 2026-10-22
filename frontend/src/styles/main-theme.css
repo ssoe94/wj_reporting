@@ -141,12 +141,54 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.main-navigation-scroll {
+  display: flex;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Cover only the scrollbar gutter; native dragging and wheel input pass through. */
+.main-navigation-scroll::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  background: var(--wj-nav-surface);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 240ms ease-out;
+}
+
+.main-navigation-scroll.is-scrolling::after {
+  opacity: 0;
+  transition-duration: 160ms;
+}
+
+.main-navigation::-webkit-scrollbar { width: 6px; }
+.main-navigation::-webkit-scrollbar-track { background: transparent; }
+.main-navigation::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: var(--wj-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-navigation-scroll::after { transition: none; }
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  .main-navigation-scroll::after { display: none; }
+}
+
 .main-navigation {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
-  scrollbar-color: rgba(22, 143, 194, 0.22) transparent;
+  scrollbar-color: var(--wj-muted) transparent;
   scrollbar-width: thin;
 }
 

@@ -686,7 +686,8 @@
 .analysis-page .analysis-page .analysis-table tbody th { color: var(--wj-text); }
 .analysis-production-table { min-width: 700px; }
 .analysis-production-table .analysis-production-actual { font-size: 22px; font-weight: 700; color: var(--wj-accent-strong); }
-.analysis-production-table .analysis-progress { width: 80px; margin: 4px 0 0 auto; }
+.analysis-production-table td { position: relative; }
+.analysis-production-table .analysis-progress { position: absolute; right: 12px; bottom: 6px; width: 80px; margin: 0; }
 .analysis-page .analysis-context { padding-block: 0; }
 .analysis-inspection-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
 

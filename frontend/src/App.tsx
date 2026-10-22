@@ -5,6 +5,7 @@ import { LangProvider } from "./i18n";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useLang } from "./i18n";
 import { Button } from "./components/ui/button";
+import { AutoHideNavigation } from './components/layout/AutoHideNavigation';
 import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronDown, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
@@ -693,13 +694,13 @@ function AppContent() {
             </Link>
           </div>
           {/* Menu */}
-          <nav aria-label={lang === 'ko' ? '주요 메뉴' : '主菜单'} className="main-navigation">
+          <AutoHideNavigation label={lang === 'ko' ? '주요 메뉴' : '主菜单'}>
             <NavigationTree
               currentHash={routerLocation.hash}
               currentPath={pathname}
               groups={navItems}
             />
-          </nav>
+          </AutoHideNavigation>
           {/* language selector bottom */}
           <div className="main-sidebar__footer">
             <ThemeSwitch />
@@ -777,14 +778,14 @@ function AppContent() {
                   <XIcon className="h-6 w-6" />
                 </Button>
               </div>
-              <nav aria-label={lang === 'ko' ? '주요 메뉴' : '主菜单'} className="main-navigation">
+              <AutoHideNavigation label={lang === 'ko' ? '주요 메뉴' : '主菜单'}>
                 <NavigationTree
                   currentHash={routerLocation.hash}
                   currentPath={pathname}
                   groups={navItems}
                   onNavigate={() => setSidebarOpen(false)}
                 />
-              </nav>
+              </AutoHideNavigation>
               <div className="main-sidebar__footer main-sidebar__footer--mobile">
                 <ThemeSwitch />
                 <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
