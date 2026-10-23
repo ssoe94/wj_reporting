@@ -20,7 +20,7 @@ export function offsetDate(date: string, days: number): string {
 }
 
 export function historyFilters(params: URLSearchParams, now = new Date()): HistoryFilters {
-  const end = offsetDate(businessDate(now), -1);
+  const end = businessDate(now);
   return {
     start_date: params.get('start_date') ?? offsetDate(end, -6),
     end_date: params.get('end_date') ?? end,
@@ -28,6 +28,11 @@ export function historyFilters(params: URLSearchParams, now = new Date()): Histo
     direction: (params.get('direction') ?? 'all') as HistoryFilters['direction'],
     ordering: (params.get('ordering') ?? 'asc') as HistoryFilters['ordering'],
   };
+}
+
+export function includesCurrentHistoryDay(filters: HistoryFilters, now = new Date()): boolean {
+  const current = businessDate(now);
+  return validHistoryFilters(filters) && filters.start_date <= current && current <= filters.end_date;
 }
 
 function validDate(value: string): boolean {

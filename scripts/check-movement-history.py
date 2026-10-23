@@ -22,10 +22,11 @@ settings.configure(
 import django
 django.setup()
 from django.urls import path
-from inventory.movement_history import finished_goods_history, finished_goods_history_detail
+from inventory.movement_history import finished_goods_history, finished_goods_history_detail, refresh_finished_goods_history
 
 urls = types.ModuleType('movement_history_test_urls')
 urls.urlpatterns = [path('api/inventory/finished-goods/history/', finished_goods_history),
+    path('api/inventory/finished-goods/history/refresh/', refresh_finished_goods_history),
     path('api/inventory/finished-goods/history/<int:group_id>/', finished_goods_history_detail)]
 sys.modules[urls.__name__] = urls
 from django.test.runner import DiscoverRunner

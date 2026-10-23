@@ -2,13 +2,17 @@ from datetime import date, datetime, timedelta
 from io import StringIO
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.management import call_command, CommandError
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 from inventory.movement_history import sync_history_day, closed_business_date
 from inventory.models import MovementHistoryDay, MovementHistoryRevision, MovementHistoryGroup
 
 URL = '/api/inventory/finished-goods/history/'
+REFRESH_URL = URL + 'refresh/'
 DAY = date(2026, 10, 18)
 
 
@@ -21,12 +25,18 @@ def movement(identifier, incoming=True, amount='10.1234', at='2026-10-18T12:30:0
             'qrCode': 'WJ-7459', 'batchNo': 'LOT-1', 'operator': '张三', **extra}
 
 
+def identifier_payload_selects(queries):
+    return [query['sql'] for query in queries
+            if '"inventory_movementhistorygroup"."identifiers"' in query['sql'].split(' FROM ', 1)[0]]
+
+
 class MovementHistoryTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.client.force_authenticate(get_user_model().objects.create_user(username='reader'))
         self.fetch = patch('inventory.movement_history._fetch_page').start()
-        patch('inventory.movement_history.timezone.now', return_value=datetime.fromisoformat('2026-10-19T10:00:00+08:00')).start()
+        self.now = patch('inventory.movement_history.timezone.now', return_value=datetime.fromisoformat('2026-10-19T10:00:00+08:00')).start()
         self.addCleanup(patch.stopall)
         self.fetch.return_value = {'list': [], 'total': 0}
 
@@ -130,11 +140,228 @@ class MovementHistoryTests(TestCase):
 
     def test_missing_zero_and_pending_dates_are_distinct_without_query_writes(self):
         self.collect([])
-        data = self.query(start_date='2026-10-17', end_date='2026-10-19').data
-        self.assertEqual(data['source']['missing_dates'], ['2026-10-17'])
-        self.assertEqual(data['source']['pending_dates'], ['2026-10-19'])
+        data = self.query(start_date='2026-10-17', end_date='2026-10-20').data
+        self.assertEqual(data['source']['missing_dates'], ['2026-10-17', '2026-10-19'])
+        self.assertEqual(data['source']['pending_dates'], ['2026-10-20'])
+        self.assertEqual(data['source']['provisional_dates'], [])
         self.assertEqual(data['count'],0)
         self.assertEqual(MovementHistoryDay.objects.count(),1)
+
+    def test_open_collection_observes_0800_business_date_and_capture_cutoff(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T07:59:00+08:00')
+        self.fetch.return_value = {'list': [
+            movement(1, at='2026-10-22T07:59:59+08:00'),
+            movement(2, at='2026-10-22T08:00:00+08:00'),
+            movement(3, False, '2', at='2026-10-23T07:58:59+08:00'),
+            movement(4, at='2026-10-23T07:59:00+08:00'),
+        ], 'total': 4}
+        sync_history_day(date(2026, 10, 22), allow_open=True)
+        self.assertEqual(self.fetch.call_args.args[1:3], (
+            datetime.fromisoformat('2026-10-22T08:00:00+08:00'), self.now.return_value))
+        data = self.query(start_date='2026-10-22', end_date='2026-10-23').data
+        self.assertEqual(data['totals'][0]['total_in'], '10.1234')
+        self.assertEqual(data['totals'][0]['total_out'], '2')
+        self.assertEqual(data['source']['provisional_dates'], ['2026-10-22'])
+        self.assertEqual(data['source']['pending_dates'], ['2026-10-23'])
+        self.assertEqual(data['results'][0]['captured_through'], '2026-10-23T07:59:00+08:00')
+        with self.assertRaises(ValueError):
+            sync_history_day(date(2026, 10, 22))
+        self.fetch.reset_mock()
+        with self.assertRaises(ValueError):
+            sync_history_day(date(2026, 10, 23), allow_open=True)
+        self.fetch.assert_not_called()
+
+        self.now.return_value = datetime.fromisoformat('2026-10-23T08:00:00+08:00')
+        self.fetch.return_value = {'list': [], 'total': 0}
+        response = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['business_date'], '2026-10-23')
+        self.assertEqual(self.fetch.call_args.args[1:3], (self.now.return_value, self.now.return_value))
+        self.assertEqual(closed_business_date(), date(2026, 10, 22))
+
+    def test_current_ordinary_inbound_is_searchable_by_identifier_without_other_cart_amounts(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        material = {'code': 'ACQ30641403', 'name': 'ACQ30641403 (MCK30023403)', 'specification': 'C/A'}
+        self.fetch.return_value = {'list': [
+            movement('receipt-20261023-100', amount='100', at='2026-10-23T14:20:00+08:00',
+                     material=material, qrCode='TT0940286', trolleyCode='CART-0286', labelCode='LABEL-0286',
+                     action={'code': 'ordinary_inbound', 'message': '普通入库'}, storageLocation='成品产出仓位'),
+            movement('other-cart-80', amount='80', at='2026-10-23T14:21:00+08:00',
+                     material=material, qrCode='TT0940999'),
+        ], 'total': 2}
+        response = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['refreshed'])
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.fetch.reset_mock()
+        for search in ('tt0940286', 'cart-0286', 'label-0286'):
+            data = self.query(start_date='2026-10-23', end_date='2026-10-23', search=search).data
+            self.assertEqual(data['count'], 1)
+            self.assertEqual(data['totals'][0]['total_in'], '100')
+            row = data['results'][0]
+            self.assertEqual(row['total_in'], '100')
+            self.assertEqual(row['identifier_count'], 1)
+            self.assertTrue(row['provisional'])
+            self.assertEqual(row['captured_through'], '2026-10-23T15:30:00+08:00')
+            details = self.client.get(f"{URL}{row['id']}/", {'search': search}).data['results']
+            self.assertEqual([d['qr_code'] for d in details], ['TT0940286'])
+            self.assertEqual(details[0]['events'][0]['action_label'], '普通入库')
+            self.assertEqual(details[0]['events'][0]['storage_location'], '成品产出仓位')
+        model = self.query(start_date='2026-10-23', end_date='2026-10-23', search='acq30641403').data
+        self.assertEqual(model['totals'][0]['total_in'], '180')
+        self.assertEqual(model['results'][0]['identifier_count'], 2)
+        default_range = self.client.get(URL, {'search': 'tt0940286'}).data
+        self.assertEqual(default_range['results'][0]['business_date'], '2026-10-23')
+        self.assertEqual(default_range['totals'][0]['total_in'], '100')
+        self.assertEqual(default_range['source']['provisional_dates'], ['2026-10-23'])
+        detail = self.client.get(f"{URL}{model['results'][0]['id']}/", {'search': 'acq30641403'}).data
+        self.assertEqual(len(detail['results']), 2)
+        self.fetch.assert_not_called()
+
+    def test_get_includes_today_without_upstream_calls_or_persistence(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        self.fetch.side_effect = AssertionError('GET must never collect MES data')
+        counts = (MovementHistoryDay.objects.count(), MovementHistoryRevision.objects.count(), MovementHistoryGroup.objects.count())
+        data = self.client.get(URL).data
+        self.assertEqual(data['source']['missing_dates'], [f'2026-10-{day}' for day in range(17, 24)])
+        self.assertEqual(data['source']['pending_dates'], [])
+        self.assertEqual(data['source']['provisional_dates'], [])
+        self.assertEqual(data['count'], 0)
+        self.assertEqual((MovementHistoryDay.objects.count(), MovementHistoryRevision.objects.count(), MovementHistoryGroup.objects.count()), counts)
+        self.fetch.assert_not_called()
+
+    def test_refresh_coalesces_recent_capture_then_reloads_after_30_seconds(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        self.fetch.return_value = {'list': [movement(1, at='2026-10-23T14:00:00+08:00')], 'total': 1}
+        first = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(first.status_code, 200)
+        self.assertTrue(first.data['refreshed'])
+        self.now.return_value += timedelta(seconds=29)
+        cached = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(cached.status_code, 200)
+        self.assertFalse(cached.data['refreshed'])
+        self.assertEqual(self.fetch.call_count, 1)
+        self.now.return_value += timedelta(seconds=1)
+        fresh = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(fresh.status_code, 200)
+        self.assertTrue(fresh.data['refreshed'])
+        self.assertEqual(self.fetch.call_count, 2)
+        self.assertEqual(MovementHistoryDay.objects.get().checked_at, self.now.return_value)
+
+    def test_failed_current_refresh_keeps_last_good_capture_and_redacts_failure(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        self.fetch.return_value = {'list': [movement(1, amount='100', at='2026-10-23T14:00:00+08:00')], 'total': 1}
+        self.assertEqual(self.client.post(REFRESH_URL, {}, format='json').status_code, 200)
+        saved_checked_at = MovementHistoryDay.objects.get().checked_at
+        self.now.return_value += timedelta(seconds=31)
+        self.fetch.side_effect = RuntimeError('sensitive upstream credentials')
+        failure = self.client.post(REFRESH_URL, {}, format='json')
+        self.assertEqual(failure.status_code, 503)
+        self.assertEqual(failure.data, {'error': 'history_refresh_failed'})
+        self.assertEqual(MovementHistoryDay.objects.get().checked_at, saved_checked_at)
+        self.assertEqual(MovementHistoryRevision.objects.count(), 1)
+        self.fetch.reset_mock()
+        data = self.query(start_date='2026-10-23', end_date='2026-10-23').data
+        self.assertEqual(data['totals'][0]['total_in'], '100')
+        self.assertEqual(data['source']['provisional_dates'], ['2026-10-23'])
+        self.assertEqual(data['results'][0]['captured_through'], '2026-10-23T15:30:00+08:00')
+        self.fetch.assert_not_called()
+
+    def test_closed_capture_replaces_open_coverage_even_when_movements_are_unchanged(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        self.fetch.return_value = {'list': [movement(1, amount='100', at='2026-10-23T14:00:00+08:00')], 'total': 1}
+        self.assertEqual(sync_history_day(date(2026, 10, 23), allow_open=True), 1)
+        old = self.query(start_date='2026-10-23', end_date='2026-10-23').data
+        old_id = old['results'][0]['id']
+        self.now.return_value = datetime.fromisoformat('2026-10-24T08:00:00+08:00')
+        still_partial = self.query(start_date='2026-10-23', end_date='2026-10-23').data
+        self.assertTrue(still_partial['results'][0]['provisional'])
+        self.assertEqual(still_partial['source']['provisional_dates'], ['2026-10-23'])
+        self.assertEqual(still_partial['results'][0]['captured_through'], '2026-10-23T15:30:00+08:00')
+        self.assertEqual(sync_history_day(date(2026, 10, 23)), 2)
+        data = self.query(start_date='2026-10-23', end_date='2026-10-23').data
+        self.assertEqual(data['totals'][0]['total_in'], '100')
+        self.assertFalse(data['results'][0]['provisional'])
+        self.assertEqual(data['source']['provisional_dates'], [])
+        self.assertEqual(data['results'][0]['captured_through'], '2026-10-24T08:00:00+08:00')
+        self.assertEqual(MovementHistoryRevision.objects.count(), 2)
+        self.assertEqual(self.client.get(f'{URL}{old_id}/').data['results'][0]['total_in'], '100')
+        self.assertEqual(self.query(start_date='2026-10-23', end_date='2026-10-23', snapshot_token=old['snapshot_token']).status_code, 409)
+
+    def test_identifier_direction_filter_uses_matching_events_including_zero_quantity(self):
+        self.collect([
+            movement(1, amount='0', qrCode='ZERO-IN'),
+            movement(2, False, '5', qrCode='OTHER-OUT'),
+        ])
+        data = self.query(search='zero-in', direction='in').data
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['totals'][0]['total_in'], '0')
+        details = self.client.get(f"{URL}{data['results'][0]['id']}/", {'search': 'zero-in', 'direction': 'in'}).data
+        self.assertEqual(details['results'][0]['events'][0]['quantity'], '0')
+        outgoing = self.query(search='zero-in', direction='out').data
+        self.assertEqual(outgoing['count'], 0)
+        self.assertEqual(outgoing['totals'], [])
+
+    def test_model_search_uses_stored_aggregates_without_loading_identifier_payload(self):
+        self.collect([movement(1, amount='100')])
+        # Many movements may share a barcode. Model totals already exist, so
+        # their event population must not force identifier JSON projection.
+        MovementHistoryGroup.objects.update(inbound_count=20001)
+        self.fetch.reset_mock()
+        for search in ('h55', '白色', 'white'):
+            with CaptureQueriesContext(connection) as queries:
+                response = self.query(search=search)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['count'], 1)
+            self.assertEqual(response.data['totals'][0]['total_in'], '100')
+            self.assertEqual(response.data['results'][0]['identifier_count'], 1)
+            self.assertEqual(identifier_payload_selects(queries), [])
+        self.fetch.assert_not_called()
+
+    def test_identifier_search_rejects_over_budget_before_selecting_event_payload(self):
+        self.collect([movement(1, amount='100', qrCode='TT0940286')])
+        MovementHistoryGroup.objects.update(inbound_count=20001)
+        self.fetch.reset_mock()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.query(search='tt0940286')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data, {'error': 'history_range_too_large'})
+        self.assertEqual(identifier_payload_selects(queries), [])
+        self.fetch.assert_not_called()
+
+    def test_identifier_search_at_event_budget_projects_only_matching_barcode(self):
+        self.collect([
+            movement(1, amount='100', qrCode='TT0940286'),
+            movement(2, amount='80', qrCode='TT0940999'),
+        ])
+        MovementHistoryGroup.objects.update(inbound_count=20000)
+        self.fetch.reset_mock()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.query(search='tt0940286')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['totals'][0]['total_in'], '100')
+        self.assertEqual(response.data['results'][0]['identifier_count'], 1)
+        self.assertEqual(len(identifier_payload_selects(queries)), 1)
+        self.fetch.assert_not_called()
+
+    def test_refresh_auth_methods_and_parameter_validation(self):
+        self.assertEqual(self.client.get(REFRESH_URL).status_code, 405)
+        for payload in ({'business_date': '2026-10-24'}, {'allow_open': True}, {'unknown': 'value'}):
+            self.assertEqual(self.client.post(REFRESH_URL, payload, format='json').status_code, 400)
+        self.assertEqual(self.client.post(REFRESH_URL + '?business_date=2026-10-24', {}, format='json').status_code, 400)
+        self.assertEqual(MovementHistoryDay.objects.count(), 0)
+        self.fetch.assert_not_called()
+        anonymous = APIClient()
+        self.assertEqual(anonymous.post(REFRESH_URL, {}, format='json').status_code, 401)
+        self.fetch.assert_not_called()
+
+    def test_refresh_is_throttled_per_authenticated_user(self):
+        self.now.return_value = datetime.fromisoformat('2026-10-23T15:30:00+08:00')
+        responses = [self.client.post(REFRESH_URL, {}, format='json') for _ in range(7)]
+        self.assertEqual([response.status_code for response in responses], [200] * 6 + [429])
+        self.assertEqual(self.fetch.call_count, 1)
+        self.assertIn('Retry-After', responses[-1])
 
     def test_read_auth_validation_and_methods(self):
         for params in [{'start_date':'2026-10-20'}, {'start_date':'2025-01-01'}, {'page_size':201}, {'direction':'bad'}, {'ordering':'bad'}, {'search':'a'*101}]:
