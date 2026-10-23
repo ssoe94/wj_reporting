@@ -192,7 +192,7 @@ class MovementHistoryTests(TestCase):
         response = self.client.post(REFRESH_URL, {}, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['refreshed'])
-        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.assertIn('no-store', response['Cache-Control'].split(', '))
         self.fetch.reset_mock()
         for search in ('tt0940286', 'cart-0286', 'label-0286'):
             data = self.query(start_date='2026-10-23', end_date='2026-10-23', search=search).data

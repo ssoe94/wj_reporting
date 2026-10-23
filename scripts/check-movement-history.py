@@ -15,7 +15,7 @@ settings.configure(
     DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
     DEFAULT_AUTO_FIELD='django.db.models.BigAutoField', USE_TZ=True,
     TIME_ZONE='Asia/Shanghai', ROOT_URLCONF='movement_history_test_urls',
-    ALLOWED_HOSTS=['testserver'], MIDDLEWARE=[],
+    ALLOWED_HOSTS=['testserver'], MIDDLEWARE=['config.middleware.NoCacheAPIMiddleware'],
     REST_FRAMEWORK={'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication']},
 )
