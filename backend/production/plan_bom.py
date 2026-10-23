@@ -181,8 +181,10 @@ def read_bom(part_no, actor_id, *, reader=None):
     page = _object(_read(reader, BOM_LIST, {'materialCode': part_no, 'page': 1, 'size': 100}))
     rows, total = page.get('list'), page.get('total')
     if (type(page.get('page')) is not int or page['page'] != 1 or type(total) is not int
-            or not 1 <= total <= 100 or not isinstance(rows, list) or len(rows) != total):
+            or not 0 <= total <= 100 or not isinstance(rows, list) or len(rows) != total):
         _fail('list_incomplete')
+    if total == 0:
+        _fail('not_found')
     candidates, seen = [], set()
     for item in rows:
         item = _object(item)

@@ -72,6 +72,20 @@ def submitted(source, replacement=None):
 
 
 class PlanBomTests(SimpleTestCase):
+    def test_empty_complete_list_is_missing_bom_not_transport_failure(self):
+        reader = FixtureReader()
+        reader.page.update(total=0, list=[])
+        with self.assertRaisesMessage(ValidationError, 'mes_bom_not_found'):
+            read_bom(PART, 1, reader=reader)
+        self.assertEqual([path for path, _ in reader.calls], [BOM_LIST])
+        for page in ({'page': 1, 'total': 0, 'list': [reader.bom]},
+                     {'page': 1, 'total': 1, 'list': []},
+                     {'page': 2, 'total': 0, 'list': []},
+                     {'page': 1, 'total': False, 'list': []}):
+            reader.page = page
+            with self.subTest(page=page), self.assertRaisesMessage(ValidationError, 'mes_bom_list_incomplete'):
+                read_bom(PART, 1, reader=reader)
+
     def test_raw_per_piece_override_preserves_source_fixed_rows_and_exact_controls(self):
         reader = FixtureReader()
         source = read_bom(PART, 1, reader=reader)

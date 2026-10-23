@@ -46,6 +46,17 @@ class PlanBomViewTests(TestCase):
         self.assertFalse(PlanMaterialApproval.objects.exists())
         self.assertFalse(PlanMesRequest.objects.exists())
 
+    def test_missing_mes_bom_is_explicit_and_cannot_approve_a_stale_source(self):
+        self.reader.page.update(total=0, list=[])
+        with patch('production.plan_bom.BomReader', return_value=self.reader):
+            fetched = self.client.get(self.url, {**self.scope, 'action': 'bom', 'plan_id': self.plan.pk})
+            approved = self.client.post(self.url, self.approval(), format='json')
+        for response in (fetched, approved):
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(str(response.data[0]), 'mes_bom_not_found')
+        self.assertFalse(PlanMaterialApproval.objects.exists())
+        self.assertFalse(PlanMesRequest.objects.exists())
+
     def test_complete_bom_approval_needs_no_inventory_and_ignores_client_setup(self):
         result = self.post(self.approval(process_code='BAD', route_code='BAD', output_version='BAD'))
         self.assertEqual(result.status_code, 201, result.data)

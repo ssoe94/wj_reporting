@@ -7,6 +7,7 @@ import "./plan-workflow.css";
 import { PlanBomPrimaryInput, PlanBomInputs, initialPlanBomInputs, isPlanBomSelectionValid, selectedPlanBomNumerator,
   type PlanBomSource, type PlanBomInputSelection } from "./PlanBomInputs";
 import { materialRequirement } from "../plan-workflow-form";
+import { planBomErrorMessage } from "../plan-bom-errors";
 import { canRecheckPlanRequest, canReleasePlanSendAttempt, canSendPlanRequest, PLAN_CREATE_BATCH_LIMIT, planRequestState, safeMesId,
   planWorkflowStage, planConfirmationTime, planDateLabel, planPeriodTitle, type PlanWorkflowStage, type PlanServiceResult } from "../plan-workflow-service";
 import { recheckPlanRequest, sendPlanSelection } from "../plan-workflow-service-api";
@@ -65,7 +66,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   const [pendingChange, setPendingChange] = useState<(() => void) | null>(null);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   function leave(action: () => void) { if (busy || dateReviewRequired) return; if (dirty) setPendingChange(() => action); else action(); }
-  function clearDraft() { bomReadGeneration.current += 1; setBomLoading(false); setBomSource(null); setBomError(false); setEditing(null); setDefaultTarget(null); setDirty(false); setPendingChange(null); setNeedsReview(false); }
+  function clearDraft() { bomReadGeneration.current += 1; setBomLoading(false); setBomSource(null); setBomError(""); setEditing(null); setDefaultTarget(null); setDirty(false); setPendingChange(null); setNeedsReview(false); }
   function changed() { setDirty(true); setConfirmed(false); }
   const [type, setType] = useState<PlanType>("injection");
   const [end, setEnd] = useState(date);
@@ -74,7 +75,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   const [bomSource, setBomSource] = useState<PlanBomSource | null>(null);
   const [inputs, setInputs] = useState<PlanBomInputSelection[]>([]);
   const [bomLoading, setBomLoading] = useState(false);
-  const [bomError, setBomError] = useState(false);
+  const [bomError, setBomError] = useState("");
   const bomReadGeneration = useRef(0);
   useEffect(() => () => { bomReadGeneration.current += 1; }, []);
   const [reason, setReason] = useState("");
@@ -217,7 +218,7 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   async function loadBom(row: WorkflowRow, restore?: MaterialSnapshot | null,
     retained?: { source: PlanBomSource; inputs: PlanBomInputSelection[] }) {
     const generation = ++bomReadGeneration.current;
-    setBomLoading(true); setBomError(false); setConfirmed(false);
+    setBomLoading(true); setBomError(""); setConfirmed(false);
     try {
       const source = await getPlanBom({ ...scope }, row.id);
       if (generation !== bomReadGeneration.current) return false;
@@ -232,15 +233,15 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       setConfirmed(false); setBomSource(source); setInputs(next);
       setValues(current => ({ ...current, ...source.setup }));
       return true;
-    } catch {
-      if (generation === bomReadGeneration.current) setBomError(true);
+    } catch (error) {
+      if (generation === bomReadGeneration.current) setBomError(planBomErrorMessage(error, zh));
       return false;
     } finally {
       if (generation === bomReadGeneration.current) setBomLoading(false);
     }
   }
   function edit(row: WorkflowRow, identityChoice?: string) {
-    bomReadGeneration.current += 1; setBomSource(null); setInputs([]); setBomError(false); setBomLoading(false);
+    bomReadGeneration.current += 1; setBomSource(null); setInputs([]); setBomError(""); setBomLoading(false);
     setDefaultTarget(null); setDayUid(row.uid); setEditing(row);
     const existing = row.approval?.snapshot || row.previous_approval?.snapshot || row.recommendation?.snapshot;
     setValues({ resource_code: String(existing?.resource_code || ""), mold_code: String(existing?.mold_code || "") });
@@ -323,7 +324,9 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
       ? `范围外计划 ${count} 项 · 扩大期间查看` : `조회 밖 계획 ${count}건 · 기간을 넓혀 확인`}</span>;
   }
   function identityCell(row: WorkflowRow, selected: boolean) {
+    const candidate = selected ? row.candidate_details.find(item => item.uid === previous) : undefined;
     return <select aria-label={`${zh ? "关联以前的任务" : "이전 작업 연결"} ${row.part_no} ${row.lot_no || ""}`.trim()}
+      title={candidate ? candidateSummary(candidate, row.part_no, zh) : selected && previous === "" ? (zh ? "独立新任务" : "독립 새 작업") : undefined}
       value={selected ? previous : "__choose__"} disabled={!data?.can_edit || busy || dateReviewRequired || (selected && needsReview)}
       onChange={e => { const choice = e.target.value; if (choice === "__choose__") return;
         if (selected) { changed(); setPrevious(choice); } else leave(() => edit(row, choice)); }}>
@@ -339,22 +342,21 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
   }
   function materialForm(group: WorkflowGroup, rows: WorkflowRow[]) {
     if (!data || !editing) return null;
-    const candidate = editing.candidate_details.find(item => item.uid === previous);
     return <form id="plan-material-draft" className="plan-workflow__editor" onSubmit={e => { e.preventDefault(); if (canSave) submit(editing.identity_state !== "identified"
       ? { action: "resolve_identity", plan_id: editing.id, version: editing.version, previous_uid: previous || null, reason }
       : { action: "approve", plan_id: editing.id, uid: editing.uid, version: editing.version,
           bom_hash: bomSource?.hash, bom_version: bomSource?.version, inputs,
           resource_code: values.resource_code, mold_code: values.mold_code || "", reason }); }}>
       <div className="plan-workflow__material-heading">{rows.length > 1 && dayPicker(rows, editing, true)}{materialDayScope(editing, values.output_unit_name)}
-        <span>{zh ? `计划 v${editing.version}` : `계획 v${editing.version}`}</span>{outsideMaterialScope(group, rows)}</div>
-      {identityPending && <div className="plan-workflow__identity-summary"><strong>{zh ? "关联选择（必选）" : "작업 연결 (필수)"}</strong>
-        <span>{candidate ? candidateSummary(candidate, editing.part_no, zh) : previous === "" ? (zh ? "独立新任务" : "독립 새 작업") : (zh ? "请在本行选择关联方式" : "이 행에서 연결 방식을 선택하세요")}</span></div>}
+        {!bomLoading && !bomError && bomSource && <span className="plan-workflow__source">{zh ? "当前MES BOM" : "현재 MES BOM"} {bomSource.version}{identityPending ? (zh ? " · 原料未确认（只读）" : " · 원료 미확정 (읽기 전용)") : ""}</span>}
+        <span className="plan-workflow__source">{zh ? `计划 v${editing.version}` : `계획 v${editing.version}`}</span>
+        {dirty && <span className="plan-workflow__draft-state"><strong>{zh ? "未保存" : "미저장"}</strong><span>{zh ? `编辑版本 v${editing.version}` : `편집 기준 v${editing.version}`}</span></span>}
+        {outsideMaterialScope(group, rows)}</div>
       {bomLoading || bomError || !bomSource ? (bomLoading ? <p role="status">{zh ? "正在读取MES BOM…" : "MES BOM 조회 중…"}</p>
-        : <div role="alert" className="plan-workflow__blocked"><span>{zh ? "BOM读取失败。保留草稿，请重新查询。" : "BOM을 읽지 못했습니다. 초안을 보존했으니 다시 조회하세요."}
+        : <div role="alert" className="plan-workflow__bom-error plan-workflow__blocked"><span>{bomError || (zh ? "BOM读取失败。保留草稿，请重新查询。" : "BOM을 읽지 못했습니다. 초안을 보존했으니 다시 조회하세요.")}
           {identityPending && (zh ? " 仍可保存任务连接，原料尚未确认。" : " 작업 연결은 저장할 수 있으며 원료는 미확정입니다.")}</span>
           <button type="button" onClick={() => void (needsReview ? reviewLatest() : loadBom(editing, identityPending ? null : editing.approval?.snapshot || editing.previous_approval?.snapshot,
             !identityPending && bomSource ? { source: bomSource, inputs } : undefined))}>{zh ? "重新查询BOM" : "BOM 재조회"}</button></div>) : <>
-        <span className="plan-workflow__source">{zh ? "当前MES BOM" : "현재 MES BOM"} {bomSource.version}{identityPending ? (zh ? " · 原料未确认（只读）" : " · 원료 미확정 (읽기 전용)") : ""}</span>
         {identityPending ? <div className="plan-workflow__bom-preview">{bomSource.inputs.map(input => <div key={input.source_row_id} className="plan-workflow__input-row">
           <span>{input.material_code}{input.material_name !== input.material_code ? ` · ${input.material_name}` : ""}</span>
           <span>{input.numerator} {input.unit_name} / {input.denominator} {bomSource.setup.output_unit_name}</span>
@@ -362,21 +364,21 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
         </div>)}</div> : <>
           <PlanBomInputs source={bomSource} catalog={data.catalog.materials} quantity={editing.planned_quantity}
             value={inputs} onChange={next => { changed(); setInputs(next); }} disabled={busy || needsReview} hidePrimary ko={!zh} />
-          <div className="plan-workflow__fields plan-workflow__connection-fields">{(["resource_code", "mold_code"] as const).map(field => <label key={field}>
-            {fieldLabels[field][zh ? 1 : 0]}{field === "resource_code" ? (zh ? "（必填）" : " (필수)") : ""}
-            <input value={values[field] || ""} required={field === "resource_code"} maxLength={255} disabled={busy || needsReview}
+          <div className="plan-workflow__connection-line"><div className="plan-workflow__fields plan-workflow__connection-fields">{(["resource_code", "mold_code"] as const).map(field => <label key={field}>
+            <span>{field === "resource_code" ? (zh ? "MES设备 *" : "MES 설비 *") : (zh ? "模具／设置" : "금형·셋업")}</span>
+            <input aria-label={fieldLabels[field][zh ? 1 : 0]} value={values[field] || ""} required={field === "resource_code"} maxLength={255} disabled={busy || needsReview}
               onChange={e => { changed(); setValues(current => ({ ...current, [field]: e.target.value })); }} /></label>)}</div>
           <div className="plan-workflow__connection-read">{(["process_code", "route_code", "output_unit_name"] as const).map(field =>
-            <span key={field}>{fieldLabels[field][zh ? 1 : 0]}: {values[field] || "—"}</span>)}</div>
+            <span key={field}>{fieldLabels[field][zh ? 1 : 0]}: {values[field] || "—"}</span>)}</div></div>
           {!!missingConnection.length && <span className="plan-workflow__blocked">{zh ? "缺少必填连接信息" : "필수 연결정보 누락"}: {missingConnection.map(field => fieldLabels[field][zh ? 1 : 0]).join(" · ")}</span>}
         </>}
       </>}
-      {dirty && <div className="plan-workflow__draft-state"><strong>{zh ? "未保存" : "미저장"}</strong><span>{zh ? `编辑版本 v${editing.version}` : `편집 기준 v${editing.version}`}</span>
+      {dirty && (editing.approval || currentRow && currentRow.version !== editing.version) && <div className="plan-workflow__draft-state">
         {editing.approval && <span>{zh ? "已保存原料" : "저장된 자재"}: {editing.approval.snapshot.inputs.map(input => input.material_code).join(" + ")}</span>}
         {currentRow && currentRow.version !== editing.version && <strong>{zh ? `最新版本 v${currentRow.version} · 请核对最新计划` : `최신 v${currentRow.version} · 최신 계획 확인 필요`}</strong>}
       </div>}
-      <div className="plan-workflow__confirmation"><label>{zh ? "确认理由／依据（必填）" : "확인 사유 / 근거 (필수)"}<input aria-label={zh ? "确认理由／依据" : "확인 사유 / 근거"} required maxLength={500} value={reason} disabled={busy || dateReviewRequired} onChange={e => { if (busy || dateReviewRequired) return; changed(); setReason(e.target.value); }} /></label>
-      <label className="plan-workflow__check"><input type="checkbox" checked={confirmed} disabled={busy || dateReviewRequired || needsReview || !identityPending && (bomLoading || bomError || !bomSource)} onChange={e => { if (busy || dateReviewRequired || needsReview || !identityPending && (bomLoading || bomError || !bomSource)) return; setDirty(true); setConfirmed(e.target.checked); }} />{identityPending
+      <div className="plan-workflow__confirmation"><label className="plan-workflow__reason"><span>{zh ? "确认依据 *" : "확인 근거 *"}</span><input aria-label={zh ? "确认理由／依据" : "확인 사유 / 근거"} required maxLength={500} value={reason} disabled={busy || dateReviewRequired} onChange={e => { if (busy || dateReviewRequired) return; changed(); setReason(e.target.value); }} /></label>
+      <label className="plan-workflow__check"><input type="checkbox" checked={confirmed} disabled={busy || dateReviewRequired || needsReview || !identityPending && (bomLoading || !!bomError || !bomSource)} onChange={e => { if (busy || dateReviewRequired || needsReview || !identityPending && (bomLoading || bomError || !bomSource)) return; setDirty(true); setConfirmed(e.target.checked); }} />{identityPending
         ? (zh ? "确认当前计划与所选任务连接（必选）" : "현재 계획·선택한 작업 연결 확인 (필수)")
         : (zh ? "确认计划·完整用料（必选）" : "계획·전체 원료 확인 (필수)")}</label>
       <button type="button" onClick={() => leave(clearDraft)}>{zh ? "取消" : "취소"}</button></div>
@@ -466,6 +468,9 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
           : requestState && !["disabled", "prepared"].includes(requestState) ? label(requestState)
           : taskLabels[stage][zh ? 1 : 0];
         const lot = rowToEdit?.lot_no?.trim();
+        const productMeta = [lot && lot !== "-" ? `LOT ${lot}` : "",
+          rowToEdit?.model_name && rowToEdit.model_name !== "-" ? `MODEL ${rowToEdit.model_name}` : "",
+          rowToEdit?.part_spec && rowToEdit.part_spec !== "-" ? `SPEC ${rowToEdit.part_spec}` : ""].filter(Boolean).join(" · ");
         const rowLabel = `${group.part_no} ${group.machine_name}${lot ? ` LOT ${lot}` : ""}`;
         const toggleLabel = `${rowLabel} ${zh ? "详细内容" : "상세 내용"}`;
         return <Fragment key={group.key}><tr className={isOpen ? "plan-workflow__order is-open" : "plan-workflow__order"} data-group-key={group.key}>
@@ -473,13 +478,9 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
             checked={!!request && selectedRequests.includes(request.uid)} disabled={serviceLocked || !eligible || (!selectedRequests.includes(request?.uid || "") && selectedRequests.length >= PLAN_CREATE_BATCH_LIMIT)}
             onChange={e => { if (!request || !eligible || serviceLocked) return; setSelectedRequests(prior => e.target.checked
               ? (prior.includes(request.uid) || prior.length >= PLAN_CREATE_BATCH_LIMIT ? prior : [...prior, request.uid]) : prior.filter(uid => uid !== request.uid)); }} /></td>
-          <th scope="row" className="plan-workflow__product"><div className="plan-workflow__product-line"><button type="button" className="plan-workflow__expand" aria-label={toggleLabel} title={mesId ? `MES #${mesId}` : toggleLabel} aria-description={mesId ? `MES #${mesId}` : undefined} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{isOpen ? "▾" : "▸"}</button><strong title={group.part_no}>{group.part_no || (zh ? "品号待确认" : "품번 확인 필요")}</strong><span className="plan-workflow__mobile-machine">{group.machine_name}</span></div>
-            {lot && lot !== "-" && <span className="plan-workflow__lot" title={`LOT ${lot}`}>LOT {lot}</span>}
-            {(rowToEdit?.model_name || rowToEdit?.part_spec) && <span className="plan-workflow__product-meta">
-              {rowToEdit.model_name && rowToEdit.model_name !== "-" && <span>MODEL {rowToEdit.model_name}</span>}
-              {rowToEdit.part_spec && rowToEdit.part_spec !== "-" && <span>SPEC {rowToEdit.part_spec}</span>}
-            </span>}
-            <span className="plan-workflow__mobile-summary" title={planPeriodTitle(group)}>{planDateLabel(group, zh)} · {group.quantity.replace(/\.0+$/, "")}</span>
+          <th scope="row" className="plan-workflow__product"><div className="plan-workflow__product-line"><button type="button" className="plan-workflow__expand" aria-label={toggleLabel} title={mesId ? `MES #${mesId}` : toggleLabel} aria-description={mesId ? `MES #${mesId}` : undefined} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{isOpen ? "▾" : "▸"}</button><strong title={group.part_no}>{group.part_no || (zh ? "品号待确认" : "품번 확인 필요")}</strong></div>
+            {productMeta && <span className="plan-workflow__product-meta" title={productMeta} tabIndex={0}>{productMeta}</span>}
+            <span className="plan-workflow__mobile-summary" title={planPeriodTitle(group)}>{group.machine_name} · {planDateLabel(group, zh)} · {group.quantity.replace(/\.0+$/, "")}</span>
           </th>
           <td className="plan-workflow__machine">{group.machine_name}</td><td className="plan-workflow__period" title={planPeriodTitle(group)}><time dateTime={group.planned_start} aria-label={planPeriodTitle(group)}>{planDateLabel(group, zh)}</time></td>
           <td className="plan-workflow__quantity">{group.quantity.replace(/\.0+$/, "")}</td>
@@ -505,7 +506,9 @@ function WorkflowEditor({ date, language, onDirtyChange, onPendingChange, sendAt
             : stage === "issue" ? (request?.can_send === true && data.write_enabled !== true ? <span className="plan-workflow__mobile-status" title={currentTask}>{["disabled", "prepared"].includes(requestState || "") ? (zh ? "准备已保存" : "준비 저장됨") : currentTask}</span> : <button type="button" className="btn btn-primary" disabled={serviceLocked || !data.can_edit || (request?.can_send === true ? !eligible : !!group.blockers.length || group.operation === "unchanged")}
               onClick={() => request?.can_send === true ? createRequests([request.uid]) : submit({ action: "prepare", keys: [group.key] })}>{request?.can_send === true ? (zh ? "创建MES" : "MES 생성") : (zh ? "准备工单" : "생성 준비")}</button>)
             : canRecheckPlanRequest(request) ? <button type="button" className="btn btn-primary" disabled={serviceLocked} onClick={() => request && recheck(request.uid)}>{zh ? "复查MES" : "MES 재조회"}</button>
-            : <button type="button" disabled={busy} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{stage === "plan" ? (zh ? "核对计划" : "계획 확인") : (zh ? "查看" : "상세 확인")}</button>}</div></td>
+            : <button type="button" disabled={busy} aria-expanded={isOpen} aria-controls={`group-${group.key}`} onClick={() => openGroup(group.key, isOpen)}>{stage === "plan" ? (zh ? "核对计划" : "계획 확인") : (zh ? "查看" : "상세 확인")}</button>}
+            {!(stage === "issue" && (request?.can_send === true && data.write_enabled !== true || !selected && !request)) && <span className={`plan-workflow__compact-status ${group.blockers.length || (selected && dirty) || stage === "review" ? "plan-workflow__blocked" : "plan-workflow__approved"}`} title={currentTask}>{currentTask}</span>}
+          </div></td>
         </tr>
         {isOpen && <tr className="plan-workflow__detail-row"><td colSpan={8}><div id={`group-${group.key}`} className="plan-workflow__detail">{!selected && mesId && <span>MES #{mesId}</span>}{compactDetail(group, rows, !!selected)}</div></td></tr>}
         </Fragment>;

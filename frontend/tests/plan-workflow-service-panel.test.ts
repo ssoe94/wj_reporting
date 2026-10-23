@@ -4,6 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import * as contract from '../src/domains/production/plan-workflow-service.ts';
 import { materialRequirement } from '../src/domains/production/plan-workflow-form.ts';
+import { planBomErrorMessage } from '../src/domains/production/plan-bom-errors.ts';
 import { serviceWorkflowFixture, serviceBomFixture, serviceUid, SERVICE_SCOPE } from './fixtures/plan-workflow-service.ts';
 import type { WorkflowData } from '../src/domains/production/plan-workflow-api.ts';
 
@@ -80,6 +81,7 @@ function fixture(initial = serviceWorkflowFixture(), attempts = new Set<string>(
     },
     '../plan-workflow-api': workflowApi, './PlanBomInputs': bom,
     '../plan-workflow-form': { materialRequirement }, '../plan-workflow-service': contract,
+    '../plan-bom-errors': { planBomErrorMessage },
     '../plan-workflow-service-api': api, './plan-workflow.css': {},
   };
   const exports: Record<string, any> = {};
@@ -411,7 +413,7 @@ test('BOM failure has no legacy fallback; only explicit retry restores an approv
   f.bomReads[0].reply.reject(Error('SYNTHETIC BOM read denied')); await f.flush();
   f.saveMaterial(); assert.equal(f.mutations.length, 0, 'BOM failure offers no fallback approval');
   assert.equal(f.mutations.length, 0); assert.equal(rawSelects(f).length, 0);
-  assert.match(f.text(), /BOM을 읽지 못했습니다/); assert.equal(f.button('저장').props.disabled, true);
+  assert.match(f.text(), /BOM 조회에 실패했습니다/); assert.equal(f.button('저장').props.disabled, true);
   f.button('BOM 재조회').props.onClick(); await f.flush(); assert.equal(f.bomReads.length, 2);
   f.bomReads[1].reply.resolve(serviceBomFixture()); await f.flush();
   assert.equal(rawSelects(f).length, 1); await f.changeReason('After successful BOM read');
@@ -561,6 +563,7 @@ test('historical choices identify product, LOT and model; selecting a date expla
   assert.equal(choices[0].props.value, serviceUid(502));
   assert.match(choices[0].props.children, /SYN-PART-1.*RECENT-MODEL.*RECENT-LOT.*1736/);
   identitySelect(f).props.onChange({ target: { value: serviceUid(502) } }); await f.flush();
+  assert.match(identitySelect(f).props.title, /SYN-PART-1.*RECENT-MODEL.*RECENT-LOT.*1736/);
   assert.match(f.text(), /CURRENT-MODEL/); assert.match(f.text(), /CURRENT-SPEC/);
   assert.match(f.text(), /확인 사유 입력.*확인 체크/); assert.equal(f.button('저장').props.disabled, true);
   f.bomReads[0].reply.resolve(threeRowBom()); await f.flush();
