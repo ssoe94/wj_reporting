@@ -187,11 +187,10 @@ export function PlanBomInputs(props: PlanBomInputsProps) {
     </p>}
     {source.inputs.map((row, index) => {
       return <div key={row.source_row_id} className="plan-workflow__input-row" data-source-row-id={row.source_row_id}>
-        <span>{row === primary ? (ko ? "원료 배합" : "原料配比") : `${index + 1}. ${materialLabel(row)}`}</span>
-        {row === primary ? <span aria-hidden="true" /> : row.replaceable === true ? <label>
-          <span>{ko ? "사용 원료" : "使用原料"}</span>
+        {row !== primary && row.replaceable === true ? <label className="plan-workflow__bom-material">
+          <span>{index + 1}.</span>
           {materialSelect(props, row, index)}
-        </label> : <span>{ko ? "고정 자재" : "固定物料"}</span>}
+        </label> : <span>{row === primary ? (ko ? "원료 배합" : "原料配比") : `${index + 1}. ${materialLabel(row)}`}</span>}
         {materialAmounts(row, source, props)}
       </div>;
     })}
