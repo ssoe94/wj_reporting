@@ -1,21 +1,22 @@
-import { Fragment, useState } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { useLang } from '../../i18n';
 import api from '../../lib/api';
-import { historyFilters, validHistoryFilters, historyTime, quantity, businessDate, offsetDate } from '../../domains/inventory/movement-history';
+import { historyFilters, validHistoryFilters, includesCurrentHistoryDay, historyTime, quantity, businessDate, offsetDate } from '../../domains/inventory/movement-history';
 import type { HistoryFilters } from '../../domains/inventory/movement-history';
 
 const labels = {
   ko: {
     title: '입·출고 이력', description: '기간과 모델별로 완성품 창고의 입고·출고 흐름을 조회합니다.',
-    expand: '번호별 보기', collapse: '접기', identifier: 'MES 식별번호(물류·대차)', trolley: '대차번호', label: '라벨번호', missing: '번호 없음', identifiers: '식별번호', missingDates: '미수집 날짜', pendingDates: '마감 전 날짜', events: '시간순 내역', both: '일별 행은 입고·출고를 함께 표시합니다.',
-    modelColumn: '모델', start: '시작일', end: '종료일', model: '모델 검색', placeholder: '모델 코드·이름·규격',
+    expand: '번호별 보기', collapse: '접기', identifier: 'MES 식별번호(물류·대차)', trolley: '대차번호', label: '라벨번호', missing: '번호 없음', identifiers: '식별번호', missingDates: '미수집 날짜', pendingDates: '예정 날짜', provisionalDates: '당일 집계 중', events: '시간순 내역', both: '일별 행은 입고·출고를 함께 표시합니다.',
+    modelColumn: '모델', start: '시작일', end: '종료일', model: '모델·식별번호 검색', placeholder: '모델 코드·이름·규격·MES 식별번호',
     direction: '입출고 구분', all: '전체', in: '입고', out: '출고', ordering: '정렬',
     asc: '오래된 순', desc: '최신 순', search: '조회', week: '최근 7일', month: '최근 30일',
     invalid: '유효한 날짜를 최대 366일 범위로 선택하고 검색어를 100자 이내로 입력해 주세요.',
-    source: '완성품 창고 · 마감일 기준 상하이 08:00~다음 날 08:00. 행을 펼치면 번호별 입·출고를 볼 수 있습니다.',
-    updated: '최근 수집 시각',
+    source: '완성품 창고 · 상하이 08:00~다음 날 08:00. 당일은 수집 시점까지 집계합니다. 행을 펼치면 번호별 입·출고를 볼 수 있습니다.',
+    updated: '최근 수집 시각', provisional: '집계 중', capturedThrough: '집계 시각',
+    refresh: 'MES 최신 내역 가져오기', refreshing: 'MES 내역 가져오는 중…', refreshError: '최신 MES 내역을 가져오지 못했습니다. 다시 시도해 주세요.', refreshThrottled: '잠시 후 최신 내역을 다시 가져와 주세요.', refreshed: 'MES 최신 내역을 반영했습니다.',
     quantity: '구분·수량', action: '작업 유형', batch: '배치', operator: '담당자', unknown: '방향 미확인', rangeError: '조회량이 많습니다. 기간을 줄여 다시 조회해 주세요.', expired: 'MES 이력이 갱신되었습니다. 처음부터 다시 조회해 주세요.',
     period: '기준일', unit: '단위', net: '순변동',
     rows: '일별·모델별 항목', shown: '표시', total: '수집된 이력 합계', more: '이어서 보기', loading: '불러오는 중…',
@@ -23,13 +24,14 @@ const labels = {
   },
   zh: {
     title: '出入库履历', description: '按期间及型号查看成品仓库的出入库变化。',
-    expand: '查看编号', collapse: '收起', identifier: 'MES标识码（物流·台车）', trolley: '台车号', label: '标签号', missing: '无编号', identifiers: '标识码', missingDates: '未采集日期', pendingDates: '未结束日期', events: '按时间查看', both: '每日行同时显示入库和出库。',
-    modelColumn: '型号', start: '开始日期', end: '结束日期', model: '型号搜索', placeholder: '型号编码·名称·规格',
+    expand: '查看编号', collapse: '收起', identifier: 'MES标识码（物流·台车）', trolley: '台车号', label: '标签号', missing: '无编号', identifiers: '标识码', missingDates: '未采集日期', pendingDates: '未来日期', provisionalDates: '当日统计中', events: '按时间查看', both: '每日行同时显示入库和出库。',
+    modelColumn: '型号', start: '开始日期', end: '结束日期', model: '型号·标识码搜索', placeholder: '型号编码·名称·规格·MES标识码',
     direction: '出入库类型', all: '全部', in: '入库', out: '出库', ordering: '排序',
     asc: '从早到晚', desc: '从新到旧', search: '查询', week: '最近7天', month: '最近30天',
     invalid: '请选择有效日期，范围不超过366天，搜索词不超过100字。',
-    source: '成品仓库 · 已结束业务日：上海08:00至次日08:00。展开查看各编号的出入库。',
-    updated: '最近采集时间',
+    source: '成品仓库 · 上海08:00至次日08:00。当日统计截至采集时点。展开查看各编号的出入库。',
+    updated: '最近采集时间', provisional: '统计中', capturedThrough: '统计时点',
+    refresh: '获取MES最新记录', refreshing: '正在获取MES记录…', refreshError: '无法获取MES最新记录，请重试。', refreshThrottled: '请稍后再获取最新记录。', refreshed: '已更新MES最新记录。',
     quantity: '类型·数量', action: '操作类型', batch: '批次', operator: '操作人', unknown: '方向不明', rangeError: '查询数据过多，请缩短日期范围后重试。', expired: 'MES记录已更新，请从头重新查询。',
     period: '业务日期', unit: '单位', net: '净变化',
     rows: '日期·型号项目', shown: '已显示', total: '已采集记录合计', more: '继续查看', loading: '加载中…',
@@ -41,6 +43,7 @@ type Amounts = { unit: string; total_in: string; total_out: string; net_change: 
 type HistoryRow = Amounts & {
   id: number; business_date: string; material_code: string; material_name: string; specification: string;
   warehouse_name: string; identifier_count: number; missing_identifier_count: number; revision: number;
+  provisional: boolean; captured_through: string;
 };
 type IdentifierRow = {
   qr_code: string; trolley_code: string; label_code: string; total_in: string; total_out: string;
@@ -49,7 +52,7 @@ type IdentifierRow = {
 };
 interface HistoryPage {
   count: number; page: number; page_size: number; totals: Amounts[]; snapshot_token: string;
-  source: { fetched_at: string | null; missing_dates: string[]; pending_dates: string[]; business_day: string };
+  source: { fetched_at: string | null; missing_dates: string[]; pending_dates: string[]; provisional_dates: string[]; business_day: string };
   results: HistoryRow[];
 }
 
@@ -80,7 +83,7 @@ function FilterForm({ initial, text, apply }: { initial: HistoryFilters; text: T
     <div className="flex flex-wrap gap-2">
       <button type="submit" className="rounded-md bg-[var(--wj-accent-strong)] px-5 py-2 text-sm font-semibold text-[var(--wj-on-accent)] hover:bg-[var(--wj-accent-strong)] focus-visible:outline-2 focus-visible:outline-blue-600">{text.search}</button>
       {[7, 30].map(days => <button key={days} type="button" className={buttonClass} onClick={() => {
-        const end = offsetDate(businessDate(), -1);
+        const end = businessDate();
         setDraft(previous => ({ ...previous, start_date: offsetDate(end, 1 - days), end_date: end }));
       }}>{days === 7 ? text.week : text.month}</button>)}
     </div>
@@ -88,10 +91,10 @@ function FilterForm({ initial, text, apply }: { initial: HistoryFilters; text: T
   </form>;
 }
 
-function IdentifierDetails({ row, direction, text }: { row: HistoryRow; direction: HistoryFilters['direction']; text: Text }) {
+function IdentifierDetails({ row, direction, search, text }: { row: HistoryRow; direction: HistoryFilters['direction']; search: string; text: Text }) {
   const query = useQuery({
-    queryKey: ['finished-goods-history-detail', row.id, direction],
-    queryFn: async ({ signal }) => (await api.get<{ id: number; results: IdentifierRow[] }>(`/inventory/finished-goods/history/${row.id}/`, { params: { direction }, signal })).data,
+    queryKey: ['finished-goods-history-detail', row.id, direction, search],
+    queryFn: async ({ signal }) => (await api.get<{ id: number; results: IdentifierRow[] }>(`/inventory/finished-goods/history/${row.id}/`, { params: { direction, search }, signal })).data,
     retry: false,
   });
   if (query.isPending) return <p role="status" className="p-4">{text.loading}</p>;
@@ -121,21 +124,21 @@ function IdentifierDetails({ row, direction, text }: { row: HistoryRow; directio
   </div>;
 }
 
-function DailyRows({ rows, text, direction }: { rows: HistoryRow[]; text: Text; direction: HistoryFilters['direction'] }) {
+function DailyRows({ rows, text, direction, search }: { rows: HistoryRow[]; text: Text; direction: HistoryFilters['direction']; search: string }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   return <tbody className="divide-y divide-[var(--wj-border)]">{rows.map(row => <Fragment key={row.id}>
     <tr className="hover:bg-[var(--wj-surface-solid)]" data-testid="daily-row">
       <td className="px-4 py-3"><button type="button" aria-expanded={expanded.has(row.id)} aria-controls={`history-detail-${row.id}`} aria-label={`${expanded.has(row.id) ? text.collapse : text.expand} ${row.business_date} ${row.material_code}`} className={buttonClass} onClick={() => setExpanded(previous => {
         const next = new Set(previous); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next;
       })}>{expanded.has(row.id) ? '−' : '+'}</button></td>
-      <td className="px-4 py-3">{row.business_date}<div className="text-[var(--wj-muted)]">{row.warehouse_name}</div></td>
+      <td className="px-4 py-3">{row.business_date}{row.provisional && <span className="ml-2 rounded bg-[var(--wj-warning-bg)] px-2 py-0.5 text-[var(--wj-warning)]">{text.provisional}</span>}<div className="text-[var(--wj-muted)]">{row.warehouse_name}</div>{row.provisional && <div className="text-[var(--wj-muted)]">{text.capturedThrough}: {historyTime(row.captured_through)}</div>}</td>
       <td className="px-4 py-3"><div className="font-medium">{row.material_code}</div><div className="text-[var(--wj-muted)]">{[row.material_name, row.specification].filter(Boolean).join(' · ')}</div></td>
       <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--wj-success)]">{quantity(row.total_in)}</td>
       <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--wj-danger)]">{quantity(row.total_out)}</td>
       <td className="px-4 py-3">{row.unit || '—'}</td>
       <td className="px-4 py-3 text-right tabular-nums">{row.identifier_count}{row.missing_identifier_count > 0 && <div className="text-[var(--wj-muted)]">{text.missing}: {row.missing_identifier_count}</div>}</td>
     </tr>
-    {expanded.has(row.id) && <tr><td colSpan={7} id={`history-detail-${row.id}`} className="bg-[var(--wj-surface-solid)]"><IdentifierDetails row={row} text={text} direction={direction} /></td></tr>}
+    {expanded.has(row.id) && <tr><td colSpan={7} id={`history-detail-${row.id}`} className="bg-[var(--wj-surface-solid)]"><IdentifierDetails row={row} text={text} direction={direction} search={search} /></td></tr>}
   </Fragment>)}</tbody>;
 }
 
@@ -145,6 +148,21 @@ export default function MovementHistoryPage() {
   const [params, setParams] = useSearchParams();
   const filters = historyFilters(params);
   const valid = validHistoryFilters(filters);
+  const queryClient = useQueryClient();
+  const currentDate = businessDate();
+  const includesCurrent = includesCurrentHistoryDay(filters);
+  const autoRefreshedDay = useRef('');
+  const refresh = useMutation({
+    mutationFn: async () => (await api.post<{ business_date: string; version: number; refreshed: boolean }>('/inventory/finished-goods/history/refresh/', {})).data,
+    onSuccess: async () => { await queryClient.resetQueries({ queryKey: ['finished-goods-history'] }); },
+    retry: false,
+  });
+  const refreshCurrent = refresh.mutate;
+  useEffect(() => {
+    if (!includesCurrent || autoRefreshedDay.current === currentDate) return;
+    autoRefreshedDay.current = currentDate;
+    refreshCurrent();
+  }, [includesCurrent, currentDate, refreshCurrent]);
   const query = useInfiniteQuery({
     queryKey: ['finished-goods-history', filters],
     initialPageParam: { page: 1, snapshot_token: '' },
@@ -159,15 +177,26 @@ export default function MovementHistoryPage() {
   const data = query.data?.pages[0];
   const rows = query.data?.pages.flatMap(page => page.results) ?? [];
   const errorCode = (query.error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error;
-  const apply = (next: HistoryFilters) => setParams(new URLSearchParams({ ...next }));
+  const restart = () => queryClient.resetQueries({ queryKey: ['finished-goods-history', filters], exact: true });
+  const apply = (next: HistoryFilters) => {
+    if (JSON.stringify(next) === JSON.stringify(filters)) { void restart(); return; }
+    setParams(new URLSearchParams({ ...next }));
+  };
+  const refreshStatus = (refresh.error as { response?: { status?: number } } | null)?.response?.status;
   return <main className="p-4 md:p-6 space-y-4 text-[var(--wj-text)]">
     <div><h1 className="text-2xl font-semibold">{text.title}</h1><p className="mt-1 text-sm text-[var(--wj-muted)]">{text.description}</p></div>
     <FilterForm key={JSON.stringify(filters)} initial={filters} text={text} apply={apply} />
+    {includesCurrent && <div className="flex flex-wrap items-center gap-3 text-sm">
+      <button type="button" className={buttonClass} disabled={refresh.isPending} onClick={() => refreshCurrent()}>{refresh.isPending ? text.refreshing : text.refresh}</button>
+      {refresh.isPending && <span role="status" className="text-[var(--wj-muted)]">{text.refreshing}</span>}
+      {refresh.isError && <span role="alert" className="text-[var(--wj-danger)]">{refreshStatus === 429 ? text.refreshThrottled : text.refreshError}</span>}
+      {refresh.isSuccess && <span role="status" className="text-[var(--wj-muted)]">{text.refreshed}</span>}
+    </div>}
     <p className="text-sm text-[var(--wj-muted)]">{text.source}</p>
     {!valid && <p role="alert" className="text-sm text-[var(--wj-danger)]">{text.invalid}</p>}
     {valid && query.isPending && <p role="status" className="rounded-lg border bg-[var(--wj-surface-solid)] p-6 text-center">{text.loading}</p>}
     {query.isError && <div role="alert" className="rounded-lg border border-[var(--wj-danger-border)] bg-[var(--wj-surface-solid)] p-4 text-sm text-[var(--wj-danger)]">
-      {errorCode === 'history_range_too_large' ? text.rangeError : errorCode === 'history_query_expired' ? text.expired : text.error} <button type="button" className={buttonClass} onClick={() => query.isFetchNextPageError && errorCode !== 'history_query_expired' ? query.fetchNextPage() : query.refetch()}>{text.retry}</button>
+      {errorCode === 'history_range_too_large' ? text.rangeError : errorCode === 'history_query_expired' ? text.expired : text.error} <button type="button" className={buttonClass} onClick={() => query.isFetchNextPageError && errorCode !== 'history_query_expired' ? query.fetchNextPage() : restart()}>{text.retry}</button>
     </div>}
     {valid && data && <>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--wj-muted)]" aria-live="polite">
@@ -175,6 +204,7 @@ export default function MovementHistoryPage() {
       </div>
       {data.source.missing_dates.length > 0 && <details className="rounded-lg border border-[var(--wj-warning-border)] bg-[var(--wj-surface-solid)] p-3 text-sm text-[var(--wj-warning)]"><summary className="cursor-pointer">{text.missingDates}: {data.source.missing_dates.length}</summary><p className="mt-2 break-words">{data.source.missing_dates.join(', ')}</p></details>}
       {data.source.pending_dates.length > 0 && <details className="text-sm text-[var(--wj-muted)]"><summary className="cursor-pointer">{text.pendingDates}: {data.source.pending_dates.length}</summary><p className="mt-2 break-words">{data.source.pending_dates.join(', ')}</p></details>}
+      {(data.source.provisional_dates?.length ?? 0) > 0 && <p className="text-sm text-[var(--wj-muted)]">{text.provisionalDates}: {data.source.provisional_dates.join(', ')}</p>}
       {data.totals.length > 0 && <section aria-label={text.total} className="rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface-solid)] p-4">
         <h2 className="mb-2 text-sm font-semibold">{text.total}{filters.direction !== 'all' && ` · ${text[filters.direction]}`}</h2>
         {data.totals.map(total => <div key={total.unit} className="flex flex-wrap gap-x-6 gap-y-1 text-sm tabular-nums">
@@ -192,7 +222,7 @@ export default function MovementHistoryPage() {
             <thead className="bg-[var(--wj-surface-solid)] text-[var(--wj-muted)]"><tr>
               {[text.expand, text.period, text.modelColumn, text.in, text.out, text.unit, text.identifiers].map((title, i) => <th key={title} scope="col" className={`px-4 py-3 font-semibold ${[3, 4, 6].includes(i) ? 'text-right' : 'text-left'}`}>{title}</th>)}
             </tr></thead>
-            <DailyRows key={JSON.stringify(filters)} rows={rows} text={text} direction={filters.direction} />
+            <DailyRows key={JSON.stringify(filters)} rows={rows} text={text} direction={filters.direction} search={filters.search} />
           </table>
         </div>}
         {query.hasNextPage && <div className="p-4 text-center"><button type="button" className={buttonClass} disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>{query.isFetchingNextPage ? text.loading : text.more}</button></div>}

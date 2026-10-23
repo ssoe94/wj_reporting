@@ -8,16 +8,18 @@ import json
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from .models import MovementHistoryDay, MovementHistoryRevision, MovementHistoryGroup
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 MAX_PAGES = 50
 PAGE_SIZE = 200
+MAX_SEARCH_EVENTS = 20_000
 
 
 class HistoryRangeError(Exception):
@@ -176,7 +178,11 @@ def _load_history(start, end):
 
 
 def closed_business_date(now=None):
-    return ((now or timezone.now()).astimezone(SHANGHAI) - timedelta(hours=8)).date() - timedelta(days=1)
+    return current_business_date(now) - timedelta(days=1)
+
+
+def current_business_date(now=None):
+    return ((now or timezone.now()).astimezone(SHANGHAI) - timedelta(hours=8)).date()
 
 
 def amounts(incoming, outgoing):
@@ -217,14 +223,15 @@ def _group_rows(rows):
     return list(groups.values())
 
 
-def sync_history_day(business_date):
+def sync_history_day(business_date, *, allow_open=False):
     """Fetch fully before publication. Preserve last good data on any failure."""
-    if business_date > closed_business_date():
+    started = timezone.now()
+    if business_date > (current_business_date(started) if allow_open else closed_business_date(started)):
         raise ValueError('Only closed business days can be collected.')
     start = datetime.combine(business_date, time(8), SHANGHAI)
-    end = start + timedelta(days=1)
-    started = timezone.now()
+    end = min(start + timedelta(days=1), started.astimezone(SHANGHAI))
     payload = _load_history(start, end)
+    payload['source'].update(period_start=start.isoformat(), period_end=end.isoformat())
     groups = _group_rows(payload['rows'])
     fingerprint = hashlib.sha256(json.dumps(sorted(payload['rows'], key=lambda r: r['id']), sort_keys=True).encode()).hexdigest()
     with transaction.atomic():
@@ -234,7 +241,10 @@ def sync_history_day(business_date):
         if day.checked_at and day.checked_at > started:
             return day.version
         latest = day.revisions.filter(version=day.version).first()
-        if latest is None or latest.fingerprint != fingerprint:
+        # The final closed capture must replace an open capture even if no new
+        # movements occurred, so its coverage endpoint remains auditable.
+        coverage_changed = latest and latest.source.get('period_end') != end.isoformat()
+        if latest is None or latest.fingerprint != fingerprint or coverage_changed:
             revision = MovementHistoryRevision.objects.create(day=day, version=day.version + 1,
                 fingerprint=fingerprint, collected_at=started, source=payload['source'])
             MovementHistoryGroup.objects.bulk_create([MovementHistoryGroup(revision=revision, **group) for group in groups])
@@ -250,11 +260,78 @@ def _private(data, status=200):
     return response
 
 
+class HistoryRefreshThrottle(UserRateThrottle):
+    scope = 'movement_history_refresh'
+    rate = '6/min'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([HistoryRefreshThrottle])
+def refresh_finished_goods_history(request):
+    """Mirror today's read-only MES ledger; never create an MES movement."""
+    if request.data or request.query_params:
+        return _private({'error': 'No parameters are accepted.'}, 400)
+    day = current_business_date()
+    saved = MovementHistoryDay.objects.filter(business_date=day, version__gt=0).first()
+    # Coalesce page opens and repeated refreshes without hiding older captures.
+    if saved and saved.checked_at and timezone.now() - saved.checked_at < timedelta(seconds=30):
+        return _private({'business_date': day.isoformat(), 'version': saved.version, 'refreshed': False})
+    try:
+        version = sync_history_day(day, allow_open=True)
+    except Exception:
+        return _private({'error': 'history_refresh_failed'}, 503)
+    return _private({'business_date': day.isoformat(), 'version': version, 'refreshed': True})
+
+
+def _model_matches(group, search):
+    needle = search.casefold()
+    return not needle or any(needle in getattr(group, key).casefold()
+                            for key in ('material_code', 'material_name', 'specification'))
+
+
+def _matching_identifiers(group, search):
+    needle = search.casefold()
+    if _model_matches(group, search):
+        return group.identifiers
+    return [item for item in group.identifiers if any(needle in item.get(key, '').casefold()
+            for key in ('qr_code', 'trolley_code', 'label_code'))]
+
+
+def _is_provisional(revision):
+    end = revision.source.get('period_end')
+    expected = datetime.combine(revision.day.business_date + timedelta(days=1), time(8), SHANGHAI)
+    return (datetime.fromisoformat(end) < expected) if end else revision.day.business_date > closed_business_date()
+
+
+def _summary(group, search='', direction='all'):
+    item = {k: getattr(group, k) for k in ('id', 'material_code', 'material_name', 'specification',
+        'warehouse_name', 'unit', 'identifier_count', 'missing_identifier_count')}
+    item.update(group.amounts)
+    if search and not _model_matches(group, search):
+        details = _matching_identifiers(group, search)
+        if not details:
+            return None
+        if direction != 'all' and not any(event['direction'] == direction for detail in details for event in detail['events']):
+            return None
+        with localcontext() as ctx:
+            ctx.prec = 100
+            item.update(amounts(sum((Decimal(d['total_in']) for d in details), Decimal(0)),
+                                sum((Decimal(d['total_out']) for d in details), Decimal(0))))
+        item['identifier_count'] = sum(any(d.get(key) for key in ('qr_code', 'trolley_code', 'label_code')) for d in details)
+        item['missing_identifier_count'] = sum(len(d['events']) for d in details
+            if not any(d.get(key) for key in ('qr_code', 'trolley_code', 'label_code')))
+    item.update(business_date=group.revision.day.business_date.isoformat(), revision=group.revision.version,
+        provisional=_is_provisional(group.revision),
+        captured_through=group.revision.source.get('period_end') or group.revision.day.checked_at)
+    return item
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def finished_goods_history(request):
     params = request.query_params
-    today = closed_business_date()
+    today = current_business_date()
     try:
         start = _date(params.get('start_date', (today - timedelta(days=6)).isoformat()))
         end = _date(params.get('end_date', today.isoformat()))
@@ -279,35 +356,54 @@ def finished_goods_history(request):
     if requested and requested != token:
         return _private({'error': 'history_query_expired'}, 409)
     queryset = MovementHistoryGroup.objects.filter(revision_id__in=[rev.pk for rev in revisions])
+    model_search = Q(material_code__icontains=search) | Q(material_name__icontains=search) | Q(specification__icontains=search)
     if search:
-        queryset = queryset.filter(Q(material_code__icontains=search) | Q(material_name__icontains=search) | Q(specification__icontains=search))
+        queryset = queryset.filter(model_search | Q(identifiers__icontains=search))
     if direction != 'all':
         queryset = queryset.filter(**{('inbound_count' if direction == 'in' else 'outbound_count') + '__gt': 0})
+    prefix = '-' if ordering == 'desc' else ''
+    ordered = queryset.select_related('revision__day').order_by(prefix + 'revision__day__business_date', 'material_code', 'id')
+    # Identifier searches project both the daily row and its totals to those
+    # identifiers. Searching a model continues to show its complete daily flow.
+    matched = None
+    if search:
+        # Model searches need only stored aggregates. Bound the event payload
+        # needed for identifier-only projections before loading any JSON arrays.
+        identifier_groups = queryset.exclude(model_search)
+        event_count = identifier_groups.aggregate(count=Sum(F('inbound_count') + F('outbound_count')))['count'] or 0
+        if event_count > MAX_SEARCH_EVENTS:
+            return _private({'error': 'history_range_too_large'}, 400)
+        identifiers = {group['id']: group['identifiers'] for group in identifier_groups.values('id', 'identifiers')} if event_count else {}
+        matched = []
+        for group in ordered.defer('identifiers'):
+            if group.pk in identifiers:
+                group.identifiers = identifiers[group.pk]
+            item = _summary(group, search, direction)
+            if item is not None:
+                matched.append(item)
     totals = defaultdict(lambda: [Decimal(0), Decimal(0)])
     with localcontext() as ctx:
         ctx.prec = 100
-        for group in queryset.values('unit', 'amounts'):
+        values = matched if matched is not None else queryset.values('unit', 'amounts')
+        for group in values:
+            movement_amounts = group if matched is not None else group['amounts']
             if direction != 'out':
-                totals[group['unit']][0] += Decimal(group['amounts']['total_in'])
+                totals[group['unit']][0] += Decimal(movement_amounts['total_in'])
             if direction != 'in':
-                totals[group['unit']][1] += Decimal(group['amounts']['total_out'])
+                totals[group['unit']][1] += Decimal(movement_amounts['total_out'])
         total_rows = [dict(unit=unit, **amounts(*values)) for unit, values in sorted(totals.items())]
-    count = queryset.count()
-    prefix = '-' if ordering == 'desc' else ''
-    result = []
-    selected = queryset.select_related('revision__day').defer('identifiers').order_by(prefix + 'revision__day__business_date', 'material_code', 'id')[(page-1)*page_size:page*page_size]
-    for group in selected:
-        item = {k: getattr(group, k) for k in ('id', 'material_code', 'material_name', 'specification', 'warehouse_name', 'unit', 'identifier_count', 'missing_identifier_count')}
-        item.update(group.amounts, business_date=group.revision.day.business_date.isoformat(), revision=group.revision.version)
-        # Both values stay visible on daily rows; period totals respect direction.
-        result.append(item)
+    count = len(matched) if matched is not None else queryset.count()
+    begin, finish = (page-1)*page_size, page*page_size
+    result = matched[begin:finish] if matched is not None else [_summary(group) for group in ordered.defer('identifiers')[begin:finish]]
     captured = {rev.day.business_date for rev in revisions}
     dates = [start + timedelta(days=i) for i in range((end-start).days+1)]
     return _private({'count': count, 'page': page, 'page_size': page_size, 'snapshot_token': token,
         'results': result, 'totals': total_rows, 'source': {
             'fetched_at': max((rev.day.checked_at for rev in revisions), default=None),
             'missing_dates': [d.isoformat() for d in dates if d <= today and d not in captured],
-            'pending_dates': [d.isoformat() for d in dates if d > today], 'business_day': '08:00',
+            'pending_dates': [d.isoformat() for d in dates if d > today],
+            'provisional_dates': [rev.day.business_date.isoformat() for rev in revisions if _is_provisional(rev)],
+            'business_day': '08:00',
         }})
 
 
@@ -315,14 +411,15 @@ def finished_goods_history(request):
 @permission_classes([IsAuthenticated])
 def finished_goods_history_detail(request, group_id):
     direction = request.query_params.get('direction', 'all')
-    if direction not in ('all', 'in', 'out'):
+    search = request.query_params.get('search', '').strip()
+    if direction not in ('all', 'in', 'out') or len(search) > 100:
         return _private({'error': 'Invalid direction.'}, 400)
     group = MovementHistoryGroup.objects.filter(pk=group_id).first()
     if group is None:
         return _private({'error': 'not_found'}, 404)
     # Immutable old revision IDs remain readable if a daily refresh occurred.
     result = []
-    for original in group.identifiers:
+    for original in _matching_identifiers(group, search):
         detail = dict(original)
         events = [e for e in original['events'] if direction == 'all' or e['direction'] == direction]
         if not events:
