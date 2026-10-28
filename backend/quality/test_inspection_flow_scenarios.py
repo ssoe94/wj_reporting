@@ -4,6 +4,7 @@ QC stages must leave ProductionExecution unchanged. Additional scenarios drive
 its existing local upsert separately; no MES production task or disposition is
 executed, and synthetic QC observations never become live read evidence.
 """
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone as datetime_timezone
 import uuid
@@ -255,6 +256,32 @@ class InspectionFlowScenarioTests(APITestCase):
         self.assertTrue(InspectionRequest.objects.get(pk=child.data['id']).audit.filter(
             action='create_reinspection', actor=self.editor).exists())
 
+    @contextmanager
+    def _scenario_clock(self, started_at):
+        """Keep signed fixture logins on the same clock as the scenario."""
+        with patch('django.utils.timezone.now', return_value=started_at) as clock, \
+                patch('rest_framework_simplejwt.tokens.aware_utcnow',
+                      side_effect=lambda: clock.return_value):
+            # setUp may have cached a token before this historical clock began.
+            # Reissue through the normal helper; never bypass the session guard.
+            for actor in (self.editor, self.reviewer, self.viewer, self.other_editor):
+                actor.__dict__.pop('_inspection_test_access_token', None)
+            yield clock
+
+    def test_frozen_scenario_reissues_cached_tokens_on_its_own_clock(self):
+        started_at = datetime(2026, 10, 3, 2, tzinfo=datetime_timezone.utc)
+        previous_sid = request_helpers.synthetic_token(self.editor)['mes_sid']
+        host_time = datetime(2099, 1, 1, tzinfo=datetime_timezone.utc)
+        with patch('rest_framework_simplejwt.tokens.aware_utcnow', return_value=host_time):
+            with self._scenario_clock(started_at) as clock:
+                token = request_helpers.synthetic_token(self.editor)
+                session = request_helpers.inspection_session(self.editor)
+                self.assertNotEqual(token['mes_sid'], previous_sid)
+                self.assertGreater(session.expires_at, clock.return_value)
+                self.assertLessEqual(session.expires_at, clock.return_value + timedelta(days=31))
+                created = self.create(require_evidence=False)
+                self.assertIn('id', created)
+
     def _local_plan(self, now):
         # A local plan fixture is not a created MES work order or production task.
         self.production_actor = self.make_user('synthetic-production-operator', staff=True)
@@ -314,7 +341,7 @@ class InspectionFlowScenarioTests(APITestCase):
 
     def test_local_start_first_periodic_time_check_and_local_completion_keep_source_boundaries(self):
         started_at = datetime(2026, 10, 3, 2, tzinfo=datetime_timezone.utc)
-        with patch('django.utils.timezone.now', return_value=started_at) as clock:
+        with self._scenario_clock(started_at) as clock:
             plan = self._local_plan(started_at)
             started = self._upsert_production(
                 plan, status='running', actual_qty=0, start_datetime=started_at.isoformat(),
@@ -449,7 +476,7 @@ class InspectionFlowScenarioTests(APITestCase):
     def test_local_completion_currently_has_no_gate_for_open_case_or_draft_reinspection(self):
         """Characterize the missing gate; acceptance here is not safe MES completion."""
         started_at = datetime(2026, 10, 3, 2, tzinfo=datetime_timezone.utc)
-        with patch('django.utils.timezone.now', return_value=started_at) as clock:
+        with self._scenario_clock(started_at) as clock:
             plan = self._local_plan(started_at)
             self._upsert_production(plan, status='running', start_datetime=started_at.isoformat(), actual_qty=0)
             clock.return_value = started_at + timedelta(minutes=1)

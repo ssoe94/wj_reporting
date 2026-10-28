@@ -51,6 +51,7 @@ const LaborCostPage = lazy(() => import('./pages/hr/LaborCostPage'));
 const ModelsPage = lazy(() => import('./pages/models'));
 const Eco2Page = lazy(() => import('./pages/eco2'));
 const AnalysisPage = lazy(() => import('./pages/analysis'));
+const FlowDashboardPage = lazy(() => import('./domains/flow-dashboard/FlowDashboard'));
 const AssemblyPage = lazy(() => import('./pages/assembly'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const LgentTrolleyPage = lazy(() => import('./pages/lgent/LgentTrolleyPage'));
@@ -121,7 +122,7 @@ function isPublicRoutePath(pathname: string) {
 
 function HomeRedirect() {
   const { user } = useAuth();
-  return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/analysis"} replace />;
+  return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/dashboard"} replace />;
 }
 
 function RouteLoading() {
@@ -165,7 +166,8 @@ function useNavItems() {
         label: t('nav_overview'),
         icon: FileChartPie,
         children: [
-          { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+          { to: "/dashboard", label: t('nav_dashboard'), icon: ChartPie },
+          { to: "/analysis", label: t('nav_operations_summary'), icon: FileChartPie },
           { to: "/boards", label: lang === 'ko' ? '현황판' : '看板中心', icon: Monitor },
         ],
       },
@@ -247,7 +249,8 @@ function useNavItems() {
     label: t('nav_overview'),
     icon: FileChartPie,
     children: [
-      { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+      { to: "/dashboard", label: t('nav_dashboard'), icon: ChartPie },
+      { to: "/analysis", label: t('nav_operations_summary'), icon: FileChartPie },
       { to: "/boards", label: lang === 'ko' ? '현황판' : '看板中心', icon: Monitor },
     ],
   });
@@ -523,7 +526,8 @@ function AppContent() {
   else if (pathname.startsWith('/injection/moulds')) breadcrumbLabel = lang === 'ko' ? '금형 현황' : '模具现状';
   else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
-  else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
+  else if (pathname.startsWith('/dashboard')) breadcrumbLabel = t('nav_dashboard');
+  else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_operations_summary');
   else if (pathname.startsWith('/sales/movement-history')) breadcrumbLabel = t('nav_movement_history');
   else if (pathname.startsWith('/sales/trolleys')) breadcrumbLabel = t('nav_trolleys');
   else if (pathname.startsWith('/sales/raw-materials')) breadcrumbLabel = t('nav_raw_material_management');
@@ -854,6 +858,7 @@ function AppContent() {
             <Route path="/development/field-materials" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldMaterialsPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/eco" element={<Navigate to="/eco2" replace />} />
             <Route path="/eco2" element={<PrivateRoute><PageTransition><Eco2Page /></PageTransition></PrivateRoute>} />
+            <Route path="/dashboard" element={<PrivateRoute><PageTransition><FlowDashboardPage /></PageTransition></PrivateRoute>} />
             <Route path="/analysis" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />
 
             {/* Injection page (single) */}
