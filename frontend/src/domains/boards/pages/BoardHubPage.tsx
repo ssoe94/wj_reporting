@@ -163,7 +163,7 @@ export function BoardHubPage() {
             <button aria-pressed={lang === "ko"} className={lang === "ko" ? styles.activeLanguage : ""} onClick={() => setLang("ko")} type="button">KOR</button>
             <button aria-pressed={lang === "zh"} className={lang === "zh" ? styles.activeLanguage : ""} onClick={() => setLang("zh")} type="button">中文</button>
           </div>
-          <Link className={styles.accountLink} to={isAuthenticated ? "/analysis" : "/login"}>
+          <Link className={styles.accountLink} to={isAuthenticated ? "/dashboard" : "/login"}>
             <LogIn aria-hidden="true" size={18} />
             {isAuthenticated ? copy.dashboard : copy.login}
           </Link>
