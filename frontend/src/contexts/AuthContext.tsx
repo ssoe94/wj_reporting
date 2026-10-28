@@ -381,7 +381,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return base === '/field' || base.startsWith('/field/');
     }
 
-    if (base === '/' || base === '' || base === '/analysis') return true;
+    if (base === '/' || base === '' || base === '/dashboard' || base === '/analysis') return true;
 
     if (base.startsWith('/admin')) return false;
 
