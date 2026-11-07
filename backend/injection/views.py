@@ -2112,6 +2112,12 @@ class ProductionMatrixView(generics.GenericAPIView):
         interval_type = request.query_params.get('interval', '30min')  # '1min', '2min', '10min', '30min', '1hour', or '1day'
         columns = int(request.query_params.get('columns', '13'))  # 기본 13열
         date_str = request.query_params.get('date')
+        profile = request.query_params.get('profile', 'full')
+        if profile not in ('full', 'injection-board'):
+            return Response(
+                {"message": "profile must be full or injection-board."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         machine_number_value = request.query_params.get('machine_number')
         machine_numbers = None
         if machine_number_value not in (None, ''):
@@ -2150,6 +2156,13 @@ class ProductionMatrixView(generics.GenericAPIView):
             if not mes_data or not mes_data.get('mes_source'):
                 raise Exception("MES 서비스에서 유효한 데이터를 받지 못했습니다 (mes_data is empty or missing 'mes_source').")
             
+            if profile == 'injection-board':
+                # Keep the same calculation and observation evidence. Only omit
+                # telemetry the board never reads, without mutating shared data.
+                mes_data = {
+                    key: value for key, value in mes_data.items()
+                    if key not in ('oil_temperature_matrix', 'power_kwh_matrix', 'power_usage_matrix')
+                }
             return Response(mes_data)
 
         except Exception as e:

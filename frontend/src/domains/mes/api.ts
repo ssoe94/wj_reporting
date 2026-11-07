@@ -130,7 +130,11 @@ function mesEndpoint(path: string) {
   return `${baseUrl}${path}`;
 }
 
-async function fetchInjectionProductionMatrix(date?: string, machineNumber?: number) {
+async function fetchInjectionProductionMatrix(
+  date?: string,
+  machineNumber?: number,
+  profile?: "injection-board",
+) {
   if (date) {
     try {
       const historicalParams = new URLSearchParams({
@@ -139,6 +143,7 @@ async function fetchInjectionProductionMatrix(date?: string, machineNumber?: num
         date,
       });
       if (machineNumber) historicalParams.set("machine_number", String(machineNumber));
+      if (profile) historicalParams.set("profile", profile);
       const historicalResponse = await http.get<InjectionProductionMatrix>(
         mesEndpoint(`/injection/production-matrix/?${historicalParams.toString()}`),
         { skipAuth: true },
@@ -151,6 +156,7 @@ async function fetchInjectionProductionMatrix(date?: string, machineNumber?: num
         date,
       });
       if (machineNumber) historicalFallbackParams.set("machine_number", String(machineNumber));
+      if (profile) historicalFallbackParams.set("profile", profile);
       const historicalFallbackResponse = await http.get<InjectionProductionMatrix>(
         mesEndpoint(`/injection/production-matrix/?${historicalFallbackParams.toString()}`),
         { skipAuth: true },
@@ -165,6 +171,7 @@ async function fetchInjectionProductionMatrix(date?: string, machineNumber?: num
       columns: "721",
     });
     if (machineNumber) twoMinuteParams.set("machine_number", String(machineNumber));
+    if (profile) twoMinuteParams.set("profile", profile);
     const twoMinuteResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${twoMinuteParams.toString()}`),
       { skipAuth: true },
@@ -176,12 +183,18 @@ async function fetchInjectionProductionMatrix(date?: string, machineNumber?: num
       columns: "144",
     });
     if (machineNumber) fallbackParams.set("machine_number", String(machineNumber));
+    if (profile) fallbackParams.set("profile", profile);
     const fallbackResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${fallbackParams.toString()}`),
       { skipAuth: true },
     );
     return normalizeInjectionProductionMatrix(fallbackResponse.data);
   }
+}
+
+/** Same production/coverage evidence, without unused oil and power telemetry. */
+export async function getInjectionBoardMatrix(date?: string) {
+  return fetchInjectionProductionMatrix(date, undefined, "injection-board");
 }
 
 export async function getInjectionProductionMatrix(machineNumber?: number) {
