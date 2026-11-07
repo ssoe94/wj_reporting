@@ -15,8 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
-  getInjectionProductionMatrix,
-  getInjectionProductionMatrixForDate,
+  getInjectionBoardMatrix,
   type InjectionProductionMatrix,
 } from "@/domains/mes/api";
 import { getProductionPlanSummary, getProductionStatus } from "@/domains/production/api";
@@ -1271,7 +1270,7 @@ export function InjectionBoardPage() {
   });
   const mesQuery = useQuery({
     queryKey: ["mes", "injection-board-matrix", requestedBusinessDate],
-    queryFn: () => getInjectionProductionMatrix(),
+    queryFn: () => getInjectionBoardMatrix(),
     refetchInterval: BOARD_REFRESH_INTERVAL_MS,
     placeholderData: (previousData) => previousData,
   });
@@ -1331,7 +1330,7 @@ export function InjectionBoardPage() {
   });
   const previousMesQuery = useQuery({
     queryKey: ["mes", "injection-board-history", previousBusinessDate],
-    queryFn: () => getInjectionProductionMatrixForDate(previousBusinessDate),
+    queryFn: () => getInjectionBoardMatrix(previousBusinessDate),
     retry: 1,
     staleTime: 30 * 60_000,
     refetchOnWindowFocus: false,

@@ -87,6 +87,7 @@ class ApprovedQCReadAPITests(VaultFixture, TestCase):
 
     def test_signed_other_actor_cannot_dispatch_approved_qc(self):
         token = ScopedTokenObtainPairSerializer.get_token(self.other).access_token
+        token['mes_login_exp'] = int(self.login.expires_at.timestamp())
         self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(token))
         self.assertEqual(self.get().status_code, 403)
         self.assert_no_dispatch()
@@ -96,6 +97,7 @@ class ApprovedQCReadAPITests(VaultFixture, TestCase):
         get_user_model().objects.filter(pk=self.user.pk).update(is_superuser=False, is_staff=False)
         self.user.refresh_from_db()
         fresh = ScopedTokenObtainPairSerializer.get_token(self.user).access_token
+        fresh['mes_login_exp'] = int(self.login.expires_at.timestamp())
         self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(fresh))
         self.assertEqual(self.get().status_code, 403)
         self.read.assert_not_called()
