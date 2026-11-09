@@ -1,4 +1,5 @@
 import { http } from "@/shared/api/http";
+import { normalizeMouldInventory, normalizeStorageInventory, type MouldInventory, type StorageInventory } from "./storage-inventory";
 
 const MOULD_BOARD_ENDPOINT = "/injection/moulds/board/";
 const MOULD_DETAIL_ENDPOINT = "/injection/moulds";
@@ -84,6 +85,7 @@ export type MouldRecord = {
   confirmationRequired: boolean;
   detailSnapshotAvailable: boolean;
   warnings: MouldWarning[];
+  inventory?: MouldInventory | null;
 };
 
 export type MouldMachineSlot = {
@@ -119,6 +121,7 @@ export type MouldBoard = {
   capabilities: MouldCapabilities;
   warnings: MouldWarning[];
   calculationBasis: string[];
+  storageInventory?: StorageInventory | null;
 };
 
 export type MouldMachineValidationDecision = "match" | "mismatch";
@@ -460,6 +463,7 @@ function normalizeMouldRecord(value: unknown): MouldRecord {
     confirmationRequired: Boolean(pick(source, "confirmation_required", "confirmationRequired")),
     detailSnapshotAvailable: asBoolean(pick(source, "detail_snapshot_available", "detailSnapshotAvailable")),
     warnings: normalizeWarnings(pick(source, "warnings", "warning_details", "warningDetails")),
+    inventory: normalizeMouldInventory(pick(source, "inventory")),
   };
 }
 
@@ -544,6 +548,7 @@ export function normalizeMouldBoard(value: unknown): MouldBoard {
     capabilities: normalizeCapabilities(pick(source, "capabilities")),
     warnings: normalizeWarnings(pick(source, "warnings", "warning_details", "warningDetails")),
     calculationBasis: normalizeCalculationBasis(pick(source, "calculation_basis", "calculationBasis")),
+    storageInventory: normalizeStorageInventory(pick(source, "storage_inventory", "storageInventory")),
   };
 }
 

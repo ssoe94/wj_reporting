@@ -17,6 +17,7 @@ from django.utils.dateparse import parse_datetime
 
 from .models import MouldDataSnapshot, MouldUsageConfirmation
 from .mould_service import continuous_production_history, refresh_board_machine_metadata
+from .mould_inventory import latest_movement
 
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -264,6 +265,9 @@ def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         instance_id = str(mould.get('instance_id') or '')
         detail = detail_payloads.get(instance_id)
         mould['detail_snapshot_available'] = isinstance(detail, Mapping)
+        mould['last_movement'] = latest_movement(
+            detail.get('movement_history', []) if isinstance(detail, Mapping) else []
+        )
         production_history = (
             detail.get('production_history', [])
             if isinstance(detail, Mapping)
