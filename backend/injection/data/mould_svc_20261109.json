@@ -10,6 +10,17 @@
       "NDIF02767282"
     ]
   },
+  "identity_confirmations": [
+    {
+      "asset_code": "NDIF02767282",
+      "physical_mould_count": 2,
+      "mould_nos": ["NT1", "NT2"],
+      "source_entry_ids": ["svc-20261109-I20", "svc-20261109-Q12"],
+      "confirmed_on": "2026-11-09",
+      "basis": "owner_confirmation",
+      "row_mould_nos": {}
+    }
+  ],
   "entries": [
     {
       "entry_id": "svc-20261109-A4",

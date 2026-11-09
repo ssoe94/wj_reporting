@@ -82,24 +82,60 @@ class MouldInventorySourceTests(unittest.TestCase):
         self.assertEqual(len(inventory["entries"]), 35)
         self.assertEqual(len({entry["entry_id"] for entry in inventory["entries"]}), 35)
         self.assertTrue(all(entry["instance_id"] is None for entry in inventory["entries"]))
-        self.assertTrue(all(entry["match_status"] == "unmatched" for entry in inventory["entries"]))
+        self.assertEqual(sum(entry["match_status"] == "unmatched" for entry in inventory["entries"]), 33)
+        self.assertEqual(inventory["reconciliation"], {
+            "physical_mould_count": 35, "individually_linked_mould_count": 0,
+            "identity_pending_mould_count": 2, "unmatched_mould_count": 33,
+        })
         self.assertEqual(groups(result)["SVC"]["entry_count"], 35)
         self.assertEqual(groups(result)["SVC"]["mould_count"], 0)
 
-    def test_duplicate_source_asset_keeps_two_rows_but_counts_one_mes_mould(self):
+    def test_confirmed_distinct_moulds_do_not_share_an_individual_mes_identity(self):
         result = decorate_inventory_board(board(
             mould(asset_code=DUPLICATE_SOURCE_ASSET),
         ))
         entries = source_entries(result, DUPLICATE_SOURCE_ASSET)
 
         self.assertEqual(len(entries), 2)
-        self.assertEqual({entry["instance_id"] for entry in entries}, {"101"})
-        self.assertEqual({entry["match_status"] for entry in entries}, {"duplicate_source_asset"})
+        self.assertEqual({entry["instance_id"] for entry in entries}, {None})
+        self.assertEqual({entry["match_status"] for entry in entries}, {"shared_asset_identity_pending"})
+        for entry in entries:
+            self.assertEqual(entry["candidate_instance_ids"], ["101"])
+            self.assertEqual(entry["candidate_mould_codes"], ["MOLD-101"])
+            self.assertEqual(entry["confirmed_mould_nos"], ["NT1", "NT2"])
+            self.assertIsNone(entry["confirmed_mould_no"])
+            self.assertEqual(entry["record_location"], "")
+        self.assertEqual({entry["mould_no"] for entry in entries}, {"NT2", "NT4"})
         self.assertEqual(len({entry["source_range"] for entry in entries}), 2)
         self.assertEqual(len({entry["rack"] for entry in entries}), 2)
         self.assertEqual(groups(result)["SVC"]["mould_count"], 1)
         self.assertEqual(groups(result)["SVC"]["instance_ids"], ["101"])
         self.assertEqual(len(result["moulds"][0]["inventory"]["source_ranges"]), 2)
+        self.assertTrue(result["moulds"][0]["inventory"]["identity_pending"])
+        self.assertEqual(result["moulds"][0]["inventory"]["confirmed_mould_nos"], ["NT1", "NT2"])
+        self.assertEqual(result["storage_inventory"]["reconciliation"]["physical_mould_count"], 35)
+
+    def test_all_source_assets_reconcile_physical_and_mes_identity_counts_separately(self):
+        source = decorate_inventory_board(board())["storage_inventory"]["entries"]
+        records = [mould(str(index), asset_code=asset) for index, asset in enumerate(sorted({row["asset_code"] for row in source}))]
+        result = decorate_inventory_board(board(*records))
+        self.assertEqual(result["storage_inventory"]["reconciliation"], {
+            "physical_mould_count": 35, "individually_linked_mould_count": 33,
+            "identity_pending_mould_count": 2, "unmatched_mould_count": 0,
+        })
+        self.assertEqual(groups(result)["SVC"]["mould_count"], 34)
+        self.assertEqual(len(result["moulds"]), 34)
+
+    def test_multiple_same_asset_mes_candidates_cannot_resolve_physical_variants(self):
+        result = decorate_inventory_board(board(
+            mould("101", DUPLICATE_SOURCE_ASSET), mould("102", DUPLICATE_SOURCE_ASSET),
+        ))
+        for entry in source_entries(result, DUPLICATE_SOURCE_ASSET):
+            self.assertIsNone(entry["instance_id"])
+            self.assertEqual(entry["candidate_instance_ids"], ["101", "102"])
+            self.assertEqual(entry["match_status"], "shared_asset_identity_pending")
+        self.assertEqual(result["storage_inventory"]["reconciliation"]["individually_linked_mould_count"], 0)
+        self.assertEqual(result["storage_inventory"]["reconciliation"]["identity_pending_mould_count"], 2)
 
     def test_asset_match_does_not_assign_same_part_to_another_mould(self):
         result = decorate_inventory_board(board(
@@ -275,6 +311,8 @@ class MouldInventoryDetailTests(unittest.TestCase):
         board_result = decorate_inventory_board(board(row))
 
         self.assertEqual(result["mould"]["inventory"], board_result["moulds"][0]["inventory"])
+        self.assertTrue(result["mould"]["inventory"]["identity_pending"])
+        self.assertEqual(result["mould"]["inventory"]["confirmed_mould_nos"], ["NT1", "NT2"])
         self.assertEqual(result["movement_history"], payload["movement_history"])
         self.assertEqual(result["production_history"], payload["production_history"])
         self.assertEqual(payload, before)

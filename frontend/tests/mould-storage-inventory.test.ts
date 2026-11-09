@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  inventoryEntryMatches, inventoryMoulds, normalizeMouldInventory, normalizeStorageInventory, sourceLinkedMouldIds, storageInventoryCount,
+  inventoryEntryMatches, inventoryMoulds, normalizeMouldInventory, normalizeStorageInventory, sourceLinkedMouldIds, sourceReferencedMouldIds, storageInventoryCount, storageInventoryUnit,
 } from "../src/domains/moulds/storage-inventory.ts";
 
 const payload = {
@@ -80,10 +80,79 @@ test("source search finds rack, asset, part and source range without dropping du
 
 test("detail inventory retains confirmation provenance and physical discrepancy", () => {
   assert.deepEqual(normalizeMouldInventory({ site: "SVC", basis: "confirmed_list", source_ranges: ["A9:J9", "A12:J12"], source_locations: ["A / 1-1", "B / 2-1"], confirmed_on: "2026-11-09", location_conflict: true }), {
-    site: "SVC", basis: "confirmed_list", sourceRanges: ["A9:J9", "A12:J12"], sourceLocations: ["A / 1-1", "B / 2-1"], confirmedOn: "2026-11-09", locationConflict: true, lastMovement: null,
+    site: "SVC", basis: "confirmed_list", sourceRanges: ["A9:J9", "A12:J12"], sourceLocations: ["A / 1-1", "B / 2-1"], confirmedOn: "2026-11-09", locationConflict: true, identityPending: false, confirmedMouldNos: [], lastMovement: null,
   });
   assert.equal(normalizeMouldInventory(undefined), null);
   assert.equal(normalizeMouldInventory({ site: "S" }), null);
+});
+
+function sharedAssetPayload() {
+  const normalEntries = Array.from({ length: 33 }, (_, index) => ({
+    entry_id: `normal-${index}`, asset_code: `ASSET-${index}`, instance_id: `mes-${index}`, match_status: "matched",
+  }));
+  const sharedEntries = [
+    { entry_id: "svc-20261109-I20", mould_no: "NT2" },
+    { entry_id: "svc-20261109-Q12", mould_no: "NT4" },
+  ].map((entry) => ({
+    ...entry, asset_code: "NDIF02767282", instance_id: null, match_status: "shared_asset_identity_pending",
+    candidate_instance_ids: ["candidate-0512"], candidate_mould_codes: ["MOLD-0512"],
+    confirmed_mould_nos: ["NT1", "NT2"], confirmed_mould_no: null,
+  }));
+  return {
+    source: { ...payload.source, mould_rows: 35, unique_assets: 34, duplicate_assets: ["NDIF02767282"] },
+    entries: [...normalEntries, ...sharedEntries],
+    groups: [{ site: "SVC", mould_count: 34, entry_count: 35, instance_ids: [...normalEntries.map((entry) => entry.instance_id), "candidate-0512"] }],
+    identity_confirmations: [{ asset_code: "NDIF02767282", physical_mould_count: 2, mould_nos: ["NT1", "NT2"], source_entry_ids: sharedEntries.map((entry) => entry.entry_id), confirmed_on: "2026-11-09", row_mould_nos: {} }],
+    reconciliation: { physical_mould_count: 35, individually_linked_mould_count: 33, identity_pending_mould_count: 2 },
+  };
+}
+
+test("confirmed physical mould count stays 35 although there are 34 asset numbers and MES candidates", () => {
+  const inventory = normalizeStorageInventory(sharedAssetPayload())!;
+  assert.equal(inventory.entries.length, 35);
+  assert.equal(inventory.source.uniqueAssets, 34);
+  assert.equal(storageInventoryCount(inventory, "SVC"), 35);
+  assert.equal(storageInventoryUnit(inventory, "SVC"), "moulds");
+  assert.equal(storageInventoryUnit(normalizeStorageInventory(payload), "SVC"), "rows");
+  assert.equal(inventory.reconciliation?.individuallyLinkedMouldCount, 33);
+  assert.equal(inventory.reconciliation?.identityPendingMouldCount, 2);
+  assert.equal(sourceLinkedMouldIds(inventory).size, 33);
+  assert.equal(sourceReferencedMouldIds(inventory).size, 34);
+  const records = inventory.groups[0]!.instanceIds.map((instanceId) => ({ instanceId }));
+  assert.deepEqual(inventoryMoulds(inventory, "SVC", records).filter((mould) => !sourceReferencedMouldIds(inventory).has(mould.instanceId)), []);
+});
+
+test("shared asset rows preserve original NT2/NT4 without guessing their actual NT1/NT2 mapping", () => {
+  const inventory = normalizeStorageInventory(sharedAssetPayload())!;
+  const pending = inventory.entries.filter((entry) => entry.matchStatus === "shared_asset_identity_pending");
+  assert.deepEqual(pending.map((entry) => entry.mouldNo), ["NT2", "NT4"]);
+  assert.deepEqual(pending.map((entry) => entry.confirmedMouldNo), [null, null]);
+  assert.deepEqual(pending.map((entry) => entry.instanceId), [null, null]);
+  assert.deepEqual(pending[0]!.confirmedMouldNos, ["NT1", "NT2"]);
+  assert.deepEqual(pending[0]!.candidateMouldCodes, ["MOLD-0512"]);
+  assert.deepEqual(inventory.identityConfirmations[0]?.rowMouldNos, {});
+  assert.equal(inventoryEntryMatches(pending[0]!, "NT1"), true);
+  assert.equal(inventoryEntryMatches(pending[0]!, "MOLD-0512"), true);
+  pending[0]!.instanceId = "candidate-0512";
+  assert.equal(sourceLinkedMouldIds(inventory).has("candidate-0512"), false);
+});
+
+test("an explicitly confirmed row mapping stays separate from the source and unresolved MES identity", () => {
+  const raw = sharedAssetPayload();
+  const inventory = normalizeStorageInventory({
+    ...raw,
+    entries: raw.entries.map((entry) => entry.entry_id === "svc-20261109-I20" ? { ...entry, confirmed_mould_no: "NT1" } : entry),
+    identity_confirmations: [{ ...raw.identity_confirmations[0], row_mould_nos: { "svc-20261109-I20": "NT1" } }],
+  })!;
+  const entry = inventory.entries.find((row) => row.entryId === "svc-20261109-I20")!;
+  assert.equal(entry.mouldNo, "NT2");
+  assert.equal(entry.confirmedMouldNo, "NT1");
+  assert.equal(entry.instanceId, null);
+  assert.equal(entry.matchStatus, "shared_asset_identity_pending");
+  assert.equal(inventory.identityConfirmations[0]?.rowMouldNos[entry.entryId], "NT1");
+  const detail = normalizeMouldInventory({ site: "SVC", identity_pending: true, confirmed_mould_nos: ["NT1", "NT2"] })!;
+  assert.equal(detail.identityPending, true);
+  assert.deepEqual(detail.confirmedMouldNos, ["NT1", "NT2"]);
 });
 
 test("last movement evidence keeps its date and ambiguity instead of claiming a confirmed position", () => {

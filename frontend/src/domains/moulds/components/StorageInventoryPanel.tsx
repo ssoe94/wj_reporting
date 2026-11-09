@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Boxes, Search, X } from "lucide-react";
 import type { MouldRecord } from "../api";
 import {
-  INVENTORY_SITES, inventoryEntryMatches, inventoryMoulds, sourceLinkedMouldIds, storageInventoryCount,
+  INVENTORY_SITES, inventoryEntryMatches, inventoryMoulds, sourceLinkedMouldIds, sourceReferencedMouldIds, storageInventoryCount, storageInventoryUnit,
   type InventorySite, type StorageInventory, type StorageInventoryEntry,
 } from "../storage-inventory";
 import styles from "./StorageInventoryPanel.module.css";
@@ -10,7 +10,7 @@ import styles from "./StorageInventoryPanel.module.css";
 const COPY = {
   ko: {
     title: "별도 보관 인벤토리", close: "보관 인벤토리 닫기", other: "기타 위치", unknown: "미확인",
-    search: "자산번호·모델·보관 위치 검색", rows: "행", moulds: "벌", assets: "자산", source: "확인 목록",
+    search: "자산번호·모델·보관 위치 검색", rows: "행", moulds: "벌", assets: "자산번호", assetTypes: "종", source: "확인 목록",
     mes: "MES 연결", duplicate: "중복 자산", duplicateNote: "중복 자산의 원본 행은 모두 표시합니다.",
     locationConflict: "MES 위치 상이", unmatched: "MES 미연결", ambiguous: "MES 다중 일치", detail: "MES 상세",
     empty: "검색 결과가 없습니다.", unavailable: "보관 분류 자료를 아직 불러오지 못했습니다.",
@@ -20,10 +20,15 @@ const COPY = {
     svcHint: "SVC 확인 목록 · 실제 위치와 MES 기록을 구분해 표시합니다.",
     lastMovement: "마지막 이동 기록", ambiguousMovement: "이동 기록 확인 필요", movementBasis: "현재 위치는 별도 확인 필요",
     additionalSvc: "추가 SVC 위치 기록",
+    physical: "실물", sourceRows: "원본", displayedRows: "표시", individuallyLinked: "개별 MES 연결", identityPending: "MES 대응 미확정",
+    sharedAsset: "공유 자산번호 · 서로 다른 실물", actualVariants: "확인된 실제 금형", actualMould: "실제 금형",
+    rowMappingPending: "원본 행과 실제 금형의 대응 확인 중", sourceMouldNo: "원본 금형 번호",
+    candidate: "MES 후보 · 개별 연결 미확정", sharedAssetReason: "자산번호 공유 사유 확인 중",
+    physicalNote: "공유 자산번호의 금형도 실물을 각각 집계합니다.",
   },
   zh: {
     title: "其他存放位置", close: "关闭存放清单", other: "其他位置", unknown: "未确认",
-    search: "搜索资产号、机型、存放位置", rows: "行", moulds: "套", assets: "资产", source: "确认清单",
+    search: "搜索资产号、机型、存放位置", rows: "行", moulds: "套", assets: "资产号", assetTypes: "种", source: "确认清单",
     mes: "MES 关联", duplicate: "重复资产", duplicateNote: "重复资产的原始行全部保留。",
     locationConflict: "MES 位置不一致", unmatched: "未关联 MES", ambiguous: "MES 多条匹配", detail: "MES 详情",
     empty: "没有匹配结果。", unavailable: "暂未取得存放分类数据。",
@@ -33,6 +38,11 @@ const COPY = {
     svcHint: "SVC 已确认清单 · 实际位置与 MES 记录分别显示。",
     lastMovement: "最后移动记录", ambiguousMovement: "需确认移动记录", movementBasis: "当前位置需另行确认",
     additionalSvc: "其他 SVC 位置记录",
+    physical: "实物", sourceRows: "原表", displayedRows: "显示", individuallyLinked: "逐套 MES 关联", identityPending: "MES 对应待确认",
+    sharedAsset: "共用资产号 · 不同实物", actualVariants: "已确认实际模具", actualMould: "实际模具",
+    rowMappingPending: "原表行与实际模具的对应关系待确认", sourceMouldNo: "原表模具号",
+    candidate: "MES 候选 · 逐套关联未确认", sharedAssetReason: "共用资产号原因待确认",
+    physicalNote: "共用资产号的模具按各套实物分别计数。",
   },
 };
 
@@ -53,17 +63,24 @@ function SourceRow({ entry, copy, canOpen, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   const position = [entry.rack, entry.position].filter(Boolean).join(" / ") || "—";
+  const identityPending = entry.matchStatus === "shared_asset_identity_pending";
   return (
     <details className={styles.sourceRow} data-testid="svc-source-row">
       <summary>
         <span className={styles.rowHeading}><strong>{entry.assetCode || "—"}</strong><span>{position}</span></span>
         <span className={styles.rowDescription}>{[entry.model, entry.name].filter(Boolean).join(" · ") || "—"}</span>
         <span className={styles.rowPart}>{entry.partNo || entry.mouldNo || "—"}</span>
+        {identityPending ? <span className={styles.identityStatement}>
+          <strong>{entry.confirmedMouldNo ? `${copy.actualMould} ${entry.confirmedMouldNo}` : `${copy.actualVariants} ${entry.confirmedMouldNos.join(" / ") || "—"}`}</strong>
+          <span>{copy.sourceMouldNo}: {entry.mouldNo || "—"}</span>
+          {!entry.confirmedMouldNo ? <span>{copy.rowMappingPending}</span> : null}
+        </span> : null}
         {entry.locationConflict || entry.matchStatus !== "matched" ? (
           <span className={styles.flags}>
             {entry.matchStatus === "duplicate_source_asset" ? <span>{copy.duplicate}</span> : null}
             {entry.matchStatus === "unmatched" ? <span>{copy.unmatched}</span> : null}
             {entry.matchStatus === "ambiguous" ? <span>{copy.ambiguous}</span> : null}
+            {identityPending ? <span>{copy.sharedAsset}</span> : null}
             {entry.locationConflict ? <span><AlertTriangle size={13} aria-hidden="true" />{copy.locationConflict}</span> : null}
           </span>
         ) : null}
@@ -72,12 +89,18 @@ function SourceRow({ entry, copy, canOpen, onSelect }: {
         <dl>
           <div><dt>{copy.rack}</dt><dd>{position}</dd></div>
           <div><dt>{copy.part}</dt><dd>{entry.partNo || "—"}</dd></div>
-          <div><dt>{copy.mouldNo}</dt><dd>{entry.mouldNo || "—"}</dd></div>
+          <div><dt>{identityPending ? copy.sourceMouldNo : copy.mouldNo}</dt><dd>{entry.mouldNo || "—"}</dd></div>
+          {identityPending ? <>
+            <div><dt>{copy.actualVariants}</dt><dd>{entry.confirmedMouldNos.join(" / ") || "—"}</dd></div>
+            <div><dt>{copy.actualMould}</dt><dd>{entry.confirmedMouldNo || copy.rowMappingPending}</dd></div>
+            <div><dt>{copy.candidate}</dt><dd>{entry.candidateMouldCodes.join(" / ") || "—"}</dd></div>
+          </> : null}
           <div><dt>{copy.cavity}</dt><dd>{entry.cavityCount || "—"}</dd></div>
           <div><dt>{copy.sourceRange}</dt><dd>{entry.sourceRange || entry.sourceRow || "—"}</dd></div>
           <div><dt>{copy.currentLocation}</dt><dd>{entry.recordLocation || copy.noLocation}</dd></div>
         </dl>
-        {canOpen && entry.instanceId ? <button onClick={() => onSelect(entry.instanceId!)} type="button">{copy.detail}<ArrowUpRight size={15} aria-hidden="true" /></button> : null}
+        {identityPending ? <p className={styles.identityNote}>{copy.sharedAssetReason}</p> : null}
+        {!identityPending && canOpen && entry.instanceId ? <button onClick={() => onSelect(entry.instanceId!)} type="button">{copy.detail}<ArrowUpRight size={15} aria-hidden="true" /></button> : null}
       </div>
     </details>
   );
@@ -102,7 +125,9 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
     ...(mould.inventory?.sourceLocations ?? []), mould.inventory?.lastMovement?.toLocation ?? "", site,
   ].join(" ").normalize("NFKC").toLocaleLowerCase().includes(term));
   const sourceLinkedIds = useMemo(() => sourceLinkedMouldIds(inventory), [inventory]);
-  const additionalSvcRecords = visibleRecords.filter((mould) => !sourceLinkedIds.has(mould.instanceId));
+  const sourceReferencedIds = useMemo(() => sourceReferencedMouldIds(inventory), [inventory]);
+  const additionalSvcRecords = visibleRecords.filter((mould) => !sourceReferencedIds.has(mould.instanceId));
+  const reconciliation = inventory?.reconciliation;
   const labels: Record<InventorySite, string> = { SVC: "SVC", TIANLU: "TIANLU · 天路", OTHER: copy.other, UNCONFIRMED: copy.unknown };
   const movementTime = (value: string) => {
     const date = new Date(value);
@@ -128,14 +153,20 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
       </header>
       <div aria-label={copy.title} className={styles.sites}>
         {INVENTORY_SITES.map((location) => <button aria-pressed={site === location} className={site === location ? styles.activeSite : ""} key={location} onClick={() => onSiteChange(location)} title={labels[location]} type="button">
-          <span>{location === "TIANLU" ? "TIANLU" : labels[location]}</span><strong>{storageInventoryCount(inventory, location) ?? "—"}<small>{location === "SVC" ? copy.rows : copy.moulds}</small></strong>
+          <span>{location === "TIANLU" ? "TIANLU" : labels[location]}</span><strong>{storageInventoryCount(inventory, location) ?? "—"}<small>{copy[storageInventoryUnit(inventory, location)]}</small></strong>
         </button>)}
       </div>
       <div className={styles.basis}>
         {site === "SVC" && inventory ? <>
           <p>{copy.source} <strong>{inventory.source.confirmedOn || "—"}</strong><span>{inventory.source.filename}</span></p>
-          <p>{copy.assets} <b>{inventory.source.uniqueAssets ?? "—"}</b> · {copy.mes} <b>{sourceLinkedIds.size}</b> · {copy.duplicate} <b>{inventory.source.duplicateAssets.length}</b></p>
-          <small>{inventory.source.duplicateAssets.length ? copy.duplicateNote : copy.svcHint}</small>
+          {reconciliation ? <>
+            <p>{copy.physical} <b>{reconciliation.physicalMouldCount ?? "—"}{copy.moulds}</b> · {copy.sourceRows} <b>{inventory.source.mouldRows ?? "—"}{copy.rows}</b> · {copy.assets} <b>{inventory.source.uniqueAssets ?? "—"}{copy.assetTypes}</b></p>
+            <p>{copy.individuallyLinked} <b>{reconciliation.individuallyLinkedMouldCount ?? sourceLinkedIds.size}{copy.moulds}</b> · {copy.identityPending} <b>{reconciliation.identityPendingMouldCount ?? "—"}{copy.moulds}</b></p>
+            {inventory.identityConfirmations.length ? <small>{copy.physicalNote}</small> : null}
+          </> : <>
+            <p>{copy.assets} <b>{inventory.source.uniqueAssets ?? "—"}{copy.assetTypes}</b> · {copy.mes} <b>{sourceLinkedIds.size}</b> · {copy.duplicate} <b>{inventory.source.duplicateAssets.length}</b></p>
+            <small>{inventory.source.duplicateAssets.length ? copy.duplicateNote : copy.svcHint}</small>
+          </>}
         </> : <p>{site === "UNCONFIRMED" ? copy.unknownHint : copy.classified}</p>}
       </div>
       <label className={styles.search}><Search size={16} aria-hidden="true" /><span className={styles.srOnly}>{copy.search}</span><input type="search" placeholder={copy.search} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
@@ -151,7 +182,7 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
           </>
         ) : visibleRecords.length ? visibleRecords.map(renderMouldRow) : <p className={styles.empty} role="status">{copy.empty}</p>}
       </div>
-      {inventory ? <footer className={styles.footer}>{labels[site]} · {site === "SVC" ? `${entries.length}${copy.rows}${additionalSvcRecords.length ? ` + ${additionalSvcRecords.length}${copy.moulds}` : ""}` : `${visibleRecords.length}${copy.moulds}`}{site === "SVC" && inventory.source.sheet ? <span>{inventory.source.sheet}</span> : null}</footer> : null}
+      {inventory ? <footer className={styles.footer}>{labels[site]} · {site === "SVC" ? `${reconciliation?.physicalMouldCount != null ? `${reconciliation.physicalMouldCount}${copy.moulds} · ${search.trim() ? copy.displayedRows : copy.sourceRows} ` : ""}${entries.length}${copy.rows}${additionalSvcRecords.length ? ` + ${additionalSvcRecords.length}${copy.moulds}` : ""}` : `${visibleRecords.length}${copy.moulds}`}{site === "SVC" && inventory.source.sheet ? <span>{inventory.source.sheet}</span> : null}</footer> : null}
     </aside>
   );
 }
