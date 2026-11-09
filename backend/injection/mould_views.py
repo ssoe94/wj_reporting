@@ -31,6 +31,7 @@ from .mould_service import (
     unavailable_detail_payload,
 )
 from .machine_display import display_tonnage
+from .mould_inventory import decorate_inventory_board, decorate_inventory_detail
 from .mould_snapshots import (
     BOARD_SNAPSHOT_KEY,
     SHOT_MILESTONE_SIZE,
@@ -124,6 +125,7 @@ _MOULD_FIELDS = (
     "confirmed_milestone",
     "confirmation_required",
     "detail_snapshot_available",
+    "last_movement",
 )
 _ENUM_FIELDS = ("code", "label", "message", "name")
 _DATA_FRESHNESS_FIELDS = (
@@ -252,6 +254,10 @@ def _project_location(value: Any) -> dict[str, Any]:
 
 def _project_mould(value: Any) -> dict[str, Any]:
     projected = _project_fields(value, _MOULD_FIELDS)
+    if "last_movement" in projected:
+        projected["last_movement"] = _project_fields(projected["last_movement"], (
+            "occurred_at", "from_location", "to_location", "reason", "time_quality", "ambiguous",
+        )) or None
     for field in (
         "instance_id",
         "mould_code",
@@ -337,6 +343,18 @@ def _project_detail_payload(payload: Any) -> dict[str, Any]:
 
 
 def _no_store_response(payload, *, status_code=status.HTTP_200_OK):
+    # Build from the already public projection on every path, so old snapshots,
+    # cache hits and fresh reads all receive the same dated inventory evidence.
+    if isinstance(payload, Mapping):
+        if isinstance(payload.get("moulds"), list):
+            payload = decorate_inventory_board(payload)
+        elif isinstance(payload.get("mould"), Mapping):
+            board = MouldDataSnapshot.objects.filter(
+                snapshot_key=BOARD_SNAPSHOT_KEY,
+            ).values_list("payload", flat=True).first()
+            payload = decorate_inventory_detail(
+                payload, moulds=board.get("moulds") if isinstance(board, Mapping) else None,
+            )
     response = Response(payload, status=status_code)
     response["Cache-Control"] = "no-store"
     response["Pragma"] = "no-cache"

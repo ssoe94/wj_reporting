@@ -206,6 +206,38 @@
   border-radius: 12px;
 }
 
+.storagePanel {
+  position: relative;
+}
+
+.storageHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.inventoryToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--wj-border);
+  border-radius: 6px;
+  background: var(--wj-surface-solid);
+  color: var(--wj-text);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.inventoryToggle > span { display: inline-flex; align-items: baseline; gap: 4px; }
+.inventoryToggle small { font-size: 12px; color: var(--wj-muted); }
+.inventoryToggle:focus-visible { outline: 2px solid var(--wj-accent, #336b97); outline-offset: 2px; }
+.inventoryToggle:active { background: var(--wj-selected, #e9f1f8); }
+
 .panelHeader {
   display: flex;
   flex: 0 0 auto;

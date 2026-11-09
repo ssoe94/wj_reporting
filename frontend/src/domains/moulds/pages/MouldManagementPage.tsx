@@ -71,6 +71,8 @@ import {
   normalizedModelCode,
 } from "@/domains/moulds/machine-plan-comparison";
 import { MachineGlyph } from "@/domains/moulds/components/MachineGlyph";
+import { StorageInventoryPanel } from "@/domains/moulds/components/StorageInventoryPanel";
+import { storageInventoryCount, type InventorySite } from "@/domains/moulds/storage-inventory";
 import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import styles from "./MouldManagementPage.module.css";
 
@@ -1380,6 +1382,9 @@ function matchesSearch(mould: MouldRecord, search: string) {
     mould.drawingNo,
     mould.location.code,
     mould.location.label,
+    mould.inventory?.site ?? "",
+    ...(mould.inventory?.sourceLocations ?? []),
+    mould.inventory?.lastMovement?.toLocation ?? "",
     mould.location.machineNumber ? `${mould.location.machineNumber}호기` : "",
     mould.location.machineNumber ? `${mould.location.machineNumber}号机` : "",
   ].join(" ").toLocaleLowerCase().includes(term);
@@ -1661,6 +1666,7 @@ export function MouldManagementPage() {
   const [conflictListOpen, setConflictListOpen] = useState(false);
   const [conflictFocusCode, setConflictFocusCode] = useState("");
   const [focusedZone, setFocusedZone] = useState<string | null>(null);
+  const [inventorySite, setInventorySite] = useState<InventorySite | null>(null);
   const [isZonePanning, setIsZonePanning] = useState(false);
   const zoneDragRef = useRef<ZoneDragState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
@@ -1685,6 +1691,7 @@ export function MouldManagementPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (detailOpen) setDetailOpen(false);
+      else if (inventorySite !== null) setInventorySite(null);
       else if (statusListOpen) setStatusListOpen(false);
       else if (verificationMachineNumber !== null) setVerificationMachineNumber(null);
       else if (conflictListOpen) setConflictListOpen(false);
@@ -1692,7 +1699,7 @@ export function MouldManagementPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [conflictListOpen, detailOpen, focusedZone, statusListOpen, verificationMachineNumber]);
+  }, [conflictListOpen, detailOpen, focusedZone, inventorySite, statusListOpen, verificationMachineNumber]);
 
   const boardQuery = useQuery({
     queryKey: ["injection", "moulds", "board"],
@@ -2275,6 +2282,13 @@ export function MouldManagementPage() {
               {item.label}<strong>{item.count}</strong>
             </button>
           ))}
+          {board ? <button
+            aria-controls="mould-storage-inventory"
+            aria-expanded={inventorySite === "SVC"}
+            className={inventorySite === "SVC" ? styles.activeChip : ""}
+            onClick={() => { setStatusListOpen(false); setInventorySite("SVC"); }}
+            type="button"
+          >SVC<strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{language === "ko" ? "행" : "行"}</small></button> : null}
         </div>
         <div className={styles.boardStatus}>
           {usingFallback ? <small>{copy.fallbackNotice}</small> : null}
@@ -2406,11 +2420,25 @@ export function MouldManagementPage() {
           <section className={styles.storagePanel} aria-labelledby="mould-storage-title">
             <div className={styles.panelHeader}>
               <div><p>{copy.stored}</p><h2 id="mould-storage-title">{copy.storageInventory}</h2><span>{copy.touchHint}</span></div>
+              <div className={styles.storageHeaderActions}>
               {storageConflictGroups.length || unmappedStorageMoulds.length ? (
                 <button className={styles.panelIssueButton} onClick={() => openConflictList()} type="button">
                   <AlertTriangle aria-hidden="true" size={16} />{copy.dataIssues}<strong>{storageConflictGroups.length + unmappedStorageMoulds.length}</strong>
                 </button>
               ) : null}
+              <button
+                aria-controls="mould-storage-inventory"
+                aria-expanded={inventorySite !== null}
+                className={styles.inventoryToggle}
+                onClick={() => { setStatusListOpen(false); setInventorySite(inventorySite === null ? "SVC" : null); }}
+                type="button"
+              >
+                <Boxes size={17} aria-hidden="true" />
+                <span>SVC <strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{language === "ko" ? "행" : "行"}</small></span>
+                <span>TIANLU <strong>{storageInventoryCount(board.storageInventory, "TIANLU") ?? "—"}</strong></span>
+                <Expand size={15} aria-hidden="true" />
+              </button>
+              </div>
             </div>
             <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : styles.zoneListOverview}`}>
               {!focusedZone ? (
@@ -2630,6 +2658,20 @@ export function MouldManagementPage() {
               {visibleStorageConflictCount ? <span><i className={`${styles.zonePreviewCell} ${styles.zonePreviewConflict}`} />{copy.duplicateLocations}</span> : null}
               <small>{copy.inactivityLegend} · {copy.inactivityBasis}</small>
             </div>
+            {inventorySite ? <StorageInventoryPanel
+              inventory={board.storageInventory}
+              moulds={board.moulds}
+              language={language}
+              site={inventorySite}
+              onSiteChange={setInventorySite}
+              onClose={() => setInventorySite(null)}
+              onSelectMould={(instanceId) => {
+                setFilter("all");
+                setSearch("");
+                setInventorySite(null);
+                selectMould(instanceId);
+              }}
+            /> : null}
           </section>
         </div>
       ) : null}
@@ -2876,7 +2918,17 @@ export function MouldManagementPage() {
               <>
                 <aside className={styles.selectedSummary}>
                   <dl className={styles.summaryFacts}>
-                    <div><dt>{copy.currentLocation}</dt><dd>{displayLocation(selectedDetail)}</dd></div>
+                    {selectedDetail.inventory ? <div><dt>{language === "ko" ? "보관 분류" : "存放分类"}</dt><dd>
+                      {selectedDetail.inventory.site === "OTHER" ? (language === "ko" ? "기타 위치" : "其他位置") : selectedDetail.inventory.site === "UNCONFIRMED" ? copy.unknown : selectedDetail.inventory.site}
+                      <small>{selectedDetail.inventory.basis === "confirmed_list" ? `${language === "ko" ? "확인 목록" : "确认清单"} · ${selectedDetail.inventory.confirmedOn ?? "—"}` : selectedDetail.inventory.basis === "last_movement" ? (language === "ko" ? "마지막 이동 기록 기준 · 현재 위치 확인 필요" : "按最后移动记录 · 当前位置待确认") : language === "ko" ? "MES 기록 기준" : "按 MES 记录"}</small>
+                      {selectedDetail.inventory.locationConflict ? <small>{language === "ko" ? "MES 위치 상이" : "MES 位置不一致"}</small> : null}
+                    </dd></div> : null}
+                    <div><dt>{selectedDetail.inventory ? (language === "ko" ? "MES 기록 위치" : "MES 记录位置") : copy.currentLocation}</dt><dd>{displayLocation(selectedDetail)}</dd></div>
+                    {selectedDetail.inventory?.lastMovement ? <div><dt>{language === "ko" ? "마지막 이동 기록" : "最后移动记录"}</dt><dd>
+                      {selectedDetail.inventory.lastMovement.toLocation || copy.unknown}
+                      <small>{dateTime(selectedDetail.inventory.lastMovement.occurredAt, language, copy.noTimestamp)}</small>
+                      {selectedDetail.inventory.lastMovement.ambiguous ? <small>{language === "ko" ? "이동일·목적지 확인 필요" : "需确认移动日期及目的地"}</small> : null}
+                    </dd></div> : null}
                     <div><dt>{copy.finalChangedAt}</dt><dd>{dateTime(selectedDetail.finalChangedAt, language, copy.noTimestamp)}<small>{finalChangedQualityLabel(selectedDetail.finalChangedAt, copy)}</small></dd></div>
                     <div><dt>{copy.lifetimeOutput}</dt><dd>{number(selectedLifetimeProduction, language)} {copy.shots}</dd></div>
                     <div><dt>{copy.outputBatch}</dt><dd>{number(selectedDetail.currentOutputAmount, language)} {copy.times}</dd></div>

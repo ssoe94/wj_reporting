@@ -921,14 +921,23 @@ class MouldPublicViewTests(TestCase):
     def setUp(self):
         cache.clear()
 
-    def assert_sensitive_keys_absent(self, value):
+    def assert_sensitive_keys_absent(self, value, path=()):
         if isinstance(value, dict):
             for key, child in value.items():
-                self.assertNotIn(str(key).casefold(), self.sensitive_keys)
-                self.assert_sensitive_keys_absent(child)
+                if path == ("storage_inventory",) and key == "source":
+                    # The only public source object is the checked-in inventory
+                    # citation, never an upstream MES provenance payload.
+                    self.assertEqual(set(child), {
+                        "filename", "sha256", "sheet", "confirmed_on",
+                        "mould_rows", "unique_assets", "duplicate_assets",
+                    })
+                    self.assertEqual(child["filename"], "SVC模具仓库清单.xlsx")
+                else:
+                    self.assertNotIn(str(key).casefold(), self.sensitive_keys)
+                self.assert_sensitive_keys_absent(child, (*path, key))
         elif isinstance(value, list):
             for child in value:
-                self.assert_sensitive_keys_absent(child)
+                self.assert_sensitive_keys_absent(child, (*path, "[]"))
 
     @patch("injection.mould_views.build_mould_board")
     def test_board_is_public_and_projects_only_dashboard_fields(self, build_board):
