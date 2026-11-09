@@ -122,6 +122,32 @@ test("confirmed physical mould count stays 35 although there are 34 asset number
   assert.deepEqual(inventoryMoulds(inventory, "SVC", records).filter((mould) => !sourceReferencedMouldIds(inventory).has(mould.instanceId)), []);
 });
 
+test("revised source distinguishes one unmatched asset from resolved shared-asset identity", () => {
+  const matched = Array.from({ length: 34 }, (_, index) => ({
+    entry_id: `revision-2-${index}`, asset_code: `ASSET-${index}`, instance_id: `mes-${index}`, match_status: "matched",
+  }));
+  const inventory = normalizeStorageInventory({
+    source: { ...payload.source, mould_rows: 35, unique_assets: 35, duplicate_assets: [] },
+    entries: [...matched, { entry_id: "svc-20261109-Q12", asset_code: "NDIF02959528", mould_no: "NT1", instance_id: null, match_status: "unmatched" }],
+    groups: [{ site: "SVC", mould_count: 34, entry_count: 35, instance_ids: matched.map((entry) => entry.instance_id) }],
+    identity_confirmations: [],
+    reconciliation: { physical_mould_count: 35, individually_linked_mould_count: 34, identity_pending_mould_count: 0, unmatched_mould_count: 1 },
+  })!;
+  assert.equal(inventory.source.uniqueAssets, 35);
+  assert.equal(storageInventoryCount(inventory, "SVC"), 35);
+  assert.equal(storageInventoryUnit(inventory, "SVC"), "moulds");
+  assert.deepEqual(inventory.reconciliation, {
+    physicalMouldCount: 35, individuallyLinkedMouldCount: 34, identityPendingMouldCount: 0, unmatchedMouldCount: 1,
+  });
+  assert.equal(sourceLinkedMouldIds(inventory).size, 34);
+  assert.deepEqual(inventory.identityConfirmations, []);
+  const unmatched = inventory.entries.find((entry) => entry.assetCode === "NDIF02959528")!;
+  assert.equal(unmatched.matchStatus, "unmatched");
+  assert.equal(unmatched.instanceId, null);
+  assert.deepEqual(unmatched.candidateInstanceIds, []);
+  assert.equal(normalizeStorageInventory(sharedAssetPayload())?.reconciliation?.unmatchedMouldCount, null);
+});
+
 test("shared asset rows preserve original NT2/NT4 without guessing their actual NT1/NT2 mapping", () => {
   const inventory = normalizeStorageInventory(sharedAssetPayload())!;
   const pending = inventory.entries.filter((entry) => entry.matchStatus === "shared_asset_identity_pending");
