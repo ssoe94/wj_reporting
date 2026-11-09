@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  inventoryEntryMatches, inventoryMoulds, normalizeMouldInventory, normalizeStorageInventory, sourceLinkedMouldIds, sourceReferencedMouldIds, storageInventoryCount, storageInventoryUnit,
+  inventoryEntryMatches, inventoryMoulds, matchesMouldDisplayFilter, mouldDisplayCategory, mouldDisplayCounts, normalizeMouldInventory, normalizeStorageInventory, sourceLinkedMouldIds, sourceReferencedMouldIds, storageInventoryCount, storageInventoryGroups, storageInventoryUnit,
 } from "../src/domains/moulds/storage-inventory.ts";
 
 const payload = {
@@ -80,7 +80,7 @@ test("source search finds rack, asset, part and source range without dropping du
 
 test("detail inventory retains confirmation provenance and physical discrepancy", () => {
   assert.deepEqual(normalizeMouldInventory({ site: "SVC", basis: "confirmed_list", source_ranges: ["A9:J9", "A12:J12"], source_locations: ["A / 1-1", "B / 2-1"], confirmed_on: "2026-11-09", location_conflict: true }), {
-    site: "SVC", basis: "confirmed_list", sourceRanges: ["A9:J9", "A12:J12"], sourceLocations: ["A / 1-1", "B / 2-1"], confirmedOn: "2026-11-09", locationConflict: true, identityPending: false, confirmedMouldNos: [], lastMovement: null,
+    site: "SVC", vendor: null, basis: "confirmed_list", sourceRanges: ["A9:J9", "A12:J12"], sourceLocations: ["A / 1-1", "B / 2-1"], confirmedOn: "2026-11-09", locationConflict: true, identityPending: false, confirmedMouldNos: [], lastMovement: null,
   });
   assert.equal(normalizeMouldInventory(undefined), null);
   assert.equal(normalizeMouldInventory({ site: "S" }), null);
@@ -190,4 +190,59 @@ test("last movement evidence keeps its date and ambiguity instead of claiming a 
   assert.equal(inventory.lastMovement?.toLocation, "天路");
   assert.equal(inventory.lastMovement?.occurredAt, "2026-09-20T01:00:00Z");
   assert.equal(inventory.lastMovement?.ambiguous, true);
+});
+
+test("vendor groups preserve data-driven Chinese names and repair metadata without a registry in the client", () => {
+  const inventory = normalizeStorageInventory({ entries: [], groups: [
+    { site: "SVC", mould_count: 34, entry_count: 35, instance_ids: [] },
+    { site: "VENDOR:GUANGLI", name: "广立", category: "repair", mould_count: 6, instance_ids: ["g1", "g2"] },
+    { site: "VENDOR:苏州新伙伴模具有限公司", name: "苏州新伙伴", category: "external", mould_count: 1, instance_ids: ["new-1"] },
+  ] })!;
+  assert.deepEqual(storageInventoryGroups(inventory).map((group) => [group.site, group.name, group.category]), [
+    ["SVC", "SVC", "svc"], ["VENDOR:GUANGLI", "广立", "repair"], ["VENDOR:苏州新伙伴模具有限公司", "苏州新伙伴", "external"],
+  ]);
+  assert.equal(storageInventoryCount(inventory, "VENDOR:GUANGLI"), 6);
+  assert.deepEqual(inventoryMoulds(inventory, "VENDOR:苏州新伙伴模具有限公司", [{ instanceId: "new-1" }, { instanceId: "g1" }]), [{ instanceId: "new-1" }]);
+  const detail = normalizeMouldInventory({ site: "VENDOR:苏州新伙伴模具有限公司", vendor: { key: "VENDOR:苏州新伙伴模具有限公司", name: "苏州新伙伴", category: "external" } })!;
+  assert.equal(detail.vendor?.name, "苏州新伙伴");
+  assert.equal(detail.vendor?.category, "external");
+});
+
+test("old inventory contracts retain their groups and unknown counts without inventing repair vendors", () => {
+  const inventory = normalizeStorageInventory(payload)!;
+  assert.deepEqual(inventory.groups.map((group) => [group.site, group.name, group.category]), [
+    ["SVC", "SVC", "svc"], ["TIANLU", "天路", "external"], ["OTHER", "OTHER", "other"],
+  ]);
+  assert.equal(normalizeMouldInventory({ site: "TIANLU" })?.vendor, null);
+  assert(storageInventoryGroups(null).every((group) => group.mouldCount === null));
+  for (const invalid of ["VENDOR:", "VENDOR:   ", "VENDOR:新\n公司", `VENDOR:${"长".repeat(161)}`]) {
+    assert.equal(normalizeMouldInventory({ site: invalid }), null);
+  }
+  assert.equal(normalizeMouldInventory({ site: "VENDOR:GUANGLI", vendor: { key: "VENDOR:TAIZHIKE", name: "泰之科", category: "repair" } })?.vendor, null);
+});
+
+test("repair-vendor display filters and counts move each mould once while retaining raw MES categories", () => {
+  const repairInventory = normalizeMouldInventory({ site: "VENDOR:GUANGLI", vendor: { key: "VENDOR:GUANGLI", name: "广立", category: "repair" } });
+  const externalInventory = normalizeMouldInventory({ site: "VENDOR:ZIJIN", vendor: { key: "VENDOR:ZIJIN", name: "紫金", category: "external" } });
+  const records = [
+    { summaryCategory: "offsite" as const, inventory: repairInventory },
+    { summaryCategory: "unknown" as const, inventory: repairInventory },
+    { summaryCategory: "repair" as const },
+    { summaryCategory: "maintenance" as const },
+    { summaryCategory: "offsite" as const, inventory: externalInventory },
+    { summaryCategory: "storage" as const },
+    { summaryCategory: "machine" as const },
+    { summaryCategory: "unknown" as const },
+    { summaryCategory: "unknown" as const, inventory: normalizeMouldInventory({ site: "SVC" }) },
+  ];
+  const before = JSON.stringify(records);
+  const counts = mouldDisplayCounts(records);
+  assert.deepEqual(counts, { total: 9, machine: 1, storage: 1, maintenance: 1, repair: 3, offsite: 1, unknown: 2 });
+  assert.equal(records.filter((mould) => matchesMouldDisplayFilter(mould, "repair")).length, counts.repair + counts.maintenance);
+  assert.equal(records.filter((mould) => matchesMouldDisplayFilter(mould, "offsite")).length, counts.offsite);
+  assert.equal(mouldDisplayCategory(records[0]!), "repair");
+  assert.equal(mouldDisplayCategory(records[4]!), "offsite");
+  assert.equal(records.filter((mould) => matchesMouldDisplayFilter(mould, "all")).length, counts.total);
+  assert.equal(counts.machine + counts.storage + counts.maintenance + counts.repair + counts.offsite + counts.unknown, counts.total);
+  assert.equal(JSON.stringify(records), before);
 });

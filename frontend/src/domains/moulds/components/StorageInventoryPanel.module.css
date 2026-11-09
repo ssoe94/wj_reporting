@@ -17,10 +17,22 @@
 .header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--wj-border); }
 .header h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 16px; }
 .header button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--wj-border); border-radius: 6px; background: var(--wj-surface-solid); color: inherit; cursor: pointer; }
-.sites { display: grid; flex: 0 0 auto; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; padding: 10px 10px 6px; }
-.sites button { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 8px 4px; border: 1px solid var(--wj-border); border-radius: 6px; background: var(--wj-surface-solid); color: inherit; cursor: pointer; }
-.sites button > span { font-size: 14px; white-space: nowrap; }
-.sites strong { font-size: 22px; line-height: 1.15; }
+.pickerHeading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; }
+.pickerHeading > strong { font-size: 16px; overflow-wrap: anywhere; }
+.pickerHeading > strong > span { margin-left: 5px; color: var(--wj-muted); font-size: 14px; font-weight: 500; }
+.pickerHeading > button { flex: 0 0 auto; padding: 5px 7px; border: 1px solid var(--wj-border); border-radius: 5px; background: var(--wj-surface-solid); color: inherit; font-size: 13px; cursor: pointer; }
+.companyPicker { flex: 0 0 auto; min-height: 0; max-height: 220px; padding: 0 10px 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.companyPicker > section { margin-top: 8px; }
+.companyPicker h4 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 5px; font-size: 14px; }
+.companyPicker h4 > strong { font-size: 16px; }
+.companyPicker h4 small { margin-left: 4px; font-size: 12px; font-weight: 450; }
+.companyPicker .repairSection { padding: 8px; border: 1px solid var(--wj-border); border-radius: 6px; }
+.companyPicker .repairSection h4 { color: var(--wj-warning-text, #986020); font-size: 18px; }
+.sites { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.repairSection .sites { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sites button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 4px; min-height: 34px; padding: 5px 7px; border: 1px solid var(--wj-border); border-radius: 5px; background: var(--wj-surface-solid); color: inherit; cursor: pointer; }
+.sites button > span { min-width: 0; overflow-wrap: anywhere; text-align: left; font-size: 14px; }
+.sites strong { flex-shrink: 0; font-size: 18px; line-height: 1.15; }
 .sites small { margin-left: 3px; color: var(--wj-muted); font-size: 12px; font-weight: 450; }
 .sites .activeSite { border-color: #336b97; background: var(--wj-selected, #e9f1f8); color: #205982; box-shadow: inset 0 0 0 1px #336b97; }
 .basis { flex: 0 0 auto; padding: 2px 12px 8px; border-bottom: 1px solid var(--wj-border); color: var(--wj-muted); font-size: 12px; line-height: 1.45; }
@@ -68,7 +80,9 @@
 @media (max-width: 720px) {
   .panel { position: fixed; z-index: 55; inset: 8px 8px 8px auto; width: calc(100vw - 16px); border: 1px solid var(--wj-border); border-radius: 8px; }
   .header button { width: 42px; height: 42px; }
-  .sites button { min-height: 65px; }
+  .companyPicker { max-height: 280px; }
+  .sites button { min-height: 42px; }
+  .pickerHeading > button { min-height: 36px; }
   .sourceDetail button { min-height: 42px; }
 }
 @media (prefers-contrast: more) {

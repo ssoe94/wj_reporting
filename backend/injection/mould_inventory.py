@@ -17,10 +17,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .mould_events import canonical_machine_location
+from .mould_vendors import REQUIRED_VENDOR_KEYS, group_metadata, group_order, vendor_for_key, vendor_for_location
 
 SITES = ("SVC", "TIANLU", "OTHER", "UNCONFIRMED")
 _ABCS = re.compile(r"^[ABCS]\d*-\d+$", re.IGNORECASE)
-_TIANLU = re.compile(r"天路|(?<![A-Z0-9])TIAN\s*LU(?![A-Z0-9])", re.IGNORECASE)
 _SVC = re.compile(r"(?<![A-Z0-9])SVC(?![A-Z0-9])", re.IGNORECASE)
 _GENERIC = {"", "厂外", "廠外", "外部", "外协", "外協", "外借", "在途", "厂内", "廠內",
             "외부", "외주", "미확인", "unknown", "unconfirmed", "offsite", "outside", "external", "-"}
@@ -86,12 +86,22 @@ def _location_site(mould):
     # Coordinates/mounted positions outrank a broad parent label such as SVC.
     if _ABCS.fullmatch(code) or canonical_machine_location(code) or location.get("kind") == "machine":
         return None
+    vendor = vendor_for_location(code)
+    if vendor:
+        return vendor["key"]
+    if _SVC.search(code):
+        return "SVC"
+    # A specific warehouse/repair-area code outranks a broad supplier parent.
+    if code and code.casefold() not in _GENERIC:
+        return "OTHER"
     labels = [str(location.get(key) or "").strip() for key in (
         "code", "label", "parent_code", "parent_label", "zone_code", "zone_label",
     )]
     text = " ".join(labels)
-    if _TIANLU.search(text):
-        return "TIANLU"
+    for label in labels:
+        vendor = vendor_for_location(label)
+        if vendor:
+            return vendor["key"]
     if _SVC.search(text):
         return "SVC"
     return "OTHER" if any(value.casefold() not in _GENERIC for value in labels) else "UNCONFIRMED"
@@ -118,29 +128,37 @@ def _inventory(mould, entries):
     current_site = _location_site(mould)
     movement = mould.get("last_movement")
     movement = movement if isinstance(movement, Mapping) else None
+    valid_movement = False
+    if movement and not movement.get("ambiguous") and movement.get("time_quality") == "child_field":
+        try:
+            valid_movement = datetime.fromisoformat(str(movement.get("occurred_at") or "").replace("Z", "+00:00")).tzinfo is not None
+        except ValueError:
+            pass
     from_history = False
-    if current_site == "UNCONFIRMED" and movement and not movement.get("ambiguous"):
+    if current_site == "UNCONFIRMED" and valid_movement:
         destination = str(movement.get("to_location") or "")
         # A last return to WJ cannot explain a currently outside mould. Keep
         # that disagreement unresolved, but show the last recorded destination.
         if not re.search(r"万佳|萬佳|(?<![A-Z])WJ(?![A-Z])", destination, re.IGNORECASE):
             historical_site = _location_site({"location": {"code": destination}})
-            if historical_site in {"SVC", "TIANLU", "OTHER"}:
+            if historical_site in {"SVC", "TIANLU", "OTHER"} or vendor_for_key(historical_site):
                 current_site = historical_site
                 from_history = True
     newer_position = _newer_position(mould)
-    if movement and not movement.get("ambiguous"):
+    if valid_movement:
         newer_position = newer_position or _newer_position({"position_changed_at": movement.get("occurred_at")})
     # Retain a conflicting explicit position rather than claiming the sheet is
     # a live move. Generic outside/warehouse positions can be refined by it.
     conflict = bool(entries) and (
-        current_site is None or current_site == "TIANLU"
+        current_site is None or vendor_for_key(current_site) is not None
         or (newer_position and current_site != "SVC")
     )
     use_confirmation = bool(entries) and not newer_position
     identity = _identity_confirmation(mould.get("asset_code"))
+    site = "SVC" if use_confirmation else current_site
     return {
-        "site": "SVC" if use_confirmation else current_site,
+        "site": site,
+        "vendor": vendor_for_key(site),
         "basis": "confirmed_list" if use_confirmation else (
             "last_movement" if from_history else "unconfirmed" if current_site == "UNCONFIRMED" else "mes_location"
         ),
@@ -168,14 +186,14 @@ def decorate_inventory_board(payload):
     for entry in catalog["entries"]:
         by_source_asset[_key(entry["asset_code"])].append(entry)
 
-    groups = {site: set() for site in SITES}
+    groups = {site: set() for site in (*SITES, *REQUIRED_VENDOR_KEYS)}
     for mould in moulds:
         asset = _key(mould.get("asset_code"))
         entries = by_source_asset.get(asset, []) if len(by_asset[asset]) == 1 else []
         mould["inventory"] = _inventory(mould, entries)
         site = mould["inventory"]["site"]
-        if site in groups and mould.get("instance_id"):
-            groups[site].add(str(mould["instance_id"]))
+        if (site in groups or vendor_for_key(site)) and mould.get("instance_id"):
+            groups.setdefault(site, set()).add(str(mould["instance_id"]))
 
     entries = []
     for source in catalog["entries"]:
@@ -224,9 +242,10 @@ def decorate_inventory_board(payload):
         "entries": entries,
         "groups": [{
             "site": site, "mould_count": len(groups[site]),
+            **group_metadata(site),
             "entry_count": len(entries) if site == "SVC" else len(groups[site]),
             "instance_ids": sorted(groups[site]),
-        } for site in SITES],
+        } for site in sorted(groups, key=group_order)],
     }
     return result
 
