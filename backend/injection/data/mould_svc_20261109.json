@@ -1,26 +1,14 @@
 {
   "source": {
     "filename": "SVC模具仓库清单.xlsx",
-    "sha256": "c5acfc93c72275984243d81ecc2e1f5bdb7be3789a0c101844e70cf99ac5453c",
+    "sha256": "effe3496a4fd2a75f839334ce4a08279f94895c95dc5cf778a67b4846ab3147a",
     "sheet": "存放模具2026.11.9",
     "confirmed_on": "2026-11-09",
     "mould_rows": 35,
-    "unique_assets": 34,
-    "duplicate_assets": [
-      "NDIF02767282"
-    ]
+    "unique_assets": 35,
+    "duplicate_assets": []
   },
-  "identity_confirmations": [
-    {
-      "asset_code": "NDIF02767282",
-      "physical_mould_count": 2,
-      "mould_nos": ["NT1", "NT2"],
-      "source_entry_ids": ["svc-20261109-I20", "svc-20261109-Q12"],
-      "confirmed_on": "2026-11-09",
-      "basis": "owner_confirmation",
-      "row_mould_nos": {}
-    }
-  ],
+  "identity_confirmations": [],
   "entries": [
     {
       "entry_id": "svc-20261109-A4",
@@ -268,8 +256,8 @@
       "rack": "第3排 上层",
       "position": "2",
       "asset_code": "NDIF03152956",
-      "model": "22MK4",
-      "name": "Stand Base NT4 ",
+      "model": "22MK400",
+      "name": "Stand Base NT4",
       "part_no": "MAM64885101",
       "mould_no": "NT4",
       "cavity_count": null
@@ -491,11 +479,11 @@
       "source_range": "Q12:X12",
       "rack": "第5排 下层",
       "position": "3",
-      "asset_code": "NDIF02767282",
+      "asset_code": "NDIF02959528",
       "model": "22MK400",
       "name": "Stand base NT1",
       "part_no": "MAM64885101",
-      "mould_no": "NT4",
+      "mould_no": "NT1",
       "cavity_count": 1
     },
     {

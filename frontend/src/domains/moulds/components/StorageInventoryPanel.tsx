@@ -161,7 +161,10 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
           <p>{copy.source} <strong>{inventory.source.confirmedOn || "—"}</strong><span>{inventory.source.filename}</span></p>
           {reconciliation ? <>
             <p>{copy.physical} <b>{reconciliation.physicalMouldCount ?? "—"}{copy.moulds}</b> · {copy.sourceRows} <b>{inventory.source.mouldRows ?? "—"}{copy.rows}</b> · {copy.assets} <b>{inventory.source.uniqueAssets ?? "—"}{copy.assetTypes}</b></p>
-            <p>{copy.individuallyLinked} <b>{reconciliation.individuallyLinkedMouldCount ?? sourceLinkedIds.size}{copy.moulds}</b> · {copy.identityPending} <b>{reconciliation.identityPendingMouldCount ?? "—"}{copy.moulds}</b></p>
+            <p>{copy.individuallyLinked} <b>{reconciliation.individuallyLinkedMouldCount ?? sourceLinkedIds.size}{copy.moulds}</b>
+              {(reconciliation.identityPendingMouldCount ?? 0) > 0 ? <> · {copy.identityPending} <b>{reconciliation.identityPendingMouldCount}{copy.moulds}</b></> : null}
+              {(reconciliation.unmatchedMouldCount ?? 0) > 0 ? <> · {copy.unmatched} <b>{reconciliation.unmatchedMouldCount}{copy.moulds}</b></> : null}
+            </p>
             {inventory.identityConfirmations.length ? <small>{copy.physicalNote}</small> : null}
           </> : <>
             <p>{copy.assets} <b>{inventory.source.uniqueAssets ?? "—"}{copy.assetTypes}</b> · {copy.mes} <b>{sourceLinkedIds.size}</b> · {copy.duplicate} <b>{inventory.source.duplicateAssets.length}</b></p>

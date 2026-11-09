@@ -65,6 +65,7 @@ export type StorageInventory = {
     physicalMouldCount: number | null;
     individuallyLinkedMouldCount: number | null;
     identityPendingMouldCount: number | null;
+    unmatchedMouldCount: number | null;
   } | null;
   groups: Array<{ site: InventorySite; mouldCount: number | null; entryCount: number | null; instanceIds: string[] }>;
 };
@@ -166,6 +167,7 @@ export function normalizeStorageInventory(value: unknown): StorageInventory | nu
       physicalMouldCount: count(field(reconciliation, "physical_mould_count", "physicalMouldCount")),
       individuallyLinkedMouldCount: count(field(reconciliation, "individually_linked_mould_count", "individuallyLinkedMouldCount")),
       identityPendingMouldCount: count(field(reconciliation, "identity_pending_mould_count", "identityPendingMouldCount")),
+      unmatchedMouldCount: count(field(reconciliation, "unmatched_mould_count", "unmatchedMouldCount")),
     } : null,
     groups: raw.groups.flatMap((value) => {
       const group = record(value);
