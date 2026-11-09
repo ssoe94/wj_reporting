@@ -72,7 +72,7 @@ import {
 } from "@/domains/moulds/machine-plan-comparison";
 import { MachineGlyph } from "@/domains/moulds/components/MachineGlyph";
 import { StorageInventoryPanel } from "@/domains/moulds/components/StorageInventoryPanel";
-import { storageInventoryCount, storageInventoryUnit, type InventorySite } from "@/domains/moulds/storage-inventory";
+import { matchesMouldDisplayFilter, mouldDisplayCategory, mouldDisplayCounts, storageInventoryCount, storageInventoryUnit, type InventorySite } from "@/domains/moulds/storage-inventory";
 import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import styles from "./MouldManagementPage.module.css";
 
@@ -103,6 +103,7 @@ const COPY = {
     mounted: "장착",
     stored: "보관",
     repair: "수리",
+    repairInProgress: "수리중",
     offsite: "외부",
     unknown: "미확인",
     machines: "사출기 장착 현황",
@@ -328,6 +329,7 @@ const COPY = {
     mounted: "已安装",
     stored: "存放",
     repair: "维修",
+    repairInProgress: "维修中",
     offsite: "外部",
     unknown: "未确认",
     machines: "注塑机安装现状",
@@ -1366,9 +1368,15 @@ function machineDisplayLabel(machineNumber: number, tonnage: string, language: "
 }
 
 function matchesFilter(mould: MouldRecord, filter: ViewFilter) {
-  if (filter === "all") return true;
-  if (filter === "repair") return ["repair", "maintenance"].includes(mould.summaryCategory);
-  return mould.summaryCategory === filter;
+  return matchesMouldDisplayFilter(mould, filter);
+}
+
+function displayCategoryLabel(mould: MouldRecord, copy: Copy) {
+  const category = mouldDisplayCategory(mould);
+  if (category === "machine") return copy.mounted;
+  if (category === "storage") return copy.stored;
+  if (category === "repair" || category === "maintenance") return copy.repairInProgress;
+  return category === "offsite" ? copy.offsite : copy.unknown;
 }
 
 function matchesSearch(mould: MouldRecord, search: string) {
@@ -1383,6 +1391,7 @@ function matchesSearch(mould: MouldRecord, search: string) {
     mould.location.code,
     mould.location.label,
     mould.inventory?.site ?? "",
+    mould.inventory?.vendor?.name ?? "",
     ...(mould.inventory?.sourceLocations ?? []),
     ...(mould.inventory?.confirmedMouldNos ?? []),
     mould.inventory?.lastMovement?.toLocation ?? "",
@@ -1887,13 +1896,14 @@ export function MouldManagementPage() {
     ? unmappedStorageMoulds.filter((mould) => canonicalStorageCoordinate(mould.location) === conflictFocusCode)
     : unmappedStorageMoulds;
 
+  const displayCounts = useMemo(() => mouldDisplayCounts(board?.moulds ?? []), [board?.moulds]);
   const filters: Array<{ key: ViewFilter; label: string; count: number }> = board ? [
-    { key: "all", label: copy.all, count: board.summary.total },
-    { key: "machine", label: copy.mounted, count: board.summary.mounted },
-    { key: "storage", label: copy.stored, count: board.summary.stored },
-    { key: "repair", label: copy.repair, count: board.summary.repair + board.summary.maintenance },
-    { key: "offsite", label: copy.offsite, count: board.summary.offsite },
-    { key: "unknown", label: copy.unknown, count: board.summary.unknown },
+    { key: "all", label: copy.all, count: displayCounts.total },
+    { key: "machine", label: copy.mounted, count: displayCounts.machine },
+    { key: "storage", label: copy.stored, count: displayCounts.storage },
+    { key: "repair", label: copy.repairInProgress, count: displayCounts.repair + displayCounts.maintenance },
+    { key: "offsite", label: copy.offsite, count: displayCounts.offsite },
+    { key: "unknown", label: copy.unknown, count: displayCounts.unknown },
   ] : [];
 
   const finalChangedAt = board?.finalChangedAt;
@@ -2439,7 +2449,7 @@ export function MouldManagementPage() {
               >
                 <Boxes size={17} aria-hidden="true" />
                 <span>SVC <strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{svcCountUnit}</small></span>
-                <span>TIANLU <strong>{storageInventoryCount(board.storageInventory, "TIANLU") ?? "—"}</strong></span>
+                <span>{language === "ko" ? "업체·수리" : "单位·维修"}</span>
                 <Expand size={15} aria-hidden="true" />
               </button>
               </div>
@@ -2883,9 +2893,9 @@ export function MouldManagementPage() {
                       <td data-label={copy.mouldCode}><strong>{text(mould.mouldCode)}</strong><small>{text(mould.assetCode)}</small></td>
                       <td data-label={copy.mouldNameLabel}>{text(mould.name)}</td>
                       <td data-label={copy.drawingNo}>{text(mould.drawingNo)}</td>
-                      <td data-label={copy.currentLocation}><span className={styles.locationPill}>{displayLocation(mould)}</span></td>
+                      <td data-label={copy.currentLocation}><span className={styles.locationPill}>{mould.inventory?.vendor?.name || displayLocation(mould)}</span></td>
                       <td data-label={copy.finalChangedAt}>{dateTime(mould.finalChangedAt, language, copy.noTimestamp)}</td>
-                      <td data-label={copy.status}>{text(mould.statusLabel, copy.unknown)}</td>
+                      <td data-label={copy.status}>{displayCategoryLabel(mould, copy)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -2923,7 +2933,8 @@ export function MouldManagementPage() {
                 <aside className={styles.selectedSummary}>
                   <dl className={styles.summaryFacts}>
                     {selectedDetail.inventory ? <div><dt>{language === "ko" ? "보관 분류" : "存放分类"}</dt><dd>
-                      {selectedDetail.inventory.site === "OTHER" ? (language === "ko" ? "기타 위치" : "其他位置") : selectedDetail.inventory.site === "UNCONFIRMED" ? copy.unknown : selectedDetail.inventory.site}
+                      {selectedDetail.inventory.vendor?.name || (selectedDetail.inventory.site === "OTHER" ? (language === "ko" ? "기타 위치" : "其他位置") : selectedDetail.inventory.site === "UNCONFIRMED" ? copy.unknown : selectedDetail.inventory.site.replace(/^VENDOR:/, ""))}
+                      {selectedDetail.inventory.vendor ? <small>{selectedDetail.inventory.vendor.category === "repair" ? copy.repairInProgress : (language === "ko" ? "외부 업체" : "外部单位")}</small> : null}
                       <small>{selectedDetail.inventory.basis === "confirmed_list" ? `${language === "ko" ? "확인 목록" : "确认清单"} · ${selectedDetail.inventory.confirmedOn ?? "—"}` : selectedDetail.inventory.basis === "last_movement" ? (language === "ko" ? "마지막 이동 기록 기준 · 현재 위치 확인 필요" : "按最后移动记录 · 当前位置待确认") : language === "ko" ? "MES 기록 기준" : "按 MES 记录"}</small>
                       {selectedDetail.inventory.locationConflict ? <small>{language === "ko" ? "MES 위치 상이" : "MES 位置不一致"}</small> : null}
                       {selectedDetail.inventory.identityPending ? <>
@@ -2931,7 +2942,7 @@ export function MouldManagementPage() {
                         <small>{selectedDetail.inventory.confirmedMouldNos.join(" / ")} · {language === "ko" ? "이 MES 기록과의 대응 확인 중" : "与本 MES 记录的对应关系待确认"}</small>
                       </> : null}
                     </dd></div> : null}
-                    <div><dt>{selectedDetail.inventory ? (language === "ko" ? "MES 기록 위치" : "MES 记录位置") : copy.currentLocation}</dt><dd>{displayLocation(selectedDetail)}</dd></div>
+                    <div><dt>{selectedDetail.inventory ? (language === "ko" ? "MES 기록 위치" : "MES 记录位置") : copy.currentLocation}</dt><dd>{selectedDetail.inventory?.vendor ? localizedMachineText(text(selectedDetail.location.label || selectedDetail.location.code, copy.unknown), language) : displayLocation(selectedDetail)}</dd></div>
                     {selectedDetail.inventory?.lastMovement ? <div><dt>{language === "ko" ? "마지막 이동 기록" : "最后移动记录"}</dt><dd>
                       {selectedDetail.inventory.lastMovement.toLocation || copy.unknown}
                       <small>{dateTime(selectedDetail.inventory.lastMovement.occurredAt, language, copy.noTimestamp)}</small>

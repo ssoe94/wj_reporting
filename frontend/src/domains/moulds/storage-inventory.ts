@@ -1,8 +1,21 @@
 export const INVENTORY_SITES = ["SVC", "TIANLU", "OTHER", "UNCONFIRMED"] as const;
-export type InventorySite = typeof INVENTORY_SITES[number];
+export type InventorySite = typeof INVENTORY_SITES[number] | `VENDOR:${string}`;
+export type InventoryGroupCategory = "svc" | "repair" | "external" | "other" | "unconfirmed";
+export type InventoryVendor = { key: InventorySite; name: string; category: "repair" | "external" };
+export type StorageInventoryGroup = {
+  site: InventorySite;
+  name: string;
+  category: InventoryGroupCategory;
+  mouldCount: number | null;
+  entryCount: number | null;
+  instanceIds: string[];
+};
+export type MouldDisplayCategory = "machine" | "storage" | "maintenance" | "repair" | "offsite" | "unknown";
+type DisplayCategorizedMould = { summaryCategory: MouldDisplayCategory; inventory?: { vendor?: InventoryVendor | null } | null };
 
 export type MouldInventory = {
   site: InventorySite;
+  vendor: InventoryVendor | null;
   basis: "confirmed_list" | "mes_location" | "last_movement" | "unconfirmed";
   sourceRanges: string[];
   sourceLocations: string[];
@@ -67,7 +80,7 @@ export type StorageInventory = {
     identityPendingMouldCount: number | null;
     unmatchedMouldCount: number | null;
   } | null;
-  groups: Array<{ site: InventorySite; mouldCount: number | null; entryCount: number | null; instanceIds: string[] }>;
+  groups: StorageInventoryGroup[];
 };
 
 type RecordValue = Record<string, unknown>;
@@ -81,7 +94,27 @@ const count = (value: unknown): number | null => {
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
 const boolean = (value: unknown) => value === true || value === 1 || value === "true";
-const site = (value: unknown): InventorySite | null => INVENTORY_SITES.includes(value as InventorySite) ? value as InventorySite : null;
+const site = (value: unknown): InventorySite | null => {
+  if (typeof value !== "string") return null;
+  if ((INVENTORY_SITES as readonly string[]).includes(value)) return value as InventorySite;
+  const suffix = value.startsWith("VENDOR:") ? value.slice(7) : "";
+  const hasControlCharacter = Array.from(suffix).some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
+  return suffix.trim() && suffix.length <= 160 && !hasControlCharacter ? value as InventorySite : null;
+};
+
+const defaultGroupCategory = (location: InventorySite): InventoryGroupCategory => location === "SVC" ? "svc"
+  : location === "OTHER" ? "other" : location === "UNCONFIRMED" ? "unconfirmed" : "external";
+
+function normalizeVendor(value: unknown, location: InventorySite): InventoryVendor | null {
+  const raw = record(value);
+  const key = site(raw.key);
+  const name = string(raw.name);
+  if (key !== location || !name || (raw.category !== "repair" && raw.category !== "external")) return null;
+  return { key, name, category: raw.category };
+}
 
 export function normalizeMouldInventory(value: unknown): MouldInventory | null {
   const raw = record(value);
@@ -91,6 +124,7 @@ export function normalizeMouldInventory(value: unknown): MouldInventory | null {
   const movement = record(movementValue);
   return {
     site: location,
+    vendor: normalizeVendor(raw.vendor, location),
     basis: raw.basis === "confirmed_list" || raw.basis === "mes_location" || raw.basis === "last_movement" ? raw.basis : "unconfirmed",
     sourceRanges: strings(field(raw, "source_ranges", "sourceRanges")),
     sourceLocations: strings(field(raw, "source_locations", "sourceLocations")),
@@ -174,12 +208,42 @@ export function normalizeStorageInventory(value: unknown): StorageInventory | nu
       const location = site(group.site);
       return location ? [{
         site: location,
+        name: string(group.name) || (location === "TIANLU" ? "天路" : location.replace(/^VENDOR:/, "")),
+        category: ["svc", "repair", "external", "other", "unconfirmed"].includes(string(group.category))
+          ? group.category as InventoryGroupCategory : defaultGroupCategory(location),
         mouldCount: count(field(group, "mould_count", "mouldCount")),
         entryCount: count(field(group, "entry_count", "entryCount")),
         instanceIds: [...new Set(strings(field(group, "instance_ids", "instanceIds")))],
       }] : [];
     }),
   };
+}
+
+export function storageInventoryGroups(inventory: StorageInventory | null | undefined): StorageInventoryGroup[] {
+  return inventory?.groups ?? INVENTORY_SITES.map((location) => ({
+    site: location,
+    name: location === "TIANLU" ? "天路" : location,
+    category: defaultGroupCategory(location),
+    mouldCount: null,
+    entryCount: null,
+    instanceIds: [],
+  }));
+}
+
+export function mouldDisplayCategory(mould: DisplayCategorizedMould): MouldDisplayCategory {
+  return mould.inventory?.vendor?.category === "repair" ? "repair" : mould.summaryCategory;
+}
+
+export function matchesMouldDisplayFilter(mould: DisplayCategorizedMould, filter: MouldDisplayCategory | "all"): boolean {
+  if (filter === "all") return true;
+  const category = mouldDisplayCategory(mould);
+  return filter === "repair" ? category === "repair" || category === "maintenance" : category === filter;
+}
+
+export function mouldDisplayCounts(moulds: DisplayCategorizedMould[]): Record<MouldDisplayCategory, number> & { total: number } {
+  const counts = { total: moulds.length, machine: 0, storage: 0, maintenance: 0, repair: 0, offsite: 0, unknown: 0 };
+  for (const mould of moulds) counts[mouldDisplayCategory(mould)] += 1;
+  return counts;
 }
 
 export function storageInventoryCount(inventory: StorageInventory | null | undefined, location: InventorySite): number | null {
