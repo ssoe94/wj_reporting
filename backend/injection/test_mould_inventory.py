@@ -103,8 +103,11 @@ class MouldInventorySourceTests(unittest.TestCase):
             self.assertEqual(entry["candidate_instance_ids"], ["101"])
             self.assertEqual(entry["candidate_mould_codes"], ["MOLD-101"])
             self.assertEqual(entry["confirmed_mould_nos"], ["NT1", "NT2"])
-            self.assertIsNone(entry["confirmed_mould_no"])
             self.assertEqual(entry["record_location"], "")
+        self.assertEqual(
+            {(entry["rack"], entry["mould_no"], entry["confirmed_mould_no"]) for entry in entries},
+            {("第4排 下层", "NT2", "NT2"), ("第5排 下层", "NT4", "NT1")},
+        )
         self.assertEqual({entry["mould_no"] for entry in entries}, {"NT2", "NT4"})
         self.assertEqual(len({entry["source_range"] for entry in entries}), 2)
         self.assertEqual(len({entry["rack"] for entry in entries}), 2)

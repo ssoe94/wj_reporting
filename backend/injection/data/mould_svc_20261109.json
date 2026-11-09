@@ -18,7 +18,10 @@
       "source_entry_ids": ["svc-20261109-I20", "svc-20261109-Q12"],
       "confirmed_on": "2026-11-09",
       "basis": "owner_confirmation",
-      "row_mould_nos": {}
+      "row_mould_nos": {
+        "svc-20261109-I20": "NT2",
+        "svc-20261109-Q12": "NT1"
+      }
     }
   ],
   "entries": [
