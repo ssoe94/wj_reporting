@@ -72,7 +72,7 @@ import {
 } from "@/domains/moulds/machine-plan-comparison";
 import { MachineGlyph } from "@/domains/moulds/components/MachineGlyph";
 import { StorageInventoryPanel } from "@/domains/moulds/components/StorageInventoryPanel";
-import { storageInventoryCount, type InventorySite } from "@/domains/moulds/storage-inventory";
+import { storageInventoryCount, storageInventoryUnit, type InventorySite } from "@/domains/moulds/storage-inventory";
 import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import styles from "./MouldManagementPage.module.css";
 
@@ -1384,6 +1384,7 @@ function matchesSearch(mould: MouldRecord, search: string) {
     mould.location.label,
     mould.inventory?.site ?? "",
     ...(mould.inventory?.sourceLocations ?? []),
+    ...(mould.inventory?.confirmedMouldNos ?? []),
     mould.inventory?.lastMovement?.toLocation ?? "",
     mould.location.machineNumber ? `${mould.location.machineNumber}호기` : "",
     mould.location.machineNumber ? `${mould.location.machineNumber}号机` : "",
@@ -1741,6 +1742,9 @@ export function MouldManagementPage() {
   });
   const usingFallback = developmentFallback;
   const board = usingFallback ? FALLBACK_MOULD_BOARD : boardQuery.data;
+  const svcCountUnit = storageInventoryUnit(board?.storageInventory, "SVC") === "moulds"
+    ? (language === "ko" ? "벌" : "套")
+    : (language === "ko" ? "행" : "行");
   const dataStateLabel = usingFallback ? copy.fallbackBadge : board?.dataFreshness.stale ? copy.staleBadge : copy.liveBadge;
   const fallbackProductionLinks = useMemo(
     () => buildFallbackMachineProductionLinks(usingFallback ? board : undefined),
@@ -2288,7 +2292,7 @@ export function MouldManagementPage() {
             className={inventorySite === "SVC" ? styles.activeChip : ""}
             onClick={() => { setStatusListOpen(false); setInventorySite("SVC"); }}
             type="button"
-          >SVC<strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{language === "ko" ? "행" : "行"}</small></button> : null}
+          >SVC<strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{svcCountUnit}</small></button> : null}
         </div>
         <div className={styles.boardStatus}>
           {usingFallback ? <small>{copy.fallbackNotice}</small> : null}
@@ -2434,7 +2438,7 @@ export function MouldManagementPage() {
                 type="button"
               >
                 <Boxes size={17} aria-hidden="true" />
-                <span>SVC <strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{language === "ko" ? "행" : "行"}</small></span>
+                <span>SVC <strong>{storageInventoryCount(board.storageInventory, "SVC") ?? "—"}</strong><small>{svcCountUnit}</small></span>
                 <span>TIANLU <strong>{storageInventoryCount(board.storageInventory, "TIANLU") ?? "—"}</strong></span>
                 <Expand size={15} aria-hidden="true" />
               </button>
@@ -2922,6 +2926,10 @@ export function MouldManagementPage() {
                       {selectedDetail.inventory.site === "OTHER" ? (language === "ko" ? "기타 위치" : "其他位置") : selectedDetail.inventory.site === "UNCONFIRMED" ? copy.unknown : selectedDetail.inventory.site}
                       <small>{selectedDetail.inventory.basis === "confirmed_list" ? `${language === "ko" ? "확인 목록" : "确认清单"} · ${selectedDetail.inventory.confirmedOn ?? "—"}` : selectedDetail.inventory.basis === "last_movement" ? (language === "ko" ? "마지막 이동 기록 기준 · 현재 위치 확인 필요" : "按最后移动记录 · 当前位置待确认") : language === "ko" ? "MES 기록 기준" : "按 MES 记录"}</small>
                       {selectedDetail.inventory.locationConflict ? <small>{language === "ko" ? "MES 위치 상이" : "MES 位置不一致"}</small> : null}
+                      {selectedDetail.inventory.identityPending ? <>
+                        <small>{language === "ko" ? "공유 자산번호 · 실물별 MES 대응 미확정" : "共用资产号 · 逐套 MES 对应待确认"}</small>
+                        <small>{selectedDetail.inventory.confirmedMouldNos.join(" / ")} · {language === "ko" ? "이 MES 기록과의 대응 확인 중" : "与本 MES 记录的对应关系待确认"}</small>
+                      </> : null}
                     </dd></div> : null}
                     <div><dt>{selectedDetail.inventory ? (language === "ko" ? "MES 기록 위치" : "MES 记录位置") : copy.currentLocation}</dt><dd>{displayLocation(selectedDetail)}</dd></div>
                     {selectedDetail.inventory?.lastMovement ? <div><dt>{language === "ko" ? "마지막 이동 기록" : "最后移动记录"}</dt><dd>

@@ -44,6 +44,10 @@
 .rowPart { color: var(--wj-muted); font-size: 13px; }
 .movement { display: block; margin-top: 5px; color: var(--wj-muted); font-size: 13px; line-height: 1.45; }
 .movement > span { display: block; }
+.identityStatement { display: grid; gap: 3px; margin-top: 6px; font-size: 13px; line-height: 1.45; }
+.identityStatement > strong { color: var(--wj-text); }
+.identityStatement > span, .identityNote { color: var(--wj-muted); }
+.identityNote { margin: 5px 0 0; font-size: 13px; line-height: 1.45; }
 .additionalHeading { display: flex; justify-content: space-between; gap: 8px; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--wj-border); background: var(--wj-surface, #f4f7fa); font-size: 14px; }
 .additionalHeading > span { white-space: nowrap; }
 .flags { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; color: var(--wj-warning-text, #986020); font-size: 12px; }

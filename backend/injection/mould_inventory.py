@@ -35,6 +35,11 @@ def _key(value):
     return str(value or "").strip().upper()
 
 
+def _identity_confirmation(asset):
+    return next((value for value in _catalog().get("identity_confirmations", [])
+                 if _key(value["asset_code"]) == _key(asset)), None)
+
+
 def latest_movement(history):
     """Last dated destination, with ties/missing actual dates kept unresolved.
 
@@ -133,6 +138,7 @@ def _inventory(mould, entries):
         or (newer_position and current_site != "SVC")
     )
     use_confirmation = bool(entries) and not newer_position
+    identity = _identity_confirmation(mould.get("asset_code"))
     return {
         "site": "SVC" if use_confirmation else current_site,
         "basis": "confirmed_list" if use_confirmation else (
@@ -143,6 +149,8 @@ def _inventory(mould, entries):
         "confirmed_on": _catalog()["source"]["confirmed_on"] if entries else None,
         "location_conflict": conflict,
         "last_movement": copy.deepcopy(movement),
+        "identity_pending": identity is not None,
+        "confirmed_mould_nos": list(identity["mould_nos"]) if identity else [],
     }
 
 
@@ -181,9 +189,38 @@ def decorate_inventory_board(payload):
             "record_location": str((matched.get("location") or {}).get("code") or "") if matched else "",
             "location_conflict": matched["inventory"]["location_conflict"] if matched else False,
         })
+        identity = _identity_confirmation(entry["asset_code"])
+        if identity and entry["entry_id"] in identity["source_entry_ids"]:
+            # A shared asset number identifies candidate records, not which
+            # physical NT1/NT2 owns their usage or movement history. Never attach
+            # that record as an individually verified link to either source row.
+            entry.update({
+                "instance_id": None,
+                "match_status": "shared_asset_identity_pending",
+                "candidate_instance_ids": sorted({str(row["instance_id"]) for row in candidates}),
+                "candidate_mould_codes": sorted({str(row.get("mould_code") or "") for row in candidates} - {""}),
+                "confirmed_mould_nos": list(identity["mould_nos"]),
+                "confirmed_mould_no": identity["row_mould_nos"].get(entry["entry_id"]),
+                "record_location": "",
+                "location_conflict": False,
+            })
         entries.append(entry)
+    physical_count = 0
+    for asset, source_rows in by_source_asset.items():
+        identity = _identity_confirmation(asset)
+        if len(source_rows) > 1 and identity is None:
+            physical_count = None
+            break
+        physical_count += identity["physical_mould_count"] if identity else 1
     result["storage_inventory"] = {
         "source": copy.deepcopy(catalog["source"]),
+        "identity_confirmations": copy.deepcopy(catalog.get("identity_confirmations", [])),
+        "reconciliation": {
+            "physical_mould_count": physical_count,
+            "individually_linked_mould_count": sum(entry["match_status"] == "matched" for entry in entries),
+            "identity_pending_mould_count": sum(entry["match_status"] == "shared_asset_identity_pending" for entry in entries),
+            "unmatched_mould_count": sum(entry["match_status"] == "unmatched" for entry in entries),
+        },
         "entries": entries,
         "groups": [{
             "site": site, "mould_count": len(groups[site]),
