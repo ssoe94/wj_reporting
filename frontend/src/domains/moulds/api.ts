@@ -62,6 +62,7 @@ export type MouldRecord = {
   serialNo: string;
   supplier: string;
   currentOutputAmount: number | null;
+  lifetimeShotCount: number | null;
   currentOutputBatchAmount: number | null;
   lifespanStatus: string;
   maintenanceStatus: string;
@@ -432,6 +433,7 @@ function normalizeMouldRecord(value: unknown): MouldRecord {
     serialNo: asString(pick(source, "serial_no", "serialNo")),
     supplier: enumLabel(pick(source, "supplier", "manufacturer")),
     currentOutputAmount: asNullableNumber(pick(source, "current_output_amount", "currentOutputAmount")),
+    lifetimeShotCount: asNullableNumber(pick(source, "lifetime_shot_count", "lifetimeShotCount")),
     currentOutputBatchAmount: asNullableNumber(pick(source, "current_output_batch_amount", "currentOutputBatchAmount")),
     lifespanStatus: enumLabel(pick(source, "lifespan_status", "lifespanStatus")),
     maintenanceStatus: enumLabel(pick(source, "maintenance_status", "maintenanceStatus")),

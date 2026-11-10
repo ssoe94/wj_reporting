@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Boxes,
   Clock3,
+  Download,
   Expand,
   FileText,
   History,
@@ -52,7 +53,7 @@ import {
 import { getInjectionActivityCoverage } from "@/domains/mes/api";
 import { getOverviewBoard } from "@/domains/boards/overview/api";
 import { useStoredLanguage } from "@/shared/i18n/language";
-import { getShanghaiBusinessDateString } from "@/shared/utils/date";
+import { getShanghaiBusinessDateString, getShanghaiDateString } from "@/shared/utils/date";
 import {
   activityEvidenceBasis,
   assessOpenPlanGroup,
@@ -73,6 +74,7 @@ import {
 import { MachineGlyph } from "@/domains/moulds/components/MachineGlyph";
 import { StorageInventoryPanel } from "@/domains/moulds/components/StorageInventoryPanel";
 import { matchesMouldDisplayFilter, mouldDisplayCategory, mouldDisplayCounts, storageInventoryCount, storageInventoryUnit, type InventorySite } from "@/domains/moulds/storage-inventory";
+import { downloadMouldWorkbook } from "@/domains/moulds/mould-export";
 import { MarqueeLine } from "@/shared/components/MarqueeLine";
 import styles from "./MouldManagementPage.module.css";
 
@@ -91,6 +93,9 @@ const COPY = {
     staleShort: "지연",
     clearSelection: "선택 해제",
     refresh: "위치 빠른 새로고침",
+    exportExcel: "전체 엑셀",
+    exportingExcel: "엑셀 준비 중",
+    exportExcelError: "엑셀을 내려받지 못했습니다. 다시 시도해 주세요.",
     loading: "금형 현황을 불러오는 중입니다.",
     loadError: "MES API를 불러오지 못했습니다. API 권한과 서버 연결 상태를 확인해주세요.",
     developmentFallback: "개발 환경에서는 검증용 예시 데이터를 표시합니다.",
@@ -317,6 +322,9 @@ const COPY = {
     staleShort: "延迟",
     clearSelection: "取消选择",
     refresh: "快速刷新位置",
+    exportExcel: "全部导出 Excel",
+    exportingExcel: "正在生成 Excel",
+    exportExcelError: "无法下载 Excel，请重试。",
     loading: "正在加载模具现状。",
     loadError: "MES API 暂不可用，请检查 API 权限和服务器连接。",
     developmentFallback: "开发环境当前显示验证用示例数据。",
@@ -1724,6 +1732,12 @@ export function MouldManagementPage() {
       queryClient.setQueryData(["injection", "moulds", "board"], freshBoard);
     },
   });
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const latestBoard = await getMouldBoard();
+      await downloadMouldWorkbook(latestBoard, language, getShanghaiDateString());
+    },
+  });
   const productionBusinessDate = getShanghaiBusinessDateString();
   const productionEvidenceQuery = useQuery({
     queryKey: ["production-status", "mould-board-model-evidence", productionBusinessDate],
@@ -2280,6 +2294,11 @@ export function MouldManagementPage() {
           <button aria-label={isFullscreen ? copy.exitFullscreen : copy.fullscreen} className={styles.topAction} onClick={() => void toggleFullscreen()} title={isFullscreen ? copy.exitFullscreen : copy.fullscreen} type="button">
             {isFullscreen ? <Minimize2 aria-hidden="true" size={22} /> : <Maximize2 aria-hidden="true" size={22} />}
           </button>
+          {board && !usingFallback ? (
+            <button className={`${styles.topAction} ${styles.exportButton}`} disabled={!board.moulds.length || exportMutation.isPending} onClick={() => exportMutation.mutate()} type="button">
+              <Download aria-hidden="true" size={16} />{exportMutation.isPending ? copy.exportingExcel : copy.exportExcel}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -2318,6 +2337,8 @@ export function MouldManagementPage() {
           ) : null}
         </div>
       </div>
+
+      {exportMutation.isError ? <div className={`${styles.inlineNotice} ${styles.inlineWarning}`} role="alert">{copy.exportExcelError}</div> : null}
 
       {board ? (
         <div className={styles.boardGrid}>

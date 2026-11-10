@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import copy
+import math
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -235,6 +236,20 @@ def usage_shot_count(*, current_output_amount: Any, production_history: Any) -> 
     return max(current_count, int(history_count))
 
 
+def _lifetime_shot_count(production_history: Any) -> int | float | None:
+    """Match the detail screen's continuous monthly production total."""
+    if not isinstance(production_history, list):
+        return None
+    rows = continuous_production_history([
+        row for row in production_history if isinstance(row, Mapping)
+    ])
+    return max((
+        count for row in rows
+        if isinstance(count := row.get('cumulative_quantity'), (int, float))
+        and not isinstance(count, bool) and math.isfinite(count)
+    ), default=None)
+
+
 def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     result = refresh_board_machine_metadata(payload)
     moulds = result.get('moulds')
@@ -273,6 +288,7 @@ def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             if isinstance(detail, Mapping)
             else []
         )
+        mould['lifetime_shot_count'] = _lifetime_shot_count(production_history)
         location = mould.get('location')
         mounted = isinstance(location, Mapping) and location.get('kind') == 'machine'
         fallback_activity_at, fallback_activity_source = (

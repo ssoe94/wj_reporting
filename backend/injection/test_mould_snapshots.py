@@ -69,6 +69,37 @@ class MouldSnapshotUsageTests(TestCase):
         self.assertEqual(payload['moulds'][1]['location']['kind'], 'unknown')
         self.assertNotIn('display_tonnage', payload['machines'][0])
 
+    def test_board_exports_continuous_shots_and_distinguishes_zero_from_missing(self):
+        detail = detail_payload()
+        detail['production_history'][0]['cumulative_quantity'] = 999_999
+        detail['production_history'][1]['cumulative_quantity'] = 200
+        for instance_id, history in (
+            ('123', detail['production_history']),
+            ('124', [{'year': 2026, 'month': 1, 'quantity': 0}]),
+        ):
+            MouldDataSnapshot.objects.create(
+                snapshot_key=detail_snapshot_key(instance_id),
+                kind=MouldDataSnapshot.KIND_DETAIL,
+                instance_id=instance_id,
+                payload={'production_history': history},
+            )
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={'moulds': [
+                {'instance_id': instance_id, 'current_output_amount': 245_000}
+                for instance_id in ('123', '124', '125')
+            ]},
+        )
+
+        response = APIClient().get('/api/injection/moulds/board/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({
+            row['instance_id']: row['lifetime_shot_count']
+            for row in response.json()['moulds']
+        }, {'123': 300, '124': 0, '125': None})
+
     def test_last_production_uses_monthly_period_not_generic_record_timestamp(self):
         result = last_production_at([
             {

@@ -5540,6 +5540,22 @@
   gap: 10px;
 }
 
+.topAction.exportButton {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .topAction.exportButton { grid-column: span 3; }
+}
+
 .boardStatus > small {
   color: var(--wj-warning);
   font-size: 0.72rem;
