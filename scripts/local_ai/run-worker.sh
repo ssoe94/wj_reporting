@@ -57,7 +57,10 @@ flag_enabled() {
 if flag_enabled "${AI_WORKER_AUTOSTART_RUNTIME:-true}" \
   && flag_enabled "$AI_WORKER_USE_LLM" \
   && [[ "${LOCAL_LLM_BASE_URL%/}" == "http://127.0.0.1:8082/v1" ]]; then
-  if [[ -x "$runtime_uv" && -f "$runtime_repo/pyproject.toml" && -f "$runtime_repo/config/worker.toml" ]]; then
+  if /bin/launchctl print "gui/$(id -u)/com.wj.local-ai-model" >/dev/null 2>&1; then
+    # No -k: never interrupt a running generation on a worker restart.
+    /bin/launchctl kickstart "gui/$(id -u)/com.wj.local-ai-model" || true
+  elif [[ -x "$runtime_uv" && -f "$runtime_repo/pyproject.toml" && -f "$runtime_repo/config/worker.toml" ]]; then
     (
       if ! /usr/bin/env -u AI_WORKER_TOKEN "$runtime_uv" run --no-sync --directory "$runtime_repo" local-coder start >/dev/null; then
         echo "Local AI runtime start failed; worker heartbeats continue." >&2
