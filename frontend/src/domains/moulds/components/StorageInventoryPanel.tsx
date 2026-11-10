@@ -25,7 +25,7 @@ const COPY = {
     rowMappingPending: "원본 행과 실제 금형의 대응 확인 중", sourceMouldNo: "원본 금형 번호",
     candidate: "MES 후보 · 개별 연결 미확정", sharedAssetReason: "자산번호 공유 사유 확인 중",
     physicalNote: "공유 자산번호의 금형도 실물을 각각 집계합니다.",
-    repair: "수리중", externalCompanies: "외부 업체", chooseCompany: "업체·위치 선택", changeCompany: "업체·위치 변경", collapseCompanies: "분류 접기",
+    repair: "수리중", externalCompanies: "외부 업체", chooseCompany: "업체·위치 선택",
   },
   zh: {
     title: "其他存放位置", close: "关闭存放清单", other: "其他位置", unknown: "未确认",
@@ -44,7 +44,7 @@ const COPY = {
     rowMappingPending: "原表行与实际模具的对应关系待确认", sourceMouldNo: "原表模具号",
     candidate: "MES 候选 · 逐套关联未确认", sharedAssetReason: "共用资产号原因待确认",
     physicalNote: "共用资产号的模具按各套实物分别计数。",
-    repair: "维修中", externalCompanies: "外部单位", chooseCompany: "选择单位及位置", changeCompany: "更换单位及位置", collapseCompanies: "收起分类",
+    repair: "维修中", externalCompanies: "外部单位", chooseCompany: "选择单位及位置",
   },
 };
 
@@ -112,9 +112,8 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
   const [searchState, setSearchState] = useState({ site, value: "" });
   const search = searchState.site === site ? searchState.value : "";
   const setSearch = (value: string) => setSearchState({ site, value });
-  const [pickerCollapsed, setPickerCollapsed] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
-  const pickerToggleRef = useRef<HTMLButtonElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement;
     panelRef.current?.focus();
@@ -139,22 +138,20 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
   const generalGroups = groups.filter((group) => ["svc", "other", "unconfirmed"].includes(group.category));
   const repairGroups = groups.filter((group) => group.category === "repair");
   const externalGroups = groups.filter((group) => group.category === "external");
-  const groupTotal = (items: StorageInventoryGroup[]) => items.some((group) => group.mouldCount === null)
-    ? "—" : items.reduce((total, group) => total + (group.mouldCount ?? 0), 0);
   const selectSite = (nextSite: InventorySite) => {
     setSearch("");
     onSiteChange(nextSite);
-    setPickerCollapsed(true);
-    pickerToggleRef.current?.focus();
+    if (resultsRef.current) resultsRef.current.scrollTop = 0;
   };
   const renderGroupButton = (group: StorageInventoryGroup) => <button
     aria-pressed={site === group.site}
+    aria-controls="mould-inventory-results"
     className={site === group.site ? styles.activeSite : ""}
     key={group.site}
     onClick={() => selectSite(group.site)}
     title={groupLabel(group)}
     type="button"
-  ><span>{groupLabel(group)}</span><strong>{storageInventoryCount(inventory, group.site) ?? "—"}<small>{copy[storageInventoryUnit(inventory, group.site)]}</small></strong></button>;
+  ><span>{groupLabel(group)}</span><strong>{storageInventoryCount(inventory, group.site) ?? "—"}</strong></button>;
   const movementTime = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value || "—" : new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
@@ -176,28 +173,25 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
         <h3 id="mould-storage-inventory-title"><Boxes size={19} aria-hidden="true" />{copy.title}</h3>
         <button aria-label={copy.close} onClick={onClose} type="button"><X size={21} aria-hidden="true" /></button>
       </header>
-      <div className={styles.pickerHeading}>
-        <strong>{selectedLabel} <span>{selectedGroup?.category === "repair" ? `${copy.repair} · ` : ""}{storageInventoryCount(inventory, site) ?? "—"}{copy[storageInventoryUnit(inventory, site)]}</span></strong>
-        <button aria-controls="mould-inventory-company-picker" aria-expanded={!pickerCollapsed} onClick={() => setPickerCollapsed(!pickerCollapsed)} ref={pickerToggleRef} type="button">{pickerCollapsed ? copy.changeCompany : copy.collapseCompanies}</button>
-      </div>
-      {!pickerCollapsed ? <div aria-label={copy.chooseCompany} className={styles.companyPicker} id="mould-inventory-company-picker">
+      <div aria-label={copy.chooseCompany} className={styles.companyPicker} id="mould-inventory-company-picker">
         {generalGroups.length ? <div className={styles.sites}>{generalGroups.map(renderGroupButton)}</div> : null}
         {repairGroups.length ? <section className={styles.repairSection} aria-labelledby="mould-repair-companies-title">
-          <h4 id="mould-repair-companies-title">{copy.repair}<strong>{groupTotal(repairGroups)}<small>{copy.moulds}</small></strong></h4>
+          <h4 id="mould-repair-companies-title">{copy.repair}</h4>
           <div className={styles.sites}>{repairGroups.map(renderGroupButton)}</div>
         </section> : null}
-        {externalGroups.length ? <section aria-labelledby="mould-external-companies-title">
-          <h4 id="mould-external-companies-title">{copy.externalCompanies}<strong>{groupTotal(externalGroups)}<small>{copy.moulds}</small></strong></h4>
+        {externalGroups.length ? <section className={styles.externalSection} aria-labelledby="mould-external-companies-title">
+          <h4 id="mould-external-companies-title">{copy.externalCompanies}</h4>
           <div className={styles.sites}>{externalGroups.map(renderGroupButton)}</div>
         </section> : null}
-      </div> : null}
+      </div>
       <div className={styles.basis}>
+        <strong aria-live="polite">{selectedLabel} <span>{storageInventoryCount(inventory, site) ?? "—"}{copy[storageInventoryUnit(inventory, site)]}</span></strong>
         {site === "SVC" && inventory ? <>
           <p title={`${inventory.source.filename} · ${inventory.source.sheet}`}>{copy.source} <strong>{storageInventoryCount(inventory, "SVC") ?? "—"}{copy[storageInventoryUnit(inventory, "SVC")]}</strong> · {inventory.source.confirmedOn || "—"}</p>
         </> : <p>{site === "UNCONFIRMED" ? copy.unknownHint : copy.classified}</p>}
       </div>
       <label className={styles.search}><Search size={16} aria-hidden="true" /><span className={styles.srOnly}>{copy.search}</span><input type="search" placeholder={copy.search} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-      <div className={styles.results}>
+      <div className={styles.results} id="mould-inventory-results" ref={resultsRef}>
         {!inventory ? <p className={styles.empty} role="status">{copy.unavailable}</p> : site === "SVC" ? (
           <>
             {entries.map((entry) => <SourceRow key={entry.entryId} entry={entry} copy={copy} canOpen={Boolean(entry.instanceId && availableIds.has(entry.instanceId))} onSelect={onSelectMould} />)}
