@@ -23,6 +23,7 @@ Telegraphic action notes stay telegraphic: 返工 => 재작업, 报废 => 폐기
 Preserve company/person names in their original spelling, including 紫金; never invent Korean names.
 Copy Latin codes, line letters, numbers, dates and units exactly, including CS, D, 4ea, 1ea, 5ea.
 KEEP_NAME_0 and similar placeholders are original company/person names: copy each unchanged in place.
+KEEP_LIST_0 and similar placeholders contain an exact numbered-list prefix and code: copy each unchanged at the start of its line, without adding numbering or splitting it.
 If a quantity is written in Chinese words (一人), use Korean words (한 명), not a new digit.
 Keep line breaks and list meaning. Do not add '완료', '확정', '해결' unless explicitly present in the source.
 For misspellings or repeated words, preserve understandable meaning without inventing missing facts.
@@ -51,6 +52,15 @@ def prepare_source(source: str) -> tuple[str, dict[str, str]]:
             raise ValueError("Source contains a reserved translation placeholder.")
         value = value.replace(name, token)
         replacements[token] = name
+    # A list such as 1.LGCS must not become 1. LGCS: the server protects
+    # the exact compound token. Hide the prefix, not relax token validation.
+    prefixes = dict.fromkeys(re.findall(r"(?m)^\d+\.[A-Za-z][A-Za-z0-9]*", source))
+    for index, prefix in enumerate(prefixes):
+        token = f"KEEP_LIST_{index}"
+        if token in source:
+            raise ValueError("Source contains a reserved translation placeholder.")
+        value = re.sub(r"(?m)^" + re.escape(prefix) + r"(?![A-Za-z0-9])", token, value)
+        replacements[token] = prefix
     return value, replacements
 
 

@@ -65,6 +65,27 @@ class QualityActionResultTranslationTests(unittest.TestCase):
                 handle_job(self.job(source), True, llm, 'Qwen3.8-27B-4bit', True)
             self.assertEqual(llm.structured_analysis.call_count, 1)
 
+    def test_attached_numbered_code_is_preserved_without_weakening_validation(self):
+        source = '1.LGCS跟线擦拭\n2.空车返回后 注意遗留产品'
+        llm = Mock()
+        llm.structured_analysis.return_value = {'translation': 'KEEP_LIST_0 라인 현장 대응 및 닦기\n2. 빈 대차 반환 후 잔여 제품 주의'}
+        result, _ = handle_job(self.job(source), True, llm, 'Qwen3.8-27B-4bit', True)
+        self.assertTrue(result['translation'].startswith('1.LGCS '))
+        self.assertIn('KEEP_LIST_0', llm.structured_analysis.call_args.args[1]['source'])
+        self.assertEqual(handler.protected_tokens(source), handler.protected_tokens(result['translation']))
+        with self.assertRaises(ValueError):
+            handler.validate_translation(source, result['translation'].replace('1.LGCS', '1. LGCS'))
+        for invalid in ('LGCS 닦기', 'KEEP_LIST_0 닦기 KEEP_LIST_0', '1. KEEP_LIST_0 닦기'):
+            llm.structured_analysis.return_value = {'translation': invalid}
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                handler.translate_text(source, llm)
+
+    def test_list_placeholders_cannot_collide_with_source_or_change_nonlist_codes(self):
+        with self.assertRaises(ValueError):
+            handler.prepare_source('1.LGCS 跟线 KEEP_LIST_0')
+        source = '코드 1.ABC/2.5mm'
+        self.assertEqual(handler.prepare_source(source), (source, {}))
+
     def test_scope_mismatch_and_long_source_are_rejected(self):
         job = self.job()
         job['scope']['report_id'] = 8
