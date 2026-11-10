@@ -139,6 +139,7 @@ function makeMould(index: number, location: MouldLocation, code?: string): Mould
     serialNo: `WJ-M-${String(index + 1).padStart(4, "0")}`,
     supplier: index % 2 ? "WJ Tooling" : "협력 금형사",
     currentOutputAmount: output,
+    lifetimeShotCount: null,
     currentOutputBatchAmount: Math.round(output / 12),
     lifespanStatus: index % 9 === 0 ? "점검 필요" : "정상",
     maintenanceStatus: "대기 없음",

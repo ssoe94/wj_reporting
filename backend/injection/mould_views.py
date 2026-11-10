@@ -104,6 +104,7 @@ _MOULD_FIELDS = (
     "serial_no",
     "current_output_amount",
     "current_output_batch_amount",
+    "lifetime_shot_count",
     "lifespan_status",
     "maintenance_status",
     "repair_status",
