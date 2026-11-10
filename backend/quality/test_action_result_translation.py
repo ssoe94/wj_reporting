@@ -14,7 +14,7 @@ from ai_core.models import AiJob
 from .action_result_translation import (
     PROMPT_VERSION, SCHEMA_VERSION, accept_translation, enqueue_missing_translations,
     enqueue_report_translation, next_daily_retry, record_translation_failure,
-    source_sha256, translation_representation, validate_candidate,
+    source_sha256, translation_representation, validate_candidate, retry_failed_report_translation,
 )
 from .models import QualityActionResultTranslation, QualityReport
 from .serializers import QualityReportSerializer
@@ -71,6 +71,58 @@ class ActionResultTranslationTests(TestCase):
         self.assertTrue(created)
         self.assertNotEqual(current.pk, job.pk)
         self.assertTrue(self.accept(current, 'CS 확인 불량5ea, 재작업')['accepted_translation'])
+
+    def test_superuser_retry_requeues_only_failed_translation_without_source_edit(self):
+        job = self.enqueue()
+        job.status = AiJob.STATUS_FAILED
+        job.save(update_fields=['status'])
+        record_translation_failure(job)
+        source = self.report.action_result
+        path = f'/api/quality/reports/{self.report.pk}/retry-translation/'
+        response = self.client.post(path, {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['created'])
+        self.assertNotEqual(response.data['job_id'], job.pk)
+        self.assertEqual(self.client.post(path, {}, format='json').data['created'], False)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.action_result, source)
+        self.assertEqual(AiJob.objects.filter(job_type=AiJob.JOB_TYPE_QUALITY_TRANSLATION).count(), 2)
+
+    def test_retry_cannot_replace_accepted_translation_or_accept_client_text(self):
+        job = self.enqueue()
+        self.accept(job)
+        path = f'/api/quality/reports/{self.report.pk}/retry-translation/'
+        response = self.client.post(path, {}, format='json')
+        self.assertFalse(response.data['created'])
+        self.assertEqual(response.data['job_id'], job.pk)
+        self.report.refresh_from_db()
+        self.assertEqual(translation_representation(self.report)['status'], 'translated')
+        self.assertEqual(self.client.post(path, {'translation': 'invented'}, format='json').status_code, 400)
+        self.assertEqual(AiJob.objects.filter(job_type=AiJob.JOB_TYPE_QUALITY_TRANSLATION).count(), 1)
+        self.assertEqual(self.client.get(path).status_code, 405)
+
+    def test_retry_requires_active_superuser_and_known_report(self):
+        path = f'/api/quality/reports/{self.report.pk}/retry-translation/'
+        self.assertEqual(self.client.post('/api/quality/reports/999999/retry-translation/', {}, format='json').status_code, 404)
+        for active, superuser in [(True, False), (False, True)]:
+            self.user.is_active, self.user.is_superuser = active, superuser
+            self.user.save(update_fields=['is_active', 'is_superuser'])
+            self.client.force_authenticate(self.user)
+            self.assertEqual(self.client.post(path, {}, format='json').status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.post(path, {}, format='json').status_code, [401, 403])
+        self.assertEqual(AiJob.objects.filter(job_type=AiJob.JOB_TYPE_QUALITY_TRANSLATION).count(), 0)
+
+    def test_retry_non_chinese_has_no_job_and_invalid_json_bodies_are_rejected(self):
+        report = QualityReport.objects.create(report_dt=timezone.now(), action_result='한국어만 있음')
+        path = f'/api/quality/reports/{report.pk}/retry-translation/'
+        response = self.client.post(path, {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'not_required')
+        self.assertFalse(response.data['created'])
+        for body in ['[]', 'null', 'false', '{broken']:
+            self.assertEqual(self.client.post(path, data=body, content_type='application/json').status_code, 400)
+        self.assertFalse(QualityActionResultTranslation.objects.filter(report=report).exists())
 
     def test_failed_translation_waits_until_next_six_am(self):
         job = self.enqueue()
@@ -248,6 +300,31 @@ class ActionResultTranslationPostgresTests(TransactionTestCase):
         self.assertEqual(len({row[0] for row in results}), 1)
         self.assertEqual(sum(row[1] for row in results), 1)
         self.assertEqual(QualityActionResultTranslation.objects.filter(report=report).count(), 1)
+
+    def test_concurrent_explicit_retries_have_one_current_job(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        report = QualityReport.objects.create(report_dt=timezone.now(), action_result='报废处理')
+        original = QualityActionResultTranslation.objects.get(report=report).job
+        original.status = AiJob.STATUS_FAILED
+        original.save(update_fields=['status'])
+        record_translation_failure(original)
+        ready = Barrier(2)
+        def retry():
+            close_old_connections()
+            try:
+                ready.wait(timeout=10)
+                job, created = retry_failed_report_translation(report.pk)
+                return job.pk, created
+            finally:
+                close_old_connections()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: retry(), range(2)))
+        self.assertEqual(len({row[0] for row in results}), 1)
+        self.assertEqual(sum(row[1] for row in results), 1)
+        self.assertNotEqual(results[0][0], original.pk)
+        report.refresh_from_db()
+        self.assertEqual(report.action_result, '报废处理')
 
     def test_publication_waits_for_source_edit_and_rejects_old_snapshot(self):
         from concurrent.futures import ThreadPoolExecutor

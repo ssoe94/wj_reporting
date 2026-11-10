@@ -199,3 +199,16 @@ def accept_translation(job, candidate, *, prompt_version, model_name):
 
 def record_translation_failure(job):
     QualityActionResultTranslation.objects.filter(job_id=job.pk).update(retry_after=next_daily_retry())
+
+
+def retry_failed_report_translation(report_id):
+    """Privileged explicit retry; source and accepted translations are untouched."""
+    with transaction.atomic():
+        report = QualityReport.objects.select_for_update().filter(pk=report_id).first()
+        if report is None:
+            return None, False
+        cached = QualityActionResultTranslation.objects.select_for_update(of=('self',)).select_related('job').filter(report=report).first()
+        if cached and cached.job and cached.job.status == AiJob.STATUS_FAILED:
+            cached.retry_after = None
+            cached.save(update_fields=['retry_after', 'updated_at'])
+        return enqueue_report_translation(report.pk, retry=True)

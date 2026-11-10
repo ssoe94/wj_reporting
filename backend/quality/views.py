@@ -140,6 +140,19 @@ class QualityImportPagination(PageNumberPagination):
 class QualityReportViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, QualityPermission]
     queryset = QualityReport.objects.select_related('source_import_row', 'action_result_translation__job').all()
+
+    @action(detail=True, methods=['post'], url_path='retry-translation', permission_classes=[IsAuthenticated])
+    def retry_translation(self, request, pk=None):
+        if not request.user.is_active or not request.user.is_superuser:
+            raise PermissionDenied('Only active superusers may retry a quality translation.')
+        if request.data != {}:
+            raise ValidationError('Translation retries require an empty object, not source text or results.')
+        report = self.get_object()
+        from .action_result_translation import retry_failed_report_translation
+        job, created = retry_failed_report_translation(report.pk)
+        return Response({'report_id': report.pk, 'job_id': job.pk if job else None,
+                         'created': created, 'status': job.status if job else 'not_required'})
+
     serializer_class = QualityReportSerializer
     pagination_class = QualityReportPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
