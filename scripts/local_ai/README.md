@@ -1,17 +1,27 @@
 # Mac Studio WJ AI Worker
 
-WJ Reporting uses one outbound `launchd` service after login:
+WJ Reporting uses two login-time launchd services:
 
-- `com.wj.local-ai-worker`: starts immediately, reports model readiness through heartbeats, polls the Render backend, ensures hourly jobs exist, and submits results.
+- `com.wj.local-ai-worker`: outbound Render polling, heartbeats and result submission.
+- `com.wj.local-ai-model`: independently supervised loopback model server on
+  `127.0.0.1:8082`, with RunAtLoad and KeepAlive. A model exit is restarted without
+  restarting the worker; a worker reinstall does not stop a running model.
 
-The on-device model server (MLX, OpenAI-compatible) is managed separately at
-`127.0.0.1:8082`. At worker launch, a background `local-coder start` bootstraps
-this existing owned runtime after login or reboot. It is idempotent, never stops
-or restarts an existing server, and receives no Worker token. Custom model
-endpoints are not bootstrapped. Set `AI_WORKER_AUTOSTART_RUNTIME=false` to opt out;
-`LOCAL_AI_RUNTIME_REPO` and `LOCAL_AI_UV_BIN` override the existing manager and uv
-paths. A missing/failed manager leaves the worker running to report readiness.
-This is one start attempt per worker launch, not a periodic model watchdog.
+`run-model.sh` reuses the existing approved, isolated oMLX environment under
+`~/Developer/wj-ai-omlx-stage2-20261025` (override: `LOCAL_AI_OMLX_ROOT`). It runs
+`serve-verified-runtime.py`, which verifies installed module versions/paths, with
+one concurrent request, the existing 32 GB memory guard and 4 GB SSD cache.
+It never installs dependencies and removes the Worker token from its environment.
+The actual artifact is Qwen3.8-27B-oQ4e-mtp; the preserved
+`Qwen3.8-27B-4bit` request alias is configured by the existing model settings.
+Do not replace that model setting or change stored model identities during recovery.
+
+The worker prefers the supervised service (kickstart without `-k`). For older
+installations without that service, the previous one-shot `local-coder start`
+bootstrap remains available through `LOCAL_AI_RUNTIME_REPO` / `LOCAL_AI_UV_BIN`.
+Custom endpoints and `AI_WORKER_AUTOSTART_RUNTIME=false` skip worker bootstrap.
+Neither setting disables an independently installed model service.
+
 The Worker advertises `qwen38` only when `/v1/models` reports the
 exact configured checkpoint (`Qwen3.8-27B-4bit`). If the endpoint is unavailable,
 the worker keeps reporting its status and skips claims until readiness returns.
@@ -59,8 +69,8 @@ per-job data last. Do not reorder prompt payloads without checking the tests.
    ```
 
 2. In the Render `shared-secrets` environment group, set `AI_WORKER_TOKEN` to the clipboard value and redeploy the backend.
-3. Confirm that the separately managed model server is ready on port 8082.
-4. Install and start the outbound Worker:
+3. Confirm the approved oMLX runtime files exist; installation does not download a model or dependencies.
+4. Install and start the supervised model and outbound Worker from a normal macOS login terminal:
 
    ```bash
    ./scripts/local_ai/install-launch-agents.sh
@@ -69,7 +79,9 @@ per-job data last. Do not reorder prompt payloads without checking the tests.
 ## Operations
 
 ```bash
+launchctl print gui/$(id -u)/com.wj.local-ai-model
 launchctl print gui/$(id -u)/com.wj.local-ai-worker
+curl --fail http://127.0.0.1:8082/v1/models
 tail -f ~/Library/Logs/wj-local-ai/worker.out.log
 tail -f ~/Library/Logs/wj-local-ai/worker.err.log
 ```
@@ -103,3 +115,23 @@ module is retained for implementation compatibility and historical records; the
 current deployment does not accept Claude worker capabilities.
 
 Runtime bootstrap uses `uv run --no-sync`: it reuses the installed manager environment and does not install or update dependencies at worker startup.
+
+## Quality translation outage recovery
+
+Quality action-result translation uses only the local qwen38 queue, not ChatGPT.
+A live worker heartbeat is insufficient: check `workers[]` for
+`worker_name=mac-studio-local-ai`, `llm_ready=true`, and `available_model_ids`.
+The LGENT companion heartbeat can be online while the model is down.
+After 06:00 Shanghai, ordinary periodic polls enqueue bounded missing-translation
+batches. Verify `accepted_translation=true` and Korean text in quality history;
+do not edit source reports or submit guessed translations to clear a backlog.
+
+On 2026-11-10, 53 reports dated Nov 3–9 were pending while Nov 2 reports had
+accepted translations. Port 8082 was closed and the old bootstrap manager path
+under Documents/Codex/2026-08-16 no longer existed. This change restores persistent
+supervision using the already installed runtime, without Render configuration,
+credentials, source-data changes, or ChatGPT fallback.
+
+Model execution needs a normal macOS login session with Metal/GPU access.
+A sandbox reporting `No Metal device available` cannot verify the running model;
+install/start from the normal Mac terminal rather than altering OS protections.

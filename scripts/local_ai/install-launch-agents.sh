@@ -10,12 +10,16 @@ launch_agents_dir="$user_home_dir/Library/LaunchAgents"
 log_dir="$user_home_dir/Library/Logs/wj-local-ai"
 keychain_service="${AI_WORKER_KEYCHAIN_SERVICE:-com.wj.local-ai-worker.token}"
 
+model_label="com.wj.local-ai-model"
+model_target="$launch_agents_dir/$model_label.plist"
 worker_label="com.wj.local-ai-worker"
 worker_target="$launch_agents_dir/$worker_label.plist"
 legacy_mlx_target="$launch_agents_dir/com.wj.local-ai-mlx.plist"
 legacy_gemma_target="$launch_agents_dir/com.wj.local-ai-gemma.plist"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
+  /bin/launchctl bootout "gui/$user_id" "$model_target" 2>/dev/null || true
+  /bin/rm -f "$model_target"
   /bin/launchctl bootout "gui/$user_id" "$worker_target" 2>/dev/null || true
   /bin/launchctl bootout "gui/$user_id" "$legacy_gemma_target" 2>/dev/null || true
   /bin/launchctl bootout "gui/$user_id" "$legacy_mlx_target" 2>/dev/null || true
@@ -44,6 +48,14 @@ render_plist() {
   /bin/mv "$temporary_path" "$target_path"
 }
 
+# A separately supervised model survives worker restarts and recovers on exit.
+# Do not stop an existing model while refreshing the worker installation.
+render_plist "$script_dir/$model_label.plist.template" "$model_target"
+/bin/launchctl enable "gui/$user_id/$model_label"
+if ! /bin/launchctl print "gui/$user_id/$model_label" >/dev/null 2>&1; then
+  /bin/launchctl bootstrap "gui/$user_id" "$model_target"
+fi
+/bin/launchctl kickstart "gui/$user_id/$model_label"
 render_plist "$script_dir/$worker_label.plist.template" "$worker_target"
 
 /bin/launchctl bootout "gui/$user_id" "$worker_target" 2>/dev/null || true
@@ -54,5 +66,5 @@ render_plist "$script_dir/$worker_label.plist.template" "$worker_target"
 /bin/launchctl bootstrap "gui/$user_id" "$worker_target"
 /bin/launchctl kickstart -k "gui/$user_id/$worker_label"
 
-echo "Installed and started $worker_label for the externally managed local AI model runtime."
+echo "Installed and started $worker_label with the supervised local AI model runtime."
 echo "Logs: $log_dir"
