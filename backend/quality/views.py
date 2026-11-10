@@ -145,8 +145,8 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     def retry_translation(self, request, pk=None):
         if not request.user.is_active or not request.user.is_superuser:
             raise PermissionDenied('Only active superusers may retry a quality translation.')
-        if request.data:
-            raise ValidationError('Translation retries do not accept source text or results.')
+        if request.data != {}:
+            raise ValidationError('Translation retries require an empty object, not source text or results.')
         report = self.get_object()
         from .action_result_translation import retry_failed_report_translation
         job, created = retry_failed_report_translation(report.pk)

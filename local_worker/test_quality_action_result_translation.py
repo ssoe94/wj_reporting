@@ -80,6 +80,14 @@ class QualityActionResultTranslationTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 handler.translate_text(source, llm)
 
+    def test_repeated_identical_list_prefix_preserves_every_occurrence(self):
+        source = '1.LGCS擦拭\n1.LGCS擦拭'
+        llm = Mock()
+        llm.structured_analysis.return_value = {'translation': 'KEEP_LIST_0 닦기\nKEEP_LIST_0 닦기'}
+        result = handler.translate_text(source, llm)
+        self.assertEqual(result, '1.LGCS 닦기\n1.LGCS 닦기')
+        self.assertEqual(handler.protected_tokens(source), handler.protected_tokens(result))
+
     def test_list_placeholders_cannot_collide_with_source_or_change_nonlist_codes(self):
         with self.assertRaises(ValueError):
             handler.prepare_source('1.LGCS 跟线 KEEP_LIST_0')
