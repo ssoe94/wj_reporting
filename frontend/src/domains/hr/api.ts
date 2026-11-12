@@ -1,5 +1,5 @@
 import api from "@/lib/api";
-import type { HrClassificationReferenceCommit, HrClassificationReferenceState, HrWorkbookBatch, HrWorkbookBatchCommit, HrWorkbookBatchPreview, HrWorkbookBatchResult } from './workbook-types';
+import type { HrClassificationReferenceCommit, HrClassificationReferenceState, HrWorkbookBatch, HrWorkbookBatchCommit, HrWorkbookBatchPreview, HrWorkbookBatchResult, HrRosterEntry } from './workbook-types';
 import type {
   HrAccessUser,
   HrImportCommit,
@@ -62,4 +62,12 @@ export async function getHrAccess(signal?: AbortSignal): Promise<{ users: HrAcce
 export async function updateHrAccess(id: number, granted: boolean): Promise<{ users: HrAccessUser[] }> {
   if (!Number.isSafeInteger(id) || id < 1) throw new Error("계정 ID를 확인해 주세요.");
   return (await api.patch<{ users: HrAccessUser[] }>(`${ROOT}/access/${id}/`, { granted })).data;
+}
+
+export async function getHrRoster(month: string, signal?: AbortSignal) {
+  return (await api.get<{ employees: HrRosterEntry[] }>(`${ROOT}/roster/${month}/`, { signal })).data.employees;
+}
+
+export async function updateHrRoster(month: string, id: number, update: { version: number; code?: string; reason?: string; status?: HrRosterEntry['status'] }) {
+  return (await api.patch<{ employees: HrRosterEntry[] }>(`${ROOT}/roster/${month}/${id}/`, update)).data.employees;
 }

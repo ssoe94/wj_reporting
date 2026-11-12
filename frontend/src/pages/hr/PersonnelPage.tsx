@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Edit3, Plus, Save, Search, ShieldCheck, Trash2, Undo2, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../i18n';
-import { getHrAccess, updateHrAccess, updateHrWorkspace } from '../../domains/hr/api';
+import { getHrAccess, getHrRoster, updateHrAccess, updateHrWorkspace } from '../../domains/hr/api';
 import { buildAssignments, getDepartmentTree, getDescendantIds, moveEmployee, validateDepartments, MAX_DEPARTMENTS } from '../../domains/hr/layout';
 import type { HrAccessUser, HrDepartment, HrEmployee, HrWorkspace } from '../../domains/hr/types';
+import type { HrRosterEntry } from '../../domains/hr/workbook-types';
+import HrRosterPanel from './HrRosterPanel';
 import HrImportPanel from './HrImportPanel';
 import HrWorkbookImportPanel from './HrWorkbookImportPanel';
 import HrAllocationBoard from './HrAllocationBoard';
@@ -57,6 +59,21 @@ export default function PersonnelPage() {
   const { lang } = useLang(); const ko = lang === 'ko'; const { user } = useAuth();
   const [month, setMonth] = useState(currentHrMonth);
   const { workspace, setWorkspace, loading, error, allowed, refresh } = useHrWorkspace(month);
+  const [roster, setRoster] = useState<HrRosterEntry[]>([]);
+  const [rosterError, setRosterError] = useState(false);
+  const [rosterReload, setRosterReload] = useState(0);
+  const reloadRoster = () => setRosterReload((value) => value + 1);
+  useEffect(() => {
+    const controller = new AbortController();
+    setRoster([]);
+    setRosterError(false);
+    if (allowed) {
+      getHrRoster(month, controller.signal).then((entries) => {
+        if (!controller.signal.aborted) setRoster(entries);
+      }).catch(() => { if (!controller.signal.aborted) setRosterError(true); });
+    }
+    return () => controller.abort();
+  }, [allowed, month, rosterReload, user?.id]);
   const [draft, setDraft] = useState<LayoutDraft | null>(null);
   const [baseline, setBaseline] = useState('');
   const [saving, setSaving] = useState(false);
@@ -212,7 +229,8 @@ export default function PersonnelPage() {
       {notice && <p className="hr-floating-notice" role="status" aria-live="polite">{notice}</p>}
       {hasCompanyCells || departments.length > 0 ? <HrAllocationBoard key={month} departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={move} disabled={busy || Boolean(departmentForm)} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><p>{ko ? '아래에서 회사 임금표를 올리면 저장된 기본 분류로 인원이 배치됩니다.' : '在下方上传公司工资表后，系统将按已保存的基础分类配置人员。'}</p></div>}
       <HrSource workspace={workspace} />
-      <HrWorkbookImportPanel workspace={workspace} disabled={dirty || saving || importBusy || Boolean(departmentForm)} onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '회사 임금표를 저장했습니다.' : '已保存公司工资表。'); }} />
+      <HrRosterPanel key={`${user?.id}:${month}`} month={month} entries={roster} onUpdated={setRoster} error={rosterError} onRetry={reloadRoster} disabled={busy || workbookDraft} />
+      <HrWorkbookImportPanel roster={roster} workspace={workspace} disabled={dirty || saving || importBusy || Boolean(departmentForm)} onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); reloadRoster(); setNotice(ko ? '회사 임금표를 저장했습니다.' : '已保存公司工资表。'); }} />
       <details className="hr-panel hr-disclosure"><summary>{ko ? '기타 형식 · 단일 월 가져오기' : '其他格式 · 导入单月'}</summary>
       <HrImportPanel workspace={workspace} disabled={dirty || saving || workbookBusy || workbookDraft || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />
       </details>

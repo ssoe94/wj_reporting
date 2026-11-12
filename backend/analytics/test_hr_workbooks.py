@@ -7,7 +7,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .hr_service import persist
-from .models import HrAccessGrant, HrMonthWorkspace, HrWorkspaceHistory
+from .models import HrAccessGrant, HrMonthWorkspace, HrWorkspaceHistory, HrRosterEmployee, HrRosterCodeHistory
 
 BASE = '/api/analytics/hr/'
 
@@ -226,3 +226,49 @@ class HrWorkbookTests(TestCase):
         workspace.refresh_from_db()
         workspace.currency = 'KRW'; workspace.save()
         self.assertEqual(self.preview(data).status_code, 400)
+
+    def test_roster_access_version_and_actor(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        collection = BASE + 'roster/2026-11/'
+        response = self.client.get(collection)
+        self.assertIn('private, no-store', response['Cache-Control'])
+        employee = response.data['employees'][0]
+        self.assertFalse(employee['in_month'])
+        self.assertEqual(employee['status'], 'active')
+        self.assertEqual(employee['first_month'], '2026-01')
+        self.assertEqual(employee['last_month'], '2026-07')
+        path = f"{collection}{employee['id']}/"
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.get(collection).status_code, 403)
+        self.assertEqual(self.client.patch(path, {'version': 1, 'status': 'departed'}, format='json').status_code, 403)
+        self.client.force_authenticate(self.hr)
+        change = {'version': employee['version'], 'code': '90003', 'reason': 'Synthetic correction'}
+        self.assertEqual(self.client.patch(path, change | {'actor': self.staff.pk}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(path, change, format='json').status_code, 200)
+        self.assertEqual(self.client.patch(path, change, format='json').status_code, 409)
+        history = HrRosterCodeHistory.objects.get()
+        self.assertEqual((history.previous_code, history.new_code, history.actor_id), (employee['code'], '90003', self.hr.pk))
+        self.assertTrue(next(item for item in self.client.get(BASE + 'roster/2026-01/').data['employees'] if item['id'] == employee['id'])['in_month'])
+        with patch('analytics.hr_roster_service.record_change', side_effect=RuntimeError('synthetic rollback')):
+            failed = self.client.patch(path, change | {'version': 2, 'code': '90004'}, format='json')
+            self.assertEqual(failed.status_code, 500)
+        self.assertEqual(HrRosterEmployee.objects.get(pk=employee['id']).code, '90003')
+
+    def test_cross_month_code_change_requires_confirmation_and_keeps_snapshots(self):
+        data = batch()
+        data['months'][4]['rows'][1]['code'] = '90005'
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(HrRosterEmployee.objects.filter(employment_type='hourly').exists())
+        self.assertFalse(HrRosterCodeHistory.objects.exists())
+        data['roster_decisions'] = [{
+            'name': 'Synthetic B', 'employment_type': 'hourly',
+            'code': '90005', 'reason': 'Synthetic source confirmation', 'version': 0,
+        }]
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        employee = HrRosterEmployee.objects.get(employment_type='hourly')
+        history = employee.code_history.get()
+        self.assertEqual((employee.code, history.previous_code, history.actor_id), ('90005', '245', self.hr.pk))
+        self.assertEqual(HrMonthWorkspace.objects.get(month='2026-01').employees[1]['code'], '245')
+        self.assertEqual(self.preview(data).status_code, 409)

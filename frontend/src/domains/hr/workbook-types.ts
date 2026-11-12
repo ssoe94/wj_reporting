@@ -23,6 +23,7 @@ type HrWorkbookBatchFiles = {
   files: HrPayrollSource[];
   months: HrWorkbookMonth[];
   assignment_policy: 'preserve' | 'reference';
+  roster_decisions?: HrRosterDecision[];
 };
 export type HrWorkbookBatch = HrWorkbookBatchFiles & (
   | { classification: HrClassificationReference; classification_version?: never }
@@ -47,4 +48,17 @@ export type HrWorkbookBatchResult = { workspaces: HrWorkspace[] };
 export type HrWorkbookIssue = {
   key: string; file: string; sheet: string; row: number; month: string;
   code: string; suggested_code?: string; message: string;
+  evidence?: { code: string; roster?: boolean; months: { period: string; fixedPayDifference: number | null }[] };
 };
+
+export type HrRosterEntry = {
+  id: number; code: string; name: string; employment_type: HrEmploymentType;
+  department: string; status: 'active' | 'departed'; first_month: string; last_month: string;
+  version: number; previous_codes: string[]; in_month: boolean;
+};
+export type HrCodeReview = {
+  key: string; name: string; employment_type: HrEmploymentType;
+  codes: { code: string; months: string[] }[];
+};
+
+export type HrRosterDecision = Pick<HrRosterEntry, 'name' | 'employment_type' | 'code' | 'version'> & { reason: string };

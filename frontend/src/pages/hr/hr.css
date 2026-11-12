@@ -11,7 +11,7 @@
 .hr-work-title h1 { margin:0; color:var(--hr-navy); font-size:22px; font-weight:750; white-space:nowrap; }
 .hr-work-header .hr-tabs a { min-height:38px; padding:7px 11px; font-size:14px; white-space:nowrap; }
 .hr-work-header .hr-month { font-size:13px; gap:7px; }
-.hr-work-header .hr-month input { min-height:38px; max-width:164px; padding:6px 8px; }
+.hr-work-header .hr-month select { min-height:38px; max-width:164px; padding:6px 8px; }
 .hr-summary-strip { display:grid; grid-template-columns:minmax(240px,1.5fr) repeat(3,minmax(120px,1fr)); background:var(--wj-surface-solid); border:1px solid var(--hr-border); border-radius:8px; margin:10px 0 14px; overflow:hidden; }
 .hr-summary-strip > div, .hr-summary-strip > button, .hr-summary-strip > a { min-width:0; padding:11px 16px; background:transparent; border:0; border-inline-end:1px solid var(--hr-border); text-align:start; text-decoration:none; }
 .hr-summary-strip > :last-child { border-inline-end:0; }
@@ -82,7 +82,7 @@
 .hr-tabs a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px; border-radius: 7px; color: var(--hr-muted); text-decoration: none; }
 .hr-tabs a.is-active { color: var(--hr-accent); background: var(--wj-accent-soft); font-weight: 750; }
 .hr-month { display: flex; align-items: center; gap: 10px; font-weight: 650; }
-.hr-month input { min-height: 44px; max-width: 190px; padding: 7px 10px; background: var(--wj-surface-solid); border: 1px solid var(--hr-border); border-radius: 6px; color-scheme: inherit; }
+.hr-month select { min-height: 44px; max-width: 190px; padding: 7px 10px; background: var(--wj-surface-solid); border: 1px solid var(--hr-border); border-radius: 6px; color-scheme: inherit; }
 .hr-panel { margin-bottom: 17px; padding: 20px; background: var(--hr-surface); border: 1px solid var(--hr-border); border-radius: 10px; }
 .hr-state { padding: 36px 20px; text-align: center; }
 .hr-state svg { margin: 0 auto 8px; color: var(--hr-muted); }
@@ -272,4 +272,4 @@
   .hr-cost-box.is-selected, .hr-department-box.is-drop-target, .hr-roster.is-drop-target { outline-width: 3px; }
 }
 
-@media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month input, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }
+@media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month select, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }

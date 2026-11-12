@@ -128,7 +128,15 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children, a
         <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
         <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
       </nav>
-      <label className="hr-month">{ko ? '대상 월' : '月份'}<input type="month" value={month} disabled={monthDisabled} onInput={(event) => { if (/^\d{4}-\d{2}$/.test(event.currentTarget.value)) onMonthChange(event.currentTarget.value); }} /></label>
+      <div className="hr-month">
+        <span>{ko ? '대상 월' : '月份'}</span>
+        <select aria-label={ko ? '연도' : '年份'} value={month.slice(0, 4)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${event.target.value}-${month.slice(5)}`)}>
+          {Array.from({ length: 300 }, (_, index) => String(index + 1900)).map((year) => <option key={year}>{year}</option>)}
+        </select>
+        <select aria-label={ko ? '월' : '月份'} value={month.slice(5)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${month.slice(0, 4)}-${event.target.value}`)}>
+          {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map((value) => <option key={value}>{value}</option>)}
+        </select>
+      </div>
       {actions && <div className="hr-header-actions">{actions}</div>}
     </header>
     {children}

@@ -7,18 +7,18 @@ import { readWorkbook } from '../../domains/hr/import';
 import { parseClassificationReference, parseCompanyPayroll } from '../../domains/hr/workbook-import';
 import { hrAssignmentPath } from '../../domains/hr/labels';
 import type { HrWorkbook } from '../../domains/hr/import';
-import type { HrClassificationReference, HrClassificationReferenceState, HrEmploymentType, HrWorkbookBatch, HrWorkbookBatchPreview, HrWorkbookIssue, HrWorkbookRow } from '../../domains/hr/workbook-types';
+import type { HrClassificationReference, HrClassificationReferenceState, HrEmploymentType, HrWorkbookBatch, HrWorkbookBatchPreview, HrWorkbookIssue, HrWorkbookRow, HrRosterEntry, HrRosterDecision, HrCodeReview } from '../../domains/hr/workbook-types';
 import type { HrWorkspace } from '../../domains/hr/types';
 import { compactMoney, isHrConflict } from './hrCommon';
 import './hr-workbook-import.css';
 
 type PayrollInput = { id: string; book: HrWorkbook; employment_type: HrEmploymentType | '' };
-type Props = { workspace: HrWorkspace; disabled: boolean; onImported: (workspace: HrWorkspace) => void; onBusyChange: (busy: boolean) => void; onConflict: () => void; onDraftChange?: (hasDraft: boolean) => void };
+type Props = { roster: HrRosterEntry[]; workspace: HrWorkspace; disabled: boolean; onImported: (workspace: HrWorkspace) => void; onBusyChange: (busy: boolean) => void; onConflict: () => void; onDraftChange?: (hasDraft: boolean) => void };
 const MAX_FILES = 10;
 const FILE_LIMIT = 10 * 1024 * 1024;
 const monthPattern = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/;
 
-export default function HrWorkbookImportPanel({ workspace, disabled, onImported, onBusyChange, onDraftChange }: Props) {
+export default function HrWorkbookImportPanel({ roster, workspace, disabled, onImported, onBusyChange, onDraftChange }: Props) {
   const { lang } = useLang(); const ko = lang === 'ko';
   const [open, setOpen] = useState(false);
   const [reference, setReference] = useState<HrClassificationReference | null>(null);
@@ -30,6 +30,7 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
   const [referenceError, setReferenceError] = useState('');
   const referenceRequest = useRef(0);
   const [inputs, setInputs] = useState<PayrollInput[]>([]);
+  const [decisions, setDecisions] = useState<Record<string, { code: string; reason: string }>>({});
   const [corrections, setCorrections] = useState<Record<string, string>>({});
   const [issueHistory, setIssueHistory] = useState<Record<string, HrWorkbookIssue>>({});
   const [referenceReviewRows, setReferenceReviewRows] = useState<number[]>([]);
@@ -169,10 +170,10 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
   const parsed = useMemo(() => {
     try {
       const ready = inputs.filter((input): input is PayrollInput & { employment_type: HrEmploymentType } => input.employment_type !== '');
-      if (!ready.length) return { files: [], months: [], issues: [] as HrWorkbookIssue[], warnings: [] as string[], failure: '' };
-      return { ...parseCompanyPayroll(ready, corrections), failure: '' };
-    } catch (failure) { return { files: [], months: [], issues: [] as HrWorkbookIssue[], warnings: [] as string[], failure: readableError(failure, ko ? '원본 임금표를 확인해 주세요.' : '请检查原始工资表。') }; }
-  }, [inputs, corrections, ko, readableError]);
+      if (!ready.length) return { files: [], months: [], issues: [] as HrWorkbookIssue[], warnings: [] as string[], codeReviews: [] as HrCodeReview[], failure: '' };
+      return { ...parseCompanyPayroll(ready, corrections, roster), failure: '' };
+    } catch (failure) { return { files: [], months: [], issues: [] as HrWorkbookIssue[], warnings: [] as string[], codeReviews: [] as HrCodeReview[], failure: readableError(failure, ko ? '원본 임금표를 확인해 주세요.' : '请检查原始工资表。') }; }
+  }, [inputs, corrections, roster, ko, readableError]);
   const detectedMonths = useMemo(() => [...new Set([...parsed.months.map((month) => month.month), ...parsed.issues.map((issue) => issue.month).filter((month) => monthPattern.test(month))])].sort(), [parsed]);
   const selectedMonths = detectedMonths.filter((month) => monthSelection[month] !== false);
   const selectedSet = new Set(selectedMonths);
@@ -202,17 +203,27 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
     const input = inputs.find((item) => item.id === row.source_file); if (!input) continue;
     issueRows.push({ key, file: input.book.filename, sheet: row.source_sheet, row: row.source_row, month: row.period, code: row.original_code, message: '' });
   }
+  const reviews = parsed.codeReviews.filter((review) => review.codes.some(({ months }) => months.some((month) => selectedSet.has(month))));
+  const readyDecisions: HrRosterDecision[] = reviews.flatMap((review) => {
+    const chosen = decisions[review.key];
+    const current = roster.find((entry) => JSON.stringify([entry.name.normalize('NFC').replace(/\s+/g, ''), entry.employment_type]) === review.key);
+    const selectedCodes = review.codes.filter(({ code, months }) => code === current?.code || months.some((month) => selectedSet.has(month)));
+    if (!chosen?.reason.trim() || selectedCodes.length < 2 || !selectedCodes.some(({ code }) => code === chosen.code)) return [];
+    return [{ name: review.name, employment_type: review.employment_type, code: chosen.code, reason: chosen.reason.trim(), version: current?.version ?? 0 }];
+  });
+  const incompleteDecision = reviews.some(({ key }) => Boolean(decisions[key]?.code || decisions[key]?.reason.trim()) && !readyDecisions.some((decision) =>
+    JSON.stringify([decision.name.normalize('NFC').replace(/\s+/g, ''), decision.employment_type]) === key));
   const unknownKind = inputs.some((input) => input.employment_type === '');
   const referenceRows = reference?.rows ?? [];
   const reviewReferenceIndexes = [...new Set([...referenceReviewRows, ...referenceRows.flatMap((row, index) => row.department_id === null ? [index] : [])])];
   const targetDepartments = workspace.company_structure.classification.nodes;
   const departmentPath = (id: string) => hrAssignmentPath(id, targetDepartments, lang);
   const referenceReady = referenceStatus === 'ready' && Boolean(storedReference?.reference) && !referenceDirty && !referenceConflict;
-  const canPreview = Boolean(referenceReady && inputs.length && selectedMonths.length && !unknownKind && !parsed.failure && !selectedIssues.length && !disabled && !busy);
+  const canPreview = Boolean(referenceReady && inputs.length && selectedMonths.length && !unknownKind && !parsed.failure && !incompleteDecision && !selectedIssues.length && !disabled && !busy);
   async function inspect() {
     if (!canPreview || !storedReference?.reference) return;
     const payload: HrWorkbookBatch = { classification_version: storedReference.version, files: parsed.files,
-      months: parsed.months.filter((month) => selectedSet.has(month.month)), assignment_policy: policy };
+      months: parsed.months.filter((month) => selectedSet.has(month.month)), assignment_policy: policy, roster_decisions: readyDecisions };
     const id = begin(); setNotice(''); setConflict(false);
     try {
       const result = await previewHrWorkbookBatch(payload);
@@ -252,7 +263,7 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
         const months = result.workspaces.map((item) => item.month).sort(); if (current) onImported(current); setSavedMonths(months);
         setNotice(ko ? `${months.join(', ')} 월 자료를 저장했습니다.` : `已保存 ${months.join(', ')} 月资料。`);
         if (reloadFailed) setError(ko ? '선택 월 저장은 완료했습니다. 현재 보고 있는 월을 새로 불러오지 못했으므로 저장한 월의 집계 링크에서 확인해 주세요.' : '所选月份已保存，但无法刷新当前查看月份，请通过已保存月份的汇总链接确认。');
-        setPreview(null); previewPayload.current = null; setInputs([]); setCorrections({}); setIssueHistory({}); setMonthSelection({});
+        setPreview(null); previewPayload.current = null; setInputs([]); setCorrections({}); setDecisions({}); setIssueHistory({}); setMonthSelection({});
       }
     } catch (failure) {
       if (valid(id)) {
@@ -263,7 +274,7 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
   }
   function resetSelection() {
     if (busy) return;
-    invalidate(); setInputs([]); setCorrections({}); setIssueHistory({}); setMonthSelection({});
+    invalidate(); setInputs([]); setCorrections({}); setDecisions({}); setIssueHistory({}); setMonthSelection({});
     if (payrollInput.current) payrollInput.current.value = '';
     setNotice(ko ? '임금표 선택과 사번 수정 초안을 비웠습니다. 시스템 기본 분류는 유지됩니다.' : '已清除工资表选择及工号更正草稿，系统基础分类保持不变。');
   }
@@ -301,13 +312,13 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
     {savedMonths.length > 0 && <div className="hr-workbook-month-links">{savedMonths.map((month) => <Link key={month} to={`/hr/labor-cost?month=${month}`}>{month} {ko ? '집계 보기' : '查看汇总'}</Link>)}</div>}
     {open && <div className="hr-workbook-body">
       {disabled && <p className="hr-muted">{ko ? '배치 변경을 저장하거나 되돌린 뒤 업로드하세요.' : '请保存或撤销配置更改后再上传。'}</p>}
-      <label className="hr-field hr-workbook-payroll-picker">{ko ? '임금 원본 · 계약직 / 시간제 · 최대 10개' : '原始工资表 · 合同工 / 小时工 · 最多 10 个'}<input ref={payrollInput} type="file" accept=".xlsx" multiple disabled={busy || disabled || !referenceReady} onChange={(event) => void choosePayroll(event.target.files)} /><small>{ko ? '각 파일 최대 10 MB. 원본의 시트와 월을 자동으로 읽습니다.' : '每个文件最大 10 MB，自动读取原始工作表及月份。'}</small></label>
+      <div className="hr-field hr-workbook-payroll-picker">{ko ? '임금 원본 · 계약직 / 시간제 · 최대 10개' : '原始工资表 · 合同工 / 小时工 · 最多 10 个'}<button type="button" className="hr-button" disabled={busy || disabled || !referenceReady} onClick={() => payrollInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button><input hidden ref={payrollInput} type="file" accept=".xlsx" multiple disabled={busy || disabled || !referenceReady} onChange={(event) => void choosePayroll(event.target.files)} /><small>{ko ? '각 파일 최대 10 MB. 원본의 시트와 월을 자동으로 읽습니다.' : '每个文件最大 10 MB，自动读取原始工作表及月份。'}</small></div>
       {referenceDirty && <p className="hr-alert is-warning">{ko ? '기본 분류의 저장 전 변경이 있습니다. 먼저 분류를 저장하거나 변경을 취소해 주세요.' : '基础分类存在未保存更改，请先保存分类或撤销更改。'}</p>}
       <details className="hr-disclosure hr-workbook-reference-management" open={referenceDirty || referenceConflict || (referenceStatus === 'ready' && !registeredReference) ? true : undefined}>
         <summary>{ko ? '기본 분류표 관리' : '管理基础分类表'}{referenceDirty ? (ko ? ' · 저장 전 변경' : ' · 未保存更改') : ''}</summary>
         <p className="hr-muted">{ko ? '분류표는 시스템에 독립적으로 저장합니다. 이 작업으로 월별 급여 자료를 만들거나 기존 월의 인원 배치를 바꾸지 않습니다.' : '分类表独立保存到系统，此操作不会创建月度工资资料或改变已有月份的人员配置。'}</p>
         <div className="hr-workbook-reference-status"><span>{registeredReference ? `${registeredReference.filename} · ${registeredReference.rows.length}${ko ? '명' : '人'} · v${storedReference?.version}` : (ko ? '등록된 기본 분류 없음' : '尚无已登记基础分类')}</span><button className="hr-button" disabled={busy || disabled || referenceStatus === 'loading'} onClick={() => void loadStoredReference()}><RefreshCw size={14} />{ko ? '서버 최신 분류 조회' : '查询服务器最新分类'}</button></div>
-        <label className="hr-field">{ko ? '분류표 등록·변경 · 部门划分.xlsx' : '登记或更新分类表 · 部门划分.xlsx'}<input ref={referenceInput} type="file" accept=".xlsx" disabled={busy || disabled || referenceStatus !== 'ready'} onChange={(event) => void chooseReference(event.target.files?.[0])} /></label>
+        <div className="hr-field">{ko ? '분류표 등록·변경 · 部门划分.xlsx' : '登记或更新分类表 · 部门划分.xlsx'}<button type="button" className="hr-button" disabled={busy || disabled || referenceStatus !== 'ready'} onClick={() => referenceInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button><input hidden ref={referenceInput} type="file" accept=".xlsx" disabled={busy || disabled || referenceStatus !== 'ready'} onChange={(event) => void chooseReference(event.target.files?.[0])} /></div>
         {reference && <div className="hr-workbook-reference-draft"><span>{reference.filename} · {reference.rows.length}{ko ? '행' : '行'}{referenceDirty ? (ko ? ' · 작성 중' : ' · 草稿') : ''}</span>
           <button className="hr-button is-primary" disabled={busy || disabled || !referenceDirty || referenceConflict || referenceStatus !== 'ready'} onClick={() => void saveReference()}>{ko ? '기본 분류로 저장' : '保存为基础分类'}</button>
           {referenceDirty && !referenceConflict && <button className="hr-button" disabled={busy || disabled || referenceStatus !== 'ready'} onClick={useStoredReference}>{ko ? '분류 변경 취소' : '撤销分类更改'}</button>}
@@ -324,9 +335,31 @@ export default function HrWorkbookImportPanel({ workspace, disabled, onImported,
       })}</tbody></table></div>}
       {unknownKind && <p className="hr-alert is-warning">{ko ? '파일명에서 고용 형태를 확인하지 못한 파일은 계약직·시간제를 직접 선택해 주세요.' : '无法从文件名确定类型的文件，请手动选择合同工或小时工。'}</p>}
       {parsed.failure && <p role="alert" className="hr-alert is-error">{parsed.failure}</p>}
-      {parsed.warnings.length > 0 && <details className="hr-disclosure"><summary>{ko ? '원본 확인 사항' : '原始资料提示'} ({parsed.warnings.length})</summary><ul className="hr-workbook-warning-list">{parsed.warnings.map((warning, index) => <li key={index}>{warningLabel(warning)}</li>)}</ul></details>}
+      {parsed.warnings.length > 0 && <details className="hr-disclosure"><summary>{ko ? 'Excel 표시 금액 사용' : '采用 Excel 显示金额'} ({parsed.warnings.length})</summary><ul className="hr-workbook-warning-list">{parsed.warnings.map((warning, index) => <li key={index}>{warningLabel(warning)}</li>)}</ul></details>}
       {detectedMonths.length > 0 && <div className="hr-workbook-months"><strong>{ko ? '저장할 월' : '保存月份'}</strong>{detectedMonths.map((month) => <label key={month} className="hr-checkbox"><input type="checkbox" checked={monthSelection[month] !== false} disabled={busy || disabled} onChange={(event) => { invalidate(); setMonthSelection((current) => ({ ...current, [month]: event.target.checked })); }} />{month}</label>)}</div>}
-      {issueRows.length > 0 && <details className="hr-disclosure" open><summary>{ko ? '사번 확인·수정' : '确认及更正工号'} ({selectedIssues.length} {ko ? '선택 월 문제' : '所选月份问题'})</summary><p className="hr-muted">{ko ? '선택한 월의 문제만 저장을 막습니다. 원본 행으로 확인하고 올바른 사번을 입력하세요.' : '仅所选月份的问题会阻止保存，请核对原始行并输入正确工号。'}</p><div className="hr-table-scroll hr-workbook-issue-scroll"><table><thead><tr><th>{ko ? '파일' : '文件'}</th><th>{ko ? '시트·행' : '工作表·行'}</th><th>{ko ? '월' : '月份'}</th><th>{ko ? '원본 사번' : '原始工号'}</th><th>{ko ? '확인 사항' : '确认事项'}</th><th>{ko ? '수정 사번' : '更正工号'}</th></tr></thead><tbody>{issueRows.map((issue) => <tr key={issue.key} className={selectedSet.has(issue.month) || !monthPattern.test(issue.month) ? '' : 'is-excluded'}><td>{issue.file}</td><td>{issue.sheet} · {issue.row}</td><td>{issue.month || '—'}</td><td>{rowKeys.get(issue.key)?.original_code || '—'}</td><td>{issueLabel(parsed.issues.find((current) => current.key === issue.key))}</td><td><div className="hr-workbook-correction"><input maxLength={64} aria-label={`${issue.file} ${issue.sheet} ${issue.row}${ko ? '행 사번 수정' : '行更正工号'}`} value={corrections[issue.key] ?? ''} placeholder={issue.suggested_code ?? ''} disabled={busy || disabled} onChange={(event) => { invalidate(); setCorrections((current) => ({ ...current, [issue.key]: event.target.value })); }} /><button className="hr-icon-button" aria-label={`${issue.row}${ko ? '행 수정 취소' : '行取消更正'}`} disabled={busy || disabled || !Object.hasOwn(corrections, issue.key)} onClick={() => { invalidate(); setCorrections((current) => { const next = { ...current }; delete next[issue.key]; return next; }); }}><RotateCcw size={15} /></button></div></td></tr>)}</tbody></table></div></details>}
+      {reviews.length > 0 && <details className="hr-disclosure" open>
+        <summary>{ko ? '월별 사번 변경 확인' : '确认跨月工号变更'} ({reviews.length})</summary>
+        <p className="hr-muted">{ko ? '사번과 사유를 선택하면 급여표 저장 시 명부에 기록됩니다. 보류하면 월별 급여만 저장됩니다.' : '选择工号并填写原因后，保存工资表时将登记到名册。暂不确认时，仅保存各月工资资料。'}</p>
+        {reviews.map((review) => {
+          const chosen = decisions[review.key] ?? { code: '', reason: '' };
+          const update = (next: typeof chosen) => { invalidate(); setDecisions((current) => ({ ...current, [review.key]: next })); };
+          return <div className="hr-compact-toolbar" key={review.key}>
+            <strong>{review.name}</strong>
+            <label>{ko ? '현재 사번' : '现行工号'} <select value={chosen.code} disabled={busy || disabled} onChange={(event) => update({ ...chosen, code: event.target.value, reason: event.target.value ? chosen.reason : '' })}>
+              <option value="">{ko ? '확인 보류' : '暂不确认'}</option>{review.codes.map(({ code, months }) => <option key={code} value={code}>{code} · {months.join(', ') || (ko ? '명부' : '名册')}</option>)}
+            </select></label>
+            {chosen.code && <label>{ko ? '변경 사유' : '变更原因'} <input maxLength={500} value={chosen.reason} disabled={busy || disabled} onChange={(event) => update({ ...chosen, reason: event.target.value })} /></label>}
+          </div>;
+        })}
+        {incompleteDecision && <p role="status">{ko ? '사유를 입력하고 비교할 월을 선택하거나 확인을 보류하세요.' : '请填写原因并选择相关月份，或暂不确认。'}</p>}
+      </details>}
+      {issueRows.length > 0 && <details className="hr-disclosure" open><summary>{ko ? '사번 확인·수정' : '确认及更正工号'} ({selectedIssues.length} {ko ? '선택 월 문제' : '所选月份问题'})</summary><p className="hr-muted">{ko ? '선택한 월의 문제만 저장을 막습니다. 원본 행으로 확인하고 올바른 사번을 입력하세요.' : '仅所选月份的问题会阻止保存，请核对原始行并输入正确工号。'}</p><div className="hr-table-scroll hr-workbook-issue-scroll"><table><thead><tr><th>{ko ? '파일' : '文件'}</th><th>{ko ? '시트·행' : '工作表·行'}</th><th>{ko ? '월' : '月份'}</th><th>{ko ? '원본 사번' : '原始工号'}</th><th>{ko ? '확인 사항' : '确认事项'}</th><th>{ko ? '수정 사번' : '更正工号'}</th></tr></thead><tbody>{issueRows.map((issue) => <tr key={issue.key} className={selectedSet.has(issue.month) || !monthPattern.test(issue.month) ? '' : 'is-excluded'}><td>{issue.file}</td><td>{issue.sheet} · {issue.row}</td><td>{issue.month || '—'}</td><td>{rowKeys.get(issue.key)?.original_code || '—'}</td><td>{issueLabel(parsed.issues.find((current) => current.key === issue.key))}
+        {issue.evidence && <div><strong>{issue.evidence.code}</strong>{issue.evidence.roster && <span> · {ko ? '등록 명부 일치' : '与名册一致'}</span>}
+          {issue.evidence.months.slice(0, 2).map((entry) => <div key={entry.period}>{entry.period}{entry.fixedPayDifference !== null ? ` · ${ko ? '고정급 차이' : '固定工资差额'} ${(entry.fixedPayDifference / 100).toFixed(2)} CNY` : rowKeys.get(issue.key)?.employment_type === 'hourly' ? (ko ? ' · 인접 월·같은 부서' : ' · 相邻月份、相同部门') : ''}</div>)}
+        </div>}</td><td><div className="hr-workbook-correction"><input maxLength={64} aria-label={`${issue.file} ${issue.sheet} ${issue.row}${ko ? '행 사번 수정' : '行更正工号'}`} value={corrections[issue.key] ?? ''} placeholder={ko ? '직접 입력' : '手动输入'} disabled={busy || disabled} onChange={(event) => { invalidate(); setCorrections((current) => ({ ...current, [issue.key]: event.target.value })); }} /><button className="hr-icon-button" aria-label={`${issue.row}${ko ? '행 수정 취소' : '行取消更正'}`} disabled={busy || disabled || !Object.hasOwn(corrections, issue.key)} onClick={() => { invalidate(); setCorrections((current) => { const next = { ...current }; delete next[issue.key]; return next; }); }}><RotateCcw size={15} /></button>
+        {issue.suggested_code && <button className="hr-button" disabled={busy || disabled || corrections[issue.key] === issue.suggested_code} onClick={() => {
+          invalidate(); setCorrections((current) => ({ ...current, [issue.key]: issue.suggested_code! }));
+        }}>{ko ? '추천 적용' : '应用建议'}</button>}</div></td></tr>)}</tbody></table></div></details>}
       <div className="hr-workbook-policy"><label className="hr-field">{ko ? '인원 배치 적용' : '人员配置方式'}<select value={policy} disabled={busy || disabled} onChange={(event) => { invalidate(); setPolicy(event.target.value as 'preserve' | 'reference'); }}><option value="preserve">{ko ? '같은 월의 기존 배치 유지 · 신규 인원은 기본 분류 적용' : '保留同月现有配置 · 新人员按基础分类配置'}</option><option value="reference">{ko ? '저장된 기본 분류로 다시 배치' : '按已保存基础分类重新配置'}</option></select></label><button className="hr-button" disabled={!canPreview} onClick={() => void inspect()}>{busy ? (ko ? '처리 중…' : '处理中…') : (ko ? '선택 월 미리보기' : '预览所选月份')}</button></div>
       {error && <p role="alert" className="hr-alert is-error">{error}</p>}
       {preview && <div className="hr-workbook-preview"><h3><CheckCircle2 size={16} />{ko ? '선택 월 검증 결과' : '所选月份验证结果'}</h3><div className="hr-table-scroll"><table><thead><tr><th>{ko ? '월' : '月份'}</th><th>{ko ? '가져올 인원' : '导入人数'}</th><th>{ko ? '다른 고용 형태 유지' : '保留其他用工类型'}</th><th>{ko ? '미분류' : '未分类'}</th><th>{ko ? '금액 미입력' : '金额未填写'}</th><th className="hr-number">{ko ? '월 합계 (CNY)' : '月合计（CNY）'}</th></tr></thead><tbody>{preview.months.map((month) => <tr key={month.month}><td>{month.month}</td><td>{month.imported_count}</td><td>{month.retained_count}</td><td>{month.unassigned_count}</td><td>{month.missing_cost_count}</td><td className="hr-number">{month.total === null ? (ko ? '미확정' : '待确认') : compactMoney(month.total, 'CNY', lang)}{month.total === null && <small className="hr-workbook-known-total">{ko ? '입력분' : '已录入'} {compactMoney(month.known_total, 'CNY', lang)}</small>}</td></tr>)}</tbody></table></div>

@@ -171,8 +171,9 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
     </div>
     {disabled && <p className="hr-muted">{ko ? '배치 변경을 저장하거나 버린 뒤 업로드하세요.' : '保存或放弃配置更改后再上传。'}</p>}
     {open && <div className="hr-import-body">
-      <label className="hr-field hr-file-field">{ko ? '파일 · XLSX / CSV / TSV / TXT · 최대 10 MB' : '文件 · XLSX / CSV / TSV / TXT · 最大 10 MB'}
-        <input ref={fileInput} type="file" accept=".xlsx,.csv,.tsv,.txt" disabled={busy || disabled} onChange={(event) => void selectFile(event.target.files?.[0])} /></label>
+      <div className="hr-field hr-file-field">{ko ? '파일 · XLSX / CSV / TSV / TXT · 최대 10 MB' : '文件 · XLSX / CSV / TSV / TXT · 最大 10 MB'}
+        <button type="button" className="hr-button" disabled={busy || disabled} onClick={() => fileInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button>
+        <input hidden ref={fileInput} type="file" accept=".xlsx,.csv,.tsv,.txt" disabled={busy || disabled} onChange={(event) => void selectFile(event.target.files?.[0])} /></div>
       <details className="hr-disclosure"><summary>{ko ? '표 붙여넣기' : '粘贴表格'}</summary>
         <label className="hr-field">{ko ? '제목 행 포함' : '包含表头'}<textarea rows={3} maxLength={10 * 1024 * 1024} value={pasteText} disabled={busy || disabled}
           onChange={(event) => setPasteText(event.target.value)} placeholder={ko ? 'Excel에서 복사한 표' : '从 Excel 复制的表格'} /></label>

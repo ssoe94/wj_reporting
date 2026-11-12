@@ -16,6 +16,7 @@ from .hr_service import save_import, save_layout, workspace_payload
 from .models import HrAccessGrant, HrMonthWorkspace
 from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializer, WorkbookCommitSerializer
 from .hr_workbook_service import build_preview, save_batch
+from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload
 from .hr_reference_service import reference_payload, save_reference
 
 
@@ -114,3 +115,16 @@ class HrAccessDetailView(HrBaseView):
         except serializers.ValidationError as error:
             raise serializers.ValidationError({'granted': error.detail['can_manage_hr']}) from error
         return Response(access_payload())
+
+
+class HrRosterView(HrBaseView):
+    def get(self, request, month):
+        validate_month(month)
+        return Response(roster_payload(month))
+
+
+class HrRosterDetailView(HrBaseView):
+    def patch(self, request, month, employee_id):
+        validate_month(month)
+        edit_roster(employee_id, validated_input(request, RosterUpdateSerializer), request.user)
+        return Response(roster_payload(month))

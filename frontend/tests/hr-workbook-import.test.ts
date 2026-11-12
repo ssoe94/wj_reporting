@@ -112,12 +112,15 @@ test('one code linked to different names across months blocks all involved rows 
   assert.equal(resolved.months[1].rows[0].code, '00245');
 });
 
-test('different codes for one identity across months warn without guessing or changing either key', () => {
+test('different codes for one identity across months create one review without changing either key', () => {
   const result = parseCompanyPayroll([source([contractHeaders, contract('1月', '00011'), contract('2月', '00245')])]);
   assert.deepEqual(result.issues, []);
   assert.deepEqual(result.months.map(({ rows }) => rows[0].code), ['00011', '00245']);
-  assert.equal(result.warnings.length, 2);
-  assert.ok(result.warnings.every((warning) => !warning.includes('合成员工甲')));
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.codeReviews.length, 1);
+  assert.deepEqual(result.codeReviews[0].codes, [
+    { code: '00011', months: ['2026-01'] }, { code: '00245', months: ['2026-02'] },
+  ]);
   const ambiguous = parseCompanyPayroll([source([contractHeaders, contract('1月', ''), contract('2月', '00011'), contract('3月', '00245')])]);
   assert.equal(ambiguous.issues[0].suggested_code, undefined);
 });
@@ -284,4 +287,19 @@ test('synthetic SheetJS workbook preserves padded keys and cached display precis
   assert.equal(parsed.months[0].rows[0].title, '合成职务');
   assert.equal(parsed.months[0].rows[0].source_department, '合成部门');
   assert.equal(parsed.warnings.length, 1);
+});
+
+test('only the conflicting and missing rows are flagged when adjacent months establish ownership', () => {
+  const inputs = [source([contractHeaders,
+    contract('4月', '90001', '测试甲'), contract('4月', '90002', '测试乙'),
+    contract('5月', '90002', '测试甲'), contract('5月', '', '测试乙'),
+    contract('6月', '90001', '测试甲'), contract('6月', '90002', '测试乙'),
+  ])];
+  const result = parseCompanyPayroll(inputs);
+  assert.deepEqual(result.issues.map(({ month, suggested_code }) => [month, suggested_code]), [
+    ['2026-05', '90001'], ['2026-05', '90002'],
+  ]);
+  assert.deepEqual(result.codeReviews, []);
+  const corrections = Object.fromEntries(result.issues.map(({ key, suggested_code }) => [key, suggested_code!]));
+  assert.deepEqual(parseCompanyPayroll(inputs, corrections).issues, []);
 });

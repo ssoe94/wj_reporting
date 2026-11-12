@@ -3,10 +3,12 @@ from django.urls import path
 from .views import AnalyticsProductionProgressView
 from .field_operations_views import AnalyticsFieldOperationsView
 from .development_task_views import DevelopmentTaskDetailView, DevelopmentTaskInitializeView, DevelopmentTaskListView
-from .hr_views import HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
+from .hr_views import HrRosterView, HrRosterDetailView, HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
 
 
 urlpatterns = [
+    path('hr/roster/<str:month>/', HrRosterView.as_view()),
+    path('hr/roster/<str:month>/<int:employee_id>/', HrRosterDetailView.as_view()),
     path('hr/classification-reference/', HrClassificationReferenceView.as_view()),
     path('hr/workbook-preview/', HrWorkbookPreviewView.as_view()),
     path('hr/workbook-import/', HrWorkbookImportView.as_view()),

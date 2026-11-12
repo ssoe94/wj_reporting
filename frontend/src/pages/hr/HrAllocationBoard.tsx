@@ -45,7 +45,8 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
     return result;
   }, [employees]);
   const collisions = useMemo(() => getEmployeeCodeCollisions(employees.map((person) => person.code)), [employees]);
-  const canEdit = Boolean(onMove && !disabled);
+  const showNames = Boolean(onMove);
+  const canEdit = showNames && !disabled;
   const fullCost = useMemo(() => employees.some((person) => person.amount === null) ? null : employees.reduce((sum, person) => sum + amountToCents(person.amount!), 0), [employees]);
   const groups = [...catalog.groups].sort((a, b) => {
     const ai = HR_DEPARTMENT_ORDER.indexOf(a.id); const bi = HR_DEPARTMENT_ORDER.indexOf(b.id);
@@ -62,7 +63,7 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   const extras = departments.filter((department) => !canonical.has(department.id) && department.parent_id === null);
   const leaders = catalog.leaders.filter((leader) => byId.has(leader.id));
   const filtered = useMemo(() => employees.filter((person) => (scope !== 'unassigned' || person.department_id === null)
-    && `${formatEmployeeCode(person.code)} ${person.code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [employees, scope, search]);
+    && `${formatEmployeeCode(person.code)} ${person.code} ${showNames ? person.name : ''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [employees, scope, search, showNames]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / 6)); const currentPage = Math.min(page, pageCount - 1);
   const visiblePeople = filtered.slice(currentPage * 6, currentPage * 6 + 6);
   const selectedPerson = selection?.type === 'person' ? employees.find((person) => person.code === selection.code) : undefined;
@@ -210,14 +211,14 @@ export default function HrAllocationBoard({ departments, employees, summary, cur
   function staffPill(person: HrEmployee, dock = false) {
     const justMoved = recentMove?.code === person.code && recentMove.target === person.department_id && (dock ? recentMove.target === null : recentMove.target !== null);
     if (!dock) return <button key={person.code} type="button" className={`hr-person-badge${canEdit ? ' is-movable' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}${justMoved ? ' is-recent-move' : ''}`} data-person-code={person.code}
-      aria-label={`${codeLabel(person.code)} ${person.name} ${ko ? '상세' : '详情'}`} title={canEdit ? (ko ? '드래그하여 이동 · 클릭하여 상세 보기' : '拖动配置 · 点击查看详情') : undefined}
+      aria-label={`${codeLabel(person.code)} ${showNames ? person.name : ''} ${ko ? '상세' : '详情'}`} title={canEdit ? (ko ? '드래그하여 이동 · 클릭하여 상세 보기' : '拖动配置 · 点击查看详情') : undefined}
       onPointerDown={(event) => startDrag(event, person)} onPointerMove={trackDrag} onPointerUp={finishDrag} onPointerCancel={() => endDrag(true)} onLostPointerCapture={() => { if (dragRef.current) endDrag(true); }}
       onClick={() => openPerson(person)}>
-      {justMoved ? <Check size={12} aria-hidden="true" /> : canEdit && <GripVertical size={12} aria-hidden="true" />}<strong>{formatEmployeeCode(person.code)}</strong><span className="hr-badge-name" title={person.name}>· {person.name}</span>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
+      {justMoved ? <Check size={12} aria-hidden="true" /> : canEdit && <GripVertical size={12} aria-hidden="true" />}<strong>{formatEmployeeCode(person.code)}</strong>{showNames && <span className="hr-badge-name" title={person.name}>· {person.name}</span>}{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
     </button>;
     return <div key={person.code} className={`hr-person-pill${dock ? ' is-dock' : ''}${drag?.active && drag.code === person.code ? ' is-dragging' : ''}${justMoved ? ' is-recent-move' : ''}`} data-person-code={person.code}>
       <button type="button" className="hr-person-open" onClick={() => openPerson(person)} aria-label={`${codeLabel(person.code)} ${ko ? '상세' : '详情'}`}>
-        <strong>{formatEmployeeCode(person.code)}</strong>{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
+        <strong>{formatEmployeeCode(person.code)}</strong>{showNames && <span className="hr-badge-name" title={person.name}>· {person.name}</span>}{collisions.has(person.code) && <small>{ko ? '원본' : '原编号'} {person.code}</small>}
         {dock && <><b>{amount(person.amount)}</b><small title={path(person.department_id)}>{path(person.department_id)}</small></>}
       </button>
       {onMove && <button type="button" className="hr-person-grip" disabled={disabled} aria-label={`${codeLabel(person.code)} ${ko ? '끌어서 이동' : '拖动配置'}`} title={ko ? '끌어서 이동' : '拖动配置'} onPointerDown={(event) => startDrag(event, person)} onPointerMove={trackDrag} onPointerUp={finishDrag} onPointerCancel={() => endDrag(true)} onLostPointerCapture={() => { if (dragRef.current) endDrag(true); }} onClick={(event) => { if (event.detail === 0) openPerson(person); }}><GripVertical size={16} /></button>}

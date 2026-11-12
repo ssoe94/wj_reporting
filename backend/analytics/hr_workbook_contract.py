@@ -78,11 +78,20 @@ class MonthSerializer(StrictSerializer):
         return validate_month(value)
 
 
+class RosterDecisionSerializer(StrictSerializer):
+    name = serializers.CharField(max_length=100)
+    employment_type = serializers.ChoiceField(choices=['contract', 'hourly'])
+    code = serializers.CharField(max_length=64)
+    reason = serializers.CharField(max_length=500)
+    version = serializers.IntegerField(min_value=0)
+
+
 class WorkbookBatchSerializer(StrictSerializer):
     classification = ReferenceSerializer(required=False)
     classification_version = serializers.IntegerField(min_value=1, max_value=2147483647, required=False)
     files = SourceSerializer(many=True, allow_empty=False, max_length=10)
     months = MonthSerializer(many=True, allow_empty=False, max_length=24)
+    roster_decisions = RosterDecisionSerializer(many=True, max_length=5000, required=False)
     assignment_policy = serializers.ChoiceField(choices=['preserve', 'reference'])
 
     def validate(self, data):
@@ -99,7 +108,7 @@ class WorkbookBatchSerializer(StrictSerializer):
             codes = set()
             for row in month['rows']:
                 key = code_key(row['code'])
-                name = identity(row['name'])
+                name = (identity(row['name']), row['employment_type'])
                 source = files.get(row['source_file'])
                 coordinate = (row['source_file'], row['source_sheet'], row['source_row'])
                 if row['period'] != month['month'] or not source or source['employment_type'] != row['employment_type']:

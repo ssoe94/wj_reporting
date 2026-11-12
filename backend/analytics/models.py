@@ -290,3 +290,27 @@ class HrClassificationHistory(models.Model):
     class Meta:
         ordering = ['-id']
         constraints = [models.UniqueConstraint(fields=['reference', 'version'], name='hr_reference_history_version')]
+
+
+class HrRosterEmployee(models.Model):
+    """Company-wide employee identity, independent of historical payroll rows."""
+    code = models.CharField(max_length=64)
+    name = models.CharField(max_length=100)
+    employment_type = models.CharField(max_length=8)
+    department = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=8, default='active')
+    first_month = models.CharField(max_length=7)
+    last_month = models.CharField(max_length=7)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['code', 'id']
+
+
+class HrRosterCodeHistory(models.Model):
+    employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='code_history')
+    previous_code = models.CharField(max_length=64)
+    new_code = models.CharField(max_length=64)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
