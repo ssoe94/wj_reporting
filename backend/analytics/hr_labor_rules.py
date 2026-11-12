@@ -239,7 +239,8 @@ def resolve_hourly_rate(employee_id, month, *, rules=None, version=0, effective_
 
 
 def employee_day(employee, day, *, payroll=None, regular_hours=None, overtime_hours=None,
-                 rules=None, overrides=None, version=0, effective_month=None, calendar_version=0):
+                 rules=None, overrides=None, version=0, effective_month=None, calendar_version=0,
+                 include_contributions=True):
     """Split one day's pay and monthly reference components without double counting.
 
     Contract base salary, fixed OT, and contributions are MONTHLY references,
@@ -306,6 +307,6 @@ def employee_day(employee, day, *, payroll=None, regular_hours=None, overtime_ho
                             'amount': Decimal('0.00') if known_zero else pay[slot] if pay and hours is not None else None}
         basis['pay'] = pay['basis'] if pay else None
         contributions = {fund: contribution_amounts(fund, kind, payroll.get('gross_amount'), employee_id=employee['id'],
-            rules=rules, version=version, effective_month=effective_month) for fund in ('social_insurance', 'housing_fund')}
+            rules=rules, version=version, effective_month=effective_month) for fund in ('social_insurance', 'housing_fund')} if include_contributions else {}
         return {'measurement': 'estimate', 'date': _date(day).isoformat(), 'salary': salary,
                 'overtime': {'fixed': fixed, **actual}, 'contributions': contributions, 'basis': basis}

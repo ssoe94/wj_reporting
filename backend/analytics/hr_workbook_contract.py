@@ -49,6 +49,14 @@ class SaveReferenceSerializer(StrictSerializer):
 class PayrollComponentsSerializer(StrictSerializer):
     base_salary = AmountField(allow_null=True)
     fixed_overtime = AmountField(allow_null=True)
+    weekday_overtime = AmountField(allow_null=True, required=False)
+    weekend_overtime = AmountField(allow_null=True, required=False)
+    holiday_overtime = AmountField(allow_null=True, required=False)
+    # Payroll deductions are stored as nonnegative source amounts. The fixed
+    # pay reconstruction adds them back; intake never changes their sign.
+    personal_leave = AmountField(allow_null=True, required=False)
+    sick_leave = AmountField(allow_null=True, required=False)
+    absence = AmountField(allow_null=True, required=False)
 
 
 class PayrollRowSerializer(StrictSerializer):
@@ -67,7 +75,7 @@ class PayrollRowSerializer(StrictSerializer):
 
     def validate(self, data):
         if 'payroll_components' in data and data['employment_type'] != 'contract':
-            raise serializers.ValidationError('계약직 급여 원본의 기본급·고정 연장수당만 저장할 수 있습니다.')
+            raise serializers.ValidationError('계약직 급여 원본의 항목만 저장할 수 있습니다.')
         return data
 
 

@@ -110,7 +110,7 @@ export function useHrWorkspace(month: string) {
 }
 
 export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions }: {
-  page: 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work'; month: string; onMonthChange: (month: string) => void;
+  page: 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work' | 'labor-forecast'; month: string; onMonthChange: (month: string) => void;
   monthDisabled?: boolean; monthLabel?: string; children: ReactNode; actions?: ReactNode;
 }) {
   const { lang } = useLang();
@@ -132,6 +132,7 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel,
         <Link className={page === 'daily-work' ? 'is-active' : ''} aria-current={page === 'daily-work' ? 'page' : undefined} to={`/hr/daily-work?month=${month}`}>{ko ? '일별 근무' : '每日出勤'}</Link>
         <Link className={page === 'roster' ? 'is-active' : ''} aria-current={page === 'roster' ? 'page' : undefined} to={`/hr/roster?month=${month}`}>{ko ? '인원 명부' : '人员名册'}</Link>
         <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
+        <Link className={page === 'labor-forecast' ? 'is-active' : ''} aria-current={page === 'labor-forecast' ? 'page' : undefined} to={`/hr/labor-forecast?month=${month}`}>{ko ? '인건비 예상' : '人工成本预测'}</Link>
         <Link className={page === 'labor-standards' ? 'is-active' : ''} aria-current={page === 'labor-standards' ? 'page' : undefined} to={`/hr/labor-standards?month=${month}`}>{ko ? '인건비 기준' : '人工成本标准'}</Link>
       </nav>}
       <div className="hr-month">

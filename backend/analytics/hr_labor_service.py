@@ -1,4 +1,5 @@
 """Effective labor standards and explicit calendars with atomic private audit."""
+from collections import Counter
 from copy import deepcopy
 import hashlib
 
@@ -94,6 +95,23 @@ def save_actual_payment(month, data, actor):
     payload = data | {'payment': {'amounts': data['amounts'], 'evidence_memo': data['evidence_memo']}}
     _save(HrLaborActualPayment, HrLaborActualPaymentHistory, 'actual_payment', month, 'payment', payload, actor)
     return actual_payment_payload(month)
+
+
+def payroll_department_paths(departments):
+    """Keep distinct visualization cells with the same leaf label separate."""
+    by_id = {entry['id']: entry for entry in departments}
+    paths = {}
+    for key, entry in by_id.items():
+        path = [entry['name']]
+        seen = {key}
+        parent = entry.get('parent_id')
+        while parent in by_id and parent not in seen:
+            seen.add(parent)
+            path.append(by_id[parent]['name'])
+            parent = by_id[parent].get('parent_id')
+        paths[key] = ' / '.join(reversed(path))
+    counts = Counter(paths.values())
+    return {key: f'{name} ({key})' if counts[name] > 1 else name for key, name in paths.items()}
 
 
 def payroll_row_basis(workspace, row):

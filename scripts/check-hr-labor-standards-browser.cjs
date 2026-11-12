@@ -164,7 +164,7 @@ async function mobileContainment(page) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   browser = await playwright.chromium.launch({ headless: true });
   const ko = await fixture(); await standards(ko.page);
-  assert.equal(await ko.page.locator('.hr-tabs a').count(), 4);
+  assert.equal(await ko.page.locator('.hr-tabs a[href^="/hr/labor-forecast?month="]').count(), 1);
   assert.equal(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), `/hr/labor-standards?month=${MONTH}`);
   const rulesForm = ko.page.locator('.hr-labor-rules-form');
   assert.equal(await rulesForm.getByLabel('근무일 배수', { exact: true }).inputValue(), '1.5');

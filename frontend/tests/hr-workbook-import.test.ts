@@ -54,7 +54,7 @@ test('contract payroll components retain only explicit source amounts, including
 });
 
 test('missing or differently named component columns never infer a breakdown from gross salary', () => {
-  for (const headers of [contractHeaders, [...contractHeaders, '实发工资明细', '平时加班费', '基本工资合计']]) {
+  for (const headers of [contractHeaders, [...contractHeaders, '实发工资明细', '平时加班费合计', '基本工资合计']]) {
     const result = parseCompanyPayroll([source([headers, [...contract(), '3000.00', '200.00', '4000.00']])]);
     assert.deepEqual(result.months[0].rows[0].payroll_components, { base_salary: null, fixed_overtime: null });
   }
@@ -79,6 +79,58 @@ test('component formulas require numeric caches and exact optional headers must 
   for (const label of ['基本工资', '固定平时加班']) {
     assert.throws(() => parseCompanyPayroll([source([[...headers, label], [...contract(), 3000, 0, 1]])]), /제목이 여러 개/);
   }
+});
+
+test('contract adjustment columns retain each source amount and positive deduction sign', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班', '平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资'];
+  const result = parseCompanyPayroll([source([headers,
+    [...contract('1月', '90001', '合成甲', '4500.25'), '3000.00', '125.50', '120.25', '80.50', '40.75', '10.25', '20.50', '30.75'],
+  ])]);
+  const row = result.months[0].rows[0];
+  assert.deepEqual(row.payroll_components, {
+    base_salary: '3000.00', fixed_overtime: '125.50',
+    weekday_overtime: '120.25', weekend_overtime: '80.50', holiday_overtime: '40.75',
+    personal_leave: '10.25', sick_leave: '20.50', absence: '30.75',
+  });
+  assert.equal(row.amount, '4500.25');
+  assert.equal(row.period, '2026-01');
+  assert.equal(row.source_row, 2);
+});
+
+test('adjustment column absence, blank cells and explicit zero remain different evidence', () => {
+  const result = parseCompanyPayroll([source([[...contractHeaders, '平时加班费', '事假'],
+    [...contract(), 0, '  '],
+  ])]);
+  assert.deepEqual(result.months[0].rows[0].payroll_components, {
+    base_salary: null, fixed_overtime: null, weekday_overtime: '0.00', personal_leave: null,
+  });
+  const unrelated = parseCompanyPayroll([source([[...contractHeaders, '周末加班', '节日加班费合计', '病假小时', '缺勤'],
+    [...contract(), 10, 20, 30, 40],
+  ])]);
+  assert.deepEqual(unrelated.months[0].rows[0].payroll_components, { base_salary: null, fixed_overtime: null });
+});
+
+test('all six optional adjustment headers reject ambiguity and unsafe source amounts', () => {
+  for (const label of ['平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资']) {
+    assert.throws(() => parseCompanyPayroll([source([[...contractHeaders, label, label], [...contract(), 1, 2]])]), /제목이 여러 개/);
+    for (const invalid of [-1, '-0.01', true, '1000000000.00', '1.005', { value: undefined, formula: 'A1' }]) {
+      assert.throws(() => parseCompanyPayroll([source([[...contractHeaders, label], [...contract(), invalid]])]), /2행:/);
+    }
+  }
+  const result = parseCompanyPayroll([source([[...contractHeaders, '事假', '缺勤工资'],
+    [...contract(), { value: 12.345, formatted: '12.35', formula: 'A1' }, '999999999.99'],
+  ])]);
+  assert.equal(result.months[0].rows[0].payroll_components?.personal_leave, '12.35');
+  assert.equal(result.months[0].rows[0].payroll_components?.absence, '999999999.99');
+  assert.match(result.warnings[0], /事假.*Excel 표시 금액/);
+});
+
+test('hourly import still stores gross only even when contract adjustment labels are supplied', () => {
+  const result = parseCompanyPayroll([source([[...hourlyHeaders, '平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资'],
+    ['1月', '合成部门', '90002', '合成乙', 8, '200.00', 10, 20, 30, 40, 50, 60],
+  ], 'hourly', 'hourly')]);
+  assert.equal(result.months[0].rows[0].amount, '200.00');
+  assert.equal(Object.hasOwn(result.months[0].rows[0], 'payroll_components'), false);
 });
 
 test('header detection accepts first twenty rows and newline aliases but always selects 应发工资', () => {

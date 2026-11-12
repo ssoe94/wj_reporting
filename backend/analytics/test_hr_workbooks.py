@@ -212,7 +212,11 @@ class HrWorkbookTests(TestCase):
     def test_optional_payroll_components_keep_source_values_and_survive_other_group_import(self):
         data = batch()
         data['months'] = data['months'][:1]
-        components = {'base_salary': '3000.25', 'fixed_overtime': '0.00'}
+        components = {
+            'base_salary': '3000.25', 'fixed_overtime': '0.00',
+            'weekday_overtime': '120.25', 'weekend_overtime': '80.50', 'holiday_overtime': '40.75',
+            'personal_leave': '10.25', 'sick_leave': '20.50', 'absence': '30.75',
+        }
         data['months'][0]['rows'][0]['payroll_components'] = components
         response = self.save(self.commit(data))
         self.assertEqual(response.status_code, 200, response.data)
@@ -233,6 +237,41 @@ class HrWorkbookTests(TestCase):
         missing['months'][0]['rows'][0]['payroll_components'] = {'base_salary': None, 'fixed_overtime': None}
         response = self.save(self.commit(missing))
         self.assertEqual(response.data['workspaces'][0]['employees'][0]['payroll_components'], {'base_salary': None, 'fixed_overtime': None})
+
+    def test_adjustment_components_preserve_absent_blank_zero_and_source_bounds(self):
+        data = batch()
+        data['months'] = data['months'][:1]
+        components = {'base_salary': None, 'fixed_overtime': None, 'weekday_overtime': '0',
+                      'personal_leave': None, 'absence': '999999999.99'}
+        data['months'][0]['rows'][0]['payroll_components'] = components
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        stored = response.data['workspaces'][0]['employees'][0]['payroll_components']
+        self.assertEqual(stored['weekday_overtime'], '0.00')
+        self.assertIsNone(stored['personal_leave'])
+        self.assertEqual(stored['absence'], '999999999.99')
+        self.assertNotIn('weekend_overtime', stored)
+        self.assertNotIn('holiday_overtime', stored)
+        self.assertNotIn('sick_leave', stored)
+
+    def test_adjustment_components_reject_invalid_amounts_and_tampering(self):
+        fields = ('weekday_overtime', 'weekend_overtime', 'holiday_overtime', 'personal_leave', 'sick_leave', 'absence')
+        for field in fields:
+            for invalid in ('-0.01', '1000000000.00', '1.005', True, 1.5):
+                with self.subTest(field=field, invalid=invalid):
+                    data = batch()
+                    data['months'][0]['rows'][0]['payroll_components'] = {
+                        'base_salary': None, 'fixed_overtime': None, field: invalid,
+                    }
+                    self.assertEqual(self.preview(data).status_code, 400)
+        data = batch()
+        data['months'][0]['rows'][0]['payroll_components'] = {
+            'base_salary': '3000.00', 'fixed_overtime': '125.50', 'personal_leave': '20.00',
+        }
+        reviewed = self.commit(data)
+        reviewed['months'][0]['rows'][0]['payroll_components']['personal_leave'] = '40.00'
+        self.assertEqual(self.save(reviewed).status_code, 400)
+        self.assertEqual(HrMonthWorkspace.objects.count(), 0)
 
     def test_payroll_components_are_strict_and_part_of_reviewed_fingerprint(self):
         for components in (None, {}, {'base_salary': '3000'},

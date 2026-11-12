@@ -33,11 +33,16 @@ const TITLE_HEADERS = ['title', 'job title', '직책', '직급', '직무', '职�
 type CellDetails = { value: unknown; formatted?: string; formula?: string; error?: boolean };
 type Location = { file: string; sheet: string; row: number };
 const FIXED_PAY = ['基本工资', '技能工资', '职务工资', '岗位工资', '工龄工资'];
+const PAYROLL_ADJUSTMENTS = [
+  ['weekday_overtime', '平时加班费'], ['weekend_overtime', '周末加班费'], ['holiday_overtime', '节日加班费'],
+  ['personal_leave', '事假'], ['sick_leave', '病假'], ['absence', '缺勤工资'],
+] as const;
 
 type PayrollHeader = {
   index: number; code: number; name: number; title: number | null;
   department: number; amount: number; period: number; periodHeader: string; fixedPay: number[];
   baseSalary: number | null; fixedOvertime: number | null;
+  adjustments: { field: typeof PAYROLL_ADJUSTMENTS[number][0]; label: string; column: number | null }[];
 };
 type ReferenceHeader = {
   index: number; code: number | null; name: number; department: number;
@@ -151,6 +156,7 @@ function payrollHeader(sheet: HrWorkbookSheet): PayrollHeader {
       return { index, code: mapping.code, name: mapping.name, title: mapping.title,
         department: mapping.source_department, amount, fixedPay: FIXED_PAY.map((label) => uniqueColumn(headers, [label])).filter((column) => column !== null), period: periodMapping.period,
         baseSalary: uniqueColumn(headers, ['基本工资']), fixedOvertime: uniqueColumn(headers, ['固定平时加班']),
+        adjustments: PAYROLL_ADJUSTMENTS.map(([field, label]) => ({ field, label, column: uniqueColumn(headers, [label]) })),
         periodHeader: normalizeHeader(headers.find((header) => header.index === periodMapping.period)?.label ?? '') };
     }
   }
@@ -287,7 +293,7 @@ export function parseCompanyPayroll(
       }
       if (input.employment_type === 'contract') {
         const headers = getHeaderColumns(sheet, header.index);
-        for (const label of ['基本工资', '固定平时加班']) {
+        for (const label of ['基本工资', '固定平时加班', ...PAYROLL_ADJUSTMENTS.map(([, label]) => label)]) {
           if (headers.filter((column) => normalizeHeader(column.label) === label).length > 1) {
             at({ file: input.book.filename, sheet: sheet.name, row: header.index + 1 },
               new Error(`${label} 제목이 여러 개입니다. 원본 열을 한 개만 남겨 주세요.`));
@@ -319,6 +325,14 @@ export function parseCompanyPayroll(
             const fixed = optionalPayrollAmount(header.fixedOvertime == null ? undefined : values[header.fixedOvertime], '固定平时加班');
             row.payroll_components = { base_salary: base.amount, fixed_overtime: fixed.amount };
             for (const [label, component] of [['基本工资', base], ['固定平时加班', fixed]] as const) {
+              if (component.rounded) warnings.add(`${context(location, code)}: ${label} 저장된 소수 금액 대신 Excel 표시 금액(소수 두 자리)을 사용했습니다.`);
+            }
+            for (const { field, label, column } of header.adjustments) {
+              // An absent column is not an observed zero. Leave old source
+              // snapshots distinguishable from a supplied but blank cell.
+              if (column == null) continue;
+              const component = optionalPayrollAmount(values[column], label);
+              row.payroll_components[field] = component.amount;
               if (component.rounded) warnings.add(`${context(location, code)}: ${label} 저장된 소수 금액 대신 Excel 표시 금액(소수 두 자리)을 사용했습니다.`);
             }
           }

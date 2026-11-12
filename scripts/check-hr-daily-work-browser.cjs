@@ -318,7 +318,7 @@ async function writeFixture(value, rows, reason) {
   const leave = await previewAfter(ko, () => field('90001', '출근 상태').selectOption('personal_leave'), value => byCode(value, '90001').work.attendance === 'personal_leave');
   assert.equal(byCode(leave, '90001').estimate.deduction_status, 'unconfirmed');
   assert.equal(byCode(leave, '90001').estimate.amount, null);
-  await previewAfter(ko, () => field('90001', '사假 시간').fill('4'), value => byCode(value, '90001').work.personal_leave_hours === '4');
+  await previewAfter(ko, () => field('90001', '개인 휴가 시간').fill('4'), value => byCode(value, '90001').work.personal_leave_hours === '4');
   assert.match(await row('90001').locator('.hr-daily-estimate').innerText(), /공제 산식 미확정/);
   ko.page.once('dialog', dialog => dialog.accept()); await ko.page.getByRole('button', { name: '근무 초안 되돌리기', exact: true }).click();
   await until(async () => await field('90001', '출근 상태').inputValue() === 'present', 'leave draft discarded');

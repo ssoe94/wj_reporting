@@ -9,8 +9,6 @@ from .hr_contract import AmountField, MAX_EMPLOYEES, StrictSerializer, validate_
 
 
 ATTENDANCE = ('present', 'absent', 'personal_leave', 'sick_leave', 'off')
-HOURS = ('regular_hours', 'weekday_hours', 'rest_hours', 'holiday_hours',
-         'personal_leave_hours', 'sick_leave_hours')
 KINDS = ('hire', 'terminate', 'transfer', 'title_change', 'employment_change', 'cancel')
 MAX_ID = 2**63 - 1
 

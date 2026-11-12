@@ -10,7 +10,7 @@ from rest_framework.exceptions import NotFound
 
 from .hr_contract import HrConflict
 from .hr_identity import code_key, identity
-from .hr_labor_service import payroll_row_basis
+from .hr_labor_service import payroll_department_paths, payroll_row_basis
 from .hr_roster_service import codes_for, lock_roster
 from .models import HrMonthWorkspace, HrPersonnelEvent, HrRosterEmployee
 
@@ -19,7 +19,7 @@ def event_revision():
     return HrPersonnelEvent.objects.aggregate(revision=Max('id'))['revision'] or 0
 
 
-def _payrolls(employees, month):
+def _payrolls(employees, month, *, prior_only=False):
     """Scan monthly payroll once for the active roster. Match code/alias AND name."""
     pending = defaultdict(set)
     unresolved = set()
@@ -28,7 +28,12 @@ def _payrolls(employees, month):
         unresolved.add(employee.id)
         for code in (employee.code, *codes_for(employee)):
             pending[code_key(code), employee.normalized_name].add(employee.id)
-    for workspace in HrMonthWorkspace.objects.filter(month__lte=month).only('month', 'version', 'employees').iterator():
+    if prior_only:
+        workspaces = HrMonthWorkspace.objects.filter(month__lt=month, currency='CNY', cost_basis='gross_salary')
+    else:
+        workspaces = HrMonthWorkspace.objects.filter(month__lte=month)
+    for workspace in workspaces.only('month', 'version', 'employees', 'departments').iterator():
+        department_names = payroll_department_paths(workspace.departments) if prior_only else {}
         matches = defaultdict(list)
         for row in workspace.employees:
             for employee_id in pending.get((code_key(row['code']), identity(row['name'])), set()) & unresolved:
@@ -37,7 +42,11 @@ def _payrolls(employees, month):
             if len(rows) != 1:
                 result[employee_id] = {'month': workspace.month, 'ambiguous': True}
             else:
-                result[employee_id] = payroll_row_basis(workspace, rows[0])
+                row = rows[0]
+                result[employee_id] = payroll_row_basis(workspace, row)
+                if prior_only:
+                    result[employee_id]['payroll_components'] = row.get('payroll_components') or {}
+                    result[employee_id]['visual_department'] = department_names.get(row.get('department_id'), '')
         unresolved.difference_update(matches)
         if not unresolved:
             break
@@ -97,22 +106,37 @@ def _project(employee, events, day, payroll):
             'payroll': payroll}
 
 
-def employee_states_at(day, employees=None):
-    """Calculate date-specific states on read. Imported roster dates have month precision."""
+def employee_states_for_days(days, employees=None, *, prior_payroll_only=False):
+    """Resolve dates in one month using a single roster, event and payroll load."""
+    days = list(days)
+    if not days:
+        return {}
+    month = days[0].isoformat()[:7]
+    if any(day.isoformat()[:7] != month for day in days):
+        raise ValueError('Project one payroll month at a time.')
     if employees is None:
         employees = HrRosterEmployee.objects.prefetch_related('code_history')
     employees = list(employees)
     if not employees:
-        return []
+        return {day.isoformat(): [] for day in days}
     by_employee = defaultdict(list)
-    events = HrPersonnelEvent.objects.filter(Q(date__lte=day) | Q(kind='hire'))
+    events = HrPersonnelEvent.objects.filter(Q(date__lte=max(days)) | Q(kind='hire'))
     if len(employees) < 100:
         events = events.filter(employee_id__in=[employee.id for employee in employees])
     for event in events:
         by_employee[event.employee_id].append(event)
-    payrolls = _payrolls(employees, day.isoformat()[:7])
-    return [_project(employee, by_employee[employee.id], day, payrolls.get(employee.id, {}))
-            for employee in employees]
+    payrolls = _payrolls(employees, month, prior_only=prior_payroll_only)
+    return {
+        day.isoformat(): [
+            _project(employee, by_employee[employee.id], day, payrolls.get(employee.id, {}))
+            for employee in employees
+        ] for day in days
+    }
+
+
+def employee_states_at(day, employees=None):
+    """Calculate date-specific states on read. Imported roster dates have month precision."""
+    return employee_states_for_days([day], employees)[day.isoformat()]
 
 
 def _check_timeline(employee):

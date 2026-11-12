@@ -3,6 +3,7 @@ export const HR_DAILY_WORK_PATH = '/hr/daily-work';
 export const HR_ROSTER_PATH = '/hr/roster';
 export const HR_LABOR_STANDARDS_PATH = '/hr/labor-standards';
 export const HR_LABOR_COST_PATH = '/hr/labor-cost';
+export const HR_LABOR_FORECAST_PATH = '/hr/labor-forecast';
 
 export function isHrRoute(route: string): boolean {
   try {

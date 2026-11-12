@@ -25,6 +25,7 @@ from .hr_labor_service import standard_payload, calendar_payload, save_standard,
 from .hr_daily_contract import validate_day, DailyPreviewSerializer, DailySaveSerializer, PersonnelEventSerializer
 from .hr_daily_work import daily_work_payload, preview_daily_work, save_daily_work
 from .hr_personnel_events import append_personnel_event
+from .hr_forecast_service import forecast_payload, shanghai_today
 
 
 def validated_input(request, serializer_type, *, context=None):
@@ -204,3 +205,8 @@ class HrPersonnelEventView(HrBaseView):
         day = validate_day(day)
         append_personnel_event(day, validated_input(request, PersonnelEventSerializer), request.user)
         return Response(daily_work_payload(day, can_edit=True), status=201)
+
+
+class HrLaborForecastView(HrBaseView):
+    def get(self, request, month):
+        return Response(forecast_payload(validate_month(month), shanghai_today()))

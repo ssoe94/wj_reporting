@@ -1,6 +1,15 @@
 export type HrCurrency = "CNY" | "KRW" | "USD";
 export type HrCostBasis = "employer_total" | "gross_salary" | "custom";
-export type HrPayrollComponents = { base_salary: string | null; fixed_overtime: string | null };
+export type HrPayrollComponents = {
+  base_salary: string | null;
+  fixed_overtime: string | null;
+  weekday_overtime?: string | null;
+  weekend_overtime?: string | null;
+  holiday_overtime?: string | null;
+  personal_leave?: string | null;
+  sick_leave?: string | null;
+  absence?: string | null;
+};
 
 export type HrDepartment = {
   id: string;
