@@ -64,7 +64,7 @@ def company_departments(workspace):
 
 
 def build_preview(data, workspaces=None, roster_plan=None):
-    people, _, grouped, decisions = roster_plan if roster_plan is not None else plan_roster(data)
+    people, _, grouped, decisions, aliases = roster_plan if roster_plan is not None else plan_roster(data)
     if workspaces is None:
         workspaces = {workspace.month: workspace for workspace in HrMonthWorkspace.objects.filter(month__in=[item['month'] for item in data['months']])}
     reference = (stored_reference(data['classification_version']) if 'classification_version' in data
@@ -91,12 +91,13 @@ def build_preview(data, workspaces=None, roster_plan=None):
             if old and identity(old['name']) != identity(row['name']):
                 raise serializers.ValidationError('기존 자료와 같은 사번의 직원 정보가 다릅니다. 사번을 확인해 주세요.')
             person = person_key(row['name'], row['employment_type'])
-            employee = people.get(person)
+            roster_person = aliases.get(person, person)
+            employee = people.get(roster_person)
             confirmed_codes = {code_key(code) for code in [employee.code, *codes_for(employee)]} if employee else set()
-            if person in decisions:
-                confirmed_codes.update(code_key(entry['code']) for entry in grouped[person])
+            if roster_person in decisions:
+                confirmed_codes.update(code_key(entry['code']) for entry in grouped[roster_person])
             matched = by_code.get(key) or by_name.get(person)
-            if matched and (identity(matched['name']) != identity(row['name']) or matched['employment_type'] != row['employment_type'] or (matched.get('code') and code_key(matched['code']) != key and not {code_key(matched['code']), key} <= confirmed_codes)):
+            if matched and (identity(matched['name']) != identity(row['name']) or (matched['employment_type'] != row['employment_type'] and code_key(matched.get('code', '')) != key) or (matched.get('code') and code_key(matched['code']) != key and not {code_key(matched['code']), key} <= confirmed_codes)):
                 raise serializers.ValidationError('분류표와 임금표의 직원 정보 또는 사번이 다릅니다. 원본을 확인해 주세요.')
             row['department_id'] = old['department_id'] if old and data['assignment_policy'] == 'preserve' else matched['department_id'] if matched else None
             rows.append(row)

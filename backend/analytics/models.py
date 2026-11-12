@@ -327,12 +327,16 @@ class HrRosterEmployee(models.Model):
 
 
 class HrRosterCodeHistory(models.Model):
-    """Code decisions and manual roster edits share complete code/status snapshots."""
+    """Confirmed roster changes retain before/after identity and attribute values."""
     employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='code_history')
     previous_code = models.CharField(max_length=64)
     new_code = models.CharField(max_length=64)
     previous_status = models.CharField(max_length=8)
     new_status = models.CharField(max_length=8)
+    previous_employment_type = models.CharField(max_length=8)
+    new_employment_type = models.CharField(max_length=8)
+    previous_department = models.CharField(max_length=100, blank=True)
+    new_department = models.CharField(max_length=100, blank=True)
     reason = models.CharField(max_length=500)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     actor_label = models.CharField(max_length=200)

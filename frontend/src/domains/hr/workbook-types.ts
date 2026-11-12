@@ -59,6 +59,7 @@ export type HrRosterEntry = {
 export type HrCodeReview = {
   key: string; name: string; employment_type: HrEmploymentType;
   codes: { code: string; months: string[] }[];
+  employment_types?: { employment_type: HrEmploymentType; months: string[] }[];
 };
 
 export type HrRosterDecision = Pick<HrRosterEntry, 'name' | 'employment_type' | 'code' | 'version'> & { reason: string };

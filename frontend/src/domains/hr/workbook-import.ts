@@ -343,13 +343,14 @@ export function parseCompanyPayroll(
     if (!code || code.length > 64) continue;
     const key = codeKey(code);
     const owners = sightings.get(key) ?? new Map<string, Set<string>>();
-    const months = owners.get(identity) ?? new Set<string>();
+    const owner = nameIdentity(item.row.name);
+    const months = owners.get(owner) ?? new Set<string>();
     months.add(period);
-    owners.set(identity, months);
+    owners.set(owner, months);
     sightings.set(key, owners);
   }
   const registeredOwners = new Map(roster.flatMap((entry) =>
-    [entry.code, ...entry.previous_codes].map((code) => [codeKey(code), identityKey(entry.name, entry.employment_type)] as const)));
+    [entry.code, ...entry.previous_codes].map((code) => [codeKey(code), nameIdentity(entry.name)] as const)));
   const ownerOf = (code: string): string | undefined => {
     const key = codeKey(code);
     if (registeredOwners.has(key)) return registeredOwners.get(key);
@@ -358,12 +359,12 @@ export function parseCompanyPayroll(
     return undefined;
   };
   for (const item of parsed) {
-    if (item.row.code && item.row.code.length <= 64 && ownerOf(item.row.code) !== rowIdentity(item)) {
-      addIssue(item, '같은 사번이 서로 다른 성명·고용 형태에 연결되어 있습니다.');
+    if (item.row.code && item.row.code.length <= 64 && ownerOf(item.row.code) !== nameIdentity(item.row.name)) {
+      addIssue(item, '같은 사번이 서로 다른 성명에 연결되어 있습니다.');
     }
   }
   for (const items of byMonth.values()) {
-    const remaining = items.filter((item) => item.row.code && (!ownerOf(item.row.code) || ownerOf(item.row.code) === rowIdentity(item)));
+    const remaining = items.filter((item) => item.row.code && (!ownerOf(item.row.code) || ownerOf(item.row.code) === nameIdentity(item.row.name)));
     const counts = new Map<string, number>();
     for (const { row } of remaining) counts.set(codeKey(row.code), (counts.get(codeKey(row.code)) ?? 0) + 1);
     const collisions = getEmployeeCodeCollisions(remaining.map(({ row }) => row.code));
@@ -374,8 +375,33 @@ export function parseCompanyPayroll(
   }
   const validByIdentity = new Map([...byIdentity].map(([identity, items]) =>
     [identity, items.filter((item) => !issueMessages.has(item.key))]));
+  // Only a shared exact code/name connects identities across employment types.
+  // Keep the original type-specific groups for missing-code recommendations.
+  const aliases = new Map<string, string>();
+  const canonical = (key: string): string => {
+    const parent = aliases.get(key);
+    if (!parent || parent === key) return key;
+    const root = canonical(parent);
+    aliases.set(key, root);
+    return root;
+  };
+  const codePeople = new Map<string, string>();
+  const connect = (name: string, employment: HrEmploymentType, code: string) => {
+    const key = identityKey(name, employment);
+    const evidence = JSON.stringify([nameIdentity(name), codeKey(code)]);
+    const owner = codePeople.get(evidence) ?? key;
+    aliases.set(canonical(key), canonical(owner));
+    codePeople.set(evidence, owner);
+  };
+  for (const entry of roster) for (const code of [entry.code, ...entry.previous_codes]) connect(entry.name, entry.employment_type, code);
+  for (const items of validByIdentity.values()) for (const { row } of items) connect(row.name, row.employment_type, row.code);
+  const reviewGroups = new Map<string, ParsedRow[]>();
+  for (const [key, items] of validByIdentity) {
+    const group = canonical(key);
+    reviewGroups.set(group, [...(reviewGroups.get(group) ?? []), ...items]);
+  }
   const codeReviews: HrCodeReview[] = [];
-  for (const [identity, items] of validByIdentity) {
+  for (const [identity, items] of reviewGroups) {
     const observed = new Map<string, { code: string; months: Set<string> }>();
     for (const { row } of items) {
       const key = codeKey(row.code);
@@ -383,17 +409,28 @@ export function parseCompanyPayroll(
       entry.months.add(row.period);
       observed.set(key, entry);
     }
-    const registered = roster.find((entry) => identityKey(entry.name, entry.employment_type) === identity);
+    const registered = roster.find((entry) => canonical(identityKey(entry.name, entry.employment_type)) === identity);
     if (registered && [...observed.keys()].some((code) => !registeredOwners.has(code))) {
       const key = codeKey(registered.code);
       if (!observed.has(key)) observed.set(key, { code: registered.code, months: new Set() });
     }
     const codes = [...observed.values()].map(({ code, months }) => ({ code, months: [...months].sort() }));
-    const row = items[0]?.row;
+    const row = items.reduce<HrWorkbookRow | undefined>((latest, item) => !latest || item.row.period > latest.period ? item.row : latest, undefined);
     const hasConcurrentCodes = new Set(items.map(({ row }) => row.period)).size !== items.length;
-    if (row && !hasConcurrentCodes && codes.length > 1 && (registered || new Set(codes.flatMap(({ months }) => months)).size > 1)
-      && (!registered || codes.some(({ code }) => ![registered.code, ...registered.previous_codes].some((known) => codeKey(known) === codeKey(code))))) {
-      codeReviews.push({ key: identity, name: row.name, employment_type: row.employment_type, codes });
+    const employmentMonths = new Map<HrEmploymentType, Set<string>>();
+    for (const { row: entry } of items) {
+      const months = employmentMonths.get(entry.employment_type) ?? new Set<string>();
+      months.add(entry.period);
+      employmentMonths.set(entry.employment_type, months);
+    }
+    if (registered && !employmentMonths.has(registered.employment_type)) employmentMonths.set(registered.employment_type, new Set());
+    const employmentChanged = row && employmentMonths.size > 1 && (!registered
+      || (row.period >= registered.last_month && row.employment_type !== registered.employment_type));
+    const codeChanged = codes.length > 1 && (registered || new Set(codes.flatMap(({ months }) => months)).size > 1)
+      && (!registered || codes.some(({ code }) => ![registered.code, ...registered.previous_codes].some((known) => codeKey(known) === codeKey(code))));
+    if (row && !hasConcurrentCodes && (codeChanged || employmentChanged)) {
+      codeReviews.push({ key: identity, name: row.name, employment_type: row.employment_type, codes,
+        ...(employmentChanged ? { employment_types: [...employmentMonths].map(([employment_type, months]) => ({ employment_type, months: [...months].sort() })) } : {}) });
     }
   }
   const monthIndex = (period: string) => Number(period.slice(0, 4)) * 12 + Number(period.slice(5));
@@ -407,11 +444,11 @@ export function parseCompanyPayroll(
     const registered = roster.filter((entry) => identityKey(entry.name, entry.employment_type) === identity);
     for (const entry of registered) {
       if (item.row.employment_type === 'hourly' && nameIdentity(entry.department) !== nameIdentity(item.row.source_department ?? '')) continue;
-      if (ownerOf(entry.code) === identity) candidates.set(codeKey(entry.code), { code: entry.code, months: [], roster: true });
+      if (ownerOf(entry.code) === nameIdentity(item.row.name)) candidates.set(codeKey(entry.code), { code: entry.code, months: [], roster: true });
     }
     for (const other of validByIdentity.get(identity) ?? []) {
       const distance = Math.abs(monthIndex(other.row.period) - targetMonth);
-      if (distance === 0 || ownerOf(other.row.code) !== identity) continue;
+      if (distance === 0 || ownerOf(other.row.code) !== nameIdentity(item.row.name)) continue;
       const sameDepartment = nameIdentity(other.row.source_department ?? '') === nameIdentity(item.row.source_department ?? '');
       if (item.row.employment_type === 'hourly' && (!sameDepartment || distance !== 1)) continue;
       const delta = item.fixedPay !== null && other.fixedPay !== null ? item.fixedPay - other.fixedPay : null;

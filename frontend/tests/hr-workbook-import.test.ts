@@ -303,3 +303,46 @@ test('only the conflicting and missing rows are flagged when adjacent months est
   const corrections = Object.fromEntries(result.issues.map(({ key, suggested_code }) => [key, suggested_code!]));
   assert.deepEqual(parseCompanyPayroll(inputs, corrections).issues, []);
 });
+
+test('same normalized code and name across employment types creates one nonblocking transition review', () => {
+  const inputs = [source([contractHeaders, contract('10月', '90001', '测试甲')]),
+    source([hourlyHeaders, ...[6, 7, 8, 9].map((month) => [`${month}月`, '合成部门', '00090001', '测试 甲', 20, '0.20'])], 'hourly', 'hourly')];
+  const result = parseCompanyPayroll(inputs);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.codeReviews.length, 1);
+  assert.equal(result.codeReviews[0].employment_type, 'contract');
+  assert.deepEqual(result.codeReviews[0].employment_types, [
+    { employment_type: 'contract', months: ['2026-10'] },
+    { employment_type: 'hourly', months: ['2026-06', '2026-07', '2026-08', '2026-09'] },
+  ]);
+  assert.deepEqual(result.months.map(({ month, rows }) => [month, rows.length, rows[0].amount]), [
+    ['2026-06', 1, '0.20'], ['2026-07', 1, '0.20'], ['2026-08', 1, '0.20'], ['2026-09', 1, '0.20'], ['2026-10', 1, '10.00'],
+  ]);
+  const roster = [{ id: 1, code: '00090001', name: '测试 甲', employment_type: 'hourly' as const,
+    department: '合成部门', status: 'active' as const, first_month: '2026-06', last_month: '2026-09',
+    version: 1, previous_codes: [], in_month: false }];
+  const existing = parseCompanyPayroll(inputs, {}, roster);
+  assert.deepEqual(existing.issues, []);
+  assert.equal(existing.codeReviews.length, 1);
+  const october = parseCompanyPayroll(inputs.slice(0, 1), {}, roster);
+  assert.deepEqual(october.issues, []);
+  assert.equal(october.codeReviews.length, 1);
+  assert.deepEqual(october.codeReviews[0].employment_types, [
+    { employment_type: 'contract', months: ['2026-10'] }, { employment_type: 'hourly', months: [] },
+  ]);
+  const confirmed = parseCompanyPayroll(inputs, {}, [{ ...roster[0], employment_type: 'contract', last_month: '2026-10', version: 2 }]);
+  assert.deepEqual(confirmed.issues, []);
+  assert.deepEqual(confirmed.codeReviews, []);
+});
+
+test('different names still conflict across types; same-name employees with distinct codes stay separate', () => {
+  const hourly = source([hourlyHeaders, ...[6, 7, 8, 9].map((month) => [`${month}月`, '合成部门', '90001', '测试甲', 20, '0.20'])], 'hourly', 'hourly');
+  const conflict = parseCompanyPayroll([hourly, source([contractHeaders, contract('10月', '00090001', '测试乙')])]);
+  assert.equal(conflict.issues.length, 1);
+  assert.ok(conflict.issues[0].message.includes('서로 다른 성명'));
+  assert.equal(conflict.issues[0].suggested_code, undefined);
+  assert.deepEqual(conflict.codeReviews, []);
+  const separate = parseCompanyPayroll([hourly, source([contractHeaders, contract('10月', '90002', '测试甲')])]);
+  assert.deepEqual(separate.issues, []);
+  assert.deepEqual(separate.codeReviews, []);
+});

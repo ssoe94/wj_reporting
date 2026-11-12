@@ -405,3 +405,191 @@ class HrWorkbookTests(TestCase):
         self.assertEqual((history.previous_code, history.new_code, history.previous_status, history.new_status),
                          ('245', '00090005', 'active', 'active'))
         self.assertEqual((history.actor_id, history.reason), (self.hr.pk, data['roster_decisions'][0]['reason']))
+
+
+def employment_transition_batch():
+    """Synthetic same-code employee changes employment type after September."""
+    return {
+        'classification': {'filename': 'synthetic-transition-reference.xlsx', 'rows': [{
+            'code': '00090001', 'name': 'Synthetic Transition', 'employment_type': 'hourly',
+            'source_department': '注塑', 'source_function': '注塑管理', 'source_row': 2,
+        }]},
+        'files': [
+            {'id': 'h', 'filename': 'synthetic-hourly.xlsx', 'employment_type': 'hourly'},
+            {'id': 'c', 'filename': 'synthetic-contract.xlsx', 'employment_type': 'contract'},
+        ],
+        'months': [{'month': f'2026-{month:02}', 'rows': [{
+            'code': '90001' if month == 10 else '00090001',
+            'name': 'Synthetic\tTransition' if month == 10 else 'Synthetic Transition',
+            'amount': '2.40' if month == 10 else '1.20', 'title': '', 'period': f'2026-{month:02}',
+            'source_department': 'Synthetic contract team' if month == 10 else 'Synthetic hourly line',
+            'employment_type': 'contract' if month == 10 else 'hourly',
+            'source_file': 'c' if month == 10 else 'h', 'source_sheet': 'payroll', 'source_row': month + 1,
+            'original_code': '90001' if month == 10 else '00090001',
+        }]} for month in range(6, 11)],
+        'assignment_policy': 'preserve',
+    }
+
+
+class HrRosterEmploymentTransitionTests(TestCase):
+    def setUp(self):
+        self.hr = get_user_model().objects.create_user('hr-transition')
+        HrAccessGrant.objects.create(user=self.hr, enabled=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.hr)
+
+    def preview(self, data):
+        return self.client.post(BASE + 'workbook-preview/', data, format='json')
+
+    def commit(self, data):
+        response = self.preview(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        preview = response.data
+        payload = {**deepcopy(data), 'preview_token': preview['preview_token'], 'confirmations': [
+            {'month': month['month'], 'version': month['version'], 'expected_total': month['total'],
+             'fingerprint': month['fingerprint']}
+            for month in preview['months']
+        ]}
+        return self.client.post(BASE + 'workbook-import/', payload, format='json')
+
+    def seed_hourly(self):
+        data = employment_transition_batch()
+        data['months'] = data['months'][:-1]
+        response = self.commit(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        return HrRosterEmployee.objects.get()
+
+    def decision(self, version):
+        return {'name': 'Synthetic Transition', 'employment_type': 'contract', 'code': '00090001',
+                'reason': 'Synthetic employment transition confirmation', 'version': version}
+
+    def assert_month_presence(self):
+        for month in ('2026-06', '2026-10'):
+            response = self.client.get(f'{BASE}roster/{month}/')
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(len(response.data['employees']), 1)
+            self.assertTrue(response.data['employees'][0]['in_month'])
+
+    def test_unconfirmed_first_upload_keeps_one_hourly_row_and_all_payroll_months(self):
+        response = self.commit(employment_transition_batch())
+        self.assertEqual(response.status_code, 200, response.data)
+        employee = HrRosterEmployee.objects.get()
+        self.assertEqual((employee.employment_type, employee.first_month, employee.last_month),
+                         ('hourly', '2026-06', '2026-09'))
+        self.assertEqual(employee.department, 'Synthetic hourly line')
+        self.assertFalse(HrRosterCodeHistory.objects.exists())
+        self.assertEqual(HrMonthWorkspace.objects.count(), 5)
+        self.assertEqual([month['summary']['total'] for month in response.data['workspaces']],
+                         ['1.20', '1.20', '1.20', '1.20', '2.40'])
+        self.assertEqual(HrMonthWorkspace.objects.get(month='2026-10').employees[0]['employment_type'], 'contract')
+        self.assert_month_presence()
+
+    def test_unconfirmed_existing_employee_stays_unchanged_for_october_and_full_upload(self):
+        employee = self.seed_hourly()
+        initial = (employee.code, employee.department, employee.version, employee.first_month, employee.last_month)
+        for only_october in (True, False):
+            with self.subTest(only_october=only_october):
+                data = employment_transition_batch()
+                if only_october:
+                    data['months'] = data['months'][-1:]
+                response = self.commit(data)
+                self.assertEqual(response.status_code, 200, response.data)
+                employee.refresh_from_db()
+                self.assertEqual(HrRosterEmployee.objects.count(), 1)
+                self.assertEqual(employee.employment_type, 'hourly')
+                self.assertEqual((employee.code, employee.department, employee.version, employee.first_month, employee.last_month), initial)
+                self.assertFalse(HrRosterCodeHistory.objects.exists())
+        self.assert_month_presence()
+
+    def test_confirmed_existing_transition_updates_latest_type_department_and_one_audit(self):
+        employee = self.seed_hourly()
+        data = employment_transition_batch()
+        data['months'].reverse()  # Latest month, never list order, defines the new attributes.
+        data['roster_decisions'] = [self.decision(employee.version)]
+        before = timezone.now()
+        response = self.commit(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(HrRosterEmployee.objects.count(), 1)
+        employee.refresh_from_db()
+        self.assertEqual((employee.employment_type, employee.department, employee.last_month, employee.version),
+                         ('contract', 'Synthetic contract team', '2026-10', 2))
+        self.assertEqual((employee.normalized_name, employee.normalized_code), ('SyntheticTransition', '90001'))
+        history = HrRosterCodeHistory.objects.get()
+        self.assertEqual(history.employee_id, employee.pk)
+        self.assertEqual((history.previous_employment_type, history.new_employment_type), ('hourly', 'contract'))
+        self.assertEqual((history.previous_department, history.new_department),
+                         ('Synthetic hourly line', 'Synthetic contract team'))
+        self.assertEqual((history.previous_code, history.new_code), ('00090001', '00090001'))
+        self.assertEqual((history.reason, history.actor_id, history.actor_label),
+                         (data['roster_decisions'][0]['reason'], self.hr.pk, self.hr.username))
+        self.assertLessEqual(before, history.created_at)
+        self.assertLessEqual(history.created_at, timezone.now())
+        self.assert_month_presence()
+        self.assertEqual(self.preview(data).status_code, 409)
+
+    def test_confirmed_first_upload_creates_one_employee_and_transition_audit(self):
+        data = employment_transition_batch()
+        data['roster_decisions'] = [self.decision(0)]
+        response = self.commit(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        employee = HrRosterEmployee.objects.get()
+        self.assertEqual((employee.employment_type, employee.department, employee.first_month, employee.last_month),
+                         ('contract', 'Synthetic contract team', '2026-06', '2026-10'))
+        history = HrRosterCodeHistory.objects.get()
+        self.assertEqual((history.previous_employment_type, history.new_employment_type, history.actor_id),
+                         ('hourly', 'contract', self.hr.pk))
+        self.assertEqual((history.previous_department, history.new_department),
+                         ('Synthetic hourly line', 'Synthetic contract team'))
+
+    def test_transition_rejects_different_name_on_same_code(self):
+        data = employment_transition_batch()
+        data['months'][-1]['rows'][0]['name'] = 'Synthetic Other'
+        self.assertEqual(self.preview(data).status_code, 400)
+        self.assertFalse(HrRosterEmployee.objects.exists())
+        self.seed_hourly()
+        data['months'] = data['months'][-1:]
+        self.assertEqual(self.preview(data).status_code, 400)
+        self.assertEqual(HrRosterEmployee.objects.count(), 1)
+
+    def test_same_name_with_distinct_codes_and_types_stays_two_people(self):
+        data = employment_transition_batch()
+        hourly = deepcopy(data['months'][0]['rows'][0])
+        hourly['period'] = '2026-10'
+        contract = data['months'][-1]['rows'][0]
+        contract['code'] = contract['original_code'] = '90002'
+        data['months'] = [{'month': '2026-10', 'rows': [hourly, contract]}]
+        response = self.commit(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(set(HrRosterEmployee.objects.values_list('normalized_code', 'employment_type')),
+                         {('90001', 'hourly'), ('90002', 'contract')})
+        self.assertFalse(HrRosterCodeHistory.objects.exists())
+        roster = self.client.get(BASE + 'roster/2026-10/').data['employees']
+        self.assertEqual(len(roster), 2)
+        self.assertTrue(all(row['in_month'] for row in roster))
+
+    def test_transition_confirmation_requires_reason_version_and_server_owned_actor(self):
+        employee = self.seed_hourly()
+        for extra, expected in (({'version': 0}, 409), ({'reason': ''}, 400),
+                                ({'actor': self.hr.pk}, 400), ({'created_at': '2000-01-01T00:00:00Z'}, 400)):
+            with self.subTest(extra=extra):
+                data = employment_transition_batch()
+                data['roster_decisions'] = [self.decision(employee.version) | extra]
+                self.assertEqual(self.preview(data).status_code, expected)
+        employee.refresh_from_db()
+        self.assertEqual((employee.employment_type, employee.last_month, employee.version), ('hourly', '2026-09', 1))
+        self.assertFalse(HrRosterCodeHistory.objects.exists())
+
+    def test_transition_audit_failure_rolls_back_roster_and_october_payroll(self):
+        employee = self.seed_hourly()
+        data = employment_transition_batch()
+        data['roster_decisions'] = [self.decision(employee.version)]
+        with patch.object(HrRosterCodeHistory.objects, 'create', side_effect=RuntimeError('synthetic transition audit failure')):
+            response = self.commit(data)
+            self.assertEqual(response.status_code, 500)
+        employee.refresh_from_db()
+        self.assertEqual((employee.employment_type, employee.department, employee.last_month, employee.version),
+                         ('hourly', 'Synthetic hourly line', '2026-09', 1))
+        self.assertEqual(HrRosterEmployee.objects.count(), 1)
+        self.assertFalse(HrMonthWorkspace.objects.filter(month='2026-10').exists())
+        self.assertFalse(HrWorkspaceHistory.objects.filter(workspace__month='2026-10').exists())
+        self.assertFalse(HrRosterCodeHistory.objects.exists())

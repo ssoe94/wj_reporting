@@ -17,6 +17,8 @@ type Props = { roster: HrRosterEntry[]; workspace: HrWorkspace; disabled: boolea
 const MAX_FILES = 10;
 const FILE_LIMIT = 10 * 1024 * 1024;
 const monthPattern = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/;
+const nameIdentity = (value: string) => value.normalize('NFC').replace(/\s+/g, '');
+const codeKey = (value: string) => /^[0-9]+$/.test(value) ? value.replace(/^0+(?=\d)/, '') : value;
 
 export default function HrWorkbookImportPanel({ roster, workspace, disabled, onImported, onBusyChange, onDraftChange }: Props) {
   const { lang } = useLang(); const ko = lang === 'ko';
@@ -162,7 +164,7 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
         loaded.push({ id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `payroll-${Date.now()}-${Math.random().toString(36).slice(2)}`, book,
           employment_type: contract !== hourly ? contract ? 'contract' : 'hourly' : '' });
       }
-      if (valid(id)) setInputs((previous) => [...previous, ...loaded]);
+      if (valid(id)) { setInputs((previous) => [...previous, ...loaded]); setDecisions({}); }
     } catch (failure) { if (valid(id)) setError(readableError(failure, ko ? '임금표를 읽지 못했습니다.' : '无法读取工资表。')); }
     finally { finish(id); if (payrollInput.current) payrollInput.current.value = ''; }
   }
@@ -203,16 +205,32 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
     const input = inputs.find((item) => item.id === row.source_file); if (!input) continue;
     issueRows.push({ key, file: input.book.filename, sheet: row.source_sheet, row: row.source_row, month: row.period, code: row.original_code, message: '' });
   }
-  const reviews = parsed.codeReviews.filter((review) => review.codes.some(({ months }) => months.some((month) => selectedSet.has(month))));
+  const reviews = parsed.codeReviews.flatMap((review) => {
+    const observedCodes = new Set(review.codes.map(({ code }) => codeKey(code)));
+    const current = roster.find((entry) => nameIdentity(entry.name) === nameIdentity(review.name)
+      && (review.employment_types
+        ? [entry.code, ...entry.previous_codes].some((code) => observedCodes.has(codeKey(code)))
+        : entry.employment_type === review.employment_type));
+    const rows = payrollRows.filter((row) => selectedSet.has(row.period) && nameIdentity(row.name) === nameIdentity(review.name)
+      && observedCodes.has(codeKey(row.code)) && (review.employment_types || row.employment_type === review.employment_type));
+    const latest = rows.reduce<HrWorkbookRow | undefined>((last, row) => !last || row.period > last.period ? row : last, undefined);
+    if (!latest) return [];
+    const codes = review.codes.filter(({ code, months }) => codeKey(code) === codeKey(current?.code ?? '') || months.some((month) => selectedSet.has(month)));
+    const changesEmployment = Boolean(review.employment_types && (current
+      ? latest.period >= current.last_month && latest.employment_type !== current.employment_type
+      : rows.some((row) => row.employment_type !== latest.employment_type)));
+    if (!changesEmployment && codes.length < 2) return [];
+    return [{ ...review, codes, current, employment_type: latest.employment_type,
+      employment_types: changesEmployment ? review.employment_types : undefined }];
+  });
+  const readyReviewKeys = new Set<string>();
   const readyDecisions: HrRosterDecision[] = reviews.flatMap((review) => {
     const chosen = decisions[review.key];
-    const current = roster.find((entry) => JSON.stringify([entry.name.normalize('NFC').replace(/\s+/g, ''), entry.employment_type]) === review.key);
-    const selectedCodes = review.codes.filter(({ code, months }) => code === current?.code || months.some((month) => selectedSet.has(month)));
-    if (!chosen?.reason.trim() || selectedCodes.length < 2 || !selectedCodes.some(({ code }) => code === chosen.code)) return [];
-    return [{ name: review.name, employment_type: review.employment_type, code: chosen.code, reason: chosen.reason.trim(), version: current?.version ?? 0 }];
+    if (!chosen?.reason.trim() || !review.codes.some(({ code }) => code === chosen.code)) return [];
+    readyReviewKeys.add(review.key);
+    return [{ name: review.name, employment_type: review.employment_type, code: chosen.code, reason: chosen.reason.trim(), version: review.current?.version ?? 0 }];
   });
-  const incompleteDecision = reviews.some(({ key }) => Boolean(decisions[key]?.code || decisions[key]?.reason.trim()) && !readyDecisions.some((decision) =>
-    JSON.stringify([decision.name.normalize('NFC').replace(/\s+/g, ''), decision.employment_type]) === key));
+  const incompleteDecision = reviews.some(({ key }) => Boolean(decisions[key]?.code || decisions[key]?.reason.trim()) && !readyReviewKeys.has(key));
   const unknownKind = inputs.some((input) => input.employment_type === '');
   const referenceRows = reference?.rows ?? [];
   const reviewReferenceIndexes = [...new Set([...referenceReviewRows, ...referenceRows.flatMap((row, index) => row.department_id === null ? [index] : [])])];
@@ -294,6 +312,7 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
     if (issue.message.includes('64자')) notes.push('工号超过 64 字符');
     return notes.join(' · ') || '请核对原始工号';
   }
+  const employmentLabel = (type: HrEmploymentType) => type === 'contract' ? (ko ? '계약직' : '合同工') : (ko ? '시급직' : '小时工');
   const registeredReference = storedReference?.reference;
   const storedUnassignedCount = registeredReference?.rows.filter((row) => row.department_id === null).length ?? 0;
 
@@ -331,22 +350,24 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       </details>
       {inputs.length > 0 && <div className="hr-table-scroll"><table className="hr-workbook-file-table"><thead><tr><th>{ko ? '파일' : '文件'}</th><th>{ko ? '고용 형태' : '用工类型'}</th><th>{ko ? '시트' : '工作表'}</th><th>{ko ? '읽은 행·월' : '读取行数·月份'}</th><th /></tr></thead><tbody>{inputs.map((input) => {
         const rows = payrollRows.filter((row) => row.source_file === input.id); const months = [...new Set(rows.map((row) => row.period))];
-        return <tr key={input.id}><td>{input.book.filename}</td><td><select aria-label={`${input.book.filename} ${ko ? '고용 형태' : '用工类型'}`} value={input.employment_type} disabled={busy || disabled} onChange={(event) => { invalidate(); setInputs((items) => items.map((item) => item.id === input.id ? { ...item, employment_type: event.target.value as HrEmploymentType | '' } : item)); }}><option value="">{ko ? '직접 선택' : '请选择'}</option><option value="contract">{ko ? '계약직 · 合同工' : '合同工'}</option><option value="hourly">{ko ? '시간제 · 小时工' : '小时工'}</option></select></td><td>{input.book.sheets.length}</td><td>{rows.length} {ko ? '행' : '行'}{months.length ? ` · ${months.join(', ')}` : ''}</td><td><button className="hr-icon-button" aria-label={`${input.book.filename} ${ko ? '파일 제거' : '移除文件'}`} disabled={busy} onClick={() => { invalidate(); setInputs((items) => items.filter((item) => item.id !== input.id)); }}><X size={16} /></button></td></tr>;
+        return <tr key={input.id}><td>{input.book.filename}</td><td><select aria-label={`${input.book.filename} ${ko ? '고용 형태' : '用工类型'}`} value={input.employment_type} disabled={busy || disabled} onChange={(event) => { invalidate(); setDecisions({}); setInputs((items) => items.map((item) => item.id === input.id ? { ...item, employment_type: event.target.value as HrEmploymentType | '' } : item)); }}><option value="">{ko ? '직접 선택' : '请选择'}</option><option value="contract">{ko ? '계약직 · 合同工' : '合同工'}</option><option value="hourly">{ko ? '시간제 · 小时工' : '小时工'}</option></select></td><td>{input.book.sheets.length}</td><td>{rows.length} {ko ? '행' : '行'}{months.length ? ` · ${months.join(', ')}` : ''}</td><td><button className="hr-icon-button" aria-label={`${input.book.filename} ${ko ? '파일 제거' : '移除文件'}`} disabled={busy} onClick={() => { invalidate(); setDecisions({}); setInputs((items) => items.filter((item) => item.id !== input.id)); }}><X size={16} /></button></td></tr>;
       })}</tbody></table></div>}
       {unknownKind && <p className="hr-alert is-warning">{ko ? '파일명에서 고용 형태를 확인하지 못한 파일은 계약직·시간제를 직접 선택해 주세요.' : '无法从文件名确定类型的文件，请手动选择合同工或小时工。'}</p>}
       {parsed.failure && <p role="alert" className="hr-alert is-error">{parsed.failure}</p>}
       {parsed.warnings.length > 0 && <details className="hr-disclosure"><summary>{ko ? 'Excel 표시 금액 사용' : '采用 Excel 显示金额'} ({parsed.warnings.length})</summary><ul className="hr-workbook-warning-list">{parsed.warnings.map((warning, index) => <li key={index}>{warningLabel(warning)}</li>)}</ul></details>}
-      {detectedMonths.length > 0 && <div className="hr-workbook-months"><strong>{ko ? '저장할 월' : '保存月份'}</strong>{detectedMonths.map((month) => <label key={month} className="hr-checkbox"><input type="checkbox" checked={monthSelection[month] !== false} disabled={busy || disabled} onChange={(event) => { invalidate(); setMonthSelection((current) => ({ ...current, [month]: event.target.checked })); }} />{month}</label>)}</div>}
+      {detectedMonths.length > 0 && <div className="hr-workbook-months"><strong>{ko ? '저장할 월' : '保存月份'}</strong>{detectedMonths.map((month) => <label key={month} className="hr-checkbox"><input type="checkbox" checked={monthSelection[month] !== false} disabled={busy || disabled} onChange={(event) => { invalidate(); setDecisions({}); setMonthSelection((current) => ({ ...current, [month]: event.target.checked })); }} />{month}</label>)}</div>}
       {reviews.length > 0 && <details className="hr-disclosure" open>
-        <summary>{ko ? '월별 사번 변경 확인' : '确认跨月工号变更'} ({reviews.length})</summary>
-        <p className="hr-muted">{ko ? '사번과 사유를 선택하면 급여표 저장 시 명부에 기록됩니다. 보류하면 월별 급여만 저장됩니다.' : '选择工号并填写原因后，保存工资表时将登记到名册。暂不确认时，仅保存各月工资资料。'}</p>
+        <summary>{ko ? '명부 변경 확인' : '确认名册变更'} ({reviews.length})</summary>
+        <p className="hr-muted">{ko ? '변경을 선택하고 사유를 입력하면 급여표 저장 시 명부에 기록됩니다. 고용형태와 부서는 최신 선택 월을 적용합니다. 보류하면 월별 급여만 저장됩니다.' : '选择变更并填写原因后，保存工资表时将登记到名册。用工类型及部门按最新所选月份更新。暂不确认时，仅保存各月工资资料。'}</p>
         {reviews.map((review) => {
           const chosen = decisions[review.key] ?? { code: '', reason: '' };
           const update = (next: typeof chosen) => { invalidate(); setDecisions((current) => ({ ...current, [review.key]: next })); };
           return <div className="hr-compact-toolbar" key={review.key}>
             <strong>{review.name}</strong>
-            <label>{ko ? '현재 사번' : '现行工号'} <select value={chosen.code} disabled={busy || disabled} onChange={(event) => update({ ...chosen, code: event.target.value, reason: event.target.value ? chosen.reason : '' })}>
-              <option value="">{ko ? '확인 보류' : '暂不确认'}</option>{review.codes.map(({ code, months }) => <option key={code} value={code}>{code} · {months.join(', ') || (ko ? '명부' : '名册')}</option>)}
+            <span>{review.employment_types ? (ko ? '고용형태 변경' : '用工类型变更') : (ko ? '사번 변경' : '工号变更')}</span>
+            {review.employment_types?.map(({ employment_type, months }) => <span className="hr-muted" key={employment_type}>{employmentLabel(employment_type)}: {months.filter((month) => selectedSet.has(month)).join(', ') || (ko ? '명부' : '名册')}</span>)}
+            <label>{review.employment_types ? (ko ? '변경 확인' : '确认变更') : (ko ? '현재 사번' : '现行工号')} <select value={chosen.code} disabled={busy || disabled} onChange={(event) => update({ ...chosen, code: event.target.value, reason: event.target.value ? chosen.reason : '' })}>
+              <option value="">{ko ? '확인 보류' : '暂不确认'}</option>{review.codes.map(({ code, months }) => <option key={code} value={code}>{code} · {review.employment_types ? `${employmentLabel(review.employment_type)} ${ko ? '적용' : '应用'}` : months.filter((month) => selectedSet.has(month)).join(', ') || (ko ? '명부' : '名册')}</option>)}
             </select></label>
             {chosen.code && <label>{ko ? '변경 사유' : '变更原因'} <input maxLength={500} value={chosen.reason} disabled={busy || disabled} onChange={(event) => update({ ...chosen, reason: event.target.value })} /></label>}
           </div>;

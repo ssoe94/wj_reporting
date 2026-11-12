@@ -98,7 +98,7 @@ class WorkbookBatchSerializer(StrictSerializer):
             codes = set()
             for row in month['rows']:
                 key = code_key(row['code'])
-                name = (identity(row['name']), row['employment_type'])
+                name = identity(row['name'])
                 source = files.get(row['source_file'])
                 coordinate = (row['source_file'], row['source_sheet'], row['source_row'])
                 if row['period'] != month['month'] or not source or source['employment_type'] != row['employment_type']:
