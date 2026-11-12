@@ -7,7 +7,12 @@ from .hr_views import HrRosterView, HrRosterDetailView, HrClassificationReferenc
 from .hr_views import HrLaborStandardView, HrLaborCalendarView, HrLaborActualPaymentView
 
 
+from .hr_views import HrDailyWorkView, HrDailyWorkPreviewView, HrPersonnelEventView
+
 urlpatterns = [
+    path('hr/daily-work/<str:day>/', HrDailyWorkView.as_view()),
+    path('hr/daily-work/<str:day>/preview/', HrDailyWorkPreviewView.as_view()),
+    path('hr/daily-work/<str:day>/events/', HrPersonnelEventView.as_view()),
     path('hr/labor-actual-payments/<str:month>/', HrLaborActualPaymentView.as_view()),
     path('hr/labor-standards/<str:month>/', HrLaborStandardView.as_view()),
     path('hr/labor-calendar/<str:month>/', HrLaborCalendarView.as_view()),

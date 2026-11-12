@@ -140,7 +140,7 @@ async function reset(page, ko = true) { await page.getByRole('button', { name: k
   browser = await playwright.chromium.launch({ headless: true });
   const ko = await fixture();
   await roster(ko.page); await waitRows(ko.page, 24);
-  assert.equal(await ko.page.locator('.hr-tabs a').count(), 4);
+  assert.equal(await ko.page.locator('.hr-tabs a').count(), 5);
   assert.equal(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), `/hr/roster?month=${MONTH}`);
   assert.deepEqual(await ko.page.locator('.hr-roster-summary strong').allTextContents(), ['18명', '6명', '5명']);
   await capture(ko.page, 'desktop-ko');

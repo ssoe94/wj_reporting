@@ -9,6 +9,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import hr_permissions
 from .hr_contract import ImportSerializer, SaveImportSerializer, LayoutSerializer, preview_payload, validate_month
 from .hr_permissions import IsHrAuthorized, IsHrSuperuser, IsHrLaborAuthorized
 from .hr_access_service import set_hr_access
@@ -20,6 +21,10 @@ from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_paylo
 from .hr_reference_service import reference_payload, save_reference
 from .hr_labor_contract import LaborStandardSaveSerializer, LaborCalendarSaveSerializer, LaborActualPaymentSaveSerializer
 from .hr_labor_service import standard_payload, calendar_payload, save_standard, save_calendar, actual_payment_payload, save_actual_payment
+
+from .hr_daily_contract import validate_day, DailyPreviewSerializer, DailySaveSerializer, PersonnelEventSerializer
+from .hr_daily_work import daily_work_payload, preview_daily_work, save_daily_work
+from .hr_personnel_events import append_personnel_event
 
 
 def validated_input(request, serializer_type, *, context=None):
@@ -171,3 +176,31 @@ class HrLaborActualPaymentView(HrBaseView):
     def put(self, request, month):
         validate_month(month)
         return Response(save_actual_payment(month, validated_input(request, LaborActualPaymentSaveSerializer), request.user))
+
+
+class HrDailyWorkView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, day):
+        return Response(daily_work_payload(validate_day(day), can_edit=hr_permissions.can_edit_hr_labor(request.user)))
+
+    def put(self, request, day):
+        day = validate_day(day)
+        return Response(save_daily_work(day, validated_input(request, DailySaveSerializer), request.user))
+
+
+class HrDailyWorkPreviewView(HrBaseView):
+    def post(self, request, day):
+        day = validate_day(day)
+        data = validated_input(request, DailyPreviewSerializer)
+        return Response(preview_daily_work(day, data, can_edit=hr_permissions.can_edit_hr_labor(request.user)))
+
+
+class HrPersonnelEventView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    @transaction.atomic
+    def post(self, request, day):
+        day = validate_day(day)
+        append_personnel_event(day, validated_input(request, PersonnelEventSerializer), request.user)
+        return Response(daily_work_payload(day, can_edit=True), status=201)

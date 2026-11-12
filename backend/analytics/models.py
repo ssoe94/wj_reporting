@@ -419,3 +419,47 @@ class HrLaborActualPaymentHistory(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['actual_payment', 'version'], name='hr_labor_payment_audit_unique')]
+
+
+class HrPersonnelEvent(models.Model):
+    """An append-only effective-dated change or a cancellation of one change."""
+
+    employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='personnel_events')
+    date = models.DateField(db_index=True)
+    kind = models.CharField(max_length=24)
+    target = models.OneToOneField('self', null=True, on_delete=models.PROTECT, related_name='cancellation')
+    changes = models.JSONField(default=dict)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['date', 'id']
+
+
+class HrDailyWork(models.Model):
+    """One date's explicit overrides. Unentered cells use the projected defaults."""
+
+    date = models.DateField(primary_key=True)
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=10)
+    overrides = models.JSONField(default=dict)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class HrDailyWorkHistory(models.Model):
+    workday = models.ForeignKey(HrDailyWork, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['workday', 'version'], name='hr_daily_work_audit_unique')]

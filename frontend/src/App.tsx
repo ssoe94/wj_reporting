@@ -41,12 +41,13 @@ import { ThemeSwitch } from './components/layout/ThemeSwitch';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
-import { canAccessHr, HR_PERSONNEL_PATH, HR_ROSTER_PATH, HR_LABOR_COST_PATH, HR_LABOR_STANDARDS_PATH } from './domains/auth/hr-access';
+import { canAccessHr, HR_PERSONNEL_PATH, HR_ROSTER_PATH, HR_LABOR_COST_PATH, HR_LABOR_STANDARDS_PATH, HR_DAILY_WORK_PATH } from './domains/auth/hr-access';
 import { INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 const PersonnelPage = lazy(() => import('./pages/hr/PersonnelPage'));
 const RosterPage = lazy(() => import('./pages/hr/RosterPage'));
+const DailyWorkPage = lazy(() => import('./pages/hr/DailyWorkPage'));
 const LaborStandardsPage = lazy(() => import('./pages/hr/LaborStandardsPage'));
 const LaborCostPage = lazy(() => import('./pages/hr/LaborCostPage'));
 
@@ -156,6 +157,7 @@ function useNavItems() {
     label: lang === 'ko' ? '인사·총무' : '人事·总务', icon: ClipboardList,
     children: [
       { to: HR_PERSONNEL_PATH, label: lang === 'ko' ? '인원 배치' : '人员配置', icon: ClipboardCheck },
+      { to: HR_DAILY_WORK_PATH, label: lang === 'ko' ? '일별 근무' : '每日出勤', icon: ClipboardCheck },
       { to: HR_ROSTER_PATH, label: lang === 'ko' ? '인원 명부' : '人员名册', icon: ClipboardCheck },
       { to: HR_LABOR_STANDARDS_PATH, label: lang === 'ko' ? '인건비 기준' : '人工成本标准', icon: ClipboardCheck },
       { to: HR_LABOR_COST_PATH, label: lang === 'ko' ? '인건비 집계' : '人工成本汇总', icon: BarChart3 },
@@ -523,6 +525,7 @@ function AppContent() {
   if (pathname === DEVELOPMENT_TASK_PATH) breadcrumbLabel = lang === 'ko' ? '개발 과제' : '开发任务';
   if (pathname === HR_PERSONNEL_PATH) breadcrumbLabel = lang === 'ko' ? '인원 배치' : '人员配置';
   if (pathname === HR_ROSTER_PATH) breadcrumbLabel = lang === 'ko' ? '인원 명부' : '人员名册';
+  if (pathname === HR_DAILY_WORK_PATH) breadcrumbLabel = lang === 'ko' ? '일별 근무' : '每日出勤';
   if (pathname === HR_LABOR_STANDARDS_PATH) breadcrumbLabel = lang === 'ko' ? '인건비 기준' : '人工成本标准';
   if (pathname === HR_LABOR_COST_PATH) breadcrumbLabel = lang === 'ko' ? '인건비 집계' : '人工成本汇总';
   else if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
@@ -908,6 +911,7 @@ function AppContent() {
             <Route path={DEVELOPMENT_TASK_PATH} element={<PrivateRoute><PageTransition><DevelopmentTasksPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_PERSONNEL_PATH} element={<PrivateRoute><PageTransition><PersonnelPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_ROSTER_PATH} element={<PrivateRoute><PageTransition><RosterPage /></PageTransition></PrivateRoute>} />
+            <Route path={HR_DAILY_WORK_PATH} element={<PrivateRoute><PageTransition><DailyWorkPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_LABOR_STANDARDS_PATH} element={<PrivateRoute><PageTransition><LaborStandardsPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_LABOR_COST_PATH} element={<PrivateRoute><PageTransition><LaborCostPage /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />

@@ -96,6 +96,22 @@ def save_actual_payment(month, data, actor):
     return actual_payment_payload(month)
 
 
+def payroll_row_basis(workspace, row):
+    """Use the same stored wage components and source coordinates in HR projections."""
+    components = row.get('payroll_components') or {}
+    return {
+        'month': workspace.month,
+        'workspace_version': workspace.version,
+        'base_salary': components.get('base_salary'),
+        'fixed_overtime': components.get('fixed_overtime'),
+        'gross_amount': row.get('amount'),
+        'title': row.get('title', ''),
+        'employment_type': row.get('employment_type'),
+        'department': row.get('source_department', ''),
+        'source': {key: row.get(key) for key in ('source_file', 'source_sheet', 'source_row')},
+    }
+
+
 def latest_payroll(employee, month):
     """Match confirmed code aliases AND name; no name-only or older-component fill."""
     from .hr_roster_service import codes_for
@@ -109,13 +125,9 @@ def latest_payroll(employee, month):
         if len(matches) > 1:
             raise ValueError('Ambiguous payroll identity; review the source month.')
         if matches:
-            row = matches[0]
-            components = row.get('payroll_components') or {}
-            return {'month': workspace.month, 'workspace_version': workspace.version,
-                    'base_salary': components.get('base_salary'), 'fixed_overtime': components.get('fixed_overtime'),
-                    'gross_amount': row.get('amount'), 'title': row.get('title', ''),
-                    'employment_type': row['employment_type'], 'department': row.get('source_department', ''),
-                    'source': {key: row.get(key) for key in ('source_file', 'source_sheet', 'source_row')}}
+            result = payroll_row_basis(workspace, matches[0])
+            result['employment_type'] = result['employment_type'] or employee.employment_type
+            return result
     return None
 
 
