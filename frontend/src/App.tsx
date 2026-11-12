@@ -41,11 +41,12 @@ import { ThemeSwitch } from './components/layout/ThemeSwitch';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
-import { canAccessHr, HR_PERSONNEL_PATH, HR_LABOR_COST_PATH } from './domains/auth/hr-access';
+import { canAccessHr, HR_PERSONNEL_PATH, HR_ROSTER_PATH, HR_LABOR_COST_PATH } from './domains/auth/hr-access';
 import { INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 const PersonnelPage = lazy(() => import('./pages/hr/PersonnelPage'));
+const RosterPage = lazy(() => import('./pages/hr/RosterPage'));
 const LaborCostPage = lazy(() => import('./pages/hr/LaborCostPage'));
 
 const ModelsPage = lazy(() => import('./pages/models'));
@@ -154,6 +155,7 @@ function useNavItems() {
     label: lang === 'ko' ? '인사·총무' : '人事·总务', icon: ClipboardList,
     children: [
       { to: HR_PERSONNEL_PATH, label: lang === 'ko' ? '인원 배치' : '人员配置', icon: ClipboardCheck },
+      { to: HR_ROSTER_PATH, label: lang === 'ko' ? '인원 명부' : '人员名册', icon: ClipboardCheck },
       { to: HR_LABOR_COST_PATH, label: lang === 'ko' ? '인건비 집계' : '人工成本汇总', icon: BarChart3 },
     ],
   }] : [];
@@ -518,6 +520,7 @@ function AppContent() {
   let breadcrumbLabel = t('brand');
   if (pathname === DEVELOPMENT_TASK_PATH) breadcrumbLabel = lang === 'ko' ? '개발 과제' : '开发任务';
   if (pathname === HR_PERSONNEL_PATH) breadcrumbLabel = lang === 'ko' ? '인원 배치' : '人员配置';
+  if (pathname === HR_ROSTER_PATH) breadcrumbLabel = lang === 'ko' ? '인원 명부' : '人员名册';
   if (pathname === HR_LABOR_COST_PATH) breadcrumbLabel = lang === 'ko' ? '인건비 집계' : '人工成本汇总';
   else if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
@@ -901,6 +904,7 @@ function AppContent() {
             {/* Admin routes */}
             <Route path={DEVELOPMENT_TASK_PATH} element={<PrivateRoute><PageTransition><DevelopmentTasksPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_PERSONNEL_PATH} element={<PrivateRoute><PageTransition><PersonnelPage /></PageTransition></PrivateRoute>} />
+            <Route path={HR_ROSTER_PATH} element={<PrivateRoute><PageTransition><RosterPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_LABOR_COST_PATH} element={<PrivateRoute><PageTransition><LaborCostPage /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* Legacy URL compatibility */}

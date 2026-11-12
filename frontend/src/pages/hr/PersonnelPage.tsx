@@ -6,7 +6,7 @@ import { getHrAccess, getHrRoster, updateHrAccess, updateHrWorkspace } from '../
 import { buildAssignments, getDepartmentTree, getDescendantIds, moveEmployee, validateDepartments, MAX_DEPARTMENTS } from '../../domains/hr/layout';
 import type { HrAccessUser, HrDepartment, HrEmployee, HrWorkspace } from '../../domains/hr/types';
 import type { HrRosterEntry } from '../../domains/hr/workbook-types';
-import HrRosterPanel from './HrRosterPanel';
+import { Link } from 'react-router-dom';
 import HrImportPanel from './HrImportPanel';
 import HrWorkbookImportPanel from './HrWorkbookImportPanel';
 import HrAllocationBoard from './HrAllocationBoard';
@@ -61,15 +61,17 @@ export default function PersonnelPage() {
   const { workspace, setWorkspace, loading, error, allowed, refresh } = useHrWorkspace(month);
   const [roster, setRoster] = useState<HrRosterEntry[]>([]);
   const [rosterError, setRosterError] = useState(false);
+  const [rosterScope, setRosterScope] = useState('');
   const [rosterReload, setRosterReload] = useState(0);
   const reloadRoster = () => setRosterReload((value) => value + 1);
   useEffect(() => {
     const controller = new AbortController();
     setRoster([]);
+    setRosterScope('');
     setRosterError(false);
     if (allowed) {
       getHrRoster(month, controller.signal).then((entries) => {
-        if (!controller.signal.aborted) setRoster(entries);
+        if (!controller.signal.aborted) { setRoster(entries); setRosterScope(`${user?.id}:${month}`); }
       }).catch(() => { if (!controller.signal.aborted) setRosterError(true); });
     }
     return () => controller.abort();
@@ -217,6 +219,7 @@ export default function PersonnelPage() {
   }
 
   return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy || workbookDraft} actions={<>
+    {allowed && <><Link className="hr-button" to={`/hr/roster?month=${month}`}>{ko ? '명부 보기' : '查看名册'}</Link><span className="hr-roster-active-count">{ko ? '재직' : '在职'} {rosterError ? (ko ? '조회 실패' : '加载失败') : rosterScope === `${user?.id}:${month}` ? `${roster.filter((item) => item.status === 'active').length}${ko ? '명' : '人'}` : '…'}</span></>}
     {hasCompanyCells && missingCompanyCells && <button className="hr-button" disabled={busy || Boolean(departmentForm)} onClick={applyCompanyCells}><Plus size={15} />{ko ? '추가 부문 적용' : '应用新增部门'}</button>}
     <button className="hr-button" disabled={!dirty || busy} onClick={discard}><Undo2 size={15} />{ko ? '되돌리기' : '撤销更改'}</button>
     <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button>
@@ -229,7 +232,6 @@ export default function PersonnelPage() {
       {notice && <p className="hr-floating-notice" role="status" aria-live="polite">{notice}</p>}
       {hasCompanyCells || departments.length > 0 ? <HrAllocationBoard key={month} departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={move} disabled={busy || Boolean(departmentForm)} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><p>{ko ? '아래에서 회사 임금표를 올리면 저장된 기본 분류로 인원이 배치됩니다.' : '在下方上传公司工资表后，系统将按已保存的基础分类配置人员。'}</p></div>}
       <HrSource workspace={workspace} />
-      <HrRosterPanel key={`${user?.id}:${month}`} month={month} entries={roster} onUpdated={setRoster} error={rosterError} onRetry={reloadRoster} disabled={busy || workbookDraft} />
       <HrWorkbookImportPanel roster={roster} workspace={workspace} disabled={dirty || saving || importBusy || Boolean(departmentForm)} onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); reloadRoster(); setNotice(ko ? '회사 임금표를 저장했습니다.' : '已保存公司工资表。'); }} />
       <details className="hr-panel hr-disclosure"><summary>{ko ? '기타 형식 · 단일 월 가져오기' : '其他格式 · 导入单月'}</summary>
       <HrImportPanel workspace={workspace} disabled={dirty || saving || workbookBusy || workbookDraft || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />

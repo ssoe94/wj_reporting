@@ -16,7 +16,7 @@ from .hr_service import save_import, save_layout, workspace_payload
 from .models import HrAccessGrant, HrMonthWorkspace
 from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializer, WorkbookCommitSerializer
 from .hr_workbook_service import build_preview, save_batch
-from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload
+from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload, roster_history_payload
 from .hr_reference_service import reference_payload, save_reference
 
 
@@ -124,6 +124,10 @@ class HrRosterView(HrBaseView):
 
 
 class HrRosterDetailView(HrBaseView):
+    def get(self, request, month, employee_id):
+        validate_month(month)
+        return Response(roster_history_payload(employee_id))
+
     def patch(self, request, month, employee_id):
         validate_month(month)
         edit_roster(employee_id, validated_input(request, RosterUpdateSerializer), request.user)

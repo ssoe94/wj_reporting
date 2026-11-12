@@ -273,3 +273,45 @@
 }
 
 @media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month select, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }
+
+/* Full roster uses the existing HR surfaces and table rhythm. */
+.hr-roster-page-panel { min-width:0; padding:16px; }
+.hr-summary-strip.hr-roster-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.hr-roster-summary > button[aria-pressed=true] { background:var(--wj-accent-soft); }
+.hr-roster-summary span { font-size:14px; }
+.hr-roster-summary > button { border-bottom:0; border-inline-end:1px solid var(--hr-border); }
+.hr-roster-summary > button:last-child { border-inline-end:0; }
+.hr-roster-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin:14px 0; }
+.hr-roster-filters .hr-field { margin:0; min-width:140px; flex:1; }
+.hr-roster-filters .hr-field:first-child { flex:2; min-width:220px; }
+.hr-roster-absent { min-height:44px; }
+.hr-roster-result-count { margin:10px 0; color:var(--hr-muted); font-size:14px; }
+.hr-roster-table { max-width:100%; max-height:65vh; overflow:auto; }
+.hr-roster-table table { min-width:1080px; }
+.hr-roster-table th { position:sticky; top:0; z-index:1; background:var(--hr-soft); white-space:nowrap; }
+.hr-roster-table :is(th, td) { vertical-align:middle; font-size:14px; }
+.hr-roster-expand { display:flex; align-items:center; gap:7px; min-height:44px; padding:6px 4px; border:0; background:transparent; color:var(--hr-accent); text-align:left; white-space:nowrap; }
+.hr-roster-editor { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; padding:14px; border:1px solid var(--hr-border); border-radius:7px; background:var(--hr-soft); }
+.hr-roster-editor > strong { flex-basis:100%; font-size:15px; }
+.hr-roster-editor .hr-field { flex:1; min-width:150px; margin:0; }
+.hr-roster-editor .hr-roster-reason { flex:2; min-width:220px; }
+.hr-roster-history { max-width:1100px; padding:10px; }
+.hr-roster-history h3 { font-size:16px; }
+.hr-roster-history h3 span { margin-left:8px; font-size:14px; font-weight:400; color:var(--hr-muted); }
+.hr-roster-history-list { margin:12px 0 0; padding:0; list-style:none; }
+.hr-roster-history-list > li { padding:12px 0; border-top:1px solid var(--hr-border); }
+.hr-roster-history-meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--hr-muted); }
+.hr-roster-history-list ul { display:flex; flex-wrap:wrap; gap:6px 22px; padding:0; margin:8px 0; list-style:none; }
+.hr-roster-history-list p { margin:5px 0; white-space:normal; overflow-wrap:anywhere; }
+.hr-roster-active-count { display:inline-flex; align-items:center; min-height:44px; font-size:14px; white-space:nowrap; }
+@media (max-width:700px) {
+  .hr-roster-page-panel { padding:12px; }
+  .hr-roster-filters .hr-field:first-child { min-width:0; flex-basis:100%; }
+  .hr-roster-filters .hr-field { min-width:0; flex-basis:calc(50% - 10px); }
+  .hr-roster-summary > button { padding:9px 8px; }
+  .hr-roster-summary span { font-size:14px; }
+  .hr-roster-editor .hr-field, .hr-roster-editor .hr-roster-reason { min-width:0; flex-basis:100%; }
+  .hr-work-header .hr-tabs { gap:2px; }
+  .hr-work-header .hr-tabs a { padding:8px 7px; gap:4px; }
+  .hr-header-actions { flex-wrap:wrap; min-width:0; }
+}

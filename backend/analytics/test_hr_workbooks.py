@@ -1,5 +1,6 @@
 """Synthetic payroll only: permissions, exact totals, atomicity and roster evidence."""
 from copy import deepcopy
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -12,6 +13,106 @@ from .hr_service import persist
 from .models import HrAccessGrant, HrMonthWorkspace, HrWorkspaceHistory, HrRosterEmployee, HrRosterCodeHistory
 
 BASE = '/api/analytics/hr/'
+
+
+class HrRosterHistoryTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.hr = User.objects.create_user('synthetic-history-hr')
+        self.superuser = User.objects.create_user('synthetic-history-root', is_superuser=True)
+        self.staff = User.objects.create_user('synthetic-history-staff', is_staff=True)
+        self.inactive = User.objects.create_user('synthetic-history-inactive', is_superuser=True, is_active=False)
+        self.grant = HrAccessGrant.objects.create(user=self.hr, enabled=True)
+        self.employee = HrRosterEmployee.objects.create(
+            code='90001', name='Synthetic History', employment_type='contract',
+            department='Synthetic team', first_month='2026-01', last_month='2026-11',
+        )
+        self.url = BASE + f'roster/2026-11/{self.employee.pk}/'
+        self.client = APIClient()
+        self.client.force_authenticate(self.hr)
+
+    def history(self, **extra):
+        return HrRosterCodeHistory.objects.create(**{
+            'employee': self.employee, 'previous_code': '90000', 'new_code': '90001',
+            'previous_status': 'active', 'new_status': 'departed',
+            'previous_employment_type': 'hourly', 'new_employment_type': 'contract',
+            'previous_department': 'Synthetic old team', 'new_department': 'Synthetic team',
+            'actor': self.hr, 'actor_label': 'Synthetic reviewer', 'reason': 'Synthetic correction',
+        } | extra)
+
+    def test_history_requires_active_hr_access_and_never_caches_errors(self):
+        self.history()
+        for user in (self.staff, self.inactive):
+            self.client.force_authenticate(user)
+            response = self.client.get(self.url)
+            self.assertEqual(response.status_code, 403)
+            self.assertTrue({'private', 'no-store'} <= set(response['Cache-Control'].split(', ')))
+            self.assertNotIn('history', response.data)
+        self.grant.enabled = False
+        self.grant.save()
+        self.client.force_authenticate(self.hr)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get(self.url).status_code, (401, 403))
+
+    def test_authorized_history_preserves_server_snapshot_and_no_store(self):
+        item = self.history()
+        for user in (self.hr, self.superuser):
+            self.client.force_authenticate(user)
+            response = self.client.get(self.url)
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue({'private', 'no-store'} <= set(response['Cache-Control'].split(', ')))
+            self.assertEqual(response['Pragma'], 'no-cache')
+            self.assertIn('Authorization', response['Vary'])
+            row = response.json()['history'][0]
+            self.assertEqual(row['id'], item.pk)
+            self.assertEqual(row['actor_label'], 'Synthetic reviewer')
+            self.assertEqual(row['reason'], 'Synthetic correction')
+            self.assertEqual(row['previous_status'], 'active')
+            self.assertEqual(row['new_status'], 'departed')
+            self.assertEqual(row['previous_employment_type'], 'hourly')
+            self.assertEqual(row['new_employment_type'], 'contract')
+            self.assertEqual(row['previous_department'], 'Synthetic old team')
+            self.assertEqual(row['new_department'], 'Synthetic team')
+            self.assertEqual(row['previous_code'], '90000')
+            self.assertEqual(row['new_code'], '90001')
+            self.assertIn('T', row['created_at'])
+            self.assertNotIn('actor_id', row)
+        self.assertEqual(HrRosterCodeHistory.objects.count(), 1)
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.version, 1)
+
+    def test_history_newest_first_limit_twenty_and_stable_timestamp_ties(self):
+        latest = timezone.now()
+        ids = []
+        for index in range(25):
+            item = self.history(reason=f'Synthetic event {index}')
+            HrRosterCodeHistory.objects.filter(pk=item.pk).update(created_at=latest)
+            ids.append(item.pk)
+        older = self.history(reason='Synthetic older event with highest id')
+        HrRosterCodeHistory.objects.filter(pk=older.pk).update(created_at=latest - timedelta(days=1))
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['id'] for item in response.data['history']], list(reversed(ids))[:20])
+
+    def test_history_is_scoped_to_employee_and_empty_is_read_only(self):
+        other = HrRosterEmployee.objects.create(
+            code='90002', name='Synthetic Other', employment_type='hourly',
+            first_month='2026-01', last_month='2026-11',
+        )
+        self.history(employee=other)
+        self.assertEqual(self.client.get(self.url).data, {'history': []})
+        self.assertEqual(HrRosterCodeHistory.objects.count(), 1)
+        self.assertEqual(HrRosterEmployee.objects.count(), 2)
+
+    def test_history_validates_month_and_missing_employee_and_has_no_delete(self):
+        for url, status in ((self.url.replace('2026-11', '2026-13'), 400),
+                            (BASE + 'roster/2026-11/999999/', 404)):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status)
+            self.assertTrue({'private', 'no-store'} <= set(response['Cache-Control'].split(', ')))
+        self.assertEqual(self.client.delete(self.url).status_code, 405)
+        self.assertTrue(HrRosterEmployee.objects.filter(pk=self.employee.pk).exists())
 
 
 def batch():

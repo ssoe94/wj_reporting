@@ -56,6 +56,13 @@ export type HrRosterEntry = {
   department: string; status: 'active' | 'departed'; first_month: string; last_month: string;
   version: number; previous_codes: string[]; in_month: boolean;
 };
+export type HrRosterHistory = {
+  id: number; created_at: string; actor_label: string; reason: string;
+  previous_code: string; new_code: string;
+  previous_status: string; new_status: string;
+  previous_employment_type: string; new_employment_type: string;
+  previous_department: string; new_department: string;
+};
 export type HrCodeReview = {
   key: string; name: string; employment_type: HrEmploymentType;
   codes: { code: string; months: string[] }[];

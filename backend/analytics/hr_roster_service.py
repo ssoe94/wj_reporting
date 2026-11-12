@@ -64,6 +64,17 @@ def roster_payload(month):
     return {'employees': result}
 
 
+def roster_history_payload(employee_id):
+    employee = get_object_or_404(HrRosterEmployee, pk=employee_id)
+    history = employee.code_history.order_by('-created_at', '-pk').values(
+        'id', 'created_at', 'actor_label', 'reason',
+        'previous_code', 'new_code', 'previous_status', 'new_status',
+        'previous_employment_type', 'new_employment_type',
+        'previous_department', 'new_department',
+    )[:20]
+    return {'history': list(history)}
+
+
 def record_change(item, previous, new, reason, actor, *, new_status=None,
                   previous_employment_type=None, new_employment_type=None,
                   previous_department=None, new_department=None):
