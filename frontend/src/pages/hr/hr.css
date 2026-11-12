@@ -315,3 +315,59 @@
   .hr-work-header .hr-tabs a { padding:8px 7px; gap:4px; }
   .hr-header-actions { flex-wrap:wrap; min-width:0; }
 }
+
+.hr-labor-standards { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(340px,1fr); gap:16px; align-items:start; }
+.hr-labor-standards > * { min-width:0; }
+.hr-labor-rules-form, .hr-labor-calendar-form { padding:16px; }
+.hr-labor-standards .hr-section-heading { align-items:center; flex-wrap:wrap; }
+.hr-labor-standards .hr-section-heading > span { color:var(--hr-muted); font-size:14px; }
+.hr-labor-fieldset { border:0; padding:16px 0 0; margin:16px 0; min-width:0; border-top:1px solid var(--hr-border); }
+.hr-labor-fieldset legend { padding:0 8px 0 0; font-size:16px; font-weight:700; }
+.hr-labor-fields { display:flex; align-items:flex-start; flex-wrap:wrap; gap:12px; }
+.hr-labor-fields > .hr-field { flex:1; min-width:135px; }
+.hr-labor-fields > strong { min-width:62px; font-size:14px; padding-top:30px; }
+.hr-labor-fields .hr-checkbox { flex:1; min-width:180px; padding-top:24px; flex-wrap:wrap; }
+.hr-labor-pending-label { display:inline-block; color:var(--wj-warning); font-size:14px; font-weight:650; }
+.hr-labor-pending { color:var(--wj-warning); border:1px solid var(--wj-warning); border-radius:6px; padding:0 12px; }
+.hr-labor-pending summary, .hr-labor-history summary { min-height:44px; padding:11px 0; cursor:pointer; font-size:14px; font-weight:650; }
+.hr-labor-pending ul { margin:0 0 12px; padding-left:20px; }
+.hr-labor-standards .is-pending { border-color:var(--wj-warning); }
+.hr-labor-departments { width:100%; border-collapse:collapse; margin-bottom:10px; }
+.hr-labor-departments :is(th, td) { text-align:start; vertical-align:middle; padding:6px; font-size:14px; border-bottom:1px solid var(--hr-border); }
+.hr-labor-departments th:first-child { width:45%; }
+.hr-labor-departments input { width:100%; min-width:0; min-height:44px; border:1px solid var(--hr-border); border-radius:6px; padding:8px; background:var(--hr-surface); }
+.hr-labor-departments td:last-child { width:70px; }
+.hr-labor-departments .hr-button { padding:8px; min-width:44px; }
+.hr-labor-contribution { margin:16px 0; }
+.hr-labor-contribution h3 { font-size:15px; margin-bottom:12px; }
+.hr-labor-save { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.hr-labor-save .hr-field { flex:1; min-width:180px; margin:0; }
+.hr-labor-history { border-top:1px solid var(--hr-border); margin-top:16px; }
+.hr-labor-history ol { list-style:none; padding:0; margin:0; }
+.hr-labor-history ol > li { padding:12px 0; border-top:1px solid var(--hr-border); overflow-wrap:anywhere; font-size:14px; }
+.hr-labor-history-meta { display:flex; flex-wrap:wrap; gap:8px 16px; color:var(--hr-muted); }
+.hr-labor-history p { margin:8px 0; }
+.hr-labor-history ul { padding-left:20px; }
+.hr-labor-history ul li { margin:6px 0; }
+.hr-labor-calendar-scroll { max-width:100%; overflow-x:auto; }
+.hr-labor-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(44px,1fr)); gap:3px; }
+.hr-labor-weekday { text-align:center; padding:5px; color:var(--hr-muted); font-size:14px; }
+.hr-labor-day { display:flex; flex-direction:column; justify-content:center; gap:3px; align-items:center; min-width:44px; min-height:64px; border:1px solid var(--hr-border); border-radius:5px; padding:5px 2px; background:var(--hr-surface); }
+.hr-labor-day strong { font-size:16px; }
+.hr-labor-day span { font-size:14px; white-space:nowrap; }
+.hr-labor-day.is-rest { background:var(--hr-soft); }
+.hr-labor-day[aria-pressed=true] { border-color:var(--hr-accent); outline:2px solid var(--hr-accent); outline-offset:-2px; background:var(--wj-accent-soft); }
+.hr-labor-date-editor { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding-top:16px; }
+.hr-labor-date-editor .hr-field { flex:1; min-width:180px; margin:0; }
+@media (max-width:1100px) { .hr-labor-standards { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:700px) {
+  .hr-work-header .hr-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hr-work-header .hr-tabs a { white-space:normal; }
+  .hr-labor-rules-form, .hr-labor-calendar-form { padding:12px; }
+  .hr-labor-fields > .hr-field { min-width:0; flex-basis:calc(50% - 12px); }
+  .hr-labor-fields > strong { flex-basis:100%; padding:0; }
+  .hr-labor-fields .hr-checkbox { padding-top:0; }
+  .hr-labor-departments :is(th, td) { padding:5px 3px; }
+  .hr-labor-departments th:first-child { width:40%; }
+  .hr-labor-calendar-form .hr-labor-save .hr-field { flex-basis:100%; }
+}

@@ -341,3 +341,55 @@ class HrRosterCodeHistory(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     actor_label = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class HrLaborStandard(models.Model):
+    """A company rule set effective from this month until the next stored start."""
+    month = models.CharField(max_length=7, primary_key=True)
+    rules = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborCalendar(models.Model):
+    """Explicit date overrides only; no inferred public-holiday schedule."""
+    month = models.CharField(max_length=7, primary_key=True)
+    days = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborStandardHistory(models.Model):
+    standard = models.ForeignKey(HrLaborStandard, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['standard', 'version'], name='hr_labor_standard_audit_unique')]
+
+
+class HrLaborCalendarHistory(models.Model):
+    calendar = models.ForeignKey(HrLaborCalendar, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['calendar', 'version'], name='hr_labor_calendar_audit_unique')]

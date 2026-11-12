@@ -109,9 +109,9 @@ export function useHrWorkspace(month: string) {
   return { workspace: selectedWorkspace, setWorkspace, loading: loading || (allowed && !selectedWorkspace && !error), error, allowed, refresh: () => setReload((value) => value + 1) };
 }
 
-export function HrShell({ page, month, onMonthChange, monthDisabled, children, actions }: {
-  page: 'personnel' | 'roster' | 'labor-cost'; month: string; onMonthChange: (month: string) => void;
-  monthDisabled?: boolean; children: ReactNode; actions?: ReactNode;
+export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions }: {
+  page: 'personnel' | 'roster' | 'labor-cost' | 'labor-standards'; month: string; onMonthChange: (month: string) => void;
+  monthDisabled?: boolean; monthLabel?: string; children: ReactNode; actions?: ReactNode;
 }) {
   const { lang } = useLang();
   const ko = lang === 'ko';
@@ -131,9 +131,10 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children, a
         <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
         <Link className={page === 'roster' ? 'is-active' : ''} aria-current={page === 'roster' ? 'page' : undefined} to={`/hr/roster?month=${month}`}>{ko ? '인원 명부' : '人员名册'}</Link>
         <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
+        <Link className={page === 'labor-standards' ? 'is-active' : ''} aria-current={page === 'labor-standards' ? 'page' : undefined} to={`/hr/labor-standards?month=${month}`}>{ko ? '인건비 기준' : '人工成本标准'}</Link>
       </nav>}
       <div className="hr-month">
-        <span>{ko ? '대상 월' : '月份'}</span>
+        <span>{monthLabel ?? (ko ? '대상 월' : '月份')}</span>
         <select aria-label={ko ? '연도' : '年份'} value={month.slice(0, 4)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${event.target.value}-${month.slice(5)}`)}>
           {hrMonthYears(month).map((year) => <option key={year}>{year}</option>)}
         </select>

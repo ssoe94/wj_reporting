@@ -1,5 +1,6 @@
 export const HR_PERSONNEL_PATH = '/hr/personnel';
 export const HR_ROSTER_PATH = '/hr/roster';
+export const HR_LABOR_STANDARDS_PATH = '/hr/labor-standards';
 export const HR_LABOR_COST_PATH = '/hr/labor-cost';
 
 export function isHrRoute(route: string): boolean {

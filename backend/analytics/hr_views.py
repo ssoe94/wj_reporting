@@ -18,12 +18,14 @@ from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializ
 from .hr_workbook_service import build_preview, save_batch
 from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload, roster_history_payload
 from .hr_reference_service import reference_payload, save_reference
+from .hr_labor_contract import LaborStandardSaveSerializer, LaborCalendarSaveSerializer
+from .hr_labor_service import standard_payload, calendar_payload, save_standard, save_calendar
 
 
-def validated_input(request, serializer_type):
+def validated_input(request, serializer_type, *, context=None):
     if len(json.dumps(request.data, ensure_ascii=False).encode('utf-8')) > 6_000_000:
         raise serializers.ValidationError({'detail': '입력 크기는 6MB 이하여야 합니다.'})
-    serializer = serializer_type(data=request.data)
+    serializer = serializer_type(data=request.data, context=context or {})
     serializer.is_valid(raise_exception=True)
     return dict(serializer.validated_data)
 
@@ -132,3 +134,24 @@ class HrRosterDetailView(HrBaseView):
         validate_month(month)
         edit_roster(employee_id, validated_input(request, RosterUpdateSerializer), request.user)
         return Response(roster_payload(month))
+
+
+class HrLaborStandardView(HrBaseView):
+    def get(self, request, month):
+        validate_month(month)
+        return Response(standard_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        return Response(save_standard(month, validated_input(request, LaborStandardSaveSerializer), request.user))
+
+
+class HrLaborCalendarView(HrBaseView):
+    def get(self, request, month):
+        validate_month(month)
+        return Response(calendar_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        data = validated_input(request, LaborCalendarSaveSerializer, context={'month': month})
+        return Response(save_calendar(month, data, request.user))
