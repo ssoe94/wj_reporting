@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .hr_contract import ImportSerializer, SaveImportSerializer, LayoutSerializer, preview_payload, validate_month
-from .hr_permissions import IsHrAuthorized, IsHrSuperuser
+from .hr_permissions import IsHrAuthorized, IsHrSuperuser, IsHrLaborAuthorized
 from .hr_access_service import set_hr_access
 from .hr_service import save_import, save_layout, workspace_payload
 from .models import HrAccessGrant, HrMonthWorkspace
@@ -18,8 +18,8 @@ from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializ
 from .hr_workbook_service import build_preview, save_batch
 from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload, roster_history_payload
 from .hr_reference_service import reference_payload, save_reference
-from .hr_labor_contract import LaborStandardSaveSerializer, LaborCalendarSaveSerializer
-from .hr_labor_service import standard_payload, calendar_payload, save_standard, save_calendar
+from .hr_labor_contract import LaborStandardSaveSerializer, LaborCalendarSaveSerializer, LaborActualPaymentSaveSerializer
+from .hr_labor_service import standard_payload, calendar_payload, save_standard, save_calendar, actual_payment_payload, save_actual_payment
 
 
 def validated_input(request, serializer_type, *, context=None):
@@ -137,6 +137,8 @@ class HrRosterDetailView(HrBaseView):
 
 
 class HrLaborStandardView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
     def get(self, request, month):
         validate_month(month)
         return Response(standard_payload(month))
@@ -147,6 +149,8 @@ class HrLaborStandardView(HrBaseView):
 
 
 class HrLaborCalendarView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
     def get(self, request, month):
         validate_month(month)
         return Response(calendar_payload(month))
@@ -155,3 +159,15 @@ class HrLaborCalendarView(HrBaseView):
         validate_month(month)
         data = validated_input(request, LaborCalendarSaveSerializer, context={'month': month})
         return Response(save_calendar(month, data, request.user))
+
+
+class HrLaborActualPaymentView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, month):
+        validate_month(month)
+        return Response(actual_payment_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        return Response(save_actual_payment(month, validated_input(request, LaborActualPaymentSaveSerializer), request.user))

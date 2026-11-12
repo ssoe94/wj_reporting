@@ -29,11 +29,56 @@ test('two explicit employment files split seven months and retain source facts w
   assert.equal(result.months[0].rows.length, 2);
   assert.deepEqual(result.months[0].rows[0], { code: '00011', name: '合成员工甲', title: '合成职务',
     amount: '10.00', period: '2026-01', source_department: '合成部门', employment_type: 'contract',
-    source_file: 'contract', source_sheet: '工资', source_row: 2, original_code: '00011' });
+    source_file: 'contract', source_sheet: '工资', source_row: 2, original_code: '00011',
+    payroll_components: { base_salary: null, fixed_overtime: null } });
   assert.equal(result.months[0].rows[1].title, '');
   assert.ok(result.months.flatMap(({ rows }) => rows).every((row) => !Object.hasOwn(row, 'department_id')));
   assert.deepEqual(result.issues, []);
   assert.deepEqual(result.warnings, []);
+});
+
+test('contract payroll components retain only explicit source amounts, including zero and missing values', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班'];
+  const result = parseCompanyPayroll([source([headers,
+    [...contract('1月', '90001', '合成甲', '5000.00'), '3000.25', 0],
+    [...contract('2月', '90001', '合成甲', '4000.00'), '', '125.50'],
+    [...contract('3月', '90001', '合成甲', '6000.00'), null, '  '],
+  ])]);
+  assert.deepEqual(result.months.map(({ rows }) => rows[0].payroll_components), [
+    { base_salary: '3000.25', fixed_overtime: '0.00' },
+    { base_salary: null, fixed_overtime: '125.50' },
+    { base_salary: null, fixed_overtime: null },
+  ]);
+  assert.deepEqual(result.months.map(({ rows }) => rows[0].amount), ['5000.00', '4000.00', '6000.00']);
+  assert.equal(result.months[1].rows[0].source_row, 3);
+});
+
+test('missing or differently named component columns never infer a breakdown from gross salary', () => {
+  for (const headers of [contractHeaders, [...contractHeaders, '实发工资明细', '平时加班费', '基本工资合计']]) {
+    const result = parseCompanyPayroll([source([headers, [...contract(), '3000.00', '200.00', '4000.00']])]);
+    assert.deepEqual(result.months[0].rows[0].payroll_components, { base_salary: null, fixed_overtime: null });
+  }
+  const baseOnly = parseCompanyPayroll([source([[...contractHeaders, '基本工资'], [...contract(), '3000.00']])]);
+  assert.deepEqual(baseOnly.months[0].rows[0].payroll_components, { base_salary: '3000.00', fixed_overtime: null });
+  const hourly = parseCompanyPayroll([source([[...hourlyHeaders, '基本工资', '固定平时加班'],
+    ['1月', '合成部门', '90002', '合成乙', 8, '200.00', '100.00', '50.00']], 'hourly', 'hourly')]);
+  assert.equal(Object.hasOwn(hourly.months[0].rows[0], 'payroll_components'), false);
+});
+
+test('component formulas require numeric caches and exact optional headers must not be ambiguous', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班'];
+  const result = parseCompanyPayroll([source([headers, [...contract(),
+    { value: 3000.25, formula: 'A1' }, { value: 125.555, formatted: '125.56', formula: 'A2' }]])]);
+  assert.deepEqual(result.months[0].rows[0].payroll_components, { base_salary: '3000.25', fixed_overtime: '125.56' });
+  assert.match(result.warnings[0], /固定平时加班.*Excel 표시 금액/);
+  for (const invalid of [-1, true, '1.005', { value: undefined, formula: 'A1' },
+    { value: '', formula: 'A1' }, { value: 10, error: true }]) {
+    assert.throws(() => parseCompanyPayroll([source([headers, [...contract('1月', '90001', 'PRIVATE_SYNTHETIC_NAME'), invalid, 0]])]),
+      (error: Error) => error.message.includes('2행:') && !error.message.includes('PRIVATE_SYNTHETIC_NAME'));
+  }
+  for (const label of ['基本工资', '固定平时加班']) {
+    assert.throws(() => parseCompanyPayroll([source([[...headers, label], [...contract(), 3000, 0, 1]])]), /제목이 여러 개/);
+  }
 });
 
 test('header detection accepts first twenty rows and newline aliases but always selects 应发工资', () => {

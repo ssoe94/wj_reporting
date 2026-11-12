@@ -1,4 +1,4 @@
-import type { HrEmployee, HrImportRow, HrWorkspace } from './types';
+import type { HrEmployee, HrImportRow, HrPayrollComponents, HrWorkspace } from './types';
 
 export type HrEmploymentType = 'contract' | 'hourly';
 export type HrReferenceRow = {
@@ -17,6 +17,7 @@ export type HrPayrollSource = { id: string; filename: string; employment_type: H
 export type HrWorkbookRow = HrImportRow & {
   period: string; employment_type: HrEmploymentType; source_file: string;
   source_sheet: string; source_row: number; original_code: string;
+  payroll_components?: HrPayrollComponents;
 };
 export type HrWorkbookMonth = { month: string; rows: HrWorkbookRow[] };
 type HrWorkbookBatchFiles = {

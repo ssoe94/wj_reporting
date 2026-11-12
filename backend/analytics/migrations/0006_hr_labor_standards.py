@@ -73,4 +73,34 @@ class Migration(migrations.Migration):
                 'constraints': [models.UniqueConstraint(fields=('standard', 'version'), name='hr_labor_standard_audit_unique')],
             },
         ),
+        migrations.CreateModel(
+            name='HrLaborActualPayment',
+            fields=[
+                ('month', models.CharField(max_length=7, primary_key=True, serialize=False)),
+                ('payment', models.JSONField(default=dict)),
+                ('version', models.PositiveIntegerField(default=1)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('updated_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['month'],
+            },
+        ),
+        migrations.CreateModel(
+            name='HrLaborActualPaymentHistory',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('version', models.PositiveIntegerField()),
+                ('before', models.JSONField(default=dict)),
+                ('after', models.JSONField(default=dict)),
+                ('reason', models.CharField(max_length=500)),
+                ('actor_label', models.CharField(max_length=200)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('actor', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
+                ('actual_payment', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='history', to='analytics.hrlaboractualpayment')),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('actual_payment', 'version'), name='hr_labor_payment_audit_unique')],
+            },
+        ),
     ]

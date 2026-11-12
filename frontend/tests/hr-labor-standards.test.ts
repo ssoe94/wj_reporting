@@ -6,7 +6,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import ts from 'typescript';
 import * as labor from '../src/domains/hr/labor-standards.ts';
 import { canAccessHr } from '../src/domains/auth/hr-access.ts';
-import type { HrLaborCalendar, HrLaborRules, HrLaborStandards } from '../src/domains/hr/labor-standards.ts';
+import type { HrLaborActualPayments, HrLaborCalendar, HrLaborRules, HrLaborStandards } from '../src/domains/hr/labor-standards.ts';
 
 type Element = { type: unknown; props: Record<string, any> };
 const nodes = (value: any): Element[] => Array.isArray(value) ? value.flatMap(nodes)
@@ -16,18 +16,16 @@ const text = (value: any): string => Array.isArray(value) ? value.map(text).join
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 function rulesFixture(): HrLaborRules {
-  const missing = { rate_percent: null, base: null, fixed_amount: null };
+  const contribution = (keys: string[]) => ({ applies_to: { contract: null, hourly: null }, base: { rule: null, common_amount: null, employee_amounts: {}, lower: null, upper: null }, items: Object.fromEntries(keys.map((key) => [key, { employer_rate: null, employee_rate: null }])) });
   return {
     multipliers: { workday: '1.5', rest_day: '2', public_holiday: '3' },
     contract: { days_per_month: '21.75', hours_per_day: '8' },
-    hourly_premium: { enabled: false, confirmed: false },
+    hourly_premium: { enabled: true, confirmed: true },
     department_overtime: { '测试部门甲': '4', '测试部门乙': null },
-    weekday_excluded_titles: { titles: [], confirmed: false },
-    department_hours_include_fixed_overtime: null,
-    employer_contributions: {
-      social_insurance: { contract: { ...missing }, hourly: { ...missing } },
-      housing_fund: { contract: { ...missing }, hourly: { ...missing } },
-    },
+    weekday_excluded_titles: { titles: ['Synthetic senior'], confirmed: true },
+    department_hours_include_fixed_overtime: false,
+    hourly_rates: { company_default: { amount: '24.50', confirmed: false }, employee_overrides: [] },
+    contributions: { social_insurance: contribution(['pension', 'medical', 'unemployment', 'work_injury', 'maternity']), housing_fund: contribution(['housing_fund']) },
   };
 }
 function standardsFixture(): HrLaborStandards {
@@ -38,14 +36,16 @@ function calendarFixture(): HrLaborCalendar {
   return { month: '2026-11', version: 2, days: {}, history: [] };
 }
 
-function harness(kind: 'rules' | 'calendar' | 'page' = 'rules', options: { ko?: boolean; initial?: HrLaborStandards | HrLaborCalendar; user?: unknown } = {}) {
+function actualFixture(): HrLaborActualPayments { return { month: '2026-11', version: 3, measurement: 'actual', evidence_memo: '', history: [], amounts: { social_insurance: { total: null, contract: null, hourly: null }, housing_fund: { total: null, contract: null, hourly: null } } }; }
+
+function harness(kind: 'rules' | 'calendar' | 'actual' | 'page' = 'rules', options: { ko?: boolean; initial?: HrLaborStandards | HrLaborCalendar | HrLaborActualPayments; user?: unknown } = {}) {
   const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/hr/LaborStandardsPage.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const state: unknown[] = []; let cursor = 0; let error: unknown = null; let restarts = 0;
   let effects: (() => unknown)[] = [];
   const requests: { kind: string; month: string; payload: Record<string, unknown> }[] = [];
-  const initial = clone(options.initial ?? (kind === 'calendar' ? calendarFixture() : standardsFixture()));
+  const initial = clone(options.initial ?? (kind === 'calendar' ? calendarFixture() : kind === 'actual' ? actualFixture() : standardsFixture()));
   const getRequests: string[] = [];
   const dependencies: Record<string, unknown> = {
     'react/jsx-runtime': jsxRuntime,
@@ -58,9 +58,15 @@ function harness(kind: 'rules' | 'calendar' | 'page' = 'rules', options: { ko?: 
     '../../domains/auth/hr-access': { canAccessHr },
     '../../i18n': { useLang: () => ({ lang: options.ko === false ? 'zh' : 'ko' }) },
     '../../domains/hr/labor-standards': labor,
+    '../../domains/hr/api': { getHrRoster: async () => { getRequests.push('roster'); return []; } },
     '../../domains/hr/labor-standards-api': {
       getHrLaborStandards: async () => { getRequests.push('standards'); return standardsFixture(); },
       getHrLaborCalendar: async () => { getRequests.push('calendar'); return calendarFixture(); },
+      getHrLaborActualPayments: async () => { getRequests.push('actual'); return actualFixture(); },
+      saveHrLaborActualPayments: async (month: string, payload: Record<string, unknown>) => {
+        requests.push({ kind: 'actual', month, payload: clone(payload) }); if (error) throw error;
+        return { ...actualFixture(), month, version: Number(payload.version) + 1, amounts: clone(payload.amounts), evidence_memo: payload.evidence_memo, history: [] };
+      },
       saveHrLaborStandards: async (month: string, payload: Record<string, unknown>) => {
         requests.push({ kind: 'rules', month, payload: clone(payload) }); if (error) throw error;
         return { ...standardsFixture(), month, version: Number(payload.version) + 1, rules: clone(payload.rules), history: [] };
@@ -74,8 +80,8 @@ function harness(kind: 'rules' | 'calendar' | 'page' = 'rules', options: { ko?: 
   };
   const exports: Record<string, any> = {};
   new Function('require', 'exports', compiled)((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, exports);
-  const props = { initial, ko: options.ko !== false, onActivity: () => {}, restart: () => { restarts += 1; } };
-  const render = () => { cursor = 0; effects = []; return nodes(kind === 'page' ? exports.default() : (kind === 'rules' ? exports.LaborRulesForm(props) : exports.LaborCalendarForm(props))); };
+  const props = { initial, roster: [{ id: 1, code: '90001', name: '测试甲' }, { id: 2, code: '90002', name: '测试乙' }], ko: options.ko !== false, onActivity: () => {}, restart: () => { restarts += 1; } };
+  const render = () => { cursor = 0; effects = []; return nodes(kind === 'page' ? exports.default() : (kind === 'rules' ? exports.LaborRulesForm(props) : kind === 'actual' ? exports.LaborActualPaymentsForm(props) : exports.LaborCalendarForm(props))); };
   const field = (label: string) => {
     const node = render().find((node) => node.type === 'label' && text(node) === label);
     assert.ok(node, `Missing label ${label}`);
@@ -89,6 +95,7 @@ function harness(kind: 'rules' | 'calendar' | 'page' = 'rules', options: { ko?: 
   return { render, field, button, requests, getRequests, props, exports, restarts: () => restarts, runEffects: () => { for (const effect of effects) effect(); },
     failWith: (failure: unknown) => { error = failure; },
     change: (label: string, value: string) => field(label).props.onChange({ target: { value } }),
+    aria: (label: string) => { const input = render().find((node) => node.props['aria-label'] === label); assert.ok(input, label); return input; },
     submit: async () => { render().find((node) => node.type === 'form')!.props.onSubmit({ preventDefault() {} }); await setImmediate(); },
   };
 }
@@ -96,24 +103,26 @@ function harness(kind: 'rules' | 'calendar' | 'page' = 'rules', options: { ko?: 
 test('pending standards distinguish unknown values from confirmed zero and false', () => {
   const missing = rulesFixture();
   const pending = labor.pendingLaborItems(missing, true);
-  assert.equal(pending.length, 8);
+  assert.equal(pending.length, 12);
   assert.ok(pending.includes('测试部门乙 야근 시간 미입력'));
   const confirmed = clone(missing);
   confirmed.hourly_premium.confirmed = true;
   confirmed.weekday_excluded_titles.confirmed = true;
   confirmed.department_hours_include_fixed_overtime = false;
   confirmed.department_overtime['测试部门乙'] = '0';
-  for (const fund of Object.values(confirmed.employer_contributions)) for (const item of Object.values(fund)) {
-    item.rate_percent = '0'; item.base = 'fixed'; item.fixed_amount = '0';
+  confirmed.hourly_rates.company_default.confirmed = true;
+  for (const fund of Object.values(confirmed.contributions)) {
+    fund.applies_to = { contract: false, hourly: false }; fund.base.rule = 'common'; fund.base.common_amount = '0';
+    for (const item of Object.values(fund.items)) { item.employer_rate = '0'; item.employee_rate = '0'; }
   }
   assert.deepEqual(labor.pendingLaborItems(confirmed, true), []);
-  confirmed.employer_contributions.social_insurance.contract.fixed_amount = null;
-  assert.deepEqual(labor.pendingLaborItems(confirmed, true), ['사회보험 · 계약직 미입력']);
+  confirmed.contributions.social_insurance.base.common_amount = null;
+  assert.deepEqual(labor.pendingLaborItems(confirmed, true), ['사회보험 기준액 미입력']);
 });
 
 test('Chinese unknown labels contain no Korean and remain distinct from zero', () => {
   const pending = labor.pendingLaborItems(rulesFixture(), false);
-  assert.equal(pending.length, 8); assert.ok(pending.some((item) => item.includes('未确认')));
+  assert.equal(pending.length, 12); assert.ok(pending.some((item) => item.includes('未确认')));
   assert.ok(pending.some((item) => item.includes('未填写')));
   assert.equal(/[가-힣]/.test(pending.join(' ')), false);
 });
@@ -264,5 +273,87 @@ test('standards page denies ungranted and inactive accounts before fetching priv
   }
   const allowed = harness('page', { user: { id: 3, is_active: true, can_access_hr: true } });
   assert.ok(allowed.render().some((node) => node.type === 'HrShell' && node.props.page === 'labor-standards'));
-  allowed.runEffects(); assert.deepEqual(allowed.getRequests, ['standards', 'calendar']);
+  allowed.runEffects(); assert.deepEqual(allowed.getRequests, ['standards', 'calendar', 'actual', 'roster']);
+});
+
+
+test('current overview marks synthetic hourly defaults and missing rates without treating zero as missing', () => {
+  const rules = rulesFixture();
+  rules.contributions.social_insurance.items.maternity = { employer_rate: '0', employee_rate: '0' };
+  const rows = labor.laborSummaryRows(rules, '2026-10', true);
+  assert.equal(rows.find((row) => row.id === 'hourly')!.status, 'unconfirmed');
+  assert.match(rows.find((row) => row.id === 'hourly')!.value, /합성 기본값/);
+  assert.equal(rows.find((row) => row.id === 'social_insurance.pension')!.status, 'missing');
+  assert.equal(rows.find((row) => row.id === 'social_insurance.maternity')!.status, 'confirmed');
+  assert.ok(rows.every((row) => row.month === '2026-10'));
+  assert.equal(/[가-힣]/.test(JSON.stringify(labor.laborSummaryRows(rules, '2026-10', false))), false);
+  rules.hourly_rates.company_default = { amount: null, confirmed: true };
+  const absent = labor.laborSummaryRows(rules, '2026-10', true).find((row) => row.id === 'hourly')!;
+  assert.equal(absent.status, 'missing'); assert.equal(absent.value, '—');
+  rules.hourly_rates.company_default = { amount: '28.00', confirmed: false };
+  assert.ok(!labor.laborSummaryRows(rules, '2026-10', true).find((row) => row.id === 'hourly')!.value.includes('합성'));
+  rules.contributions.social_insurance.base = { ...rules.contributions.social_insurance.base, rule: 'common', lower: '1000', upper: '5000' };
+  assert.equal(labor.laborSummaryRows(rules, '2026-10', true).find((row) => row.id === 'social_insurance.bounds')!.value, '1000 / 5000');
+});
+
+test('hourly employee exceptions require roster employee, effective month, amount and reason', async () => {
+  const form = harness();
+  form.button('직원 시급 예외 추가').props.onClick();
+  form.change('기준 변경 사유', 'Synthetic hourly revision');
+  await form.submit(); assert.equal(form.requests.length, 0);
+  form.aria('시급 예외 직원 1').props.onChange({ target: { value: '2' } });
+  form.aria('시급 예외 시작 월 1').props.onChange({ target: { value: '2026-12' } });
+  form.aria('시급 예외 금액 1').props.onChange({ target: { value: '27.50' } });
+  form.aria('시급 예외 사유 1').props.onChange({ target: { value: 'Synthetic personal exception' } });
+  assert.equal(form.button('기준 저장').props.disabled, false);
+  await form.submit();
+  const rules = form.requests[0].payload.rules as HrLaborRules;
+  assert.deepEqual(rules.hourly_rates.employee_overrides, [{ employee_id: 2, effective_month: '2026-12', amount: '27.50', reason: 'Synthetic personal exception' }]);
+});
+
+test('engineer toggle edits the exact exclusion list without removing other titles', async () => {
+  const form = harness();
+  form.field('工程师도 평일 실적 야근 제외').props.onChange({ target: { checked: true } });
+  form.change('기준 변경 사유', 'Synthetic engineer decision');
+  await form.submit();
+  assert.deepEqual((form.requests[0].payload.rules as HrLaborRules).weekday_excluded_titles.titles, ['Synthetic senior', '工程师']);
+});
+
+test('actual payment validation permits exact and partial breakdowns and leaves derivation to server', () => {
+  const values = actualFixture().amounts;
+  values.social_insurance = { total: '500.00', contract: '350.00', hourly: '150.00' };
+  assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance.hourly = null; assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance.contract = '501'; assert.equal(labor.actualPaymentIssue(values), 'breakdown_mismatch');
+  values.social_insurance = { total: null, contract: '350', hourly: '150' }; assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance.hourly = null; assert.equal(labor.actualPaymentIssue(values), 'total_required');
+  values.social_insurance = { total: '500', contract: '350', hourly: '140' }; assert.equal(labor.actualPaymentIssue(values), 'breakdown_mismatch');
+  values.social_insurance = { total: '0', contract: '0', hourly: null }; assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance.total = '0.001'; assert.equal(labor.actualPaymentIssue(values), 'invalid_amount');
+  values.social_insurance = { total: '0.30', contract: '0.10', hourly: '0.20' }; assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance = { total: '999999999.99', contract: null, hourly: null }; assert.equal(labor.actualPaymentIssue(values), null);
+  values.social_insurance.total = '1000000000.00'; assert.equal(labor.actualPaymentIssue(values), 'invalid_amount');
+});
+
+test('actual payments save measured amounts with their independent version and evidence', async () => {
+  const form = harness('actual');
+  form.aria('사회보험 회사 부담 총액').props.onChange({ target: { value: '500.00' } });
+  form.change('실제 납부액 변경 사유', '  Synthetic bill correction  ');
+  await form.submit(); assert.equal(form.requests.length, 0, 'evidence required for actual amount');
+  form.change('납부 근거 메모', '  Synthetic bill-01  ');
+  await form.submit();
+  assert.deepEqual(form.requests, [{ kind: 'actual', month: '2026-11', payload: { version: 3, reason: 'Synthetic bill correction', evidence_memo: 'Synthetic bill-01', amounts: { social_insurance: { total: '500.00', contract: null, hourly: null }, housing_fund: { total: null, contract: null, hourly: null } } } }]);
+});
+
+test('actual payment 409 keeps amount, evidence and reason draft without implicit version rebase', async () => {
+  const form = harness('actual'); form.failWith({ response: { status: 409 } });
+  form.aria('사회보험 회사 부담 총액').props.onChange({ target: { value: '500' } });
+  form.change('납부 근거 메모', 'Synthetic bill'); form.change('실제 납부액 변경 사유', 'Synthetic conflict');
+  await form.submit();
+  form.props.initial.version = 9;
+  assert.equal(form.aria('사회보험 회사 부담 총액').props.value, '500');
+  assert.equal(form.field('납부 근거 메모').props.value, 'Synthetic bill');
+  assert.equal(form.field('실제 납부액 변경 사유').props.value, 'Synthetic conflict');
+  assert.equal(form.button('실제 납부액 저장').props.disabled, true);
+  await form.submit(); assert.equal(form.requests.length, 1); assert.equal(form.requests[0].payload.version, 3);
 });

@@ -371,3 +371,26 @@
   .hr-labor-departments th:first-child { width:40%; }
   .hr-labor-calendar-form .hr-labor-save .hr-field { flex-basis:100%; }
 }
+
+.hr-labor-overview table { width:100%; border-collapse:collapse; min-width:580px; }
+.hr-labor-overview :is(th, td) { font-size:14px; padding:8px 10px; text-align:start; border-bottom:1px solid var(--hr-border); vertical-align:middle; }
+.hr-labor-overview thead th { background:var(--hr-soft); }
+.hr-labor-overview tbody th { font-weight:600; }
+.hr-labor-side-column { min-width:0; }
+.hr-hourly-override { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; padding:12px 0; border-top:1px solid var(--hr-border); }
+.hr-hourly-override .hr-field { min-width:0; margin:0; }
+.hr-hourly-override .hr-button { justify-self:start; }
+.hr-labor-rate-table { width:100%; border-collapse:collapse; margin:12px 0; }
+.hr-labor-rate-table :is(th,td) { padding:6px; text-align:start; font-size:14px; border-bottom:1px solid var(--hr-border); vertical-align:middle; }
+.hr-labor-rate-table input { width:100%; min-width:0; min-height:44px; border:1px solid var(--hr-border); border-radius:6px; padding:8px; background:var(--hr-surface); }
+.hr-labor-rate-table th:first-child { width:22%; }
+.hr-labor-employee-bases { border-inline-start:2px solid var(--hr-border); padding-inline-start:12px; margin:12px 0; }
+.hr-labor-employee-bases .hr-labor-fields { align-items:flex-end; }
+.hr-labor-employee-bases .hr-button { margin-bottom:13px; }
+.hr-labor-actual-form { min-width:0; padding:16px; }
+@media (max-width:700px) {
+  .hr-hourly-override { grid-template-columns:minmax(0,1fr); }
+  .hr-labor-actual-form { padding:12px; }
+  .hr-labor-rate-table :is(th,td) { padding:5px 3px; }
+  .hr-labor-overview { padding:12px; }
+}

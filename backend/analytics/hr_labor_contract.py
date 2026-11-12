@@ -5,8 +5,8 @@ import re
 
 from rest_framework import serializers
 
-from .hr_contract import StrictSerializer
-from .hr_labor_rules import DAY_TYPES, default_labor_rules
+from .hr_contract import StrictSerializer, validate_month
+from .hr_labor_rules import DAY_TYPES, SOCIAL_ITEMS, default_labor_rules
 
 
 def _invalid(field):
@@ -66,20 +66,63 @@ def validate_rules(data):
         _invalid('weekday_excluded_titles')
     result['weekday_excluded_titles'] = {'titles': titles, 'confirmed': _bool(excluded['confirmed'], 'weekday_excluded_titles')}
     result['department_hours_include_fixed_overtime'] = _bool(data['department_hours_include_fixed_overtime'], 'department_hours_include_fixed_overtime', nullable=True)
-    contributions = data['employer_contributions']
-    _keys(contributions, ('social_insurance', 'housing_fund'), 'employer_contributions')
-    result['employer_contributions'] = {}
-    for kind, types in contributions.items():
-        _keys(types, ('contract', 'hourly'), kind)
-        result['employer_contributions'][kind] = {}
-        for employment, config in types.items():
-            _keys(config, ('rate_percent', 'base', 'fixed_amount'), kind)
-            if config['base'] not in (None, 'gross', 'fixed'):
+    hourly = data['hourly_rates']
+    _keys(hourly, ('company_default', 'employee_overrides'), 'hourly_rates')
+    _keys(hourly['company_default'], ('amount', 'confirmed'), 'hourly_rates')
+    company = hourly['company_default']
+    overrides = hourly['employee_overrides']
+    if not isinstance(overrides, list) or len(overrides) > 5000:
+        _invalid('hourly_rates')
+    result['hourly_rates'] = {'company_default': {
+        'amount': _decimal(company['amount'], 'hourly_rates', '999999999.99', nullable=True, places=2),
+        'confirmed': _bool(company['confirmed'], 'hourly_rates')}, 'employee_overrides': []}
+    identities, referenced = set(), set()
+    for item in overrides:
+        _keys(item, ('employee_id', 'effective_month', 'amount', 'reason'), 'hourly_rates')
+        employee_id = item['employee_id']
+        if type(employee_id) is not int or not 0 < employee_id <= 9223372036854775807:
+            _invalid('employee_id')
+        validate_month(item['effective_month'])
+        key = (employee_id, item['effective_month'])
+        if key in identities or not isinstance(item['reason'], str) or not item['reason'].strip() or len(item['reason']) > 500:
+            _invalid('hourly_rates')
+        identities.add(key)
+        referenced.add(employee_id)
+        result['hourly_rates']['employee_overrides'].append({**item, 'reason': item['reason'].strip(),
+            'amount': _decimal(item['amount'], 'hourly_rates', '999999999.99', places=2)})
+    contributions = data['contributions']
+    _keys(contributions, ('social_insurance', 'housing_fund'), 'contributions')
+    result['contributions'] = {}
+    for kind, config in contributions.items():
+        _keys(config, ('applies_to', 'base', 'items'), kind)
+        _keys(config['applies_to'], ('contract', 'hourly'), kind)
+        base = config['base']
+        _keys(base, ('rule', 'common_amount', 'employee_amounts', 'lower', 'upper'), kind)
+        if base['rule'] not in (None, 'common', 'employee', 'gross'):
+            _invalid(kind)
+        clean_base = {'rule': base['rule'], 'employee_amounts': {}}
+        for field in ('common_amount', 'lower', 'upper'):
+            clean_base[field] = _decimal(base[field], kind, '999999999.99', nullable=True, places=2)
+        if clean_base['lower'] is not None and clean_base['upper'] is not None and Decimal(clean_base['lower']) > Decimal(clean_base['upper']):
+            _invalid(kind)
+        if not isinstance(base['employee_amounts'], dict) or len(base['employee_amounts']) > 5000:
+            _invalid(kind)
+        for employee_id, amount in base['employee_amounts'].items():
+            if not isinstance(employee_id, str) or not re.fullmatch(r'[1-9]\d{0,17}', employee_id):
                 _invalid(kind)
-            result['employer_contributions'][kind][employment] = {
-                'rate_percent': _decimal(config['rate_percent'], kind, 100, nullable=True),
-                'base': config['base'], 'fixed_amount': _decimal(config['fixed_amount'], kind, '999999999.99', nullable=True, places=2),
-            }
+            referenced.add(int(employee_id))
+            clean_base['employee_amounts'][employee_id] = _decimal(amount, kind, '999999999.99', places=2)
+        _keys(config['items'], SOCIAL_ITEMS if kind == 'social_insurance' else ('housing_fund',), kind)
+        items = {}
+        for item, rates in config['items'].items():
+            _keys(rates, ('employer_rate', 'employee_rate'), kind)
+            items[item] = {side: _decimal(value, kind, 100, nullable=True) for side, value in rates.items()}
+        result['contributions'][kind] = {'applies_to': {key: _bool(value, kind, nullable=True) for key, value in config['applies_to'].items()},
+                                        'base': clean_base, 'items': items}
+    if referenced:
+        from .models import HrRosterEmployee
+        if set(HrRosterEmployee.objects.filter(pk__in=referenced).values_list('pk', flat=True)) != referenced:
+            _invalid('employee_id')
     return result
 
 
@@ -110,3 +153,30 @@ class LaborCalendarSaveSerializer(StrictSerializer):
             if kind not in DAY_TYPES:
                 _invalid('days')
         return dict(sorted(value.items()))
+
+
+class LaborActualPaymentSaveSerializer(StrictSerializer):
+    version = serializers.IntegerField(min_value=0)
+    reason = serializers.CharField(max_length=500)
+    amounts = serializers.JSONField()
+    evidence_memo = serializers.CharField(max_length=1000, allow_blank=True)
+
+    def validate_amounts(self, value):
+        _keys(value, ('social_insurance', 'housing_fund'), 'amounts')
+        result = {}
+        for kind, amounts in value.items():
+            _keys(amounts, ('total', 'contract', 'hourly'), 'amounts')
+            parsed = {key: _decimal(amount, 'amounts', '999999999.99', nullable=True, places=2) for key, amount in amounts.items()}
+            known = sum((Decimal(parsed[key]) for key in ('contract', 'hourly') if parsed[key] is not None), Decimal(0))
+            complete = parsed['contract'] is not None and parsed['hourly'] is not None
+            if parsed['total'] is not None and (known > Decimal(parsed['total']) or complete and known != Decimal(parsed['total'])):
+                _invalid('amounts')
+            if complete and parsed['total'] is None:
+                parsed['total'] = _decimal(format(known, 'f'), 'amounts', '999999999.99', places=2)
+            result[kind] = parsed
+        return result
+
+    def validate(self, data):
+        if any(value is not None for amounts in data['amounts'].values() for value in amounts.values()) and not data['evidence_memo'].strip():
+            raise serializers.ValidationError({'evidence_memo': '실제 납부액의 근거 메모를 입력해 주세요.'})
+        return data

@@ -46,6 +46,11 @@ class SaveReferenceSerializer(StrictSerializer):
     reference = ReferenceSerializer()
 
 
+class PayrollComponentsSerializer(StrictSerializer):
+    base_salary = AmountField(allow_null=True)
+    fixed_overtime = AmountField(allow_null=True)
+
+
 class PayrollRowSerializer(StrictSerializer):
     code = serializers.CharField(max_length=64)
     name = serializers.CharField(max_length=100)
@@ -58,6 +63,12 @@ class PayrollRowSerializer(StrictSerializer):
     source_sheet = serializers.CharField(max_length=100)
     source_row = serializers.IntegerField(min_value=1, max_value=5100)
     original_code = serializers.CharField(max_length=500, allow_blank=True)
+    payroll_components = PayrollComponentsSerializer(required=False)
+
+    def validate(self, data):
+        if 'payroll_components' in data and data['employment_type'] != 'contract':
+            raise serializers.ValidationError('계약직 급여 원본의 기본급·고정 연장수당만 저장할 수 있습니다.')
+        return data
 
 
 class MonthSerializer(StrictSerializer):

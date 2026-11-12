@@ -4,10 +4,11 @@ from .views import AnalyticsProductionProgressView
 from .field_operations_views import AnalyticsFieldOperationsView
 from .development_task_views import DevelopmentTaskDetailView, DevelopmentTaskInitializeView, DevelopmentTaskListView
 from .hr_views import HrRosterView, HrRosterDetailView, HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
-from .hr_views import HrLaborStandardView, HrLaborCalendarView
+from .hr_views import HrLaborStandardView, HrLaborCalendarView, HrLaborActualPaymentView
 
 
 urlpatterns = [
+    path('hr/labor-actual-payments/<str:month>/', HrLaborActualPaymentView.as_view()),
     path('hr/labor-standards/<str:month>/', HrLaborStandardView.as_view()),
     path('hr/labor-calendar/<str:month>/', HrLaborCalendarView.as_view()),
     path('hr/roster/<str:month>/', HrRosterView.as_view()),

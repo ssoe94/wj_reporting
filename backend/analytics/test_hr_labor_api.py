@@ -150,10 +150,13 @@ class HrLaborApiTests(TestCase):
             data['rules'][field] = value
             with self.subTest(field=field, value=value):
                 self.assertEqual(self.client.put(self.standard, data, format='json').status_code, 400)
-        for field, value in [('rate_percent', '101'), ('fixed_amount', '1.005'), ('base', 'employee_deduction')]:
+        for field, value in [('common_amount', '1.005'), ('rule', 'employee_deduction')]:
             data = self.payload()
-            data['rules']['employer_contributions']['social_insurance']['contract'][field] = value
+            data['rules']['contributions']['social_insurance']['base'][field] = value
             self.assertEqual(self.client.put(self.standard, data, format='json').status_code, 400)
+        data = self.payload()
+        data['rules']['contributions']['social_insurance']['items']['pension']['employer_rate'] = '101'
+        self.assertEqual(self.client.put(self.standard, data, format='json').status_code, 400)
         data = self.payload()
         data['rules']['unknown'] = True
         self.assertEqual(self.client.put(self.standard, data, format='json').status_code, 400)
@@ -174,6 +177,7 @@ class HrLaborApiTests(TestCase):
                 self.assertEqual(self.client.put(url, data, format='json').status_code, 500)
             self.assertFalse(model.objects.exists())
             self.assertEqual(self.client.put(url, data, format='json').status_code, 200)
+            original = deepcopy(model.objects.get())
             changed = deepcopy(data) | {'version': 1}
             field = 'rules' if model == HrLaborStandard else 'days'
             if field == 'rules':
@@ -184,7 +188,7 @@ class HrLaborApiTests(TestCase):
                 self.assertEqual(self.client.put(url, changed, format='json').status_code, 500)
             stored = model.objects.get()
             self.assertEqual(stored.version, 1)
-            self.assertEqual(getattr(stored, field), data[field])
+            self.assertEqual(getattr(stored, field), getattr(original, field))
             self.assertEqual(audit.objects.count(), 1)
 
     def test_noop_does_not_increment_or_audit_and_history_is_bounded(self):

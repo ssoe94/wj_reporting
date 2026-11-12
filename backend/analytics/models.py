@@ -393,3 +393,29 @@ class HrLaborCalendarHistory(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['calendar', 'version'], name='hr_labor_calendar_audit_unique')]
+
+
+class HrLaborActualPayment(models.Model):
+    """Actual employer invoice payments, separate from estimated contribution rates."""
+    month = models.CharField(max_length=7, primary_key=True)
+    payment = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborActualPaymentHistory(models.Model):
+    actual_payment = models.ForeignKey(HrLaborActualPayment, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['actual_payment', 'version'], name='hr_labor_payment_audit_unique')]

@@ -8,7 +8,7 @@ from django.utils import timezone
 from .hr_contract import HrConflict, validate_month
 from .hr_labor_rules import default_labor_rules
 from .hr_service import check_version
-from .models import HrLaborStandard, HrLaborCalendar, HrLaborStandardHistory, HrLaborCalendarHistory
+from .models import HrLaborStandard, HrLaborCalendar, HrLaborStandardHistory, HrLaborCalendarHistory, HrLaborActualPayment, HrLaborActualPaymentHistory
 
 
 def lock_labor(scope):
@@ -80,3 +80,56 @@ def save_standard(month, data, actor):
 def save_calendar(month, data, actor):
     _save(HrLaborCalendar, HrLaborCalendarHistory, 'calendar', month, 'days', data, actor)
     return calendar_payload(month)
+
+
+def actual_payment_payload(month):
+    record = HrLaborActualPayment.objects.filter(pk=month).first()
+    payment = deepcopy(record.payment) if record else {'amounts': {
+        kind: {'total': None, 'contract': None, 'hourly': None} for kind in ('social_insurance', 'housing_fund')}, 'evidence_memo': ''}
+    return {'month': month, 'version': record.version if record else 0, 'measurement': 'actual', **payment, 'history': _history(record)}
+
+
+@transaction.atomic
+def save_actual_payment(month, data, actor):
+    payload = data | {'payment': {'amounts': data['amounts'], 'evidence_memo': data['evidence_memo']}}
+    _save(HrLaborActualPayment, HrLaborActualPaymentHistory, 'actual_payment', month, 'payment', payload, actor)
+    return actual_payment_payload(month)
+
+
+def latest_payroll(employee, month):
+    """Match confirmed code aliases AND name; no name-only or older-component fill."""
+    from .hr_roster_service import codes_for
+    from .hr_workbook_contract import code_key, identity
+    from .models import HrMonthWorkspace
+    validate_month(month)
+    codes = {code_key(code) for code in [employee.code, *codes_for(employee)]}
+    for workspace in HrMonthWorkspace.objects.filter(month__lte=month).order_by('-month').iterator():
+        matches = [row for row in workspace.employees
+                   if code_key(row['code']) in codes and identity(row['name']) == identity(employee.name)]
+        if len(matches) > 1:
+            raise ValueError('Ambiguous payroll identity; review the source month.')
+        if matches:
+            row = matches[0]
+            components = row.get('payroll_components') or {}
+            return {'month': workspace.month, 'workspace_version': workspace.version,
+                    'base_salary': components.get('base_salary'), 'fixed_overtime': components.get('fixed_overtime'),
+                    'gross_amount': row.get('amount'), 'title': row.get('title', ''),
+                    'employment_type': row['employment_type'], 'department': row.get('source_department', ''),
+                    'source': {key: row.get(key) for key in ('source_file', 'source_sheet', 'source_row')}}
+    return None
+
+
+def estimate_employee_day(employee, day, *, regular_hours=None, overtime_hours=None):
+    """Read-only adapter for the future daily entry/forecast flow; no endpoint yet."""
+    from .hr_labor_rules import employee_day, _date
+    month = _date(day).isoformat()[:7]
+    standard = effective_standard(month)
+    calendar = calendar_payload(month)
+    payroll = latest_payroll(employee, month)
+    # For earlier payroll periods use their recorded employment/department/title,
+    # not today's mutable roster classification.
+    person = {'id': employee.pk, 'employment_type': (payroll or {}).get('employment_type', employee.employment_type),
+              'department': (payroll or {}).get('department', employee.department), 'title': (payroll or {}).get('title', '')}
+    return employee_day(person, day, payroll=payroll, regular_hours=regular_hours, overtime_hours=overtime_hours,
+                        rules=standard['rules'], overrides=calendar['days'], version=standard['version'],
+                        effective_month=standard['month'], calendar_version=calendar['version'])

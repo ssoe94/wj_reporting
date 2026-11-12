@@ -1,10 +1,11 @@
 from django.urls import path
 from .hr_views import HrRosterView, HrRosterDetailView, HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
-from .hr_views import HrLaborStandardView, HrLaborCalendarView
+from .hr_views import HrLaborStandardView, HrLaborCalendarView, HrLaborActualPaymentView
 from injection.admin_approvals import AdminUserCreateView, SignupApprovalRequestsView, SignupApprovalApproveView
 from injection.views import UserProfileViewSet
 
 urlpatterns = [
+    path('api/analytics/hr/labor-actual-payments/<str:month>/', HrLaborActualPaymentView.as_view()),
     path('api/analytics/hr/labor-standards/<str:month>/', HrLaborStandardView.as_view()),
     path('api/analytics/hr/labor-calendar/<str:month>/', HrLaborCalendarView.as_view()),
     path('api/analytics/hr/roster/<str:month>/', HrRosterView.as_view()),

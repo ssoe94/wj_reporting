@@ -209,6 +209,51 @@ class HrWorkbookTests(TestCase):
         self.assertEqual(response.data['workspaces'][0]['employees'][0]['department_id'], 'injection')
         self.assertEqual(HrMonthWorkspace.objects.get(month='2026-02').version, 1)
 
+    def test_optional_payroll_components_keep_source_values_and_survive_other_group_import(self):
+        data = batch()
+        data['months'] = data['months'][:1]
+        components = {'base_salary': '3000.25', 'fixed_overtime': '0.00'}
+        data['months'][0]['rows'][0]['payroll_components'] = components
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        employee = response.data['workspaces'][0]['employees'][0]
+        self.assertEqual(employee['payroll_components'], components)
+        self.assertEqual(employee['period'], '2026-01')
+        self.assertEqual(employee['amount'], '10.10')
+        self.assertNotIn('payroll_components', response.data['workspaces'][0]['employees'][1])
+        hourly = deepcopy(data)
+        hourly['months'][0]['rows'] = hourly['months'][0]['rows'][1:]
+        hourly['months'][0]['rows'][0]['amount'] = '21.20'
+        hourly['files'] = hourly['files'][1:]
+        self.assertEqual(self.save(self.commit(hourly)).status_code, 200)
+        stored = HrMonthWorkspace.objects.get(month='2026-01')
+        self.assertEqual(next(row for row in stored.employees if row['code'] == '00011')['payroll_components'], components)
+        missing = batch()
+        missing['months'] = missing['months'][1:2]
+        missing['months'][0]['rows'][0]['payroll_components'] = {'base_salary': None, 'fixed_overtime': None}
+        response = self.save(self.commit(missing))
+        self.assertEqual(response.data['workspaces'][0]['employees'][0]['payroll_components'], {'base_salary': None, 'fixed_overtime': None})
+
+    def test_payroll_components_are_strict_and_part_of_reviewed_fingerprint(self):
+        for components in (None, {}, {'base_salary': '3000'},
+                           {'base_salary': '3000', 'fixed_overtime': '0', 'untrusted': '1'},
+                           {'base_salary': '-1', 'fixed_overtime': '0'},
+                           {'base_salary': '1.005', 'fixed_overtime': '0'},
+                           {'base_salary': True, 'fixed_overtime': '0'}):
+            with self.subTest(components=components):
+                data = batch()
+                data['months'][0]['rows'][0]['payroll_components'] = components
+                self.assertEqual(self.preview(data).status_code, 400)
+        data = batch()
+        data['months'][0]['rows'][1]['payroll_components'] = {'base_salary': None, 'fixed_overtime': None}
+        self.assertEqual(self.preview(data).status_code, 400)
+        data = batch()
+        data['months'][0]['rows'][0]['payroll_components'] = {'base_salary': '3000.00', 'fixed_overtime': '125.50'}
+        reviewed = self.commit(data)
+        reviewed['months'][0]['rows'][0]['payroll_components']['fixed_overtime'] = '250.00'
+        self.assertEqual(self.save(reviewed).status_code, 400)
+        self.assertEqual(HrMonthWorkspace.objects.count(), 0)
+
     def test_unknowns_kept_and_payroll_department_never_guesses_assignment(self):
         data = batch()
         data['classification']['rows'][0]['source_function'] = 'unknown function'

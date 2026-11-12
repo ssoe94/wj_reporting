@@ -1,5 +1,6 @@
 export type HrCurrency = "CNY" | "KRW" | "USD";
 export type HrCostBasis = "employer_total" | "gross_salary" | "custom";
+export type HrPayrollComponents = { base_salary: string | null; fixed_overtime: string | null };
 
 export type HrDepartment = {
   id: string;
@@ -20,6 +21,7 @@ export type HrImportRow = {
 
 export type HrEmployee = HrImportRow & {
   department_id: string | null;
+  payroll_components?: HrPayrollComponents;
 };
 
 export type HrAssignment = Pick<HrEmployee, "code" | "department_id">;

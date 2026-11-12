@@ -37,6 +37,7 @@ const FIXED_PAY = ['基本工资', '技能工资', '职务工资', '岗位工资
 type PayrollHeader = {
   index: number; code: number; name: number; title: number | null;
   department: number; amount: number; period: number; periodHeader: string; fixedPay: number[];
+  baseSalary: number | null; fixedOvertime: number | null;
 };
 type ReferenceHeader = {
   index: number; code: number | null; name: number; department: number;
@@ -149,6 +150,7 @@ function payrollHeader(sheet: HrWorkbookSheet): PayrollHeader {
       && amount != null && periodMapping.period != null) {
       return { index, code: mapping.code, name: mapping.name, title: mapping.title,
         department: mapping.source_department, amount, fixedPay: FIXED_PAY.map((label) => uniqueColumn(headers, [label])).filter((column) => column !== null), period: periodMapping.period,
+        baseSalary: uniqueColumn(headers, ['基本工资']), fixedOvertime: uniqueColumn(headers, ['固定平时加班']),
         periodHeader: normalizeHeader(headers.find((header) => header.index === periodMapping.period)?.label ?? '') };
     }
   }
@@ -225,7 +227,7 @@ function payrollMonth(cell: HrImportCell, header: string): string {
   return parsePayrollPeriod(text, `${fullYear ?? headerYear}-01`, header);
 }
 
-function payrollAmount(cell: HrImportCell): { amount: string; rounded: boolean } {
+function payrollAmount(cell: HrImportCell, label = '应发工资'): { amount: string; rounded: boolean } {
   const item = details(cell);
   assertUsableCell(item, true);
   let cents: number;
@@ -241,8 +243,17 @@ function payrollAmount(cell: HrImportCell): { amount: string; rounded: boolean }
     cents = displayCents;
     rounded = true;
   }
-  if (cents > MAX_EMPLOYEE_AMOUNT_CENTS) throw new Error('应发工资는 999999999.99 이하로 입력해 주세요.');
+  if (cents > MAX_EMPLOYEE_AMOUNT_CENTS) throw new Error(`${label}는 999999999.99 이하로 입력해 주세요.`);
   return { amount: centsToAmount(cents), rounded };
+}
+
+function optionalPayrollAmount(cell: HrImportCell, label: string): { amount: string | null; rounded: boolean } {
+  const item = details(cell);
+  assertUsableCell(item, true);
+  if (item.value == null || (typeof item.value === 'string' && item.value.trim() === '')) {
+    return { amount: null, rounded: false };
+  }
+  return payrollAmount(cell, label);
 }
 
 export function parseCompanyPayroll(
@@ -274,6 +285,15 @@ export function parseCompanyPayroll(
         at({ file: input.book.filename, sheet: sheet.name, row: header.index + 1 },
           new Error('직무 제목이 여러 개입니다. 직무 열을 한 개만 남겨 주세요.'));
       }
+      if (input.employment_type === 'contract') {
+        const headers = getHeaderColumns(sheet, header.index);
+        for (const label of ['基本工资', '固定平时加班']) {
+          if (headers.filter((column) => normalizeHeader(column.label) === label).length > 1) {
+            at({ file: input.book.filename, sheet: sheet.name, row: header.index + 1 },
+              new Error(`${label} 제목이 여러 개입니다. 원본 열을 한 개만 남겨 주세요.`));
+          }
+        }
+      }
       for (let index = header.index + 1; index < sheet.rows.length; index += 1) {
         const values = sheet.rows[index];
         if (isBlankRow(values)) continue;
@@ -294,6 +314,14 @@ export function parseCompanyPayroll(
           const row: HrWorkbookRow = { code, name, title, amount, period,
             source_department: sourceDepartment, employment_type: input.employment_type,
             source_file: input.id, source_sheet: sheet.name, source_row: index + 1, original_code: originalCode };
+          if (input.employment_type === 'contract') {
+            const base = optionalPayrollAmount(header.baseSalary == null ? undefined : values[header.baseSalary], '基本工资');
+            const fixed = optionalPayrollAmount(header.fixedOvertime == null ? undefined : values[header.fixedOvertime], '固定平时加班');
+            row.payroll_components = { base_salary: base.amount, fixed_overtime: fixed.amount };
+            for (const [label, component] of [['基本工资', base], ['固定平时加班', fixed]] as const) {
+              if (component.rounded) warnings.add(`${context(location, code)}: ${label} 저장된 소수 금액 대신 Excel 표시 금액(소수 두 자리)을 사용했습니다.`);
+            }
+          }
           let fixedPay: number | null = null;
           if (input.employment_type === 'contract' && header.fixedPay.length === FIXED_PAY.length) {
             try {
