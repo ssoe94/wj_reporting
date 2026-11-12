@@ -3,7 +3,9 @@ from copy import deepcopy
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .hr_service import persist
@@ -248,11 +250,122 @@ class HrWorkbookTests(TestCase):
         self.assertEqual(self.client.patch(path, change, format='json').status_code, 409)
         history = HrRosterCodeHistory.objects.get()
         self.assertEqual((history.previous_code, history.new_code, history.actor_id), (employee['code'], '90003', self.hr.pk))
+        self.assertEqual((history.previous_status, history.new_status), ('active', 'active'))
+        self.assertEqual(HrRosterEmployee.objects.get(pk=employee['id']).normalized_code, '90003')
         self.assertTrue(next(item for item in self.client.get(BASE + 'roster/2026-01/').data['employees'] if item['id'] == employee['id'])['in_month'])
         with patch('analytics.hr_roster_service.record_change', side_effect=RuntimeError('synthetic rollback')):
             failed = self.client.patch(path, change | {'version': 2, 'code': '90004'}, format='json')
             self.assertEqual(failed.status_code, 500)
         self.assertEqual(HrRosterEmployee.objects.get(pk=employee['id']).code, '90003')
+
+    def test_roster_status_change_records_before_after_reason_server_actor_and_time(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        employee = HrRosterEmployee.objects.get(employment_type='contract')
+        path = f'{BASE}roster/2026-11/{employee.pk}/'
+        change = {'version': 1, 'status': 'departed', 'reason': 'Synthetic departure confirmation'}
+        for forged in ({'actor': self.staff.pk}, {'actor_label': 'forged'}, {'created_at': '2000-01-01T00:00:00Z'}):
+            self.assertEqual(self.client.patch(path, change | forged, format='json').status_code, 400)
+        before = timezone.now()
+        response = self.client.patch(path, change, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        employee.refresh_from_db()
+        self.assertEqual((employee.status, employee.version), ('departed', 2))
+        history = employee.code_history.get()
+        self.assertEqual((history.previous_code, history.new_code), (employee.code, employee.code))
+        self.assertEqual((history.previous_status, history.new_status), ('active', 'departed'))
+        self.assertEqual((history.reason, history.actor_id, history.actor_label), (change['reason'], self.hr.pk, self.hr.username))
+        self.assertLessEqual(before, history.created_at)
+        self.assertLessEqual(history.created_at, timezone.now())
+        self.assertEqual(self.client.patch(path, change, format='json').status_code, 409)
+        payload = next(row for row in response.data['employees'] if row['id'] == employee.pk)
+        self.assertEqual(payload['previous_codes'], [])
+
+    def test_roster_status_reason_is_required_and_nonblank(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        employee = HrRosterEmployee.objects.get(employment_type='contract')
+        for reason in ({}, {'reason': ''}, {'reason': '   '}):
+            response = self.client.patch(f'{BASE}roster/2026-11/{employee.pk}/', {
+                'version': 1, 'status': 'departed', **reason,
+            }, format='json')
+            self.assertEqual(response.status_code, 400, response.data)
+        employee.refresh_from_db()
+        self.assertEqual((employee.status, employee.version), ('active', 1))
+        self.assertFalse(employee.code_history.exists())
+
+    def test_roster_status_history_failure_rolls_back_entire_edit(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        employee = HrRosterEmployee.objects.get(employment_type='contract')
+        with patch.object(HrRosterCodeHistory.objects, 'create', side_effect=RuntimeError('synthetic audit failure')):
+            response = self.client.patch(f'{BASE}roster/2026-11/{employee.pk}/', {
+                'version': 1, 'status': 'departed', 'code': '90003', 'reason': 'Synthetic combined edit',
+            }, format='json')
+            self.assertEqual(response.status_code, 500)
+        employee.refresh_from_db()
+        self.assertEqual((employee.code, employee.normalized_code, employee.status, employee.version), ('00011', '11', 'active', 1))
+        self.assertFalse(employee.code_history.exists())
+
+    def test_roster_combined_edit_has_one_complete_history(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        employee = HrRosterEmployee.objects.get(employment_type='contract')
+        response = self.client.patch(f'{BASE}roster/2026-11/{employee.pk}/', {
+            'version': 1, 'status': 'departed', 'code': '00090003', 'reason': 'Synthetic combined edit',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        employee.refresh_from_db()
+        self.assertEqual((employee.code, employee.normalized_code, employee.status), ('00090003', '90003', 'departed'))
+        history = employee.code_history.get()
+        self.assertEqual((history.previous_code, history.new_code, history.previous_status, history.new_status),
+                         ('00011', '00090003', 'active', 'departed'))
+
+    def test_roster_model_computes_normalized_keys_and_database_enforces_identity(self):
+        defaults = {'department': '', 'first_month': '2026-01', 'last_month': '2026-01'}
+        employee = HrRosterEmployee.objects.create(
+            name=' Synthetic E\u0301 ', code='00090001', employment_type='contract',
+            normalized_name='spoofed', normalized_code='spoofed', **defaults,
+        )
+        self.assertEqual((employee.normalized_name, employee.normalized_code), ('SyntheticÉ', '90001'))
+        for duplicate in (
+            {'name': 'Synthetic\tÉ', 'code': '90002', 'employment_type': 'contract'},
+            {'name': 'Synthetic Other', 'code': '90001', 'employment_type': 'hourly'},
+        ):
+            with self.subTest(duplicate=duplicate), self.assertRaises(IntegrityError), transaction.atomic():
+                HrRosterEmployee.objects.create(**duplicate, **defaults)
+        # Employment type is part of the person key, but not of the code key.
+        HrRosterEmployee.objects.create(name='Synthetic É', code='90002', employment_type='hourly', **defaults)
+        employee.name, employee.code = ' Synthetic Updated ', '00090003'
+        employee.save(update_fields=['name', 'code'])
+        employee.refresh_from_db()
+        self.assertEqual((employee.normalized_name, employee.normalized_code), ('SyntheticUpdated', '90003'))
+
+    def test_roster_edit_database_code_conflict_returns_409_and_rolls_back(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        employee = HrRosterEmployee.objects.get(employment_type='contract')
+        # Model an out-of-date ownership snapshot; the actual DB constraint must win.
+        with patch('analytics.hr_roster_service.indexes', return_value=({}, {})):
+            response = self.client.patch(f'{BASE}roster/2026-11/{employee.pk}/', {
+                'version': 1, 'code': '000245', 'status': 'departed', 'reason': 'Synthetic conflict',
+            }, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        employee.refresh_from_db()
+        self.assertEqual((employee.code, employee.normalized_code, employee.status, employee.version), ('00011', '11', 'active', 1))
+        self.assertFalse(employee.code_history.exists())
+
+    def test_roster_creation_database_conflicts_return_409_and_rollback_months(self):
+        for existing in (
+            {'name': 'SyntheticA', 'code': '90001', 'employment_type': 'contract'},
+            {'name': 'Synthetic Other', 'code': '11', 'employment_type': 'hourly'},
+        ):
+            with self.subTest(existing=existing):
+                employee = HrRosterEmployee.objects.create(**existing, first_month='2025-01', last_month='2025-01')
+                # Bypass only the in-memory snapshot, not the write or database error.
+                with patch('analytics.hr_roster_service.indexes', return_value=({}, {})):
+                    response = self.save(self.commit(batch()))
+                self.assertEqual(response.status_code, 409, response.data)
+                self.assertEqual(HrRosterEmployee.objects.count(), 1)
+                self.assertFalse(HrMonthWorkspace.objects.exists())
+                self.assertFalse(HrWorkspaceHistory.objects.exists())
+                self.assertFalse(HrRosterCodeHistory.objects.exists())
+                employee.delete()
 
     def test_cross_month_code_change_requires_confirmation_and_keeps_snapshots(self):
         data = batch()
@@ -270,5 +383,25 @@ class HrWorkbookTests(TestCase):
         employee = HrRosterEmployee.objects.get(employment_type='hourly')
         history = employee.code_history.get()
         self.assertEqual((employee.code, history.previous_code, history.actor_id), ('90005', '245', self.hr.pk))
+        self.assertEqual((employee.normalized_name, employee.normalized_code), ('SyntheticB', '90005'))
+        self.assertEqual((history.previous_status, history.new_status), ('active', 'active'))
         self.assertEqual(HrMonthWorkspace.objects.get(month='2026-01').employees[1]['code'], '245')
         self.assertEqual(self.preview(data).status_code, 409)
+
+    def test_confirmed_upload_updates_existing_roster_keys_and_same_audit_table(self):
+        self.assertEqual(self.save(self.commit(batch())).status_code, 200)
+        data = batch()
+        data['months'][4]['rows'][1]['code'] = '00090005'
+        data['roster_decisions'] = [{
+            'name': 'Synthetic B', 'employment_type': 'hourly', 'code': '00090005',
+            'reason': 'Synthetic existing employee decision', 'version': 1,
+        }]
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        employee = HrRosterEmployee.objects.get(employment_type='hourly')
+        self.assertEqual((employee.code, employee.normalized_code, employee.normalized_name, employee.version),
+                         ('00090005', '90005', 'SyntheticB', 2))
+        history = employee.code_history.get()
+        self.assertEqual((history.previous_code, history.new_code, history.previous_status, history.new_status),
+                         ('245', '00090005', 'active', 'active'))
+        self.assertEqual((history.actor_id, history.reason), (self.hr.pk, data['roster_decisions'][0]['reason']))

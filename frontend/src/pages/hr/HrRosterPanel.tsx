@@ -26,14 +26,16 @@ export default function HrRosterPanel({ month, entries, onUpdated, error, onRetr
     && [item.code, item.name, ...item.previous_codes].some((value) => value.toLowerCase().includes(query)));
   const active = ko ? '재직' : '在职';
   const departed = ko ? '퇴사' : '离职';
+  const changed = Boolean(editing && (code.trim() !== editing.code || nextStatus !== editing.status));
   async function save() {
-    if (!editing || busy || disabled) return;
+    if (!editing || busy || disabled || !changed || !code.trim() || !reason.trim()) return;
     setBusy(true);
     setMessage('');
     try {
       const updated = await updateHrRoster(month, editing.id, {
-        version: editing.version, status: nextStatus,
-        ...(code.trim() !== editing.code ? { code: code.trim(), reason: reason.trim() } : {}),
+        version: editing.version, reason: reason.trim(),
+        ...(nextStatus !== editing.status ? { status: nextStatus } : {}),
+        ...(code.trim() !== editing.code ? { code: code.trim() } : {}),
       });
       onUpdated(updated);
       setEditing(null);
@@ -41,7 +43,7 @@ export default function HrRosterPanel({ month, entries, onUpdated, error, onRetr
       if (isHrConflict(failure)) {
         onRetry();
         setMessage(ko ? '명부가 변경되었습니다. 최신 내용을 확인한 뒤 편집을 다시 시작하세요.' : '名册已更新，请确认最新资料后重新编辑。');
-      } else setMessage(ko ? '명부를 저장하지 못했습니다. 사번과 사유를 확인해 주세요.' : '无法保存名册，请确认工号和原因。');
+      } else setMessage(ko ? '명부를 저장하지 못했습니다. 사번·상태와 사유를 확인해 주세요.' : '无法保存名册，请确认工号、状态和原因。');
     } finally { setBusy(false); }
   }
   return <details className="hr-panel hr-disclosure">
@@ -57,8 +59,8 @@ export default function HrRosterPanel({ month, entries, onUpdated, error, onRetr
       <strong>{editing.name}</strong>
       <label>{ko ? '사번' : '工号'} <input required maxLength={64} value={code} onChange={(event) => setCode(event.target.value)} /></label>
       <label>{ko ? '상태' : '状态'} <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as HrRosterEntry['status'])}><option value="active">{active}</option><option value="departed">{departed}</option></select></label>
-      {code.trim() !== editing.code && <label>{ko ? '변경 사유' : '变更原因'} <input required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
-      <button className="hr-button is-primary" disabled={busy || disabled || !code.trim() || (code.trim() !== editing.code && !reason.trim())}>{ko ? '저장' : '保存'}</button>
+      {changed && <label>{ko ? '변경 사유' : '变更原因'} <input required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
+      <button className="hr-button is-primary" disabled={busy || disabled || !changed || !code.trim() || !reason.trim()}>{ko ? '저장' : '保存'}</button>
       <button className="hr-button" type="button" disabled={busy} onClick={() => setEditing(null)}>{ko ? '취소' : '取消'}</button>
     </form>}
     <div className="hr-table-scroll"><table>

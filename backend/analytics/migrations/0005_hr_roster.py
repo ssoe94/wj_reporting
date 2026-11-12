@@ -19,6 +19,8 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('code', models.CharField(max_length=64)),
                 ('name', models.CharField(max_length=100)),
+                ('normalized_code', models.CharField(editable=False, max_length=64)),
+                ('normalized_name', models.CharField(editable=False, max_length=300)),
                 ('employment_type', models.CharField(max_length=8)),
                 ('department', models.CharField(blank=True, max_length=100)),
                 ('status', models.CharField(default='active', max_length=8)),
@@ -28,6 +30,10 @@ class Migration(migrations.Migration):
             ],
             options={
                 'ordering': ['code', 'id'],
+                'constraints': [
+                    models.UniqueConstraint(fields=('employment_type', 'normalized_name'), name='hr_roster_person_unique'),
+                    models.UniqueConstraint(fields=('normalized_code',), name='hr_roster_code_unique'),
+                ],
             },
         ),
         migrations.CreateModel(
@@ -36,7 +42,10 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('previous_code', models.CharField(max_length=64)),
                 ('new_code', models.CharField(max_length=64)),
+                ('previous_status', models.CharField(max_length=8)),
+                ('new_status', models.CharField(max_length=8)),
                 ('reason', models.CharField(max_length=500)),
+                ('actor_label', models.CharField(max_length=200)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('actor', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
                 ('employee', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='code_history', to='analytics.hrrosteremployee')),

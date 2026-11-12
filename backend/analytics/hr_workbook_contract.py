@@ -1,19 +1,9 @@
 """Company payroll intake: explicit roster, source coordinates and bounded batches."""
-import re
-import unicodedata
-
 from rest_framework import serializers
 
 from .hr_company_structure import COMPANY_DEPARTMENTS
 from .hr_contract import AmountField, StrictSerializer, validate_month
-
-
-def identity(value):
-    return re.sub(r'\s+', '', unicodedata.normalize('NFC', value))
-
-
-def code_key(value):
-    return str(int(value)) if re.fullmatch(r'[0-9]+', value) else value
+from .hr_identity import code_key, identity
 
 
 class ReferenceRowSerializer(StrictSerializer):

@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from .hr_identity import code_key, identity
+
 
 class MartProductionDailyProgress(models.Model):
     PROCESS_CHOICES = [
@@ -296,6 +298,8 @@ class HrRosterEmployee(models.Model):
     """Company-wide employee identity, independent of historical payroll rows."""
     code = models.CharField(max_length=64)
     name = models.CharField(max_length=100)
+    normalized_code = models.CharField(max_length=64, editable=False)
+    normalized_name = models.CharField(max_length=300, editable=False)
     employment_type = models.CharField(max_length=8)
     department = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=8, default='active')
@@ -305,12 +309,31 @@ class HrRosterEmployee(models.Model):
 
     class Meta:
         ordering = ['code', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['employment_type', 'normalized_name'], name='hr_roster_person_unique'),
+            models.UniqueConstraint(fields=['normalized_code'], name='hr_roster_code_unique'),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.normalized_name = identity(self.name)
+        self.normalized_code = code_key(self.code)
+        if kwargs.get('update_fields') is not None:
+            fields = set(kwargs['update_fields'])
+            for source, normalized in [('name', 'normalized_name'), ('code', 'normalized_code')]:
+                if source in fields:
+                    fields.add(normalized)
+            kwargs['update_fields'] = fields
+        return super().save(*args, **kwargs)
 
 
 class HrRosterCodeHistory(models.Model):
+    """Code decisions and manual roster edits share complete code/status snapshots."""
     employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='code_history')
     previous_code = models.CharField(max_length=64)
     new_code = models.CharField(max_length=64)
+    previous_status = models.CharField(max_length=8)
+    new_status = models.CharField(max_length=8)
     reason = models.CharField(max_length=500)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -7,6 +7,7 @@ import { canAccessHr } from '../../domains/auth/hr-access';
 import { useLang } from '../../i18n';
 import { getHrWorkspace } from '../../domains/hr/api';
 import { amountToCents } from '../../domains/hr/import';
+import { hrMonthYears } from '../../domains/hr/month';
 import type { HrWorkspace, HrCurrency, HrDepartment, HrEmployee } from '../../domains/hr/types';
 import './hr.css';
 
@@ -131,7 +132,7 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children, a
       <div className="hr-month">
         <span>{ko ? '대상 월' : '月份'}</span>
         <select aria-label={ko ? '연도' : '年份'} value={month.slice(0, 4)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${event.target.value}-${month.slice(5)}`)}>
-          {Array.from({ length: 300 }, (_, index) => String(index + 1900)).map((year) => <option key={year}>{year}</option>)}
+          {hrMonthYears(month).map((year) => <option key={year}>{year}</option>)}
         </select>
         <select aria-label={ko ? '월' : '月份'} value={month.slice(5)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${month.slice(0, 4)}-${event.target.value}`)}>
           {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map((value) => <option key={value}>{value}</option>)}

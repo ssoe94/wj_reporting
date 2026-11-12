@@ -1,7 +1,7 @@
 """HR-only roster. Historical payroll retains each month's reviewed source code."""
 from collections import defaultdict
 
-from django.db import connection, transaction
+from django.db import connection, IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
@@ -19,8 +19,8 @@ class RosterUpdateSerializer(StrictSerializer):
     def validate(self, data):
         if 'code' not in data and 'status' not in data:
             raise serializers.ValidationError('변경할 항목을 선택해 주세요.')
-        if 'code' in data and 'reason' not in data:
-            raise serializers.ValidationError('사번 변경 사유를 입력해 주세요.')
+        if 'reason' not in data:
+            raise serializers.ValidationError('명부 변경 사유를 입력해 주세요.')
         return data
 
 
@@ -65,8 +65,26 @@ def roster_payload(month):
     return {'employees': result}
 
 
-def record_change(item, previous, new, reason, actor):
-    HrRosterCodeHistory.objects.create(employee=item, previous_code=previous, new_code=new, reason=reason, actor=actor)
+def record_change(item, previous, new, reason, actor, *, new_status=None):
+    HrRosterCodeHistory.objects.create(
+        employee=item, previous_code=previous, new_code=new,
+        previous_status=item.status, new_status=new_status if new_status is not None else item.status,
+        reason=reason, actor=actor, actor_label=(actor.get_full_name() or actor.username)[:200],
+    )
+
+
+def update_employee(item, changes):
+    # QuerySet.update bypasses Model.save; recompute keys for this CAS path too.
+    try:
+        with transaction.atomic():
+            updated = HrRosterEmployee.objects.filter(pk=item.pk, version=item.version).update(
+                **changes, normalized_name=identity(item.name),
+                normalized_code=code_key(changes.get('code', item.code)), version=item.version + 1,
+            )
+    except IntegrityError as error:
+        raise HrConflict('직원 명부의 이름·고용형태 또는 사번이 중복됩니다. 최신 명부를 확인해 주세요.') from error
+    if updated != 1:
+        raise HrConflict()
 
 
 def check_owner(owners, code, key):
@@ -86,13 +104,8 @@ def edit_roster(employee_id, data, actor):
     check_owner(owners, new_code, person_key(item.name, item.employment_type))
     if (new_code, status) == (item.code, item.status):
         return
-    updated = HrRosterEmployee.objects.filter(pk=item.pk, version=item.version).update(
-        code=new_code, status=status, version=item.version + 1,
-    )
-    if updated != 1:
-        raise HrConflict()
-    if new_code != item.code:
-        record_change(item, item.code, new_code, data['reason'], actor)
+    update_employee(item, {'code': new_code, 'status': status})
+    record_change(item, item.code, new_code, data['reason'], actor, new_status=status)
 
 
 def plan_roster(data):
@@ -147,14 +160,16 @@ def sync_roster(plan, actor):
                 'department': latest['source_department'] if latest['period'] >= item.last_month else item.department,
             }
             if any(getattr(item, field) != value for field, value in changes.items()) or decision:
-                updated = HrRosterEmployee.objects.filter(pk=item.pk, version=item.version).update(**changes, version=item.version + 1)
-                if updated != 1:
-                    raise HrConflict()
+                update_employee(item, changes)
         else:
-            item = HrRosterEmployee.objects.create(
-                code=chosen, name=latest['name'], employment_type=latest['employment_type'],
-                department=latest['source_department'], first_month=first, last_month=latest['period'],
-            )
+            try:
+                with transaction.atomic():
+                    item = HrRosterEmployee.objects.create(
+                        code=chosen, name=latest['name'], employment_type=latest['employment_type'],
+                        department=latest['source_department'], first_month=first, last_month=latest['period'],
+                    )
+            except IntegrityError as error:
+                raise HrConflict('직원 명부의 이름·고용형태 또는 사번이 중복됩니다. 최신 명부를 확인해 주세요.') from error
         if decision:
             if item.code != chosen:
                 record_change(item, item.code, chosen, decision['reason'], actor)
