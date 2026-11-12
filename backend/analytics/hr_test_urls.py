@@ -4,9 +4,10 @@ from .hr_views import HrLaborStandardView, HrLaborCalendarView, HrLaborActualPay
 from injection.admin_approvals import AdminUserCreateView, SignupApprovalRequestsView, SignupApprovalApproveView
 from injection.views import UserProfileViewSet
 
-from .hr_views import HrDailyWorkView, HrDailyWorkPreviewView, HrPersonnelEventView, HrLaborForecastView
+from .hr_views import HrDailyWorkView, HrDailyWorkPreviewView, HrPersonnelEventView, HrLaborForecastView, HrDashboardView
 
 urlpatterns = [
+    path('api/analytics/hr/dashboard/<str:month>/', HrDashboardView.as_view()),
     path('api/analytics/hr/labor-forecast/<str:month>/', HrLaborForecastView.as_view()),
     path('api/analytics/hr/daily-work/<str:day>/', HrDailyWorkView.as_view()),
     path('api/analytics/hr/daily-work/<str:day>/preview/', HrDailyWorkPreviewView.as_view()),

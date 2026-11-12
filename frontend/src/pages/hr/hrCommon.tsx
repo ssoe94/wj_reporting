@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { RefreshCw, Users } from 'lucide-react';
+import { BarChart3, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { canAccessHr } from '../../domains/auth/hr-access';
+import { canAccessHr, HR_DASHBOARD_PATH } from '../../domains/auth/hr-access';
 import { useLang } from '../../i18n';
 import { getHrWorkspace } from '../../domains/hr/api';
 import { amountToCents } from '../../domains/hr/import';
@@ -110,7 +110,7 @@ export function useHrWorkspace(month: string) {
 }
 
 export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions }: {
-  page: 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work' | 'labor-forecast'; month: string; onMonthChange: (month: string) => void;
+  page: 'dashboard' | 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work' | 'labor-forecast'; month: string; onMonthChange: (month: string) => void;
   monthDisabled?: boolean; monthLabel?: string; children: ReactNode; actions?: ReactNode;
 }) {
   const { lang } = useLang();
@@ -128,6 +128,7 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel,
     <header className="hr-work-header">
       <div className="hr-work-title"><h1>{ko ? '인원 · 인건비' : '人员 · 人工成本'}</h1></div>
       {allowed && <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
+        <Link className={page === 'dashboard' ? 'is-active' : ''} aria-current={page === 'dashboard' ? 'page' : undefined} to={`${HR_DASHBOARD_PATH}?month=${month}`}><BarChart3 size={16} />{ko ? '인사 대시보드' : '人事总览'}</Link>
         <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
         <Link className={page === 'daily-work' ? 'is-active' : ''} aria-current={page === 'daily-work' ? 'page' : undefined} to={`/hr/daily-work?month=${month}`}>{ko ? '일별 근무' : '每日出勤'}</Link>
         <Link className={page === 'roster' ? 'is-active' : ''} aria-current={page === 'roster' ? 'page' : undefined} to={`/hr/roster?month=${month}`}>{ko ? '인원 명부' : '人员名册'}</Link>

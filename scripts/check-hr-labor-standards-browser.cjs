@@ -59,7 +59,11 @@ const MONTH = '2026-11';
 const clone = value => JSON.parse(JSON.stringify(value));
 // These are user-selected company rule examples, never employee payroll data.
 function rulesFixture() {
-  const contribution = () => ({ rate_percent: null, base: null, fixed_amount: null });
+  const contribution = items => ({
+    applies_to: { contract: null, hourly: null },
+    base: { rule: null, common_amount: null, employee_amounts: {}, lower: null, upper: null },
+    items: Object.fromEntries(items.map(item => [item, { employer_rate: null, employee_rate: null }])),
+  });
   return {
     multipliers: { workday: '1.5', rest_day: '2', public_holiday: '3' },
     contract: { days_per_month: '21.75', hours_per_day: '8' },
@@ -67,9 +71,10 @@ function rulesFixture() {
     department_overtime: { 注塑: '4', 模具: '4', 公务: '4', 品质: '4', 加工: '2.5', 营业: '2.5', 资材: '2.5', 开发: '1', 管理部: null, 总经办: null },
     weekday_excluded_titles: { titles: [], confirmed: false },
     department_hours_include_fixed_overtime: null,
-    employer_contributions: {
-      social_insurance: { contract: contribution(), hourly: contribution() },
-      housing_fund: { contract: contribution(), hourly: contribution() },
+    hourly_rates: { company_default: { amount: null, confirmed: false }, employee_overrides: [] },
+    contributions: {
+      social_insurance: contribution(['pension', 'medical', 'unemployment', 'work_injury', 'maternity']),
+      housing_fund: contribution(['housing_fund']),
     },
   };
 }
@@ -106,6 +111,11 @@ async function fixture({ lang = 'ko', mobile = false, denied = false, scenario =
     if (url.pathname === '/api/injection/user/me/') return reply(200, { id: 90001, username: 'SYNTHETIC-HR-REVIEWER', email: 'synthetic@example.invalid', is_staff: false, is_superuser: false, is_active: true, can_access_hr: !denied, groups: [], permissions: {} });
     if (url.pathname === '/api/quality/inspection-requests/capabilities/') return reply(200, {});
     if (url.pathname === '/api/auth/activity/') return reply(200, { ...pair, fixture_only: true });
+    if (url.pathname === `/api/analytics/hr/roster/${MONTH}/`) return reply(200, { employees: [] });
+    if (url.pathname === `/api/analytics/hr/labor-actual-payments/${MONTH}/`) return reply(200, {
+      month: MONTH, version: 0, measurement: 'actual', evidence_memo: '', history: [],
+      amounts: Object.fromEntries(['social_insurance', 'housing_fund'].map(fund => [fund, { total: null, contract: null, hourly: null }])),
+    });
     const standardMatch = url.pathname.match(/^\/api\/analytics\/hr\/labor-standards\/(\d{4}-\d{2})\/$/);
     if (standardMatch) {
       state.standardCalls += 1;
@@ -175,8 +185,8 @@ async function mobileContainment(page) {
   await capture(ko.page, 'desktop-ko');
   assert.equal(await rulesForm.getByLabel('管理部 기본 야근 시간', { exact: true }).inputValue(), '');
   assert.equal(await rulesForm.getByLabel('总经办 기본 야근 시간', { exact: true }).inputValue(), '');
-  assert.equal(await rulesForm.getByLabel('사회보험 계약직 요율', { exact: true }).inputValue(), '');
-  assert.equal(await rulesForm.getByLabel('공적금 시급직 요율', { exact: true }).inputValue(), '');
+  assert.equal(await rulesForm.getByLabel('사회보험 양로 회사 요율', { exact: true }).inputValue(), '');
+  assert.equal(await rulesForm.getByLabel('공적금 공적금 직원 요율', { exact: true }).inputValue(), '');
   assert.equal(await rulesForm.getByRole('checkbox', { name: /시급직 할증 규칙 확정/ }).isChecked(), false);
   assert.equal(await rulesForm.getByLabel('시급직 할증', { exact: true }).inputValue(), 'no');
   await rulesForm.locator('.hr-labor-pending > summary').click();
@@ -184,7 +194,7 @@ async function mobileContainment(page) {
   assert.match(await pending.innerText(), /管理部 야근 시간 미입력/);
   assert.match(await pending.innerText(), /시급직 할증 미확정/);
   assert.match(await pending.innerText(), /고정 연장수당 포함 여부 미확정/);
-  assert.match(await pending.innerText(), /사회보험 · 계약직 미입력/);
+  assert.match(await pending.innerText(), /사회보험 · 양로 요율 미입력/);
   await pending.scrollIntoViewIfNeeded(); await capture(ko.page, 'missing');
   checks.push('Defaults display selected multipliers; missing values remain blank and uncertainties remain unconfirmed');
   await rulesForm.getByLabel('근무일 배수', { exact: true }).fill('1.6');

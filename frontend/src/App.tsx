@@ -41,10 +41,11 @@ import { ThemeSwitch } from './components/layout/ThemeSwitch';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
-import { canAccessHr, HR_PERSONNEL_PATH, HR_ROSTER_PATH, HR_LABOR_COST_PATH, HR_LABOR_FORECAST_PATH, HR_LABOR_STANDARDS_PATH, HR_DAILY_WORK_PATH } from './domains/auth/hr-access';
+import { canAccessHr, HR_DASHBOARD_PATH, HR_PERSONNEL_PATH, HR_ROSTER_PATH, HR_LABOR_COST_PATH, HR_LABOR_FORECAST_PATH, HR_LABOR_STANDARDS_PATH, HR_DAILY_WORK_PATH } from './domains/auth/hr-access';
 import { INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
+const HrDashboardPage = lazy(() => import('./pages/hr/HrDashboardPage'));
 const PersonnelPage = lazy(() => import('./pages/hr/PersonnelPage'));
 const RosterPage = lazy(() => import('./pages/hr/RosterPage'));
 const DailyWorkPage = lazy(() => import('./pages/hr/DailyWorkPage'));
@@ -157,6 +158,7 @@ function useNavItems() {
   const hrNavigation = canAccessHr(user) ? [{
     label: lang === 'ko' ? '인사·총무' : '人事·总务', icon: ClipboardList,
     children: [
+      { to: HR_DASHBOARD_PATH, label: lang === 'ko' ? '인사 대시보드' : '人事总览', icon: BarChart3 },
       { to: HR_PERSONNEL_PATH, label: lang === 'ko' ? '인원 배치' : '人员配置', icon: ClipboardCheck },
       { to: HR_DAILY_WORK_PATH, label: lang === 'ko' ? '일별 근무' : '每日出勤', icon: ClipboardCheck },
       { to: HR_ROSTER_PATH, label: lang === 'ko' ? '인원 명부' : '人员名册', icon: ClipboardCheck },
@@ -525,6 +527,7 @@ function AppContent() {
   const isStandaloneBoardRoute = isInjectionBoardRoute || isInspectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute || isFieldRoute;
   let breadcrumbLabel = t('brand');
   if (pathname === DEVELOPMENT_TASK_PATH) breadcrumbLabel = lang === 'ko' ? '개발 과제' : '开发任务';
+  if (pathname === HR_DASHBOARD_PATH) breadcrumbLabel = lang === 'ko' ? '인사 대시보드' : '人事总览';
   if (pathname === HR_PERSONNEL_PATH) breadcrumbLabel = lang === 'ko' ? '인원 배치' : '人员配置';
   if (pathname === HR_ROSTER_PATH) breadcrumbLabel = lang === 'ko' ? '인원 명부' : '人员名册';
   if (pathname === HR_DAILY_WORK_PATH) breadcrumbLabel = lang === 'ko' ? '일별 근무' : '每日出勤';
@@ -912,6 +915,7 @@ function AppContent() {
 
             {/* Admin routes */}
             <Route path={DEVELOPMENT_TASK_PATH} element={<PrivateRoute><PageTransition><DevelopmentTasksPage /></PageTransition></PrivateRoute>} />
+            <Route path={HR_DASHBOARD_PATH} element={<PrivateRoute><PageTransition><HrDashboardPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_PERSONNEL_PATH} element={<PrivateRoute><PageTransition><PersonnelPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_ROSTER_PATH} element={<PrivateRoute><PageTransition><RosterPage /></PageTransition></PrivateRoute>} />
             <Route path={HR_DAILY_WORK_PATH} element={<PrivateRoute><PageTransition><DailyWorkPage /></PageTransition></PrivateRoute>} />

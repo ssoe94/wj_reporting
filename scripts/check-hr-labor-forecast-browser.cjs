@@ -5,7 +5,7 @@
 // Build frontend/dist first, then run from the worktree root:
 // node scripts/check-hr-labor-forecast-browser.cjs --screens /absolute/path/to/screens
 // Optional: --playwright <package> --python <venv-python> --port 4206
-//           --backend-port 4207 --dist <path> --task-008 true
+//           --backend-port 4207 --dist <path> --task-008 true | --task-009 true
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -18,13 +18,16 @@ const { spawn } = require('node:child_process');
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const name = process.argv[i];
-  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008'].includes(name), `Unknown option: ${name}`);
+  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008', '--task-009'].includes(name), `Unknown option: ${name}`);
   assert.ok(process.argv[i + 1], `Missing value: ${name}`);
   options[name.slice(2)] = process.argv[i + 1];
 }
 assert.ok(options['task-008'] === undefined || options['task-008'] === 'true', '--task-008 must be true');
+assert.ok(options['task-009'] === undefined || options['task-009'] === 'true', '--task-009 must be true');
 const task008 = options['task-008'] === 'true';
-const task = task008 ? '008' : '007';
+const task009 = options['task-009'] === 'true';
+assert.ok(!(task008 && task009), 'Choose one browser scenario.');
+const task = task009 ? '009' : task008 ? '008' : '007';
 const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
@@ -114,6 +117,8 @@ hr.set_unusable_password(); hr.save(update_fields=['password'])
 denied = User.objects.create(username='SYNTHETIC-NO-HR', is_active=True)
 denied.set_unusable_password(); denied.save(update_fields=['password'])
 HrAccessGrant.objects.create(user=hr, enabled=True)
+${task009 ? String.raw`import runpy
+runpy.run_path(sys.argv[6])['seed_dashboard'](sys.argv[5], hr)` : String.raw`
 rules = default_labor_rules()
 task008 = sys.argv[4] == '008'
 main_department, other_department = ('测试甲组', '测试乙组') if task008 else ('注塑', '品质')
@@ -177,6 +182,7 @@ for month in ('2026-09', '2026-10', '2026-11'):
         'social_insurance': {'total': '1200.00', 'contract': None, 'hourly': None},
         'housing_fund': {'total': '550.00', 'contract': None, 'hourly': None},
     }, 'evidence_memo': 'SYNTHETIC invoice'}, updated_by=hr)
+`}
 
 class FixtureAuthentication(BaseAuthentication):
     def authenticate(self, request):
@@ -197,8 +203,9 @@ with (
 `;
 let backend, browser;
 const checks = [], captures = [], errors = [];
-async function startBackend() {
-  backend = spawn(python, ['-u', '-c', pythonFixture, path.join(repo, 'backend'), String(backendPort), path.join(fixtureDirectory, 'synthetic.sqlite3'), task], {
+async function startBackend(scenario = 'forecast') {
+  backend = spawn(python, ['-u', '-c', pythonFixture, path.join(repo, 'backend'), String(backendPort),
+    path.join(fixtureDirectory, `synthetic-${scenario}.sqlite3`), task, scenario, path.join(repo, 'scripts/hr_dashboard_browser_fixture.py')], {
     cwd: repo, env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   backend.stdout.pipe(backendLog, { end: false }); backend.stderr.pipe(backendLog, { end: false });
@@ -209,6 +216,13 @@ async function startBackend() {
     backend.once('error', error => { clearTimeout(timer); reject(error); });
     backend.once('exit', code => { clearTimeout(timer); reject(new Error(`Synthetic backend exited (${code}); see ${fixtureDirectory}/backend.log`)); });
   });
+}
+async function stopBackend() {
+  if (backend && backend.exitCode === null && backend.signalCode === null) {
+    const exited = new Promise(resolve => backend.once('exit', resolve));
+    backend.kill('SIGTERM');
+    await exited;
+  }
 }
 async function backendRequest(pathname, { method = 'GET', body, role = 'hr' } = {}) {
   assert.ok(pathname.startsWith('/api/analytics/hr/'), 'Only HR fixture APIs may be called');
@@ -235,7 +249,7 @@ const pair = { access: token('access'), refresh: token('refresh') };
 
 async function fixture({ lang = 'ko', mobile = false, dark = false, denied = false, failOnce = false } = {}) {
   const context = await browser.newContext({
-    viewport: mobile ? { width: 390, height: 930 } : { width: task008 ? 1680 : 1440, height: 1160 },
+    viewport: mobile ? { width: 390, height: 930 } : { width: task008 || task009 ? 1680 : 1440, height: 1160 },
     locale: lang === 'ko' ? 'ko-KR' : 'zh-CN', timezoneId: 'Asia/Shanghai',
     reducedMotion: 'reduce', serviceWorkers: 'block',
   });
@@ -264,7 +278,7 @@ async function fixture({ lang = 'ko', mobile = false, dark = false, denied = fal
     if (url.pathname.startsWith('/api/analytics/hr/')) {
       const method = route.request().method();
       const body = route.request().postDataJSON() ?? undefined;
-      if (failOnce && url.pathname === forecastPath(MONTH)) {
+      if (failOnce && url.pathname === (task009 ? '/api/analytics/hr/dashboard/' + MONTH + '/' : forecastPath(MONTH))) {
         failOnce = false;
         calls.push({ method, pathname: url.pathname, status: 503 });
         return reply(503, { detail: 'Synthetic retry check' });
@@ -454,6 +468,17 @@ async function checkRestHours() {
 
 (async () => {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  if (task009) {
+    browser = await playwright.chromium.launch({ headless: true });
+    const { checkDashboard } = require('./hr-dashboard-browser-checks.cjs');
+    await checkDashboard({ origin, fixture, capture, backendRequest, startBackend, stopBackend, checks, scrollForCapture });
+    assert.deepEqual(errors, [], 'No uncaught browser errors');
+    assert.equal(captures.length, 9);
+    console.log(JSON.stringify({
+      result: 'PASS', real_backend: true, fixtureDirectory, checks, screenshots: captures, uncaughtBrowserErrors: errors.length,
+    }, null, 2));
+    return;
+  }
   await startBackend();
   if (task008) {
     browser = await playwright.chromium.launch({ headless: true });
@@ -630,9 +655,6 @@ async function checkRestHours() {
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
-  if (backend && backend.exitCode === null) {
-    backend.kill('SIGTERM');
-    await new Promise(resolve => backend.once('exit', resolve));
-  }
+  await stopBackend();
   backendLog.end();
 });
