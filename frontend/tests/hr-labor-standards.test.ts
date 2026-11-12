@@ -6,6 +6,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import ts from 'typescript';
 import * as labor from '../src/domains/hr/labor-standards.ts';
 import { canAccessHr } from '../src/domains/auth/hr-access.ts';
+import { normalizeHrJobTitle } from '../src/domains/hr/import.ts';
 import type { HrLaborActualPayments, HrLaborCalendar, HrLaborRules, HrLaborStandards } from '../src/domains/hr/labor-standards.ts';
 
 type Element = { type: unknown; props: Record<string, any> };
@@ -59,6 +60,7 @@ function harness(kind: 'rules' | 'calendar' | 'actual' | 'page' = 'rules', optio
     '../../i18n': { useLang: () => ({ lang: options.ko === false ? 'zh' : 'ko' }) },
     '../../domains/hr/labor-standards': labor,
     '../../domains/hr/api': { getHrRoster: async () => { getRequests.push('roster'); return []; } },
+    '../../domains/hr/import': { normalizeHrJobTitle },
     '../../domains/hr/labor-standards-api': {
       getHrLaborStandards: async () => { getRequests.push('standards'); return standardsFixture(); },
       getHrLaborCalendar: async () => { getRequests.push('calendar'); return calendarFixture(); },
@@ -191,6 +193,42 @@ test('new effective month can persist its inherited unchanged draft only with an
   assert.deepEqual(form.requests[0].payload.rules, initial.rules);
 });
 
+test('legacy standards leave rest hours blank and save edits separately from weekday hours', async () => {
+  const initial = standardsFixture();
+  const form = harness('rules', { initial });
+  const label = '测试部门甲 휴일 기본 근무(시간/인·일)';
+  assert.equal(form.aria(label).props.value, '');
+  form.change('기준 변경 사유', 'Synthetic rest hours');
+  assert.equal(form.button('기준 저장').props.disabled, true, 'a missing legacy key does not dirty the form');
+  form.aria(label).props.onChange({ target: { value: '2.75' } });
+  await form.submit();
+  const configured = form.requests[0].payload.rules as HrLaborRules;
+  assert.deepEqual(configured.department_rest_hours, { 测试部门甲: '2.75' });
+  assert.deepEqual(configured.department_overtime, initial.rules.department_overtime);
+  assert.equal(form.aria(label).props.value, '2.75');
+
+  form.aria(label).props.onChange({ target: { value: '' } });
+  form.change('기준 변경 사유', 'Synthetic reset to default');
+  await form.submit();
+  assert.deepEqual((form.requests[1].payload.rules as HrLaborRules).department_rest_hours, {});
+  assert.deepEqual(labor.pendingLaborItems({ ...configured, department_rest_hours: { 测试部门甲: null } }, true), labor.pendingLaborItems(initial.rules, true));
+});
+
+test('rest-only departments remain editable without adding weekday rules or dirtying an unchanged draft', async () => {
+  const initial = standardsFixture();
+  initial.rules.department_rest_hours = { 测试部门乙: '0', 测试部门甲: '1.25', 测试休息组: '2' };
+  const form = harness('rules', { initial });
+  const label = '测试休息组 휴일 기본 근무(시간/인·일)';
+  assert.equal(form.aria(label).props.value, '2');
+  form.change('기준 변경 사유', 'Synthetic rest-only department');
+  assert.equal(form.button('기준 저장').props.disabled, true);
+  form.aria(label).props.onChange({ target: { value: '3' } });
+  await form.submit();
+  const rules = form.requests[0].payload.rules as HrLaborRules;
+  assert.deepEqual(rules.department_rest_hours, { ...initial.rules.department_rest_hours, 测试休息组: '3' });
+  assert.deepEqual(rules.department_overtime, initial.rules.department_overtime);
+});
+
 test('standards rejects empty or duplicate department labels without losing the draft', async () => {
   const form = harness();
   const row = form.render().find((node) => node.type === 'input' && node.props['aria-label'] === '부서 원본 라벨 2')!;
@@ -317,6 +355,24 @@ test('engineer toggle edits the exact exclusion list without removing other titl
   form.change('기준 변경 사유', 'Synthetic engineer decision');
   await form.submit();
   assert.deepEqual((form.requests[0].payload.rules as HrLaborRules).weekday_excluded_titles.titles, ['Synthetic senior', '工程师']);
+});
+
+test('legacy multiline exclusions survive unrelated edits and the engineer toggle matches spaced titles', async () => {
+  const initial = standardsFixture();
+  const legacy = '合成\n岗位';
+  initial.rules.weekday_excluded_titles.titles = [legacy, '工　程\t师'];
+  const form = harness('rules', { initial });
+  const toggle = '工程师도 평일 실적 야근 제외';
+  assert.equal(form.field(toggle).props.checked, true);
+  form.change('근무일 배수', '1.75');
+  form.change('기준 변경 사유', 'Synthetic multiplier update');
+  await form.submit();
+  assert.deepEqual((form.requests[0].payload.rules as HrLaborRules).weekday_excluded_titles.titles, [legacy, '工　程\t师']);
+
+  form.field(toggle).props.onChange({ target: { checked: false } });
+  form.change('기준 변경 사유', 'Synthetic engineer decision');
+  await form.submit();
+  assert.deepEqual((form.requests[1].payload.rules as HrLaborRules).weekday_excluded_titles.titles, [legacy]);
 });
 
 test('actual payment validation permits exact and partial breakdowns and leaves derivation to server', () => {

@@ -7,6 +7,7 @@ import { canAccessHr } from '../../domains/auth/hr-access';
 import { getLaborForecast } from '../../domains/hr/labor-forecast-api';
 import { comparisonForecastMetric, forecastChartPoints, forecastComponents, forecastMetricLabel, forecastReasonLabel } from '../../domains/hr/labor-forecast';
 import type { ForecastBasis, ForecastComparison, ForecastComponent, ForecastEmployee, ForecastGroup, ForecastMetric, LaborForecast } from '../../domains/hr/labor-forecast';
+import { laborGrossPayLabel } from '../../domains/hr/labor-standards';
 import { useLang } from '../../i18n';
 import { currentHrMonth, HrLoadState, HrShell } from './hrCommon';
 import './hr-forecast.css';
@@ -322,7 +323,7 @@ function Comparison({ forecast, ko }: { forecast: LaborForecast; ko: boolean }) 
       {forecastComponents.some(key => comparisonForecastMetric(forecast.components, key, comparison) !== forecast.components[key]) &&
         <p className="hr-forecast-note">{ko ? '합계의 회사 부담금은 실제 납부액을 우선 반영합니다.' : '合计中的公司承担额优先采用实缴金额。'}</p>}
       {actualDeductions && Number(actualDeductions.known_amount) > 0 && <p className="hr-forecast-note">
-        {ko ? '실제 응발급여에 반영된 공제' : '应发工资中已扣金额'} · <Amount metric={actualDeductions} ko={ko} />
+        {ko ? `실제 ${laborGrossPayLabel(ko)}에 반영된 공제` : '应发工资中已扣金额'} · <Amount metric={actualDeductions} ko={ko} />
       </p>}
       {comparison.reasons.length > 0 && <ul className="hr-forecast-reasons">{comparison.reasons.map(reason => {
         const label = forecastReasonLabel(reason, ko);
@@ -368,7 +369,7 @@ function ForecastContent({ month, allowed, ko }: { month: string; allowed: boole
     error={ko ? '인건비 예상을 불러오지 못했습니다.' : '无法加载人工成本预测。'}
     retry={() => { setFailure(null); retry(value => value + 1); }} />;
   const hasForecast = forecast.payroll.uploaded || forecast.employees.length > 0 || forecast.total.status !== 'missing';
-  return <div className="hr-forecast">
+  return <div className="hr-forecast" lang={ko ? 'ko' : 'zh-CN'}>
     <Summary forecast={forecast} ko={ko} />
     {!forecast.payroll.uploaded && <section className="hr-panel hr-forecast-empty">
       <p>{ko ? '이달 급여표가 없습니다. 급여표를 올리면 예상과 실제를 비교할 수 있습니다.' : '本月尚未上传工资表。上传后可对比预测与实际。'}</p>

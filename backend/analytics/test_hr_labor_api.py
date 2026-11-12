@@ -93,6 +93,21 @@ class HrLaborApiTests(TestCase):
         self.assert_private(stale)
         self.assertEqual(HrLaborStandardHistory.objects.count(), 2)
 
+    def test_legacy_rule_reads_empty_rest_hours_and_can_be_edited(self):
+        data = self.payload(1)
+        data['rules'].pop('department_rest_hours')
+        record = HrLaborStandard.objects.create(month='2026-11', rules=deepcopy(data['rules']), version=1)
+        response = self.client.get(self.standard)
+        self.assertEqual(response.data['rules']['department_rest_hours'], {})
+        record.refresh_from_db()
+        self.assertNotIn('department_rest_hours', record.rules)
+        data['rules']['department_rest_hours'] = {'Synthetic team': '1.250', 'Other synthetic team': None}
+        response = self.client.put(self.standard, data, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(effective_standard('2026-12')['rules']['department_rest_hours'],
+                         {'Synthetic team': '1.25', 'Other synthetic team': None})
+        self.assertNotIn('department_rest_hours', record.history.get(version=2).before)
+
     def test_effective_periods_inherit_without_mutating_previous_and_stop_at_next_start(self):
         self.client.put(self.standard.replace('2026-11', '2026-01'), self.payload(), format='json')
         later = self.payload()
@@ -141,6 +156,9 @@ class HrLaborApiTests(TestCase):
             ('hourly_premium', {'enabled': 'false', 'confirmed': True}),
             ('department_overtime', {'Synthetic team': '25'}),
             ('department_overtime', {'': '1'}),
+            ('department_rest_hours', {'Synthetic team': '24.01'}),
+            ('department_rest_hours', {'Synthetic team': '2', ' Synthetic team': '1'}),
+            ('department_rest_hours', []),
             ('weekday_excluded_titles', {'titles': ['Synthetic', 'Synthetic'], 'confirmed': True}),
             ('weekday_excluded_titles', {'titles': [''], 'confirmed': True}),
             ('department_hours_include_fixed_overtime', 'unknown'),

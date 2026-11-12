@@ -80,7 +80,7 @@ test('company template and multi-line tab paste are readable without private fix
   const parsed=await readWorkbook(new File([tab],'copied-table.txt'));
   const mapping=suggestColumnMapping(getHeaderColumns(parsed.sheets[0],0));
   const data=parsePayrollRows(parsed.sheets[0].rows,{headerRowIndex:0,columns:mapping,targetMonth:'2026-01',classificationMode:'file',allowMissingCost:true});
-  assert.equal(data.rows[0].code,'0007'); assert.equal(data.rows[0].title,'财务部长兼\n办公室主任'); assert.equal(data.excluded_row_count,1);
+  assert.equal(data.rows[0].code,'0007'); assert.equal(data.rows[0].title,'财务部长兼办公室主任'); assert.equal(data.excluded_row_count,1);
 });
 
 test('cost-cell geometry and reporting hierarchy stay separate and contain every supplied function', () => {

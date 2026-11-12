@@ -8,6 +8,8 @@ from decimal import Decimal
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
 
+from .hr_identity import normalize_title
+
 MAX_EMPLOYEES = 5000
 MAX_DEPARTMENTS = 200
 
@@ -49,10 +51,15 @@ class AmountField(serializers.CharField):
         return money(value)
 
 
+class JobTitleField(serializers.CharField):
+    def to_internal_value(self, data):
+        return normalize_title(super().to_internal_value(data))
+
+
 class ImportRowSerializer(StrictSerializer):
     code = serializers.CharField(max_length=64)
     name = serializers.CharField(max_length=100)
-    title = serializers.CharField(max_length=100, allow_blank=True, required=False, default='')
+    title = JobTitleField(max_length=100, allow_blank=True, required=False, default='')
     amount = AmountField(allow_null=True)
     period = serializers.CharField(max_length=7, required=False)
     source_department = serializers.CharField(max_length=100, allow_blank=True, required=False, default='')

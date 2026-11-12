@@ -135,6 +135,24 @@ class ForecastCalculationTests(PureTestCase):
         self.assertEqual(result['basis']['variable_pay']['default']['amount'], '2280.00')
         self.assertEqual(days['2026-11-30']['entered_cumulative_known_amount'], '90.00')
 
+    def test_rest_hours_apply_to_elapsed_and_remaining_default_days(self):
+        team = 'Synthetic team'
+        p = person(department=team) | {'title': 'Part長'}
+        h = person(2, department=team, employment='hourly')
+        settings = engine(overrides={'2026-11-15': 'public_holiday', '2026-11-21': 'adjusted_workday'})
+        settings['rules']['department_rest_hours'][team] = '1.25'
+        settings['rules']['department_overtime'][team] = '0'
+        result = run([p, h], settings=settings, sheets={
+            '2026-11-08': {'status': 'confirmed', 'overrides': {'1': {'attendance': 'off'}, '2': {'attendance': 'off'}}},
+        })
+        days = {row['date']: (row['source'], row['amount']) for row in result['daily']}
+        self.assertEqual(days['2026-11-07'], ('default', '111.25'))
+        self.assertEqual(days['2026-11-08'], ('entered', '0.00'))
+        self.assertEqual(days['2026-11-14'], ('default', '111.25'))
+        self.assertEqual(days['2026-11-15'], ('default', '0.00'))
+        self.assertEqual(days['2026-11-21'], ('default', '196.00'))
+        self.assertEqual(result['components']['overtime']['amount'], '300.00')
+
     def test_funds_use_actual_with_estimates_and_missing_rates_known_denominator(self):
         p = person()
         result = run([p], settings=engine(known_rates=False),

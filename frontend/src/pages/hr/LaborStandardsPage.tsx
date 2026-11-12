@@ -3,15 +3,34 @@ import { useAuth } from '../../contexts/AuthContext';
 import { canAccessHr } from '../../domains/auth/hr-access';
 import { useLang } from '../../i18n';
 import { getHrLaborActualPayments, getHrLaborCalendar, getHrLaborStandards, saveHrLaborActualPayments, saveHrLaborCalendar, saveHrLaborStandards } from '../../domains/hr/labor-standards-api';
-import { actualPaymentIssue, laborCalendarDates, laborContributionLabel, laborDayLabel, laborDefaultDay, laborHistoryChanges, laborSummaryRows, pendingLaborItems } from '../../domains/hr/labor-standards';
+import { actualPaymentIssue, laborCalendarDates, laborContributionLabel, laborDayLabel, laborDefaultDay, laborGrossPayLabel, laborHistoryChanges, laborRestHoursLabel, laborSummaryRows, pendingLaborItems } from '../../domains/hr/labor-standards';
 import type { HrContribution, HrLaborActualPayments, HrLaborCalendar, HrLaborDayType, HrLaborHistory, HrLaborRules, HrLaborStandards } from '../../domains/hr/labor-standards';
 import { getHrRoster } from '../../domains/hr/api';
+import { normalizeHrJobTitle } from '../../domains/hr/import';
 import type { HrRosterEntry } from '../../domains/hr/workbook-types';
 import { currentHrMonth, HrLoadState, HrShell, isHrConflict } from './hrCommon';
 
 type FormActivity = { dirty: boolean; busy: boolean };
 type FormProps<T> = { initial: T; ko: boolean; onActivity: (activity: FormActivity) => void; restart: () => void };
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+function departmentRows({ department_overtime: weekday, department_rest_hours: rest = {} }: HrLaborRules) {
+  return [...new Set([...Object.keys(weekday), ...Object.keys(rest)])].map((name) => ({
+    name, hours: Object.hasOwn(weekday, name) ? weekday[name] : undefined,
+    restHours: Object.hasOwn(rest, name) ? rest[name] : undefined,
+  }));
+}
+function rulesSignature({ department_overtime: weekday, department_rest_hours: rest = {}, ...other }: HrLaborRules) {
+  const sorted = (hours: Record<string, string | null>) => Object.keys(hours).sort().map((key) => [key, hours[key]]);
+  return JSON.stringify([other, sorted(weekday), sorted(rest)]);
+}
+const titleLine = (title: string) => /[\r\n]/u.test(title) ? normalizeHrJobTitle(title) : title;
+const titleEditorText = (titles: string[]) => titles.map(titleLine).join('\n');
+function readTitleEditor(text: string, original: string[]) {
+  if (text === titleEditorText(original)) return original;
+  const originals = new Map(original.map((title) => [titleLine(title), title]));
+  return [...new Set(text.split('\n').map((line) => line.trim()).filter(Boolean))].map((line) => originals.get(line) ?? line);
+}
 
 function useLaborResource<T>(month: string, identity: string, allowed: boolean, get: (month: string, signal?: AbortSignal) => Promise<T>) {
   const scope = `${identity}:${month}`;
@@ -40,7 +59,7 @@ function LaborHistory({ history, ko, roster = [] }: { history: HrLaborHistory[];
     workday: ko ? '평일' : '平日', rest_day: ko ? '휴일' : '休息日', public_holiday: ko ? '법정 공휴일' : '法定节假日',
     days_per_month: ko ? '월 환산 일수' : '月折算天数', hours_per_day: ko ? '하루 기준 시간' : '日标准时数',
     hourly_premium: ko ? '시급직 할증' : '小时工加成', enabled: ko ? '적용 여부' : '是否适用', confirmed: ko ? '확정 여부' : '是否确认',
-    department_overtime: ko ? '부서별 야근 시간' : '部门加班时数', weekday_excluded_titles: ko ? '제외 직무' : '除外职务', titles: ko ? '직무 목록' : '职务列表',
+    department_overtime: ko ? '부서별 야근 시간' : '部门加班时数', department_rest_hours: laborRestHoursLabel(ko), weekday_excluded_titles: ko ? '제외 직무' : '除外职务', titles: ko ? '직무 목록' : '职务列表',
     department_hours_include_fixed_overtime: ko ? '고정 연장수당 포함' : '包含固定平时加班', employer_contributions: ko ? '회사 부담' : '公司承担',
     contributions: ko ? '보험·공적금 기준' : '保险与公积金标准', applies_to: ko ? '적용' : '适用范围', hourly_rates: ko ? '시급' : '时薪', company_default: ko ? '회사 기본' : '公司默认', employee_overrides: ko ? '직원별 예외' : '员工例外', employee_id: ko ? '직원' : '员工', effective_month: ko ? '적용 시작 월' : '生效起始月份', amount: ko ? '금액' : '金额', reason: ko ? '사유' : '原因', rule: ko ? '기준액 규칙' : '基数规则', common_amount: ko ? '회사 공통 기준액' : '公司统一基数', employee_amounts: ko ? '직원별 기준액' : '员工基数', lower: ko ? '하한' : '下限', upper: ko ? '상한' : '上限', items: ko ? '항목' : '项目', employer_rate: ko ? '회사 요율' : '公司费率', employee_rate: ko ? '직원 요율' : '员工费率', pension: ko ? '양로' : '养老', medical: ko ? '의료' : '医疗', unemployment: ko ? '실업' : '失业', work_injury: ko ? '공상' : '工伤', maternity: ko ? '생육' : '生育', amounts: ko ? '납부액' : '缴费金额', total: ko ? '총액' : '总额', evidence_memo: ko ? '근거 메모' : '依据备注',
     social_insurance: ko ? '사회보험' : '社会保险', housing_fund: ko ? '공적금' : '公积金', rate_percent: ko ? '요율 (%)' : '费率 (%)', base: ko ? '기준액' : '基数', fixed_amount: ko ? '고정 기준액' : '固定基数',
@@ -50,10 +69,11 @@ function LaborHistory({ history, ko, roster = [] }: { history: HrLaborHistory[];
     if ((value === null || value === undefined) && /^\d{4}-\d{2}-\d{2}$/.test(path)) {
       return `${ko ? '요일 기본값' : '按星期默认'} (${laborDayLabel(laborDefaultDay(path), ko)})`;
     }
+    if (value == null && path.startsWith('department_rest_hours.')) return ko ? '기본값 0시간' : '默认 0 小时';
     if (value === null || value === undefined) return ko ? '미입력' : '未填写';
     if (typeof value === 'boolean') return value ? (ko ? '예' : '是') : (ko ? '아니오' : '否');
     if (Array.isArray(value)) return value.length ? value.map((entry) => typeof entry === 'object' ? JSON.stringify(entry) : String(entry)).join(', ') : (ko ? '없음' : '无');
-    if (value === 'gross') return ko ? '응발액' : '应发工资';
+    if (value === 'gross') return laborGrossPayLabel(ko);
     if (value === 'fixed') return ko ? '고정 기준액' : '固定基数';
     if (value === 'common') return ko ? '회사 공통 기준액' : '公司统一基数';
     if (value === 'employee') return ko ? '직원별 기준액' : '员工基数';
@@ -82,7 +102,7 @@ function LaborContributionEditor({ fund, value, ko, roster, rosterDisabled, onCh
     <h3>{label}</h3>
     <div className="hr-labor-fields">{(['contract', 'hourly'] as const).map((type) => <label className="hr-field" key={type}>{type === 'contract' ? (ko ? '계약직 적용' : '适用合同工') : (ko ? '시급직 적용' : '适用小时工')}<select aria-label={`${label} ${type === 'contract' ? (ko ? '계약직 적용' : '适用合同工') : (ko ? '시급직 적용' : '适用小时工')}`} className={value.applies_to[type] === null ? 'is-pending' : ''} value={value.applies_to[type] === null ? '' : value.applies_to[type] ? 'yes' : 'no'} onChange={(event) => onChange({ ...value, applies_to: { ...value.applies_to, [type]: event.target.value === '' ? null : event.target.value === 'yes' } })}><option value="">{ko ? '미확정' : '未确认'}</option><option value="yes">{ko ? '적용' : '适用'}</option><option value="no">{ko ? '미적용' : '不适用'}</option></select></label>)}</div>
     <div className="hr-table-scroll"><table className="hr-labor-rate-table"><thead><tr><th>{ko ? '항목' : '项目'}</th><th>{ko ? '회사 요율 (%)' : '公司费率 (%)'}</th><th>{ko ? '직원 요율 (%)' : '员工费率 (%)'}</th></tr></thead><tbody>{Object.entries(value.items).map(([item, rates]) => <tr key={item}><th scope="row">{laborContributionLabel(item, ko)}</th>{(['employer_rate', 'employee_rate'] as const).map((side) => <td key={side}><input aria-label={`${label} ${laborContributionLabel(item, ko)} ${side === 'employer_rate' ? (ko ? '회사 요율' : '公司费率') : (ko ? '직원 요율' : '员工费率')}`} type="number" min="0" max="100" step="any" className={rates[side] === null ? 'is-pending' : ''} value={rates[side] ?? ''} placeholder={ko ? '미입력' : '未填写'} onChange={(event) => onChange({ ...value, items: { ...value.items, [item]: { ...rates, [side]: event.target.value || null } } })} /><Pending value={rates[side] === null} ko={ko} /></td>)}</tr>)}</tbody></table></div>
-    <label className="hr-field">{ko ? '기준액 규칙' : '基数规则'}<select aria-label={`${label} ${ko ? '기준액 규칙' : '基数规则'}`} className={value.base.rule === null ? 'is-pending' : ''} value={value.base.rule ?? ''} onChange={(event) => baseChange({ rule: (event.target.value || null) as HrContribution['base']['rule'] })}><option value="">{ko ? '미입력' : '未填写'}</option><option value="common">{ko ? '회사 공통 기준액' : '公司统一基数'}</option><option value="employee">{ko ? '직원별 기준액' : '员工基数'}</option><option value="gross">{ko ? '응발액' : '应发工资'}</option></select></label>
+    <label className="hr-field">{ko ? '기준액 규칙' : '基数规则'}<select aria-label={`${label} ${ko ? '기준액 규칙' : '基数规则'}`} className={value.base.rule === null ? 'is-pending' : ''} value={value.base.rule ?? ''} onChange={(event) => baseChange({ rule: (event.target.value || null) as HrContribution['base']['rule'] })}><option value="">{ko ? '미입력' : '未填写'}</option><option value="common">{ko ? '회사 공통 기준액' : '公司统一基数'}</option><option value="employee">{ko ? '직원별 기준액' : '员工基数'}</option><option value="gross">{laborGrossPayLabel(ko)}</option></select></label>
     {value.base.rule === 'common' && <label className="hr-field">{ko ? '회사 공통 기준액 (CNY)' : '公司统一基数 (CNY)'}<input aria-label={`${label} ${ko ? '회사 공통 기준액' : '公司统一基数'}`} type="number" min="0" step="any" className={value.base.common_amount === null ? 'is-pending' : ''} value={value.base.common_amount ?? ''} placeholder={ko ? '미입력' : '未填写'} onChange={(event) => baseChange({ common_amount: event.target.value || null })} /><Pending value={value.base.common_amount === null} ko={ko} /></label>}
     {value.base.rule === 'employee' && <div className="hr-labor-employee-bases">{Object.entries(value.base.employee_amounts).map(([id, employeeAmount]) => {
       const person = roster.find((entry) => entry.id === Number(id));
@@ -95,14 +115,19 @@ function LaborContributionEditor({ fund, value, ko, roster, rosterDisabled, onCh
 export function LaborRulesForm({ initial, ko, onActivity, restart, roster = [], rosterError = false, rosterLoading = false, retryRoster, onSaved }: FormProps<HrLaborStandards> & { roster?: HrRosterEntry[]; rosterError?: boolean; rosterLoading?: boolean; retryRoster?: () => void; onSaved?: (value: HrLaborStandards) => void }) {
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState(() => copy(initial.rules));
-  const [departments, setDepartments] = useState(() => Object.entries(initial.rules.department_overtime).map(([name, hours]) => ({ name, hours })));
-  const [titles, setTitles] = useState(initial.rules.weekday_excluded_titles.titles.join('\n'));
+  const [departments, setDepartments] = useState(() => departmentRows(initial.rules));
+  const [titles, setTitles] = useState(() => titleEditorText(initial.rules.weekday_excluded_titles.titles));
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false); const [message, setMessage] = useState('');
-  const rules: HrLaborRules = { ...draft, department_overtime: Object.fromEntries(departments.map((row) => [row.name.trim(), row.hours])),
-    weekday_excluded_titles: { ...draft.weekday_excluded_titles, titles: [...new Set(titles.split('\n').map((title) => title.trim()).filter(Boolean))] } };
+  const weekdayHours = Object.fromEntries(departments.flatMap(({ name, hours }) => hours === undefined ? [] : [[name.trim(), hours] as const]));
+  const restHours = Object.fromEntries(departments.flatMap(({ name, restHours }) => restHours === undefined ? [] : [[name.trim(), restHours] as const]));
+  const excludedTitles = readTitleEditor(titles, draft.weekday_excluded_titles.titles);
+  const isEngineer = (title: string) => normalizeHrJobTitle(title) === '工程师';
+  const rules: HrLaborRules = { ...draft, department_overtime: weekdayHours,
+    ...(draft.department_rest_hours || Object.keys(restHours).length ? { department_rest_hours: restHours } : {}),
+    weekday_excluded_titles: { ...draft.weekday_excluded_titles, titles: excludedTitles } };
   const invalidDepartments = departments.some((row) => !row.name.trim()) || new Set(departments.map((row) => row.name.trim())).size !== departments.length;
-  const dirty = invalidDepartments || JSON.stringify(rules) !== JSON.stringify(saved.rules);
+  const dirty = invalidDepartments || rulesSignature(rules) !== rulesSignature(saved.rules);
   const pending = pendingLaborItems(rules, ko);
   useEffect(() => { onActivity({ dirty, busy }); return () => onActivity({ dirty: false, busy: false }); }, [dirty, busy, onActivity]);
   const invalidOverrides = rules.hourly_rates.employee_overrides.some((item) => item.employee_id < 1 || !/^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(item.effective_month) || !item.amount.trim() || !item.reason.trim())
@@ -112,7 +137,7 @@ export function LaborRulesForm({ initial, ko, onActivity, restart, roster = [], 
     setBusy(true); setMessage('');
     try {
       const result = await saveHrLaborStandards(saved.month, { version: saved.version, reason: reason.trim(), rules });
-      setSaved(result); onSaved?.(result); setDraft(copy(result.rules)); setDepartments(Object.entries(result.rules.department_overtime).map(([name, hours]) => ({ name, hours }))); setTitles(result.rules.weekday_excluded_titles.titles.join('\n')); setReason('');
+      setSaved(result); onSaved?.(result); setDraft(copy(result.rules)); setDepartments(departmentRows(result.rules)); setTitles(titleEditorText(result.rules.weekday_excluded_titles.titles)); setReason('');
     } catch (error) {
       if (isHrConflict(error)) setConflict(true);
       else setMessage(ko ? '기준을 저장하지 못했습니다. 입력 값과 사유를 확인해 주세요.' : '无法保存标准，请检查输入值和原因。');
@@ -130,15 +155,30 @@ export function LaborRulesForm({ initial, ko, onActivity, restart, roster = [], 
       <p className="hr-muted">{ko ? '계약직 시간당 기준액 = 基本工资 ÷ 월 환산 일수 ÷ 하루 기준 시간' : '合同工每小时基数 = 基本工资 ÷ 月折算天数 ÷ 日标准时数'}</p>
       <div className="hr-labor-fields"><label className="hr-field">{ko ? '월 환산 일수' : '月折算天数'}<input type="number" min="0.01" step="any" required value={draft.contract.days_per_month} onChange={(event) => setDraft({ ...draft, contract: { ...draft.contract, days_per_month: event.target.value } })} /></label><label className="hr-field">{ko ? '하루 기준 시간' : '日标准时数'}<input type="number" min="0.01" step="any" required value={draft.contract.hours_per_day} onChange={(event) => setDraft({ ...draft, contract: { ...draft.contract, hours_per_day: event.target.value } })} /></label></div>
     </fieldset>
-    <fieldset disabled={busy} className="hr-labor-fieldset"><legend>{ko ? '부서별 평일 기본 야근 시간' : '部门平日默认加班时数'}</legend>
-      <div className="hr-table-scroll"><table className="hr-labor-departments"><thead><tr><th>{ko ? '급여 원본 부서 라벨' : '工资表部门原始标签'}</th><th>{ko ? '시간 / 일' : '小时 / 日'}</th><th>{ko ? '편집' : '编辑'}</th></tr></thead><tbody>{departments.map((row, index) => <tr key={index}><td><input aria-label={`${ko ? '부서 원본 라벨' : '部门原始标签'} ${index + 1}`} maxLength={100} value={row.name} onChange={(event) => setDepartments(departments.map((item, current) => current === index ? { ...item, name: event.target.value } : item))} /></td><td><input className={row.hours === null ? 'is-pending' : ''} aria-label={`${row.name || index + 1} ${ko ? '기본 야근 시간' : '默认加班时数'}`} type="number" min="0" max="24" step="any" value={row.hours ?? ''} placeholder={ko ? '미입력' : '未填写'} onChange={(event) => setDepartments(departments.map((item, current) => current === index ? { ...item, hours: event.target.value || null } : item))} /><Pending value={row.hours === null} ko={ko} /></td><td><button className="hr-button" type="button" aria-label={`${row.name || index + 1} ${ko ? '기준 제거' : '移除标准'}`} onClick={() => setDepartments(departments.filter((_, current) => current !== index))}>{ko ? '제거' : '移除'}</button></td></tr>)}</tbody></table></div>
-      <button type="button" className="hr-button" onClick={() => setDepartments([...departments, { name: '', hours: null }])}>{ko ? '부서 추가' : '添加部门'}</button>
+    <fieldset disabled={busy} className="hr-labor-fieldset" lang={ko ? 'ko' : 'zh-CN'}><legend>{ko ? '부서별 기본 근무 시간' : '部门默认工时'}</legend>
+      <p className="hr-muted">{ko ? '휴일 기본 근무 시간은 휴일 하루에 해당 부서 직원 1인이 일하는 예상 평균입니다. 전원이 매주 출근한다는 뜻은 아닙니다. 비워 두면 0시간이며, 법정 공휴일 근무는 직접 입력합니다.' : '休息日默认工时是该部门员工在休息日每人每天的预计平均工时，并不表示所有员工每周都出勤。留空按 0 小时计算，法定节假日工时仍须手动填写。'}</p>
+      <div className="hr-table-scroll"><table className="hr-labor-departments"><thead><tr>
+        <th scope="col">{ko ? '급여 원본 부서 라벨' : '工资表部门原始标签'}</th>
+        <th scope="col">{ko ? '평일 기본 야근(시간/일)' : '平日默认加班（小时/天）'}</th>
+        <th scope="col">{laborRestHoursLabel(ko)}</th>
+        <th scope="col">{ko ? '편집' : '编辑'}</th>
+      </tr></thead><tbody>{departments.map((row, index) => {
+        const label = row.name || index + 1;
+        const update = (patch: Partial<typeof row>) => setDepartments(departments.map((item, current) => current === index ? { ...item, ...patch } : item));
+        return <tr key={index}>
+          <td><input aria-label={`${ko ? '부서 원본 라벨' : '部门原始标签'} ${index + 1}`} maxLength={100} value={row.name} onChange={(event) => update({ name: event.target.value })} /></td>
+          <td><input className={row.hours == null ? 'is-pending' : ''} aria-label={`${label} ${ko ? '기본 야근 시간' : '默认加班时数'}`} type="number" min="0" max="24" step="any" value={row.hours ?? ''} placeholder={ko ? '미입력' : '未填写'} onChange={(event) => update({ hours: event.target.value || null })} /><Pending value={row.hours == null} ko={ko} /></td>
+          <td><input aria-label={`${label} ${laborRestHoursLabel(ko)}`} type="number" min="0" max="24" step="any" value={row.restHours ?? ''} onChange={(event) => update({ restHours: event.target.value || undefined })} /></td>
+          <td><button className="hr-button" type="button" aria-label={`${label} ${ko ? '기준 제거' : '移除标准'}`} onClick={() => setDepartments(departments.filter((_, current) => current !== index))}>{ko ? '제거' : '移除'}</button></td>
+        </tr>;
+      })}</tbody></table></div>
+      <button type="button" className="hr-button" onClick={() => setDepartments([...departments, { name: '', hours: null, restHours: undefined }])}>{ko ? '부서 추가' : '添加部门'}</button>
       {invalidDepartments && <p className="hr-labor-pending-label" role="alert">{ko ? '부서 라벨을 빈칸이나 중복 없이 입력하세요.' : '部门标签不能为空或重复。'}</p>}
     </fieldset>
     <fieldset disabled={busy} className="hr-labor-fieldset"><legend>{ko ? '지급 규칙' : '支付规则'}</legend>
       <div className="hr-labor-fields"><label className="hr-field">{ko ? '시급직 할증' : '小时工加成'}<select aria-label={ko ? '시급직 할증' : '小时工加成'} value={draft.hourly_premium.enabled ? 'yes' : 'no'} onChange={(event) => setDraft({ ...draft, hourly_premium: { ...draft.hourly_premium, enabled: event.target.value === 'yes' } })}><option value="no">{ko ? '미적용' : '不适用'}</option><option value="yes">{ko ? '적용' : '适用'}</option></select></label><label className="hr-checkbox"><input type="checkbox" checked={draft.hourly_premium.confirmed} onChange={(event) => setDraft({ ...draft, hourly_premium: { ...draft.hourly_premium, confirmed: event.target.checked } })} />{ko ? '시급직 할증 규칙 확정' : '确认小时工加成规则'} <Confirmation confirmed={draft.hourly_premium.confirmed} ko={ko} /></label></div>
       <label className="hr-field">{ko ? '평일 연장수당 제외 직무 (한 줄에 하나)' : '平日加班费除外职务（每行一项）'}<textarea rows={3} value={titles} placeholder={ko ? '급여 원본의 직무 라벨' : '工资表职务原始标签'} onChange={(event) => setTitles(event.target.value)} /></label>
-      <label className="hr-checkbox"><input type="checkbox" checked={rules.weekday_excluded_titles.titles.includes('工程师')} onChange={(event) => setTitles(event.target.checked ? [...rules.weekday_excluded_titles.titles, '工程师'].join('\n') : rules.weekday_excluded_titles.titles.filter((title) => title !== '工程师').join('\n'))} />{ko ? '工程师도 평일 실적 야근 제외' : '工程师也不计平日实际加班费'}</label>
+      <label className="hr-checkbox"><input type="checkbox" checked={excludedTitles.some(isEngineer)} onChange={(event) => setTitles(titleEditorText(event.target.checked ? [...excludedTitles, '工程师'] : excludedTitles.filter((title) => !isEngineer(title))))} />{ko ? '工程师도 평일 실적 야근 제외' : '工程师也不计平日实际加班费'}</label>
       <label className="hr-checkbox"><input type="checkbox" checked={draft.weekday_excluded_titles.confirmed} onChange={(event) => setDraft({ ...draft, weekday_excluded_titles: { ...draft.weekday_excluded_titles, confirmed: event.target.checked } })} />{ko ? '제외 직무 목록 확정' : '确认除外职务列表'} <Confirmation confirmed={draft.weekday_excluded_titles.confirmed} ko={ko} /></label>
       <p className="hr-muted">{ko ? '확정(사용자 2026-11-12): Part長·部长·财务部长兼办公室主任·技术生产总经理는 모든 부서에 적용합니다. 휴일·법정 공휴일 수당은 유지합니다.' : '用户于2026-11-12确认：Part長、部长、财务部长兼办公室主任、技术生产总经理适用于所有部门，仍计休息日及法定节假日津贴。'}</p>
       <label className="hr-field">{ko ? '부서 기본 야근 시간이 固定平时加班을 포함하는가' : '部门默认加班时数是否包含固定平时加班'}<select aria-label={ko ? '고정 연장수당 포함 여부' : '是否包含固定平时加班'} className={draft.department_hours_include_fixed_overtime === null ? 'is-pending' : ''} value={draft.department_hours_include_fixed_overtime === null ? '' : draft.department_hours_include_fixed_overtime ? 'yes' : 'no'} onChange={(event) => setDraft({ ...draft, department_hours_include_fixed_overtime: event.target.value === '' ? null : event.target.value === 'yes' })}><option value="">{ko ? '미확정' : '未确认'}</option><option value="yes">{ko ? '예' : '是'}</option><option value="no">{ko ? '아니오 (확정)' : '否（已确认）'}</option></select></label><p className="hr-muted">{ko ? '부서 시간은 실적 야근만 뜻합니다. 고정 연장수당은 월 고정액으로 최근 급여 월의 값을 별도로 이어받습니다.' : '部门时数仅指实际加班。固定平时加班按月固定额单列，沿用最近工资月份的金额。'}</p>

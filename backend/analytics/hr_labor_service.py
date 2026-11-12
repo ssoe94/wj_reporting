@@ -23,8 +23,10 @@ def lock_labor(scope):
 def effective_standard(month):
     validate_month(month)
     record = HrLaborStandard.objects.filter(month__lte=month).order_by('-month').first()
+    rules = deepcopy(record.rules) if record else default_labor_rules()
+    rules.setdefault('department_rest_hours', {})
     return {'month': record.month if record else None, 'version': record.version if record else 0,
-            'rules': deepcopy(record.rules) if record else default_labor_rules()}
+            'rules': rules}
 
 
 def _history(record):

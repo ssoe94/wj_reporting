@@ -10,6 +10,7 @@ export type HrLaborRules = {
   contract: { days_per_month: string; hours_per_day: string };
   hourly_premium: { enabled: boolean; confirmed: boolean };
   department_overtime: Record<string, string | null>;
+  department_rest_hours?: Record<string, string | null>;
   weekday_excluded_titles: { titles: string[]; confirmed: boolean };
   department_hours_include_fixed_overtime: boolean | null;
   contributions: Record<'social_insurance' | 'housing_fund', HrContribution>;
@@ -36,6 +37,12 @@ export function laborDefaultDay(date: string): HrLaborDayType {
 }
 export function laborDayLabel(type: HrLaborDayType, ko: boolean) {
   return ({ workday: ko ? '근무일' : '工作日', rest_day: ko ? '휴일' : '休息日', public_holiday: ko ? '법정 공휴일' : '法定节假日', adjusted_workday: ko ? '조정 근무일' : '调休工作日' })[type];
+}
+export function laborRestHoursLabel(ko: boolean) {
+  return ko ? '휴일 기본 근무(시간/인·일)' : '休息日默认工时（小时/人·天）';
+}
+export function laborGrossPayLabel(ko: boolean) {
+  return ko ? '지급 총액(应发工资)' : '应发工资';
 }
 export function laborContributionLabel(key: string, ko: boolean) {
   return ({ social_insurance: ko ? '사회보험' : '社会保险', housing_fund: ko ? '공적금' : '公积金', pension: ko ? '양로' : '养老', medical: ko ? '의료' : '医疗', unemployment: ko ? '실업' : '失业', work_injury: ko ? '공상' : '工伤', maternity: ko ? '생육' : '生育' } as Record<string, string>)[key] ?? key;
@@ -64,11 +71,14 @@ export function laborSummaryRows(rules: HrLaborRules, month: string | null, ko: 
     ...Object.entries(rules.multipliers).map(([type, value]) => ({ id: type, label: `${laborDayLabel(type as HrLaborDayType, ko)} ${ko ? '배수' : '倍数'}`, value, status: 'confirmed' as const, month })),
     { id: 'hourly', label: ko ? '회사 기본 시급 (CNY)' : '公司默认时薪 (CNY)', value: `${rules.hourly_rates.company_default.amount ?? '—'}${rules.hourly_rates.company_default.amount === '24.50' && !rules.hourly_rates.company_default.confirmed ? (ko ? ' · 합성 기본값 / 확인 필요' : ' · 合成默认值 / 待确认') : ''}`, status: rules.hourly_rates.company_default.amount === null ? 'missing' : rules.hourly_rates.company_default.confirmed ? 'confirmed' : 'unconfirmed', month },
   ];
+  for (const [department, hours] of Object.entries(rules.department_rest_hours ?? {})) {
+    if (hours !== null) rows.push({ id: `department_rest_hours.${department}`, label: `${department} · ${laborRestHoursLabel(ko)}`, value: hours, status: 'confirmed', month });
+  }
   for (const key of ['social_insurance', 'housing_fund'] as const) {
     const fund = rules.contributions[key]; const label = laborContributionLabel(key, ko);
     for (const [item, rates] of Object.entries(fund.items)) rows.push({ id: `${key}.${item}`, label: `${label} · ${laborContributionLabel(item, ko)} (%)`, value: `${ko ? '회사' : '公司'} ${rates.employer_rate ?? '—'} / ${ko ? '직원' : '员工'} ${rates.employee_rate ?? '—'}`, status: rates.employer_rate === null || rates.employee_rate === null ? 'missing' : 'confirmed', month });
     const rule = fund.base.rule;
-    rows.push({ id: `${key}.base`, label: `${label} ${ko ? '기준액' : '基数'}`, value: rule === 'gross' ? (ko ? '응발액' : '应发工资') : rule === 'common' ? `${ko ? '회사 공통' : '公司统一'} ${fund.base.common_amount ?? '—'} CNY` : rule === 'employee' ? `${ko ? '직원별' : '按员工'} ${Object.keys(fund.base.employee_amounts).length}${ko ? '명' : '人'}` : '—', status: !rule || (rule === 'common' && fund.base.common_amount === null) || (rule === 'employee' && !Object.keys(fund.base.employee_amounts).length) ? 'missing' : 'confirmed', month });
+    rows.push({ id: `${key}.base`, label: `${label} ${ko ? '기준액' : '基数'}`, value: rule === 'gross' ? laborGrossPayLabel(ko) : rule === 'common' ? `${ko ? '회사 공통' : '公司统一'} ${fund.base.common_amount ?? '—'} CNY` : rule === 'employee' ? `${ko ? '직원별' : '按员工'} ${Object.keys(fund.base.employee_amounts).length}${ko ? '명' : '人'}` : '—', status: !rule || (rule === 'common' && fund.base.common_amount === null) || (rule === 'employee' && !Object.keys(fund.base.employee_amounts).length) ? 'missing' : 'confirmed', month });
     rows.push({ id: `${key}.bounds`, label: `${label} ${ko ? '기준액 하한 / 상한' : '基数下限 / 上限'}`, value: `${fund.base.lower ?? (ko ? '제한 없음' : '不限')} / ${fund.base.upper ?? (ko ? '제한 없음' : '不限')}`, status: fund.base.rule === null ? 'missing' : 'confirmed', month });
     const applies = (type: 'contract' | 'hourly') => fund.applies_to[type] === null ? (ko ? '미확정' : '未确认') : fund.applies_to[type] ? (ko ? '적용' : '适用') : (ko ? '미적용' : '不适用');
     rows.push({ id: `${key}.applies`, label: `${label} ${ko ? '적용' : '适用范围'}`, value: `${ko ? '계약직' : '合同工'} ${applies('contract')} / ${ko ? '시급직' : '小时工'} ${applies('hourly')}`, status: Object.values(fund.applies_to).some((value) => value === null) ? 'unconfirmed' : 'confirmed', month });

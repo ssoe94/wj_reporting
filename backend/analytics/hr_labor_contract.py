@@ -39,6 +39,8 @@ def _decimal(value, field, maximum, *, nullable=False, positive=False, places=4)
 
 def validate_rules(data):
     defaults = default_labor_rules()
+    if isinstance(data, dict) and 'department_rest_hours' not in data:
+        data = data | {'department_rest_hours': {}}
     _keys(data, defaults, 'rules')
     result = {}
     _keys(data['multipliers'], defaults['multipliers'], 'multipliers')
@@ -48,14 +50,15 @@ def validate_rules(data):
                           for key, limit in [('days_per_month', 31), ('hours_per_day', 24)]}
     _keys(data['hourly_premium'], ('enabled', 'confirmed'), 'hourly_premium')
     result['hourly_premium'] = {key: _bool(value, 'hourly_premium') for key, value in data['hourly_premium'].items()}
-    departments = data['department_overtime']
-    if not isinstance(departments, dict) or len(departments) > 200:
-        _invalid('department_overtime')
-    result['department_overtime'] = {}
-    for label, hours in departments.items():
-        if not isinstance(label, str) or not label.strip() or len(label) > 100 or label.strip() in result['department_overtime']:
-            _invalid('department_overtime')
-        result['department_overtime'][label.strip()] = _decimal(hours, 'department_overtime', 24, nullable=True)
+    for field in ('department_overtime', 'department_rest_hours'):
+        departments = data[field]
+        if not isinstance(departments, dict) or len(departments) > 200:
+            _invalid(field)
+        result[field] = {}
+        for label, hours in departments.items():
+            if not isinstance(label, str) or not label.strip() or len(label) > 100 or label.strip() in result[field]:
+                _invalid(field)
+            result[field][label.strip()] = _decimal(hours, field, 24, nullable=True)
     excluded = data['weekday_excluded_titles']
     _keys(excluded, ('titles', 'confirmed'), 'weekday_excluded_titles')
     titles = excluded['titles']

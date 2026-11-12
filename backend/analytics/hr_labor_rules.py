@@ -14,6 +14,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 import re
 
+from .hr_identity import normalize_title
+
 
 SOCIAL_ITEMS = ('pension', 'medical', 'unemployment', 'work_injury', 'maternity')
 EXCLUDED_TITLES = ('Part長', '部长', '财务部长兼办公室主任', '技术生产总经理')
@@ -34,6 +36,7 @@ def default_labor_rules():
         'department_overtime': {'注塑': '4', '模具': '4', '公务': '4', '品质': '4',
                                 '加工': '2.5', '营业': '2.5', '资材': '2.5', '开发': '1',
                                 '管理部': None, '总经办': None},
+        'department_rest_hours': {},
         'weekday_excluded_titles': {'titles': list(EXCLUDED_TITLES), 'confirmed': True},
         'department_hours_include_fixed_overtime': False,
         'contributions': {'social_insurance': contribution(SOCIAL_ITEMS), 'housing_fund': contribution(('housing_fund',))},
@@ -146,11 +149,18 @@ def daily_default_overtime(department, title, day, *, rules=None, overrides=None
                               effective_month=effective_month, calendar_version=calendar_version)
     basis = classified['basis'] | {'department': department, 'title': title,
                                   'include_fixed_overtime': rules['department_hours_include_fixed_overtime']}
-    if classified['type'] not in ('workday', 'adjusted_workday'):
+    if classified['type'] == 'rest_day':
+        configured = rules.get('department_rest_hours', {}).get(department)
+        hours = Decimal(0) if configured is None else _number(configured)
+        return {'status': 'ready', 'hours': hours, 'candidate_hours': hours,
+                'basis': basis | {'hours': hours,
+                                  'default_hours_source': 'not_configured' if configured is None else 'department_rest_hours'}}
+    if classified['type'] == 'public_holiday':
         return {'status': 'manual_required', 'hours': None, 'candidate_hours': None, 'basis': basis}
     excluded = rules['weekday_excluded_titles']
     basis['exclusion_confirmed'] = excluded['confirmed']
-    if excluded['confirmed'] and title in excluded['titles']:
+    title_key = normalize_title(title)
+    if excluded['confirmed'] and any(title_key == normalize_title(item) for item in excluded['titles']):
         return {'status': 'ready', 'hours': Decimal(0), 'candidate_hours': Decimal(0),
                 'basis': basis | {'hours': Decimal(0), 'weekday_exempt': True}}
     configured = rules['department_overtime'].get(department)
@@ -260,12 +270,11 @@ def employee_day(employee, day, *, payroll=None, regular_hours=None, overtime_ho
     classified = classify_day(day, overrides, rules=rules, version=version,
                               effective_month=effective_month, calendar_version=calendar_version)
     workday = classified['type'] in ('workday', 'adjusted_workday')
-    excluded = rules['weekday_excluded_titles']
-    exempt = excluded['confirmed'] and employee.get('title', '') in excluded['titles']
     defaults = daily_default_overtime(employee.get('department', ''), employee.get('title', ''), day,
         rules=rules, overrides=overrides, version=version, effective_month=effective_month, calendar_version=calendar_version)
+    exempt = defaults['basis'].get('weekday_exempt', False)
     hours = _number(overtime_hours) if overtime_hours is not None else defaults['hours']
-    if workday and exempt:
+    if exempt:
         hours = Decimal(0)
     regular = _number(regular_hours) if regular_hours is not None else _number(rules['contract']['hours_per_day']) if workday else Decimal(0)
     if not workday and regular != 0:
@@ -295,8 +304,9 @@ def employee_day(employee, day, *, payroll=None, regular_hours=None, overtime_ho
                 rules=rules, version=version, effective_month=effective_month) if rate['amount'] is not None else None
             state = 'missing' if pay is None else 'ready' if pay['status'] == rate['status'] == 'ready' else 'unconfirmed'
             salary = {'period': 'day', 'status': state, 'amount': pay['regular'] if pay else None, 'component': 'hourly_regular'}
-            actual[slot] = {'period': 'day', 'status': state if hours is not None else defaults['status'],
-                            'amount': pay[slot] if pay and hours is not None else None}
+            known_zero = slot == 'rest_day' and hours == 0
+            actual[slot] = {'period': 'day', 'status': 'ready' if known_zero else state if hours is not None else defaults['status'],
+                            'amount': Decimal('0.00') if known_zero else pay[slot] if pay and hours is not None else None}
         else:
             salary = monthly(base_salary, 'base_salary')
             pay = contract_overtime(base_salary, category_hours['weekday'],

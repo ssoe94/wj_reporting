@@ -333,8 +333,10 @@
 .hr-labor-pending ul { margin:0 0 12px; padding-left:20px; }
 .hr-labor-standards .is-pending { border-color:var(--wj-warning); }
 .hr-labor-departments { width:100%; border-collapse:collapse; margin-bottom:10px; }
+.hr-page .hr-labor-departments { min-width:460px; }
 .hr-labor-departments :is(th, td) { text-align:start; vertical-align:middle; padding:6px; font-size:14px; border-bottom:1px solid var(--hr-border); }
-.hr-labor-departments th:first-child { width:45%; }
+.hr-labor-departments th:lang(ko) { word-break:keep-all; }
+.hr-labor-departments th:first-child { width:38%; }
 .hr-labor-departments input { width:100%; min-width:0; min-height:44px; border:1px solid var(--hr-border); border-radius:6px; padding:8px; background:var(--hr-surface); }
 .hr-labor-departments td:last-child { width:70px; }
 .hr-labor-departments .hr-button { padding:8px; min-width:44px; }

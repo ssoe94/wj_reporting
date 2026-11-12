@@ -5,7 +5,7 @@
 // Build frontend/dist first, then run from the worktree root:
 // node scripts/check-hr-labor-forecast-browser.cjs --screens /absolute/path/to/screens
 // Optional: --playwright <package> --python <venv-python> --port 4206
-//           --backend-port 4207 --dist <path>
+//           --backend-port 4207 --dist <path> --task-008 true
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -18,10 +18,13 @@ const { spawn } = require('node:child_process');
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const name = process.argv[i];
-  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port'].includes(name), `Unknown option: ${name}`);
+  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008'].includes(name), `Unknown option: ${name}`);
   assert.ok(process.argv[i + 1], `Missing value: ${name}`);
   options[name.slice(2)] = process.argv[i + 1];
 }
+assert.ok(options['task-008'] === undefined || options['task-008'] === 'true', '--task-008 must be true');
+const task008 = options['task-008'] === 'true';
+const task = task008 ? '008' : '007';
 const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
@@ -67,7 +70,7 @@ const backendOrigin = `http://127.0.0.1:${backendPort}`;
 const python = options.python || process.env.WJ_HR_PYTHON || path.join(path.dirname(repo), 'wj_reporting/backend/.venv/bin/python');
 assert.ok(fs.existsSync(python), 'Provide the existing backend Python with --python; this script never installs dependencies.');
 const work = path.join(repo, 'work'); fs.mkdirSync(work, { recursive: true });
-const fixtureDirectory = fs.mkdtempSync(path.join(work, 'hr-007-fixture-'));
+const fixtureDirectory = fs.mkdtempSync(path.join(work, `hr-${task}-fixture-`));
 const backendLog = fs.createWriteStream(path.join(fixtureDirectory, 'backend.log'));
 const pythonFixture = String.raw`
 import sys, socket
@@ -100,7 +103,7 @@ from django.core.management import call_command
 call_command('migrate', verbosity=0, interactive=False)
 from django.contrib.auth import get_user_model
 from analytics.models import (
-    HrAccessGrant, HrLaborActualPayment, HrLaborStandard, HrMonthWorkspace, HrRosterEmployee,
+    HrAccessGrant, HrLaborActualPayment, HrLaborCalendar, HrLaborStandard, HrMonthWorkspace, HrRosterEmployee,
 )
 from analytics.hr_labor_rules import default_labor_rules
 from analytics.hr_views import HrBaseView
@@ -112,6 +115,13 @@ denied = User.objects.create(username='SYNTHETIC-NO-HR', is_active=True)
 denied.set_unusable_password(); denied.save(update_fields=['password'])
 HrAccessGrant.objects.create(user=hr, enabled=True)
 rules = default_labor_rules()
+task008 = sys.argv[4] == '008'
+main_department, other_department = ('测试甲组', '测试乙组') if task008 else ('注塑', '品质')
+if task008:
+    # Simulate an existing standard saved before the new key was introduced.
+    rules.pop('department_rest_hours', None)
+    rules['department_overtime'] = {main_department: '3', other_department: '1'}
+    HrLaborCalendar.objects.create(month='2026-11', days={'2026-11-15': 'public_holiday'}, updated_by=hr)
 rules['hourly_rates']['company_default'] = {'amount': '25.00', 'confirmed': True}
 for kind, config in rules['contributions'].items():
     config['applies_to'] = {'contract': True, 'hourly': True}
@@ -121,9 +131,9 @@ for kind, config in rules['contributions'].items():
 HrLaborStandard.objects.create(month='2026-09', rules=rules, version=1, updated_by=hr)
 
 people = [
-    ('90001', '测试甲', 'contract', '注塑', 'injection'),
-    ('90002', '测试乙', 'hourly', '注塑', 'injection'),
-    ('90003', '测试丙', 'contract', '品质', 'quality'),
+    ('90001', '测试甲', 'contract', main_department, 'injection'),
+    ('90002', '测试乙', 'hourly', main_department, 'injection'),
+    ('90003', '测试丙', 'contract', other_department, 'quality'),
 ]
 for code, name, kind, department, visual in people:
     HrRosterEmployee.objects.create(
@@ -143,7 +153,8 @@ for month in ('2026-09', '2026-10', '2026-11'):
             '90002': '6100.00' if current else '5800.00',
             '90003': '5650.00' if current else '5340.00',
         }[code]
-        row = dict(code=code, name=name, employment_type=kind, title='测试操作员',
+        title = 'Part\n\t\u3000長' if task008 and code == '90001' else '测试操作员'
+        row = dict(code=code, name=name, employment_type=kind, title=title,
                    amount=amount, source_department=department, department_id=visual)
         if kind == 'contract':
             first = code == '90001'
@@ -187,7 +198,7 @@ with (
 let backend, browser;
 const checks = [], captures = [], errors = [];
 async function startBackend() {
-  backend = spawn(python, ['-u', '-c', pythonFixture, path.join(repo, 'backend'), String(backendPort), path.join(fixtureDirectory, 'synthetic.sqlite3')], {
+  backend = spawn(python, ['-u', '-c', pythonFixture, path.join(repo, 'backend'), String(backendPort), path.join(fixtureDirectory, 'synthetic.sqlite3'), task], {
     cwd: repo, env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   backend.stdout.pipe(backendLog, { end: false }); backend.stderr.pipe(backendLog, { end: false });
@@ -224,18 +235,18 @@ const pair = { access: token('access'), refresh: token('refresh') };
 
 async function fixture({ lang = 'ko', mobile = false, dark = false, denied = false, failOnce = false } = {}) {
   const context = await browser.newContext({
-    viewport: mobile ? { width: 390, height: 930 } : { width: 1440, height: 1160 },
+    viewport: mobile ? { width: 390, height: 930 } : { width: task008 ? 1680 : 1440, height: 1160 },
     locale: lang === 'ko' ? 'ko-KR' : 'zh-CN', timezoneId: 'Asia/Shanghai',
     reducedMotion: 'reduce', serviceWorkers: 'block',
   });
   const calls = [];
-  await context.addInitScript(({ pair, lang, dark, origin }) => {
+  await context.addInitScript(({ pair, lang, dark, origin, task }) => {
     if (location.origin !== origin) return;
-    localStorage.setItem('wj-auth-session-control-v2', JSON.stringify({ id: 'SYNTHETIC-HR-007', ...pair }));
+    localStorage.setItem('wj-auth-session-control-v2', JSON.stringify({ id: `SYNTHETIC-HR-${task}`, ...pair }));
     localStorage.setItem('lang', lang);
     localStorage.setItem('wj_next_language', lang);
     localStorage.setItem('wj:appearance:v1', dark ? 'dark' : 'light');
-  }, { pair, lang, dark, origin });
+  }, { pair, lang, dark, origin, task });
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== origin) return route.abort();
@@ -270,7 +281,7 @@ async function fixture({ lang = 'ko', mobile = false, dark = false, denied = fal
 }
 
 async function capture(page, name) {
-  const file = path.join(screens, '007-' + name + '.png');
+  const file = path.join(screens, `${task}-${name}.png`);
   await page.screenshot({ path: file, fullPage: false });
   captures.push(file);
 }
@@ -312,13 +323,13 @@ async function writeFixture(day, overrides) {
   assert.equal(result.status, 200, JSON.stringify(result.data));
 }
 
-async function makePartial() {
+async function makePartial(department = '管理部') {
   const value = await sheet(DAY);
   const result = await backendRequest(dailyPath(DAY) + 'events/', {
     method: 'POST',
     body: {
       revision: value.event_revision, kind: 'transfer', employee_id: byCode(value, '90003').employee.id,
-      changes: { department: '管理部' }, reason: 'SYNTHETIC department without an overtime default',
+      changes: { department }, reason: 'SYNTHETIC department without an overtime default',
     },
   });
   assert.equal(result.status, 201, JSON.stringify(result.data));
@@ -332,9 +343,128 @@ async function scrollForCapture(locator) {
   });
 }
 
+async function checkRestHours() {
+  const department = '测试甲组';
+  const restDate = '2026-11-14';
+  const holidayDate = '2026-11-15';
+  const standardPath = `/api/analytics/hr/labor-standards/${MONTH}/`;
+  const standardPage = `/hr/labor-standards?month=${MONTH}`;
+  const estimateOn = (forecast, date) => forecast.daily.find(day => day.date === date);
+  const before = await getForecast();
+  const legacyDay = await sheet(restDate);
+  const legacyContract = byCode(legacyDay, '90001');
+  assert.equal(legacyContract.defaults.attendance, 'off');
+  assert.equal(legacyContract.defaults.rest_hours, '0');
+  assert.equal(legacyContract.estimate.basis.default_overtime.default_hours_source, 'not_configured');
+  assert.equal(Number(estimateOn(before, restDate).amount), 0);
+
+  const ko = await fixture();
+  await ko.page.goto(origin + standardPage);
+  const koreanHeading = '휴일 기본 근무(시간/인·일)';
+  const koField = ko.page.getByLabel(`${department} ${koreanHeading}`, { exact: true });
+  await ko.page.getByRole('columnheader', { name: koreanHeading, exact: true }).waitFor();
+  assert.equal(await koField.inputValue(), '');
+  assert.match(await koField.locator('xpath=ancestor::fieldset').innerText(), /평균/);
+  await koField.fill('2.75');
+  await ko.page.getByLabel('기준 변경 사유', { exact: true }).fill('SYNTHETIC rest day forecast');
+  await ko.page.getByRole('button', { name: '기준 저장', exact: true }).click();
+  const save = await until(() => ko.calls.find(call => call.method === 'PUT' && call.pathname === standardPath), 'saving rest day hours');
+  assert.equal(save.status, 200, JSON.stringify(save.result));
+  assert.equal(save.result.rules.department_rest_hours[department], '2.75');
+  assert.equal(save.result.rules.department_overtime[department], '3');
+  await ko.page.locator('.hr-labor-rules-form .hr-section-heading').getByText(`${MONTH} · v1`, { exact: true }).waitFor();
+  await scrollForCapture(koField.locator('xpath=ancestor::fieldset'));
+  await capture(ko.page, 'standards-ko');
+  checks.push('Korean standard reads legacy JSON with an empty rest day field, then saves the new rule without changing weekday hours');
+
+  const zh = await fixture({ lang: 'zh' });
+  await zh.page.goto(origin + standardPage);
+  const chineseHeading = '休息日默认工时（小时/人·天）';
+  const zhField = zh.page.getByLabel(`${department} ${chineseHeading}`, { exact: true });
+  await zh.page.getByRole('columnheader', { name: chineseHeading, exact: true }).waitFor();
+  assert.equal(await zhField.inputValue(), '2.75');
+  assert.match(await zhField.locator('xpath=ancestor::fieldset').innerText(), /平均/);
+  await scrollForCapture(zhField.locator('xpath=ancestor::fieldset'));
+  await capture(zh.page, 'standards-zh');
+  await openForecast(zh);
+  assert.match(await zh.page.locator('.hr-forecast-comparison').innerText(), /应发工资中已扣金额/);
+  await zh.context.close();
+  checks.push('Chinese standard shows the saved value and explains the average; the actual payroll wording remains 应发工资');
+
+  await ko.page.goto(origin + `/hr/daily-work?date=${restDate}&month=${MONTH}`);
+  await ko.page.locator('.hr-daily-editor').waitFor();
+  for (const code of ['90001', '90002']) {
+    const attendance = ko.page.getByLabel(`${code} 출근 상태`, { exact: true });
+    const restHours = ko.page.getByLabel(`${code} 휴일 근무`, { exact: true });
+    assert.equal(await attendance.inputValue(), 'present');
+    assert.equal(await restHours.inputValue(), '2.75');
+    assert.match(await restHours.getAttribute('class'), /\bis-default\b/);
+    assert.equal(await restHours.isEnabled(), true);
+  }
+  assert.equal(await ko.page.getByLabel('90003 출근 상태', { exact: true }).inputValue(), 'off');
+  const restDay = await sheet(restDate);
+  assert.equal(byCode(restDay, '90001').estimate.amount, '110.00');
+  assert.equal(byCode(restDay, '90002').estimate.amount, '137.50');
+  assert.equal(byCode(restDay, '90003').estimate.amount, '0.00');
+  const weekday = byCode(await sheet(DAY), '90001');
+  assert.equal(weekday.estimate.basis.weekday_exempt, true);
+  assert.equal(weekday.work.weekday_hours, '0');
+  const publicHoliday = await sheet(holidayDate);
+  assert.equal(publicHoliday.day_type, 'public_holiday');
+  assert.equal(byCode(publicHoliday, '90001').defaults.attendance, 'off');
+  assert.equal(byCode(publicHoliday, '90001').defaults.holiday_hours, '0');
+  await scrollForCapture(ko.page.locator('.hr-daily-editor'));
+  await capture(ko.page, 'daily-rest');
+  await ko.context.close();
+  checks.push('The daily screen marks department hours as default attendance and applies both pay rates; a stored whitespace title is exempt only on weekdays, and public holidays stay off');
+
+  // An incomplete contribution produces the wider multi-line value which
+  // previously split the adjacent Korean label between 추 and 정 at 390px.
+  await makePartial('测试未配置组');
+  const mobile = await fixture({ mobile: true, dark: true });
+  const forecast = (await openForecast(mobile)).result;
+  assert.equal(forecast.components.social_insurance.estimate.status, 'partial_missing');
+  const restForecast = estimateOn(forecast, restDate);
+  assert.equal(restForecast.source, 'default');
+  assert.equal(restForecast.amount, '247.50');
+  assert.equal(estimateOn(forecast, holidayDate).amount, '0.00');
+  assert.match(await mobile.page.locator('.hr-forecast-comparison').innerText(), /지급 총액\(应发工资\)/);
+  assert.doesNotMatch(await mobile.page.locator('.hr-forecast').innerText(), /응발급여/);
+  const labels = mobile.page.locator('.hr-forecast-card dt').filter({ hasText: '요율 추정' });
+  assert.equal(await labels.count(), 2);
+  const geometry = await labels.evaluateAll(elements => elements.map(element => {
+    const label = element.firstChild;
+    const range = document.createRange();
+    const words = [...label.textContent.matchAll(/\S+/g)].map(match => {
+      range.setStart(label, match.index);
+      range.setEnd(label, match.index + match[0].length);
+      return new Set([...range.getClientRects()].map(rect => rect.top)).size;
+    });
+    const currency = element.nextElementSibling.querySelector('.hr-forecast-money');
+    return { words, whiteSpace: getComputedStyle(currency).whiteSpace, fontVariantNumeric: getComputedStyle(currency).fontVariantNumeric };
+  }));
+  assert.deepEqual(geometry, Array(2).fill({ words: [1, 1], whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }));
+  const width = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+  assert.deepEqual(width, { viewport: 390, document: 390 });
+  await scrollForCapture(mobile.page.locator('.hr-forecast-summary'));
+  await capture(mobile.page, 'forecast-mobile-390');
+  await mobile.context.close();
+  checks.push('The 390px Korean forecast includes default rest day pay, shows 지급 총액(应发工资), keeps both words of 요율 추정 intact, and retains nonwrapping tabular currency');
+}
+
 (async () => {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   await startBackend();
+  if (task008) {
+    browser = await playwright.chromium.launch({ headless: true });
+    await checkRestHours();
+    assert.deepEqual(errors, [], 'No uncaught browser errors');
+    assert.equal(captures.length, 4);
+    console.log(JSON.stringify({
+      result: 'PASS', real_backend: true, fixtureDirectory, checks, screenshots: captures, uncaughtBrowserErrors: errors.length,
+    }, null, 2));
+    return;
+  }
   await writeFixture('2026-11-11', value => [{
     employee_id: byCode(value, '90001').employee.id, work: { weekday_hours: '1' },
   }]);

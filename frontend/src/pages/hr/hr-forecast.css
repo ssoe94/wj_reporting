@@ -63,6 +63,7 @@
   .hr-forecast-card-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media (max-width:700px) {
+  .hr-forecast:lang(ko) { word-break:keep-all; }
   .hr-forecast .hr-panel { padding:10px 12px; }
   .hr-forecast-summary { grid-template-columns:minmax(0,1fr); gap:8px; }
   .hr-forecast-summary > dl { padding-top:8px; border-top:1px solid var(--hr-border); }

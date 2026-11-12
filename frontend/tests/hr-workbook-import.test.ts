@@ -237,7 +237,7 @@ test('formula results are read from numeric caches; error and missing-cache cell
 test('text formulas accept saved strings, including an optional empty title, without weakening amount caches', () => {
   const row = contract();
   row[2] = { value: '合成员工甲', formula: 'VLOOKUP(B2,名单!A:B,2,FALSE)' };
-  row[3] = { value: '合成职务', formula: 'VLOOKUP(B2,名单!A:C,3,FALSE)' };
+  row[3] = { value: '合成\n职\t　务', formula: 'VLOOKUP(B2,名单!A:C,3,FALSE)' };
   row[4] = { value: '合成部门', formula: 'VLOOKUP(B2,名单!A:D,4,FALSE)' };
   const result = parseCompanyPayroll([source([contractHeaders, row])]);
   assert.equal(result.months[0].rows[0].name, '合成员工甲');

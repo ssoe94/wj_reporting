@@ -23,7 +23,7 @@ def _decimal_strings(value):
 
 
 def default_work(person, day, day_type, **engine):
-    """Resolve actual overtime defaults and the titles exempt on workdays."""
+    """Resolve overtime defaults and the titles exempt on workdays."""
     working = day_type in WORKDAYS
     default = daily_default_overtime(person['department'], person['title'], day, **engine)
     work = {field: '0' for field in HOURS}
@@ -32,6 +32,8 @@ def default_work(person, day, day_type, **engine):
         work['weekday_hours'] = _decimal_strings(default['hours'])
         if person['employment_type'] == 'hourly':
             work['regular_hours'] = engine['rules']['contract']['hours_per_day']
+    elif day_type == 'rest_day' and default['hours'] > 0:
+        work.update(attendance='present', rest_hours=_decimal_strings(default['hours']))
     return work, bool(default['basis'].get('weekday_exempt'))
 
 

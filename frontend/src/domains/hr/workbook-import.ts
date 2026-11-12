@@ -5,6 +5,7 @@ import {
   amountToCents,
   centsToAmount,
   getHeaderColumns,
+  normalizeHrJobTitle,
   parsePayrollPeriod,
   suggestColumnMapping,
 } from './import.ts';
@@ -309,7 +310,7 @@ export function parseCompanyPayroll(
           const period = payrollMonth(values[header.period], header.periodHeader);
           const name = requiredText(values[header.name], '성명', 100);
           const sourceDepartment = requiredText(values[header.department], '원본 부서', 100);
-          const title = header.title == null ? '' : cellText(values[header.title]);
+          const title = header.title == null ? '' : normalizeHrJobTitle(cellText(values[header.title]));
           if (title.length > 100) throw new Error('직무는 100자까지 입력할 수 있습니다.');
           const originalCode = cellText(values[header.code]);
           if (originalCode.length > 500) throw new Error('원본 사번은 500자까지 읽을 수 있습니다. 원본 파일을 확인해 주세요.');

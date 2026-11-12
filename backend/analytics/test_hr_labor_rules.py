@@ -255,16 +255,23 @@ class DailyDefaultOvertimeTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready")
         self.assertEqual(result["hours"], D("0"))
 
-    def test_weekend_and_holiday_require_manual_hours_for_excluded_titles(self):
+    def test_unconfigured_rest_days_are_known_zero_and_only_public_holidays_require_manual_hours(self):
         rules = default_labor_rules()
-        rules["weekday_excluded_titles"] = {"titles": ["Synthetic supervisor"], "confirmed": True}
-        overrides = {"2026-11-16": "public_holiday"}
-        for day in ("2026-11-14", "2026-11-16"):
-            with self.subTest(day=day):
-                result = daily_default_overtime("注塑", "Synthetic supervisor", day, rules=rules, overrides=overrides)
-                self.assertEqual(result["status"], "manual_required")
-                self.assertIsNone(result["hours"])
-                self.assertIsNone(result["candidate_hours"])
+        for rest_hours in (None, {}, {"Synthetic team": None}):
+            with self.subTest(rest_hours=rest_hours):
+                if rest_hours is None:
+                    rules.pop("department_rest_hours")
+                else:
+                    rules["department_rest_hours"] = rest_hours
+                rest = daily_default_overtime("Synthetic team", "Part長", "2026-11-14", rules=rules)
+                self.assertEqual((rest["status"], rest["hours"]), ("ready", D("0")))
+                self.assertEqual(rest["basis"]["default_hours_source"], "not_configured")
+        rules["department_rest_hours"] = {"Synthetic team": "1.25"}
+        holiday = daily_default_overtime("Synthetic team", "Part長", "2026-11-14", rules=rules,
+                                         overrides={"2026-11-14": "public_holiday"})
+        self.assertEqual(holiday["status"], "manual_required")
+        self.assertIsNone(holiday["hours"])
+        self.assertIsNone(holiday["candidate_hours"])
 
     def test_adjusted_saturday_uses_weekday_department_default(self):
         rules = default_labor_rules()
@@ -497,6 +504,22 @@ class EmployeeDayTests(unittest.TestCase):
                     self.assertEqual(holiday["overtime"]["public_holiday"]["amount"], D("413.79"))
                     self.assertEqual(weekday["overtime"]["fixed"]["amount"], D("125.50"))
 
+    def test_rest_default_pays_both_employment_types_and_exclusion_normalizes_both_sides(self):
+        self.rules["department_rest_hours"] = {"Synthetic team": "1.25"}
+        self.rules["department_overtime"] = {"Synthetic team": "3"}
+        self.rules["weekday_excluded_titles"]["titles"] = ["财务部长兼\t办公室主任", "Part長"]
+        employee = self.employee | {"department": "Synthetic team", "title": "财务部长兼\n办公　室主任"}
+        payroll = self.payroll | {"base_salary": "3480"}
+        for kind, amount in (("contract", "50.00"), ("hourly", "61.25")):
+            person = employee | {"employment_type": kind}
+            weekday = employee_day(person, "2026-11-13", payroll=payroll, overtime_hours="3", rules=self.rules)
+            self.assertEqual(weekday["overtime"]["weekday"]["amount"], D("0.00"))
+            self.assertTrue(weekday["basis"]["weekday_exempt"])
+            rest = employee_day(person, "2026-11-14", payroll=payroll, rules=self.rules)
+            self.assertEqual(rest["overtime"]["rest_day"]["amount"], D(amount))
+            self.assertFalse(rest["basis"]["weekday_exempt"])
+            self.assertEqual(rest["basis"]["default_overtime"]["default_hours_source"], "department_rest_hours")
+
     def test_engineer_is_included_until_explicitly_added_to_excluded_titles(self):
         employee = self.employee | {"title": "工程师"}
         included = employee_day(employee, "2026-11-13", payroll=self.payroll, rules=self.rules)
@@ -537,14 +560,17 @@ class EmployeeDayTests(unittest.TestCase):
         self.assertEqual(override["overtime"]["weekday"]["amount"], D("192.00"))
         self.assertEqual(override["basis"]["hourly_rate"]["source"], "employee_override")
 
-    def test_hourly_rest_and_holiday_hours_are_manual_and_do_not_add_regular_pay(self):
+    def test_hourly_entered_rest_and_holiday_hours_do_not_add_regular_pay(self):
         employee = self.employee | {"employment_type": "hourly"}
         overrides = {"2026-11-16": "public_holiday"}
-        for day, slot, amount in (("2026-11-14", "rest_day", "392.00"), ("2026-11-16", "public_holiday", "588.00")):
+        for day, slot, amount, default_status, default_amount in (
+            ("2026-11-14", "rest_day", "392.00", "ready", D("0.00")),
+            ("2026-11-16", "public_holiday", "588.00", "manual_required", None),
+        ):
             with self.subTest(day=day):
-                manual = employee_day(employee, day, rules=self.rules, overrides=overrides)
-                self.assertEqual(manual["overtime"][slot]["status"], "manual_required")
-                self.assertIsNone(manual["overtime"][slot]["amount"])
+                default = employee_day(employee, day, rules=self.rules, overrides=overrides)
+                self.assertEqual(default["overtime"][slot]["status"], default_status)
+                self.assertEqual(default["overtime"][slot]["amount"], default_amount)
                 entered = employee_day(employee, day, overtime_hours="8", rules=self.rules, overrides=overrides)
                 self.assertEqual(entered["salary"]["amount"], D("0.00"))
                 self.assertEqual(entered["overtime"][slot]["amount"], D(amount))

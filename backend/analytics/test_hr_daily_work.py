@@ -146,6 +146,34 @@ class DailyWorkTests(TestCase):
             self.assertEqual(sheet['summary']['amount'], '0.00')
         self.assertFalse(HrDailyWork.objects.exists())
 
+    def test_rest_defaults_and_manual_override_for_legacy_payroll_title(self):
+        employee = HrRosterEmployee.objects.create(code='SYN-R', name='Synthetic roster', employment_type='contract',
+            department='Synthetic team', first_month='2026-10', last_month='2026-11')
+        old_title = '财务部长兼\n办公室\t主　任'
+        workspace = HrMonthWorkspace.objects.create(month='2026-10', employees=[{
+            'code': employee.code, 'name': employee.name, 'employment_type': 'contract',
+            'title': old_title, 'payroll_components': {'base_salary': '3480'},
+        }])
+        rules = default_labor_rules()
+        rules['department_overtime']['Synthetic team'] = '3'
+        rules['department_rest_hours']['Synthetic team'] = '1.25'
+        HrLaborStandard.objects.create(month='2026-11', rules=rules)
+        HrLaborCalendar.objects.create(month='2026-11', days={'2026-11-16': 'public_holiday'})
+        weekday = self.row(self.read(), employee.pk)
+        self.assertEqual(weekday['work']['weekday_hours'], '0')
+        self.assertTrue(weekday['estimate']['basis']['weekday_exempt'])
+        rest = self.read('2026-11-15')
+        row = self.row(rest, employee.pk)
+        self.assertEqual(row['defaults'], row['work'])
+        self.assertEqual((row['work']['attendance'], row['work']['rest_hours']), ('present', '1.25'))
+        self.assertEqual((row['modified'], row['estimate']['amount']), ([], '50.00'))
+        self.assertEqual(self.row(self.preview(rest, employee.pk, attendance='off'), employee.pk)['estimate']['amount'], '0.00')
+        holiday = self.row(self.read('2026-11-16'), employee.pk)
+        self.assertEqual((holiday['work']['attendance'], holiday['work']['holiday_hours']), ('off', '0'))
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.employees[0]['title'], old_title)
+        self.assertFalse(HrDailyWork.objects.exists())
+
     def test_contract_overtime_only_and_holiday_multipliers(self):
         employee = self.hire()
         HrLaborCalendar.objects.create(month='2026-11', days={'2026-11-16': 'public_holiday'})

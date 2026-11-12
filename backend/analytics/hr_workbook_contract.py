@@ -2,7 +2,7 @@
 from rest_framework import serializers
 
 from .hr_company_structure import COMPANY_DEPARTMENTS
-from .hr_contract import AmountField, StrictSerializer, validate_month
+from .hr_contract import AmountField, JobTitleField, StrictSerializer, validate_month
 from .hr_identity import code_key, identity
 
 
@@ -62,7 +62,7 @@ class PayrollComponentsSerializer(StrictSerializer):
 class PayrollRowSerializer(StrictSerializer):
     code = serializers.CharField(max_length=64)
     name = serializers.CharField(max_length=100)
-    title = serializers.CharField(max_length=100, allow_blank=True, default='')
+    title = JobTitleField(max_length=100, allow_blank=True, default='')
     amount = AmountField()
     period = serializers.CharField(max_length=7)
     source_department = serializers.CharField(max_length=100, allow_blank=True, default='')

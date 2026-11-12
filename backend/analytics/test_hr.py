@@ -91,6 +91,13 @@ class HrApiTests(TestCase):
         self.assertEqual(len(response.data['fingerprint']), 64)
         self.assertEqual(HrMonthWorkspace.objects.count(), 0)
 
+    def test_mapped_import_removes_whitespace_from_stored_job_title(self):
+        data = import_data()
+        data['rows'][0]['title'] = '테스트\n직\t　무'
+        response = self.upload(data)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(HrMonthWorkspace.objects.get(month=MONTH).employees[0]['title'], '테스트직무')
+
     def test_import_layout_rollup_and_unassigned_reconcile(self):
         self.assertEqual(self.upload().status_code, 200)
         response = self.layout()

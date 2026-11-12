@@ -169,6 +169,14 @@ class HrWorkbookTests(TestCase):
             self.assertEqual(self.preview(batch()).status_code, 200)
         self.assertEqual(HrMonthWorkspace.objects.count(), 0)
 
+    def test_workbook_import_removes_all_whitespace_from_stored_job_title(self):
+        data = batch()
+        data['months'][0]['rows'][0]['title'] = '财务部长兼\n办公室\t主　任'
+        response = self.save(self.commit(data))
+        self.assertEqual(response.status_code, 200, response.data)
+        stored = HrMonthWorkspace.objects.get(month='2026-01')
+        self.assertEqual(stored.employees[0]['title'], '财务部长兼办公室主任')
+
     def test_seven_months_persist_exact_money_source_and_reference(self):
         response = self.save(self.commit(batch()))
         self.assertEqual(response.status_code, 200, response.data)
