@@ -1,12 +1,18 @@
-from datetime import datetime
+import copy
+import hashlib
+import json
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from injection.models import MouldDataSnapshot, MouldUsageConfirmation
+from injection.mould_inventory import decorate_inventory_board
+from injection.mould_views import _merge_location_snapshot
 from injection.mould_snapshots import (
     BOARD_SNAPSHOT_KEY,
     decorate_board_payload,
@@ -189,6 +195,79 @@ class MouldSnapshotUsageTests(TestCase):
             [139_798, 200],
         )
 
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    @patch('injection.mould_views.build_mould_detail')
+    def test_newer_board_record_refreshes_young_detail_once_using_existing_lease(self, build_detail, submit):
+        payload = detail_payload()
+        payload['mould']['record_updated_at'] = '2026-11-13T03:55:00Z'
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=payload,
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY, kind=MouldDataSnapshot.KIND_BOARD,
+            payload={'moulds': [{'instance_id': '123', 'record_updated_at': '2026-11-13T12:09:49.851+08:00'}]},
+        )
+        for _ in range(2):
+            response = APIClient().get('/api/injection/moulds/123/')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['data_freshness']['status'], 'refreshing')
+            self.assertEqual(response.json()['mould']['record_updated_at'], payload['mould']['record_updated_at'])
+        submit.assert_called_once()
+        build_detail.assert_not_called()
+        snapshot.refresh_from_db()
+        self.assertIsNotNone(snapshot.refresh_started_at)
+        self.assertEqual(snapshot.payload, payload)
+
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    def test_young_detail_needs_newer_valid_same_instance_record_to_refresh(self, submit):
+        payload = detail_payload()
+        payload['mould']['record_updated_at'] = '2026-11-13T12:00:00+08:00'
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=payload,
+        )
+        board = MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY, kind=MouldDataSnapshot.KIND_BOARD, payload={},
+        )
+        for rows in (
+            [],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T04:00:00Z'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T11:59:59+08:00'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T12:00:00'}],
+            [{'instance_id': 'other', 'record_updated_at': '2026-11-13T13:00:00+08:00'}],
+            [{'instance_id': '123'}],
+            [{'instance_id': '123', 'record_updated_at': 'invalid'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-99-13T13:00:00+08:00'}],
+        ):
+            with self.subTest(rows=rows):
+                board.payload = {'moulds': rows}
+                board.save(update_fields=['payload'])
+                response = APIClient().get('/api/injection/moulds/123/')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()['data_freshness']['status'], 'snapshot')
+                submit.assert_not_called()
+        board.payload = {'moulds': [{'instance_id': '123', 'record_updated_at': '2026-11-13T13:00:00+08:00'}]}
+        board.save(update_fields=['payload'])
+        for detail_time in (None, 'invalid'):
+            snapshot.payload['mould']['record_updated_at'] = detail_time
+            snapshot.save(update_fields=['payload'])
+            response = APIClient().get('/api/injection/moulds/123/')
+            self.assertEqual(response.status_code, 200)
+            submit.assert_not_called()
+
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    def test_old_detail_still_refreshes_without_board_record(self, submit):
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=detail_payload(),
+        )
+        MouldDataSnapshot.objects.filter(pk=snapshot.pk).update(refreshed_at=timezone.now() - timedelta(hours=2))
+        response = APIClient().get('/api/injection/moulds/123/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data_freshness']['status'], 'refreshing')
+        submit.assert_called_once()
+
     def test_confirmed_checkpoint_is_not_pending(self):
         user = User.objects.create_user('mould-user')
         MouldUsageConfirmation.objects.create(
@@ -246,6 +325,7 @@ class MouldSnapshotUsageTests(TestCase):
                     'instance_id': '123',
                     'mould_code': 'MOLD-0123',
                     'drawing_no': 'SLOW-DETAIL-123',
+                    'status': '使用中',
                     'current_output_amount': 245_000,
                     'summary_category': 'storage',
                     'location': {'code': 'A1-1', 'kind': 'storage'},
@@ -261,6 +341,7 @@ class MouldSnapshotUsageTests(TestCase):
             'moulds': [{
                 'instance_id': '123',
                 'mould_code': 'MOLD-0123',
+                'status': '已报废',
                 'current_output_amount': None,
                 'summary_category': 'storage',
                 'record_updated_at': '2026-08-10T10:00:00+08:00',
@@ -280,6 +361,7 @@ class MouldSnapshotUsageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload['moulds'][0]['location']['code'], 'B1-10')
+        self.assertEqual(payload['moulds'][0]['status'], '已报废')
         self.assertEqual(payload['moulds'][0]['current_output_amount'], 245_000)
         self.assertEqual(payload['moulds'][0]['drawing_no'], 'SLOW-DETAIL-123')
         self.assertEqual(
@@ -287,7 +369,43 @@ class MouldSnapshotUsageTests(TestCase):
             '2026-08-10T10:01:00+08:00',
         )
         snapshot.refresh_from_db()
+        self.assertEqual(snapshot.payload['moulds'][0]['status'], '已报废')
         self.assertEqual(snapshot.refreshed_at, original_refreshed_at)
+
+    @patch('injection.mould_inventory._team_location_catalog')
+    def test_status_refresh_preserves_history_and_unchanged_team_confirmation(self, catalog):
+        reviewed = {
+            'instance_id': 'team-1', 'asset_code': 'TEAM-ASSET', 'drawing_no': 'TEAM-DRAWING',
+            'status': '使用中', 'record_updated_at': '2026-11-12T09:00:00+08:00',
+            'location': {'code': '厂外', 'kind': 'unknown'}, 'summary_category': 'offsite',
+        }
+        evidence = [reviewed[key] for key in ('asset_code', 'drawing_no', 'record_updated_at')]
+        evidence.extend([None] * 4)
+        catalog.return_value = {
+            'source': {'reviewed_on': '2026-11-13'},
+            'entries': {hashlib.sha256(b'team-1').hexdigest(): {
+                'site': 'TIANLU', 'source_row': 2,
+                'evidence_sha256': hashlib.sha256(json.dumps(evidence, separators=(',', ':')).encode()).hexdigest(),
+            }},
+        }
+        history = {'occurred_at': '2026-10-01T00:00:00+08:00', 'to_location': '天路', 'time_quality': 'child_field'}
+        current = {'moulds': [
+            {'instance_id': 'scrap-1', 'status': '使用中', 'last_movement': history,
+             'location': {'code': '厂外'}, 'summary_category': 'offsite', 'current_output_amount': 12345},
+            reviewed,
+        ]}
+        before = copy.deepcopy(current)
+        merged = _merge_location_snapshot(current, {'moulds': [
+            {'instance_id': 'scrap-1', 'status': '已报废', 'location': {'code': '厂外'}},
+            reviewed,
+        ]})
+        result = decorate_inventory_board(merged)
+        self.assertEqual(result['moulds'][0]['status'], '已报废')
+        self.assertEqual(result['moulds'][0]['last_movement'], history)
+        self.assertEqual(result['moulds'][0]['current_output_amount'], 12345)
+        self.assertEqual(result['moulds'][1]['inventory']['site'], 'TIANLU')
+        self.assertEqual(result['moulds'][1]['inventory']['basis'], 'team_confirmation')
+        self.assertEqual(current, before)
 
     def test_usage_confirmation_requires_edit_permission_and_is_audited(self):
         MouldDataSnapshot.objects.create(
