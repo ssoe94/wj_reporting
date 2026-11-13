@@ -376,7 +376,7 @@ def _merge_location_snapshot(
     current_payload: Mapping[str, Any],
     location_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Replace position-sensitive board fields while preserving slower enrichment."""
+    """Refresh MES position and status while preserving slower enrichment."""
 
     current = copy.deepcopy(dict(current_payload))
     quick = _project_board_payload(location_payload)
@@ -400,6 +400,8 @@ def _merge_location_snapshot(
         fresh = quick_by_id.get(instance_id)
         if fresh is not None:
             mould["location"] = copy.deepcopy(fresh.get("location"))
+            if "status" in fresh:
+                mould["status"] = copy.deepcopy(fresh["status"])
             mould["record_updated_at"] = fresh.get("record_updated_at")
             mould["final_changed_at"] = fresh.get("final_changed_at")
             category = str(mould.get("summary_category") or "unknown")
