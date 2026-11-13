@@ -1,12 +1,13 @@
 import copy
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from injection.models import MouldDataSnapshot, MouldUsageConfirmation
@@ -193,6 +194,79 @@ class MouldSnapshotUsageTests(TestCase):
             [row['source_cumulative_quantity'] for row in decorated['production_history']],
             [139_798, 200],
         )
+
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    @patch('injection.mould_views.build_mould_detail')
+    def test_newer_board_record_refreshes_young_detail_once_using_existing_lease(self, build_detail, submit):
+        payload = detail_payload()
+        payload['mould']['record_updated_at'] = '2026-11-13T03:55:00Z'
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=payload,
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY, kind=MouldDataSnapshot.KIND_BOARD,
+            payload={'moulds': [{'instance_id': '123', 'record_updated_at': '2026-11-13T12:09:49.851+08:00'}]},
+        )
+        for _ in range(2):
+            response = APIClient().get('/api/injection/moulds/123/')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['data_freshness']['status'], 'refreshing')
+            self.assertEqual(response.json()['mould']['record_updated_at'], payload['mould']['record_updated_at'])
+        submit.assert_called_once()
+        build_detail.assert_not_called()
+        snapshot.refresh_from_db()
+        self.assertIsNotNone(snapshot.refresh_started_at)
+        self.assertEqual(snapshot.payload, payload)
+
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    def test_young_detail_needs_newer_valid_same_instance_record_to_refresh(self, submit):
+        payload = detail_payload()
+        payload['mould']['record_updated_at'] = '2026-11-13T12:00:00+08:00'
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=payload,
+        )
+        board = MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY, kind=MouldDataSnapshot.KIND_BOARD, payload={},
+        )
+        for rows in (
+            [],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T04:00:00Z'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T11:59:59+08:00'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-11-13T12:00:00'}],
+            [{'instance_id': 'other', 'record_updated_at': '2026-11-13T13:00:00+08:00'}],
+            [{'instance_id': '123'}],
+            [{'instance_id': '123', 'record_updated_at': 'invalid'}],
+            [{'instance_id': '123', 'record_updated_at': '2026-99-13T13:00:00+08:00'}],
+        ):
+            with self.subTest(rows=rows):
+                board.payload = {'moulds': rows}
+                board.save(update_fields=['payload'])
+                response = APIClient().get('/api/injection/moulds/123/')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()['data_freshness']['status'], 'snapshot')
+                submit.assert_not_called()
+        board.payload = {'moulds': [{'instance_id': '123', 'record_updated_at': '2026-11-13T13:00:00+08:00'}]}
+        board.save(update_fields=['payload'])
+        for detail_time in (None, 'invalid'):
+            snapshot.payload['mould']['record_updated_at'] = detail_time
+            snapshot.save(update_fields=['payload'])
+            response = APIClient().get('/api/injection/moulds/123/')
+            self.assertEqual(response.status_code, 200)
+            submit.assert_not_called()
+
+    @patch('injection.mould_views._SNAPSHOT_REFRESH_POOL.submit')
+    def test_old_detail_still_refreshes_without_board_record(self, submit):
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'), kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123', payload=detail_payload(),
+        )
+        MouldDataSnapshot.objects.filter(pk=snapshot.pk).update(refreshed_at=timezone.now() - timedelta(hours=2))
+        response = APIClient().get('/api/injection/moulds/123/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data_freshness']['status'], 'refreshing')
+        submit.assert_called_once()
 
     def test_confirmed_checkpoint_is_not_pending(self):
         user = User.objects.create_user('mould-user')

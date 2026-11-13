@@ -40,6 +40,7 @@ from .mould_snapshots import (
     decorate_detail_payload,
     detail_snapshot_key,
     mark_snapshot_freshness,
+    parse_source_datetime,
     release_refresh,
     snapshot_is_stale,
     store_snapshot,
@@ -561,6 +562,30 @@ class MouldBoardView(APIView):
         return _no_store_response(projected_payload)
 
 
+def _board_has_newer_mould_record(instance_id: str, detail_payload: Mapping[str, Any]) -> bool:
+    """A freshly read board can invalidate a younger cached detail record."""
+
+    detail = detail_payload.get("mould")
+    if not isinstance(detail, Mapping) or str(detail.get("instance_id") or "") != instance_id:
+        return False
+    board = MouldDataSnapshot.objects.filter(
+        snapshot_key=BOARD_SNAPSHOT_KEY,
+    ).values_list("payload", flat=True).first()
+    rows = board.get("moulds") if isinstance(board, Mapping) else None
+    if not isinstance(rows, list):
+        return False
+    matches = [row for row in rows if isinstance(row, Mapping)
+               and str(row.get("instance_id") or "") == instance_id]
+    if len(matches) != 1:
+        return False
+    try:
+        detail_time = parse_source_datetime(detail.get("record_updated_at"))
+        board_time = parse_source_datetime(matches[0].get("record_updated_at"))
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return detail_time is not None and board_time is not None and board_time > detail_time
+
+
 class MouldDetailView(APIView):
     """Return the public detail projection for one mould."""
 
@@ -575,7 +600,7 @@ class MouldDetailView(APIView):
         ).first()
         if snapshot is not None:
             refreshing = False
-            if snapshot_is_stale(snapshot):
+            if snapshot_is_stale(snapshot) or _board_has_newer_mould_record(instance_id, snapshot.payload):
                 refreshing = _schedule_refresh(
                     snapshot_key,
                     lambda: _refresh_detail_snapshot(instance_id),
