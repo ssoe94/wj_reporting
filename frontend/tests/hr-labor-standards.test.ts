@@ -78,7 +78,8 @@ function harness(kind: 'rules' | 'calendar' | 'actual' | 'page' = 'rules', optio
         return { ...calendarFixture(), month, version: Number(payload.version) + 1, days: clone(payload.days), history: [] };
       },
     },
-    './hrCommon': { currentHrMonth: () => '2026-11', HrShell: 'HrShell', HrLoadState: 'HrLoadState', isHrConflict: (failure: any) => failure?.response?.status === 409 },
+    './hrCommon': { useHrMonth: () => ['2026-11', () => {}], HrShell: 'HrShell', HrLoadState: 'HrLoadState', isHrConflict: (failure: any) => failure?.response?.status === 409 },
+    './useHrPopGuard': { useHrPopGuard: () => {} },
   };
   const exports: Record<string, any> = {};
   new Function('require', 'exports', compiled)((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, exports);

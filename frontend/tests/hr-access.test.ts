@@ -12,6 +12,6 @@ test('HR requires explicit server authorization or superuser, never staff/admin/
 });
 
 test('all HR routes are guarded before broad staff/admin route grants', () => {
-  for (const path of ['/hr', '/hr/personnel', '/hr/roster?month=2026-11', '/hr/labor-standards?month=2026-11', '/HR/LABOR-COST/', '/%68r/personnel?month=2026-10', '/hr/new#section']) assert.equal(isHrRoute(path), true);
+  for (const path of ['/hr', '/hr/dashboard', '/hr/personnel?step=roster&month=2026-11', '/hr/work?step=standards&month=2026-11', '/hr/roster?month=2026-11', '/HR/LABOR-COST/', '/%68r/personnel?month=2026-10', '/hr/new#section']) assert.equal(isHrRoute(path), true);
   for (const path of ['/hr-other', '/development/field-materials', '/%invalid']) assert.equal(isHrRoute(path), false);
 });

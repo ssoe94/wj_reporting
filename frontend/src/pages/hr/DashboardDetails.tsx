@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { dashboardEmployment, dashboardMoney, dashboardNumber, dashboardStatus } from '../../domains/hr/dashboard';
 import type { DashboardMetric, DashboardNotice, DashboardPerson, HrDashboard } from '../../domains/hr/dashboard';
+import { HR_PAGES, PERSONNEL_STEPS, WORK_STEPS, hrFlowHref, hrPageForPath, hrStepLabel, legacyHrHref } from '../../domains/hr/flow';
 import './hr-dashboard-details.css';
 
 type Copy = readonly [ko: string, zh: string];
@@ -112,7 +113,7 @@ function Burden({ data, ko, reveal }: { data: HrDashboard; ko: boolean; reveal: 
       </section>
     </div>
     <section className="hr-dash-entered" aria-label={t(ko, ['이달 입력 실적', '本月录入实绩'])}>
-      <header className="hr-dash-section-header"><h3>{t(ko, ['이달 입력 실적', '本月录入实绩'])}</h3><Link to={`/hr/daily-work?month=${enteredMonth}`}>{t(ko, ['일별 근무 보기', '查看每日出勤'])}</Link></header>
+      <header className="hr-dash-section-header"><h3>{t(ko, ['이달 입력 실적', '本月录入实绩'])}</h3><Link to={hrFlowHref('work', 'daily', enteredMonth)}>{t(ko, ['일별 근무 보기', '查看每日出勤'])}</Link></header>
       <p className="hr-dash-note">{enteredMonth} · {t(ko, ['직접 입력된 시간만 합산했습니다.', '仅汇总手动录入的工时。'])}</p>
       <dl className="hr-dash-measures">
         <div><dt>{t(ko, ['입력 일수', '已录入天数'])}</dt><dd><Value metric={entered.days} ko={ko} /></dd></div>
@@ -223,14 +224,17 @@ const notices: Record<string, { title: Copy; reason: Copy; format?: Format }> = 
 };
 
 function destination(link: string, ko: boolean) {
-  const route = link.split(/[?#]/u)[0];
-  const paths: Record<string, Copy> = {
-    '/hr/personnel': ['인원 배치', '人员配置'], '/hr/roster': ['인원 명부', '人员名册'],
-    '/hr/labor-cost': ['인건비 집계', '人工成本汇总'], '/hr/labor-standards': ['인건비 기준', '人工成本标准'],
-    '/hr/labor-forecast': ['인건비 예상', '人工成本预测'], '/hr/daily-work': ['일별 근무', '每日出勤'],
-    '/hr/dashboard': ['인사 대시보드', '人事总览'],
-  };
-  return t(ko, paths[route] ?? ['관련 탭', '相关页面']);
+  const [withoutHash, hash] = link.split('#');
+  const [pathname, query] = withoutHash.split('?');
+  const href = legacyHrHref(pathname, query ?? '', hash ? `#${hash}` : '') ?? link;
+  const [route, search] = href.split(/[?#]/u);
+  const page = hrPageForPath(route);
+  const step = new URLSearchParams(search).get('step');
+  const steps = page === 'personnel' ? PERSONNEL_STEPS : page === 'work' ? WORK_STEPS : [];
+  const matchingStep = steps.find(option => option === step);
+  const label = matchingStep ? hrStepLabel(matchingStep, ko)
+    : t(ko, HR_PAGES.find(option => option.page === page)?.label ?? ['관련 탭', '相关页面']);
+  return { href, label };
 }
 
 function NoticeList({ ko, items, title }: { ko: boolean; items: DashboardNotice[]; title: string }) {
@@ -240,6 +244,7 @@ function NoticeList({ ko, items, title }: { ko: boolean; items: DashboardNotice[
     {items.length ? <ul>{items.map((item, index) => {
       const text = notices[item.code];
       const month = item.month ?? item.metric.basis.month;
+      const target = destination(item.link, ko);
       return <li key={`${item.code}:${month}:${index}`} data-kind={item.kind} data-notice={item.code}>
         <div><span className="hr-dash-notice-kind">{t(ko, item.kind === 'warning' ? ['주의', '注意'] : ['정보', '信息'])}</span>
           <strong>{text ? t(ko, text.title) : item.code}</strong>
@@ -247,7 +252,7 @@ function NoticeList({ ko, items, title }: { ko: boolean; items: DashboardNotice[
         </div>
         <Value metric={item.metric} ko={ko} format={text?.format} />
         <small>{month ? `${month} · ` : ''}{text ? t(ko, text.reason) : item.metric.basis.formula}</small>
-        <Link to={item.link}>{destination(item.link, ko)}</Link>
+        <Link to={target.href}>{target.label}</Link>
       </li>;
     })}</ul> : <p className="hr-dash-note">{t(ko, ['표시할 항목이 없습니다.', '暂无提示。'])}</p>}
   </section>;

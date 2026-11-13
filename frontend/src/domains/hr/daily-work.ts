@@ -102,8 +102,14 @@ export function todayHrDate() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}-${parts.find((part) => part.type === 'day')?.value}`;
 }
-export function initialDailyDate() {
-  const query = new URLSearchParams(window.location.search); const date = query.get('date');
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00Z`).getTime()) && new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) === date) return date;
-  const month = query.get('month'); const today = todayHrDate(); return month && /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(month) && !today.startsWith(month) ? `${month}-01` : today;
+export function initialDailyDate(search = window.location.search, today = todayHrDate()) {
+  const query = new URLSearchParams(search);
+  const date = query.get('date');
+  const selectedMonth = query.get('month');
+  const month = selectedMonth && /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(selectedMonth) ? selectedMonth : null;
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && (!month || date.slice(0, 7) === month)) {
+    const parsed = new Date(`${date}T12:00:00Z`);
+    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date) return date;
+  }
+  return month && today.slice(0, 7) !== month ? `${month}-01` : today;
 }

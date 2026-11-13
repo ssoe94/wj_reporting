@@ -6,22 +6,30 @@ import { getHrAccess, getHrRoster, updateHrAccess, updateHrWorkspace } from '../
 import { buildAssignments, getDepartmentTree, getDescendantIds, moveEmployee, validateDepartments, MAX_DEPARTMENTS } from '../../domains/hr/layout';
 import type { HrAccessUser, HrDepartment, HrEmployee, HrWorkspace } from '../../domains/hr/types';
 import type { HrRosterEntry } from '../../domains/hr/workbook-types';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { hrFlowHref, personnelStep, PERSONNEL_STEPS } from '../../domains/hr/flow';
+import { HR_PERSONNEL_PATH } from '../../domains/auth/hr-access';
 import HrImportPanel from './HrImportPanel';
 import HrWorkbookImportPanel from './HrWorkbookImportPanel';
 import HrAllocationBoard from './HrAllocationBoard';
 import HrCostRibbon from './HrCostRibbon';
+import HrRosterPanel from './HrRosterPanel';
+import LaborCostPage from './LaborCostPage';
+import { usePreventHrFileNavigation } from './usePreventHrFileNavigation';
+import { useHrPopGuard } from './useHrPopGuard';
 import { formatEmployeeCode } from '../../domains/hr/visualization';
 import { centsToAmount } from '../../domains/hr/import';
 import { COMPANY_CLASSIFICATION } from '../../domains/hr/company-structure';
 import { hrAssignmentPath, hrDepartmentLabel } from '../../domains/hr/labels';
-import { HrLoadState, HrShell, HrSource, currentHrMonth, isHrConflict, layoutSummary, localHrError, money, safeHrError, useHrWorkspace } from './hrCommon';
+import { HrLoadState, HrShell, HrSource, isHrConflict, layoutSummary, localHrError, money, safeHrError, useHrMonth, useHrWorkspace } from './hrCommon';
 
 type LayoutDraft = { departments: HrDepartment[]; employees: HrEmployee[] };
 type DepartmentForm = { id: string; name: string; function: string; parent_id: string | null; isNew: boolean };
 const EMPTY_DEPARTMENTS: HrDepartment[] = [];
 const EMPTY_EMPLOYEES: HrEmployee[] = [];
 const layoutKey = (value: LayoutDraft) => JSON.stringify({ departments: value.departments, assignments: buildAssignments(value.employees) });
+const samePersonnelMonth = (pathname: string, search: string, month: string) =>
+  pathname.replace(/\/+$/, '').toLowerCase() === HR_PERSONNEL_PATH && new URLSearchParams(search).get('month') === month;
 
 function HrAccessPanel() {
   const { lang } = useLang(); const ko = lang === 'ko';
@@ -56,23 +64,34 @@ function HrAccessPanel() {
 }
 
 export default function PersonnelPage() {
+  const [month, setMonth] = useHrMonth();
+  const { user } = useAuth();
+  return <PersonnelMonth key={`${user?.id}:${month}`} month={month} setMonth={setMonth} />;
+}
+
+function PersonnelMonth({ month, setMonth }: { month: string; setMonth: (value: string) => void }) {
   const { lang } = useLang(); const ko = lang === 'ko'; const { user } = useAuth();
-  const [month, setMonth] = useState(currentHrMonth);
+  const location = useLocation();
   const { workspace, setWorkspace, loading, error, allowed, refresh } = useHrWorkspace(month);
+  const explicitStep = PERSONNEL_STEPS.find(value => value === new URLSearchParams(location.search).get('step'));
+  const step = workspace ? personnelStep(location.search, Boolean(workspace.source)) : explicitStep;
   const [roster, setRoster] = useState<HrRosterEntry[]>([]);
   const [rosterError, setRosterError] = useState(false);
-  const [rosterScope, setRosterScope] = useState('');
+  const [rosterReady, setRosterReady] = useState(false);
   const [rosterReload, setRosterReload] = useState(0);
   const reloadRoster = () => setRosterReload((value) => value + 1);
   useEffect(() => {
     const controller = new AbortController();
-    setRoster([]);
-    setRosterScope('');
     setRosterError(false);
     if (allowed) {
       getHrRoster(month, controller.signal).then((entries) => {
-        if (!controller.signal.aborted) { setRoster(entries); setRosterScope(`${user?.id}:${month}`); }
-      }).catch(() => { if (!controller.signal.aborted) setRosterError(true); });
+        if (!controller.signal.aborted) { setRoster(entries); setRosterReady(true); }
+      }).catch((failure: unknown) => {
+        if (controller.signal.aborted) return;
+        setRosterError(true);
+        const status = (failure as { response?: { status?: number } })?.response?.status;
+        if (status === 401 || status === 403) { setRoster([]); setRosterReady(false); }
+      });
     }
     return () => controller.abort();
   }, [allowed, month, rosterReload, user?.id]);
@@ -82,6 +101,10 @@ export default function PersonnelPage() {
   const [importBusy, setImportBusy] = useState(false);
   const [workbookBusy, setWorkbookBusy] = useState(false);
   const [workbookDraft, setWorkbookDraft] = useState(false);
+  const [importDraft, setImportDraft] = useState(false);
+  const [rosterEditing, setRosterEditing] = useState(false);
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const [nextStep, setNextStep] = useState<{ step: 'roster' | 'assign'; month: string } | null>(null);
   const [saveError, setSaveError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState('');
@@ -89,27 +112,40 @@ export default function PersonnelPage() {
   const [formError, setFormError] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const dirty = Boolean(draft && layoutKey(draft) !== baseline);
-  const busy = saving || importBusy || workbookBusy;
+  const busy = saving || importBusy || workbookBusy || rosterBusy;
+  const uploadDraft = workbookDraft || importDraft;
+  const layoutDraft = dirty || Boolean(departmentForm);
+  const stepDraft = step === 'upload' ? uploadDraft : step === 'roster' && rosterEditing;
+  const leaveMessage = ko ? '저장하지 않은 인사 초안을 버리고 이동할까요?' : '放弃未保存的人事草稿并离开吗？';
+
+  usePreventHrFileNavigation(allowed && step === 'upload');
+  useHrPopGuard(Boolean(layoutDraft || stepDraft), busy, leaveMessage,
+    next => !stepDraft && !busy && samePersonnelMonth(next.pathname, next.search, month));
 
   function receiveWorkspace(data: HrWorkspace) {
     const value = { departments: data.departments.map((item) => ({ ...item })), employees: data.employees.map((item) => ({ ...item })) };
     setDraft(value); setBaseline(layoutKey(value)); setSaveError(''); setConflict(false); setDepartmentForm(null);
   }
   useEffect(() => { if (workspace) receiveWorkspace(workspace); }, [workspace]);
-  useEffect(() => { setDraft(null); setBaseline(''); setDepartmentForm(null); setNotice(''); }, [user?.id]);
   useEffect(() => {
-    if (!dirty && !busy && !departmentForm && !workbookDraft) return;
+    if (!layoutDraft && !stepDraft && !busy) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     const onLink = (event: MouseEvent) => {
       const element = event.target instanceof Element ? event.target.closest('a[href]') : null;
       if (!(element instanceof HTMLAnchorElement) || element.target === '_blank' || element.hasAttribute('download') || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const next = new URL(element.href, window.location.href);
       if (next.pathname === window.location.pathname && next.search === window.location.search && next.origin === window.location.origin) return;
-      if (busy || !window.confirm(ko ? '저장하지 않은 배치·업로드 내용을 버리고 이동할까요?' : '放弃未保存的配置及上传内容并离开吗？')) { event.preventDefault(); event.stopImmediatePropagation(); }
+      const staysInMonth = next.origin === window.location.origin && samePersonnelMonth(next.pathname, next.search, month);
+      const staysOnStep = staysInMonth && next.pathname === location.pathname && personnelStep(next.search, Boolean(workspace?.source)) === step;
+      const leavesDraft = (stepDraft && !staysOnStep) || (layoutDraft && !staysInMonth);
+      if (busy || (leavesDraft && !window.confirm(leaveMessage))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
     };
     window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', onLink, true);
     return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', onLink, true); };
-  }, [dirty, busy, ko, departmentForm, workbookDraft]);
+  }, [layoutDraft, stepDraft, busy, leaveMessage, month, step, workspace?.source, location.pathname]);
 
   const departments = draft?.departments ?? EMPTY_DEPARTMENTS;
   const employees = draft?.employees ?? EMPTY_EMPLOYEES;
@@ -125,6 +161,9 @@ export default function PersonnelPage() {
   })}), [departments, summary]);
   const tree = useMemo(() => getDepartmentTree(departments), [departments]);
   const forbiddenParents = useMemo(() => departmentForm && !departmentForm.isNew ? getDescendantIds(departments, departmentForm.id) : new Set<string>(), [departments, departmentForm]);
+  function suggestNext(step: 'roster' | 'assign', nextMonth: string) {
+    setNextStep({ step, month: nextMonth });
+  }
   function applyCompanyCells() {
     if (!draft || busy) return;
     const known = new Set(departments.map((department) => department.id));
@@ -133,9 +172,9 @@ export default function PersonnelPage() {
     catch (failure) { setSaveError(localHrError(failure, lang, ko ? '분류도를 적용하지 못했습니다.' : '无法应用分类图。')); }
   }
   function changeMonth(next: string) {
-    if (busy || workbookDraft || next === month) return;
-    if ((dirty || departmentForm) && !window.confirm(ko ? '저장하지 않은 변경을 버리고 대상 월을 바꿀까요?' : '放弃未保存的更改并切换月份吗？')) return;
-    setNotice(''); setSaveError(''); setConflict(false); setDepartmentForm(null); setDraft(null); setBaseline(''); setMonth(next);
+    if (busy || uploadDraft || next === month) return;
+    if ((layoutDraft || rosterEditing) && !window.confirm(ko ? '저장하지 않은 변경을 버리고 대상 월을 바꿀까요?' : '放弃未保存的更改并切换月份吗？')) return;
+    setMonth(next);
   }
   function discard() {
     if (!workspace || busy) return;
@@ -218,24 +257,44 @@ export default function PersonnelPage() {
     </div>;
   }
 
-  return <HrShell page="personnel" month={month} onMonthChange={changeMonth} monthDisabled={busy || workbookDraft} actions={<>
-    {allowed && <><Link className="hr-button" to={`/hr/roster?month=${month}`}>{ko ? '명부 보기' : '查看名册'}</Link><span className="hr-roster-active-count">{ko ? '재직' : '在职'} {rosterError ? (ko ? '조회 실패' : '加载失败') : rosterScope === `${user?.id}:${month}` ? `${roster.filter((item) => item.status === 'active').length}${ko ? '명' : '人'}` : '…'}</span></>}
+  const draftLock = ko ? '배치 단계에서 변경을 저장하거나 되돌린 뒤 가져오세요.' : '请在配置步骤保存或撤销更改后再导入。';
+  return <HrShell page="personnel" personnelStep={step} month={month} onMonthChange={changeMonth} monthDisabled={busy || uploadDraft} actions={allowed && step === 'assign' && workspace && draft ? <>
+    <Link className="hr-button" to={hrFlowHref('personnel', 'roster', month)}>{ko ? '명부 보기' : '查看名册'}</Link>
+    <span className="hr-roster-active-count">{ko ? '재직' : '在职'} {rosterError ? (ko ? '조회 실패' : '加载失败') : rosterReady ? `${roster.filter((item) => item.status === 'active').length}${ko ? '명' : '人'}` : '…'}</span>
     {hasCompanyCells && missingCompanyCells && <button className="hr-button" disabled={busy || Boolean(departmentForm)} onClick={applyCompanyCells}><Plus size={15} />{ko ? '추가 부문 적용' : '应用新增部门'}</button>}
     <button className="hr-button" disabled={!dirty || busy} onClick={discard}><Undo2 size={15} />{ko ? '되돌리기' : '撤销更改'}</button>
     <button className="hr-button is-primary" disabled={!dirty || busy || conflict || Boolean(departmentForm)} onClick={() => void save()}><Save size={15} />{saving ? (ko ? '저장 중…' : '正在保存…') : (ko ? '변경 저장' : '保存更改')}</button>
-  </>}>
+  </> : undefined}>
     {!allowed || loading || error || !workspace || !draft ? <HrLoadState allowed={allowed} loading={loading} error={error} retry={refresh} /> : <>
-      <HrCostRibbon departments={departments} employees={employees} currency={workspace.currency} basis={workspace.cost_basis === 'gross_salary' ? (ko ? '세전 급여' : '应发工资') : workspace.cost_basis === 'employer_total' ? (ko ? '회사 부담 총액' : '公司承担总额') : workspace.cost_basis_label} hasSource={Boolean(workspace.source)} />
-      {dirty && <p className="hr-draft-indicator" role="status">{ko ? '저장 전 변경사항이 있습니다.' : '有尚未保存的更改。'}</p>}
       {saveError && <p role="alert" className="hr-alert is-error">{saveError}</p>}
       {conflict && <div role="alert" className="hr-alert is-warning"><span>{ko ? '최신 버전과 충돌했습니다. 초안을 확인한 뒤 다시 불러오세요.' : '与最新版本冲突，请确认草稿后重新加载。'}</span><button className="hr-button" disabled={busy} onClick={loadLatest}>{ko ? '최신 내용 불러오기' : '加载最新资料'}</button></div>}
       {notice && <p className="hr-floating-notice" role="status" aria-live="polite">{notice}</p>}
-      {hasCompanyCells || departments.length > 0 ? <HrAllocationBoard key={month} departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={move} disabled={busy || Boolean(departmentForm)} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><p>{ko ? '아래에서 회사 임금표를 올리면 저장된 기본 분류로 인원이 배치됩니다.' : '在下方上传公司工资表后，系统将按已保存的基础分类配置人员。'}</p></div>}
+      {step === 'upload' && <>
+        {nextStep && <div className="hr-panel hr-upload-next">
+          <span>{nextStep.month} · {ko ? '급여 파일을 저장했습니다.' : '工资表已保存。'}</span>
+          <Link className="hr-button is-primary" to={hrFlowHref('personnel', nextStep.step, nextStep.month)}>
+            {nextStep.step === 'roster' ? (ko ? '사번 확인으로 이동' : '前往工号确认') : (ko ? '부서·파트 배치로 이동' : '前往部门·小组配置')}
+          </Link>
+        </div>}
+        <HrWorkbookImportPanel initiallyOpen roster={roster} workspace={workspace}
+          disabled={layoutDraft || saving || importBusy || importDraft} disabledReason={layoutDraft ? draftLock : undefined}
+          onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onNextStep={suggestNext}
+          onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); reloadRoster(); }} />
+        <HrImportPanel workspace={workspace} disabled={layoutDraft || saving || workbookBusy || workbookDraft}
+          disabledReason={layoutDraft ? draftLock : undefined} onBusyChange={setImportBusy} onDraftChange={setImportDraft}
+          onNextStep={suggestNext} onConflict={() => setConflict(true)} onImported={setWorkspace} />
+        <HrSource workspace={workspace} />
+      </>}
+      {step === 'roster' && (rosterReady
+        ? <HrRosterPanel month={month} entries={roster} onUpdated={setRoster} error={rosterError}
+          onRetry={reloadRoster} disabled={rosterError} onEditChange={setRosterEditing} onBusyChange={setRosterBusy} />
+        : <HrLoadState allowed={allowed} loading={!rosterError} error={ko ? '명부를 불러오지 못했습니다. 다시 시도해 주세요.' : '无法加载人员名册，请重试。'} retry={reloadRoster} />)}
+      {step === 'cost' && <LaborCostPage workspace={workspace} departments={departments} employees={employees} dirty={layoutDraft} />}
+      {step === 'assign' && <>
+      <HrCostRibbon departments={departments} employees={employees} currency={workspace.currency} basis={workspace.cost_basis === 'gross_salary' ? (ko ? '세전 급여' : '应发工资') : workspace.cost_basis === 'employer_total' ? (ko ? '회사 부담 총액' : '公司承担总额') : workspace.cost_basis_label} hasSource={Boolean(workspace.source)} />
+      {dirty && <p className="hr-draft-indicator" role="status">{ko ? '저장 전 변경사항이 있습니다.' : '有尚未保存的更改。'}</p>}
+      {hasCompanyCells || departments.length > 0 ? <HrAllocationBoard key={month} departments={departments} employees={employees} summary={chartSummary} currency={workspace.currency} catalog={workspace.company_structure.classification} onMove={move} disabled={busy || Boolean(departmentForm)} /> : <div className="hr-panel hr-state"><h3>{ko ? '회사 부문·기능 분류' : '公司部门·职能分类'}</h3><Link to={hrFlowHref('personnel', 'upload', month)}>{ko ? '급여 파일 올리기' : '上传工资表'}</Link></div>}
       <HrSource workspace={workspace} />
-      <HrWorkbookImportPanel roster={roster} workspace={workspace} disabled={dirty || saving || importBusy || Boolean(departmentForm)} onBusyChange={setWorkbookBusy} onDraftChange={setWorkbookDraft} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); reloadRoster(); setNotice(ko ? '회사 임금표를 저장했습니다.' : '已保存公司工资表。'); }} />
-      <details className="hr-panel hr-disclosure"><summary>{ko ? '기타 형식 · 단일 월 가져오기' : '其他格式 · 导入单月'}</summary>
-      <HrImportPanel workspace={workspace} disabled={dirty || saving || workbookBusy || workbookDraft || Boolean(departmentForm)} onBusyChange={setImportBusy} onConflict={() => setConflict(true)} onImported={(data) => { setWorkspace(data); setNotice(ko ? '월별 자료를 가져왔습니다.' : '已导入月度资料。'); }} />
-      </details>
       <details className="hr-panel hr-disclosure" open={departmentForm ? true : undefined}>
         <summary>{ko ? '분류 편집' : '编辑分类'}{departmentForm ? (ko ? ' · 편집 중' : ' · 编辑中') : ''}</summary>
         <div className="hr-compact-toolbar"><button className="hr-button" disabled={busy || companyNodes.every((node)=>departments.some((department)=>department.id===node.id))} onClick={applyCompanyCells}>{ko ? '회사 분류 적용' : '应用公司分类'}</button><span className="hr-muted">{departments.length} / {MAX_DEPARTMENTS} · {ko ? '최대 8단계' : '最多 8 级'}</span><button className="hr-button" disabled={busy || departments.length >= MAX_DEPARTMENTS} onClick={() => beginDepartment()}><Plus size={15} />{ko ? '추가 분류' : '添加分类'}</button></div>
@@ -252,6 +311,7 @@ export default function PersonnelPage() {
       </details>
       {workspace.history.length > 0 && <details className="hr-panel hr-history hr-disclosure"><summary>{ko ? '저장 이력' : '保存历史'} ({workspace.history.length})</summary><ol>{workspace.history.map((entry) => <li key={entry.version}><strong>v{entry.version}</strong> {entry.action} · {entry.actor} · {new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'short' }).format(new Date(entry.created_at))}</li>)}</ol></details>}
       {user?.is_superuser === true && <details className="hr-panel hr-disclosure"><summary><ShieldCheck size={16} /> {ko ? '인사 담당자 권한' : '人事负责人权限'}</summary><HrAccessPanel /></details>}
+      </>}
     </>}
   </HrShell>;
 }

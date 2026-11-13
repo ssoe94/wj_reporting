@@ -5,7 +5,7 @@
 // Build frontend/dist first, then run from the worktree root:
 // node scripts/check-hr-labor-forecast-browser.cjs --screens /absolute/path/to/screens
 // Optional: --playwright <package> --python <venv-python> --port 4206
-//           --backend-port 4207 --dist <path> --task-008 true | --task-009 true
+//           --backend-port 4207 --dist <path> --task-008 true | --task-009 true | --task-010 true
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -18,21 +18,24 @@ const { spawn } = require('node:child_process');
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const name = process.argv[i];
-  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008', '--task-009'].includes(name), `Unknown option: ${name}`);
+  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008', '--task-009', '--task-010'].includes(name), `Unknown option: ${name}`);
   assert.ok(process.argv[i + 1], `Missing value: ${name}`);
   options[name.slice(2)] = process.argv[i + 1];
 }
 assert.ok(options['task-008'] === undefined || options['task-008'] === 'true', '--task-008 must be true');
 assert.ok(options['task-009'] === undefined || options['task-009'] === 'true', '--task-009 must be true');
+assert.ok(options['task-010'] === undefined || options['task-010'] === 'true', '--task-010 must be true');
 const task008 = options['task-008'] === 'true';
 const task009 = options['task-009'] === 'true';
-assert.ok(!(task008 && task009), 'Choose one browser scenario.');
-const task = task009 ? '009' : task008 ? '008' : '007';
+const task010 = options['task-010'] === 'true';
+assert.ok([task008, task009, task010].filter(Boolean).length <= 1, 'Choose one browser scenario.');
+const task = task010 ? '010' : task009 ? '009' : task008 ? '008' : '007';
 const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
 const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep), 'Keep screenshots outside the repository.');
+assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
+  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
 fs.mkdirSync(screens, { recursive: true });
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
@@ -117,7 +120,7 @@ hr.set_unusable_password(); hr.save(update_fields=['password'])
 denied = User.objects.create(username='SYNTHETIC-NO-HR', is_active=True)
 denied.set_unusable_password(); denied.save(update_fields=['password'])
 HrAccessGrant.objects.create(user=hr, enabled=True)
-${task009 ? String.raw`import runpy
+${task009 || task010 ? String.raw`import runpy
 runpy.run_path(sys.argv[6])['seed_dashboard'](sys.argv[5], hr)` : String.raw`
 rules = default_labor_rules()
 task008 = sys.argv[4] == '008'
@@ -234,7 +237,7 @@ async function backendRequest(pathname, { method = 'GET', body, role = 'hr' } = 
 const dailyPath = date => `/api/analytics/hr/daily-work/${date}/`;
 async function sheet(date = DAY) { const result = await backendRequest(dailyPath(date)); assert.equal(result.status, 200, JSON.stringify(result.data)); return result.data; }
 const forecastPath = month => '/api/analytics/hr/labor-forecast/' + month + '/';
-const forecastPage = month => '/hr/labor-forecast?month=' + month;
+const forecastPage = month => '/hr/work?step=forecast&month=' + month;
 const byCode = (value, code) => value.rows.find(row => row.employee.code === code);
 
 function token(kind) {
@@ -249,7 +252,7 @@ const pair = { access: token('access'), refresh: token('refresh') };
 
 async function fixture({ lang = 'ko', mobile = false, dark = false, denied = false, failOnce = false } = {}) {
   const context = await browser.newContext({
-    viewport: mobile ? { width: 390, height: 930 } : { width: task008 || task009 ? 1680 : 1440, height: 1160 },
+    viewport: mobile ? { width: 390, height: 930 } : { width: task === '007' ? 1440 : 1680, height: 1160 },
     locale: lang === 'ko' ? 'ko-KR' : 'zh-CN', timezoneId: 'Asia/Shanghai',
     reducedMotion: 'reduce', serviceWorkers: 'block',
   });
@@ -362,7 +365,7 @@ async function checkRestHours() {
   const restDate = '2026-11-14';
   const holidayDate = '2026-11-15';
   const standardPath = `/api/analytics/hr/labor-standards/${MONTH}/`;
-  const standardPage = `/hr/labor-standards?month=${MONTH}`;
+  const standardPage = `/hr/work?step=standards&month=${MONTH}`;
   const estimateOn = (forecast, date) => forecast.daily.find(day => day.date === date);
   const before = await getForecast();
   const legacyDay = await sheet(restDate);
@@ -405,7 +408,7 @@ async function checkRestHours() {
   await zh.context.close();
   checks.push('Chinese standard shows the saved value and explains the average; the actual payroll wording remains 应发工资');
 
-  await ko.page.goto(origin + `/hr/daily-work?date=${restDate}&month=${MONTH}`);
+  await ko.page.goto(origin + `/hr/work?step=daily&date=${restDate}&month=${MONTH}`);
   await ko.page.locator('.hr-daily-editor').waitFor();
   for (const code of ['90001', '90002']) {
     const attendance = ko.page.getByLabel(`${code} 출근 상태`, { exact: true });
@@ -468,6 +471,17 @@ async function checkRestHours() {
 
 (async () => {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  if (task010) {
+    await startBackend('rich');
+    browser = await playwright.chromium.launch({ headless: true });
+    const { checkHrFlow } = require('./hr-flow-browser-checks.cjs');
+    await checkHrFlow({ origin, fixture, capture, backendRequest, checks });
+    assert.deepEqual(errors, [], 'No uncaught browser errors');
+    console.log(JSON.stringify({
+      result: 'PASS', real_backend: true, fixtureDirectory, checks, screenshots: captures, uncaughtBrowserErrors: errors.length,
+    }, null, 2));
+    return;
+  }
   if (task009) {
     browser = await playwright.chromium.launch({ headless: true });
     const { checkDashboard } = require('./hr-dashboard-browser-checks.cjs');
@@ -566,8 +580,8 @@ async function checkRestHours() {
   await capture(ko.page, 'comparison');
   checks.push('Expanding a source department reveals employee detail, and comparison presents actual payroll by component');
 
-  // Save from the real daily screen and return using the top forecast tab.
-  await ko.page.goto(origin + '/hr/daily-work?date=' + DAY + '&month=' + MONTH);
+  // Save from the real daily screen and return using the forecast step.
+  await ko.page.goto(origin + '/hr/work?step=daily&date=' + DAY + '&month=' + MONTH);
   await ko.page.locator('.hr-daily-editor').waitFor();
   assert.equal(await ko.page.getByLabel('90001 개인 휴가 시간', { exact: true }).count(), 1);
   assert.doesNotMatch(await ko.page.locator('.hr-daily-editor').innerText(), /사假/);
@@ -578,7 +592,7 @@ async function checkRestHours() {
   assert.equal(saved.status, 200, JSON.stringify(saved.result));
   await ko.page.locator('.hr-daily-state').getByText('입력 중 · v1', { exact: false }).waitFor();
   const requestIndex = ko.calls.length;
-  await ko.page.locator('.hr-tabs').getByRole('link', { name: '인건비 예상', exact: true }).click();
+  await ko.page.locator('a[href*="step=forecast"]').filter({ hasText: '이달 예상' }).click();
   await ko.page.locator('.hr-forecast-summary').waitFor();
   const refreshed = await until(() => ko.calls.slice(requestIndex).find(call => call.pathname === forecastPath(MONTH) && call.status === 200), 'fresh forecast after daily save');
   assert.equal(refreshed.result.days.entered, 2);
@@ -643,7 +657,7 @@ async function checkRestHours() {
   const denied = await fixture({ denied: true });
   await denied.page.goto(origin + forecastPage(MONTH));
   await denied.page.waitForURL(url => !url.pathname.startsWith('/hr'));
-  assert.equal(await denied.page.locator('a[href*="/hr/labor-forecast"]').count(), 0);
+  assert.equal(await denied.page.locator('a[href^="/hr/work"]').count(), 0);
   assert.equal(denied.calls.length, 0);
   await denied.context.close();
   checks.push('Unauthorized frontend exposes no forecast route or forecast requests');

@@ -4,25 +4,40 @@ import { CheckCircle2, FileSpreadsheet, RefreshCw, RotateCcw, Upload, X } from '
 import { useLang } from '../../i18n';
 import { getHrClassificationReference, getHrWorkspace, importHrWorkbookBatch, previewHrWorkbookBatch, saveHrClassificationReference } from '../../domains/hr/api';
 import { readWorkbook } from '../../domains/hr/import';
+import { hrFlowHref } from '../../domains/hr/flow';
 import { parseClassificationReference, parseCompanyPayroll } from '../../domains/hr/workbook-import';
 import { hrAssignmentPath } from '../../domains/hr/labels';
 import type { HrWorkbook } from '../../domains/hr/import';
 import type { HrClassificationReference, HrClassificationReferenceState, HrEmploymentType, HrWorkbookBatch, HrWorkbookBatchPreview, HrWorkbookIssue, HrWorkbookRow, HrRosterEntry, HrRosterDecision, HrCodeReview } from '../../domains/hr/workbook-types';
 import type { HrWorkspace } from '../../domains/hr/types';
 import { compactMoney, isHrConflict } from './hrCommon';
+import HrFileDrop from './HrFileDrop';
 import './hr-workbook-import.css';
 
 type PayrollInput = { id: string; book: HrWorkbook; employment_type: HrEmploymentType | '' };
-type Props = { roster: HrRosterEntry[]; workspace: HrWorkspace; disabled: boolean; onImported: (workspace: HrWorkspace) => void; onBusyChange: (busy: boolean) => void; onConflict: () => void; onDraftChange?: (hasDraft: boolean) => void };
+type Props = {
+  roster: HrRosterEntry[];
+  workspace: HrWorkspace;
+  disabled: boolean;
+  disabledReason?: string;
+  initiallyOpen?: boolean;
+  onImported: (workspace: HrWorkspace) => void;
+  onBusyChange: (busy: boolean) => void;
+  onConflict: () => void;
+  onDraftChange?: (hasDraft: boolean) => void;
+  onNextStep?: (step: 'roster' | 'assign', month: string) => void;
+};
 const MAX_FILES = 10;
 const FILE_LIMIT = 10 * 1024 * 1024;
 const monthPattern = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/;
 const nameIdentity = (value: string) => value.normalize('NFC').replace(/\s+/g, '');
 const codeKey = (value: string) => /^[0-9]+$/.test(value) ? value.replace(/^0+(?=\d)/, '') : value;
 
-export default function HrWorkbookImportPanel({ roster, workspace, disabled, onImported, onBusyChange, onDraftChange }: Props) {
+export default function HrWorkbookImportPanel({
+  roster, workspace, disabled, disabledReason, initiallyOpen = false, onImported, onBusyChange, onDraftChange, onNextStep,
+}: Props) {
   const { lang } = useLang(); const ko = lang === 'ko';
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [reference, setReference] = useState<HrClassificationReference | null>(null);
   const [storedReference, setStoredReference] = useState<HrClassificationReferenceState | null>(null);
   const [referenceStatus, setReferenceStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -54,8 +69,6 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
   const previewPayload = useRef<HrWorkbookBatch | null>(null);
   const monthRef = useRef(workspace.month);
   monthRef.current = workspace.month;
-  const referenceInput = useRef<HTMLInputElement>(null);
-  const payrollInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -88,11 +101,10 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
     return context ? `${context}：${fallback}` : fallback;
   }, [ko]);
   function assertFile(file: File) {
-    if (!/\.xlsx$/i.test(file.name)) throw new Error(ko ? '원본 XLSX 파일을 선택해 주세요.' : '请选择原始 XLSX 文件。');
     if (file.size > FILE_LIMIT) throw new Error(ko ? '파일마다 10 MB 이하여야 합니다.' : '每个文件不得超过 10 MB。');
   }
   async function chooseReference(file: File | undefined) {
-    if (!file || disabled || busy || referenceStatus !== 'ready') return;
+    if (!file || disabled || busyRef.current || referenceStatus !== 'ready') return;
     invalidate(); const id = begin();
     setReferenceError('');
     try {
@@ -103,7 +115,7 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       }
     }
     catch (failure) { if (valid(id)) setReferenceError(readableError(failure, ko ? '분류표를 읽지 못했습니다. 기존 분류와 초안은 유지됩니다.' : '无法读取分类表，现有分类及草稿已保留。')); }
-    finally { finish(id); if (referenceInput.current) referenceInput.current.value = ''; }
+    finally { finish(id); }
   }
   async function loadStoredReference() {
     if (disabled || busy) return;
@@ -151,10 +163,8 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       }
     } finally { finish(id); }
   }
-  async function choosePayroll(fileList: FileList | null) {
-    if (!fileList?.length || disabled || busy) return;
-    const files = Array.from(fileList);
-    if (files.length + inputs.length > MAX_FILES) { setError(ko ? '임금표는 최대 10개까지 선택할 수 있습니다.' : '最多可选择 10 个工资文件。'); if (payrollInput.current) payrollInput.current.value = ''; return; }
+  async function choosePayroll(files: File[]) {
+    if (!files.length || disabled || busyRef.current || !referenceReady) return;
     invalidate(); const id = begin();
     try {
       const loaded: PayrollInput[] = [];
@@ -166,7 +176,7 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       }
       if (valid(id)) { setInputs((previous) => [...previous, ...loaded]); setDecisions({}); }
     } catch (failure) { if (valid(id)) setError(readableError(failure, ko ? '임금표를 읽지 못했습니다.' : '无法读取工资表。')); }
-    finally { finish(id); if (payrollInput.current) payrollInput.current.value = ''; }
+    finally { finish(id); }
   }
 
   const parsed = useMemo(() => {
@@ -266,7 +276,7 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
   }
   async function save() {
     const payload = previewPayload.current;
-    if (!preview || !payload || busy || disabled || conflict || !referenceReady) return;
+    if (!preview || !payload || busyRef.current || disabled || conflict || !referenceReady) return;
     const submittedMonth = workspace.month; const id = begin(); setNotice('');
     try {
       const result = await importHrWorkbookBatch({ ...payload, preview_token: preview.preview_token,
@@ -279,6 +289,9 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       }
       if (valid(id) && monthRef.current === submittedMonth) {
         const months = result.workspaces.map((item) => item.month).sort(); if (current) onImported(current); setSavedMonths(months);
+        const nextStep = reviews.some(({ key }) => !readyReviewKeys.has(key)) ? 'roster' : 'assign';
+        const targetMonth = months.includes(submittedMonth) ? submittedMonth : months.at(-1);
+        if (targetMonth) onNextStep?.(nextStep, targetMonth);
         setNotice(ko ? `${months.join(', ')} 월 자료를 저장했습니다.` : `已保存 ${months.join(', ')} 月资料。`);
         if (reloadFailed) setError(ko ? '선택 월 저장은 완료했습니다. 현재 보고 있는 월을 새로 불러오지 못했으므로 저장한 월의 집계 링크에서 확인해 주세요.' : '所选月份已保存，但无法刷新当前查看月份，请通过已保存月份的汇总链接确认。');
         setPreview(null); previewPayload.current = null; setInputs([]); setCorrections({}); setDecisions({}); setIssueHistory({}); setMonthSelection({});
@@ -293,7 +306,6 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
   function resetSelection() {
     if (busy) return;
     invalidate(); setInputs([]); setCorrections({}); setDecisions({}); setIssueHistory({}); setMonthSelection({});
-    if (payrollInput.current) payrollInput.current.value = '';
     setNotice(ko ? '임금표 선택과 사번 수정 초안을 비웠습니다. 시스템 기본 분류는 유지됩니다.' : '已清除工资表选择及工号更正草稿，系统基础分类保持不变。');
   }
   function warningLabel(warning: string) {
@@ -315,6 +327,21 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
   const employmentLabel = (type: HrEmploymentType) => type === 'contract' ? (ko ? '계약직' : '合同工') : (ko ? '시급직' : '小时工');
   const registeredReference = storedReference?.reference;
   const storedUnassignedCount = registeredReference?.rows.filter((row) => row.department_id === null).length ?? 0;
+  const blocked = disabledReason || (ko ? '배치 변경을 저장하거나 되돌린 뒤 업로드하세요.' : '请保存或撤销配置更改后再上传。');
+  const busyReason = ko ? '가져오기 처리 중입니다.' : '正在处理导入。';
+  const sharedDropReason = busy ? busyReason : disabled ? blocked : undefined;
+  const referenceStatusReason = referenceStatus === 'loading'
+    ? (ko ? '시스템 기본 분류를 확인하는 중입니다.' : '正在确认系统基础分类。')
+    : (ko ? '기본 분류를 다시 불러와 주세요.' : '请重新加载基础分类。');
+  const referenceBlocked = referenceStatus !== 'ready' ? referenceStatusReason : undefined;
+  let payrollDropReason = sharedDropReason || referenceBlocked;
+  if (!payrollDropReason && !referenceReady) {
+    if (referenceDirty || referenceConflict) {
+      payrollDropReason = ko ? '기본 분류를 먼저 저장하거나 변경을 취소해 주세요.' : '请先保存基础分类或撤销更改。';
+    } else {
+      payrollDropReason = ko ? '기본 분류표를 먼저 등록해 주세요.' : '请先登记基础分类表。';
+    }
+  }
 
   return <section className="hr-panel hr-workbook-import">
     <div className="hr-workbook-heading"><div><h2><FileSpreadsheet size={17} />{ko ? '회사 임금표 업로드' : '上传公司工资表'}</h2><span>{ko ? '계약직·시간제 원본 · 시스템 기본 분류로 월별 저장' : '合同工·小时工原始表 · 使用系统基础分类按月保存'}</span></div>
@@ -328,16 +355,21 @@ export default function HrWorkbookImportPanel({ roster, workspace, disabled, onI
       {referenceStatus === 'error' && <button className="hr-button" disabled={busy || disabled} onClick={() => void loadStoredReference()}><RefreshCw size={14} />{ko ? '다시 불러오기' : '重新加载'}</button>}
     </div>
     {notice && <p role="status" className="hr-workbook-notice">{notice}</p>}
-    {savedMonths.length > 0 && <div className="hr-workbook-month-links">{savedMonths.map((month) => <Link key={month} to={`/hr/labor-cost?month=${month}`}>{month} {ko ? '집계 보기' : '查看汇总'}</Link>)}</div>}
+    {savedMonths.length > 0 && <div className="hr-workbook-month-links">{savedMonths.map((month) => <Link key={month} to={hrFlowHref('personnel', 'cost', month)}>{month} {ko ? '집계 보기' : '查看汇总'}</Link>)}</div>}
     {open && <div className="hr-workbook-body">
-      {disabled && <p className="hr-muted">{ko ? '배치 변경을 저장하거나 되돌린 뒤 업로드하세요.' : '请保存或撤销配置更改后再上传。'}</p>}
-      <div className="hr-field hr-workbook-payroll-picker">{ko ? '임금 원본 · 계약직 / 시간제 · 최대 10개' : '原始工资表 · 合同工 / 小时工 · 最多 10 个'}<button type="button" className="hr-button" disabled={busy || disabled || !referenceReady} onClick={() => payrollInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button><input hidden ref={payrollInput} type="file" accept=".xlsx" multiple disabled={busy || disabled || !referenceReady} onChange={(event) => void choosePayroll(event.target.files)} /><small>{ko ? '각 파일 최대 10 MB. 원본의 시트와 월을 자동으로 읽습니다.' : '每个文件最大 10 MB，自动读取原始工作表及月份。'}</small></div>
+      <HrFileDrop id="payroll" label={ko ? '급여 원본 · 계약직 / 시급직' : '原始工资表 · 合同工 / 小时工'}
+        ko={ko} hint={ko ? 'XLSX 최대 10개 · 파일당 최대 10 MB' : '最多 10 个 XLSX 文件 · 每个最大 10 MB'}
+        extensions={['.xlsx']} maxFiles={MAX_FILES} existingFiles={inputs.length} disabledReason={payrollDropReason}
+        onFiles={(files) => void choosePayroll(files)} />
       {referenceDirty && <p className="hr-alert is-warning">{ko ? '기본 분류의 저장 전 변경이 있습니다. 먼저 분류를 저장하거나 변경을 취소해 주세요.' : '基础分类存在未保存更改，请先保存分类或撤销更改。'}</p>}
       <details className="hr-disclosure hr-workbook-reference-management" open={referenceDirty || referenceConflict || (referenceStatus === 'ready' && !registeredReference) ? true : undefined}>
         <summary>{ko ? '기본 분류표 관리' : '管理基础分类表'}{referenceDirty ? (ko ? ' · 저장 전 변경' : ' · 未保存更改') : ''}</summary>
         <p className="hr-muted">{ko ? '분류표는 시스템에 독립적으로 저장합니다. 이 작업으로 월별 급여 자료를 만들거나 기존 월의 인원 배치를 바꾸지 않습니다.' : '分类表独立保存到系统，此操作不会创建月度工资资料或改变已有月份的人员配置。'}</p>
         <div className="hr-workbook-reference-status"><span>{registeredReference ? `${registeredReference.filename} · ${registeredReference.rows.length}${ko ? '명' : '人'} · v${storedReference?.version}` : (ko ? '등록된 기본 분류 없음' : '尚无已登记基础分类')}</span><button className="hr-button" disabled={busy || disabled || referenceStatus === 'loading'} onClick={() => void loadStoredReference()}><RefreshCw size={14} />{ko ? '서버 최신 분류 조회' : '查询服务器最新分类'}</button></div>
-        <div className="hr-field">{ko ? '분류표 등록·변경 · 部门划分.xlsx' : '登记或更新分类表 · 部门划分.xlsx'}<button type="button" className="hr-button" disabled={busy || disabled || referenceStatus !== 'ready'} onClick={() => referenceInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button><input hidden ref={referenceInput} type="file" accept=".xlsx" disabled={busy || disabled || referenceStatus !== 'ready'} onChange={(event) => void chooseReference(event.target.files?.[0])} /></div>
+        <HrFileDrop id="reference" label={ko ? '분류표 등록·변경' : '登记或更新分类表'}
+          ko={ko} hint={ko ? '部门划分.xlsx · 최대 10 MB' : '部门划分.xlsx · 最大 10 MB'} extensions={['.xlsx']}
+          disabledReason={sharedDropReason || referenceBlocked}
+          onFiles={([file]) => void chooseReference(file)} />
         {reference && <div className="hr-workbook-reference-draft"><span>{reference.filename} · {reference.rows.length}{ko ? '행' : '行'}{referenceDirty ? (ko ? ' · 작성 중' : ' · 草稿') : ''}</span>
           <button className="hr-button is-primary" disabled={busy || disabled || !referenceDirty || referenceConflict || referenceStatus !== 'ready'} onClick={() => void saveReference()}>{ko ? '기본 분류로 저장' : '保存为基础分类'}</button>
           {referenceDirty && !referenceConflict && <button className="hr-button" disabled={busy || disabled || referenceStatus !== 'ready'} onClick={useStoredReference}>{ko ? '분류 변경 취소' : '撤销分类更改'}</button>}

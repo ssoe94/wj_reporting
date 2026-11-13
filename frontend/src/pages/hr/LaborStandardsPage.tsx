@@ -8,7 +8,8 @@ import type { HrContribution, HrLaborActualPayments, HrLaborCalendar, HrLaborDay
 import { getHrRoster } from '../../domains/hr/api';
 import { normalizeHrJobTitle } from '../../domains/hr/import';
 import type { HrRosterEntry } from '../../domains/hr/workbook-types';
-import { currentHrMonth, HrLoadState, HrShell, isHrConflict } from './hrCommon';
+import { HrLoadState, HrShell, isHrConflict, useHrMonth } from './hrCommon';
+import { useHrPopGuard } from './useHrPopGuard';
 
 type FormActivity = { dirty: boolean; busy: boolean };
 type FormProps<T> = { initial: T; ko: boolean; onActivity: (activity: FormActivity) => void; restart: () => void };
@@ -297,7 +298,7 @@ export function LaborActualPaymentsForm({ initial, ko, onActivity, restart }: Fo
 export default function LaborStandardsPage() {
   const { user } = useAuth(); const allowed = canAccessHr(user);
   const { lang } = useLang(); const ko = lang === 'ko';
-  const [month, setMonth] = useState(currentHrMonth);
+  const [month, setMonth] = useHrMonth();
   const identity = String(user?.id ?? '');
   const standards = useLaborResource(month, identity, allowed, getHrLaborStandards);
   const calendar = useLaborResource(month, identity, allowed, getHrLaborCalendar);
@@ -307,17 +308,19 @@ export default function LaborStandardsPage() {
   const [calendarActivity, setCalendarActivity] = useState<FormActivity>({ dirty: false, busy: false });
   const [actualActivity, setActualActivity] = useState<FormActivity>({ dirty: false, busy: false });
   const dirty = rulesActivity.dirty || calendarActivity.dirty || actualActivity.dirty; const busy = rulesActivity.busy || calendarActivity.busy || actualActivity.busy;
+  const leaveMessage = ko ? '저장하지 않은 기준·달력·실제 납부액 변경을 버리고 이동할까요?' : '放弃未保存的标准、日历或实际缴费更改并离开吗？';
+  useHrPopGuard(dirty, busy, leaveMessage);
   useEffect(() => {
     if (!dirty && !busy) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     const onLink = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
       if (!(target instanceof HTMLAnchorElement) || target.target === '_blank' || target.hasAttribute('download') || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || target.href === window.location.href) return;
-      if (busy || !window.confirm(ko ? '저장하지 않은 기준·달력·실제 납부액 변경을 버리고 이동할까요?' : '放弃未保存的标准、日历或实际缴费更改并离开吗？')) { event.preventDefault(); event.stopImmediatePropagation(); }
+      if (busy || !window.confirm(leaveMessage)) { event.preventDefault(); event.stopImmediatePropagation(); }
     };
     window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', onLink, true);
     return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', onLink, true); };
-  }, [dirty, busy, ko]);
+  }, [dirty, busy, leaveMessage]);
   function changeMonth(next: string) {
     if (busy || next === month) return;
     if (dirty && !window.confirm(ko ? '저장하지 않은 기준·달력·실제 납부액 변경을 버리고 적용 월을 바꿀까요?' : '放弃未保存的标准、日历或实际缴费更改并切换月份吗？')) return;
