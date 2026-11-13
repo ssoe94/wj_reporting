@@ -6,6 +6,7 @@
 // node scripts/check-hr-labor-forecast-browser.cjs --screens /absolute/path/to/screens
 // Optional: --playwright <package> --python <venv-python> --port 4206
 //           --backend-port 4207 --dist <path> --task-008 true | --task-009 true | --task-010 true
+//           --followup-screens <path> (010b captures, when running --task-010 true)
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -18,7 +19,7 @@ const { spawn } = require('node:child_process');
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const name = process.argv[i];
-  assert.ok(['--screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008', '--task-009', '--task-010'].includes(name), `Unknown option: ${name}`);
+  assert.ok(['--screens', '--followup-screens', '--playwright', '--port', '--dist', '--python', '--backend-port', '--task-008', '--task-009', '--task-010'].includes(name), `Unknown option: ${name}`);
   assert.ok(process.argv[i + 1], `Missing value: ${name}`);
   options[name.slice(2)] = process.argv[i + 1];
 }
@@ -33,10 +34,16 @@ const task = task010 ? '010' : task009 ? '009' : task008 ? '008' : '007';
 const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
-const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
-  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
-fs.mkdirSync(screens, { recursive: true });
+function screenshotDirectory(directory) {
+  const output = path.resolve(directory);
+  assert.ok(output !== repo && (!output.startsWith(repo + path.sep) || output.startsWith(path.join(repo, 'work') + path.sep)),
+    'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
+  fs.mkdirSync(output, { recursive: true });
+  return output;
+}
+const screens = screenshotDirectory(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
+assert.ok(!options['followup-screens'] || task010, '--followup-screens is only used with --task-010 true');
+const followupScreens = options['followup-screens'] ? screenshotDirectory(options['followup-screens']) : screens;
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
 if (playwrightPath) playwright = require(path.resolve(playwrightPath));
@@ -297,8 +304,8 @@ async function fixture({ lang = 'ko', mobile = false, dark = false, denied = fal
   return { context, page, calls };
 }
 
-async function capture(page, name) {
-  const file = path.join(screens, `${task}-${name}.png`);
+async function capture(page, name, prefix = task, directory = screens) {
+  const file = path.join(directory, `${prefix}-${name}.png`);
   await page.screenshot({ path: file, fullPage: false });
   captures.push(file);
 }
@@ -475,7 +482,10 @@ async function checkRestHours() {
     await startBackend('rich');
     browser = await playwright.chromium.launch({ headless: true });
     const { checkHrFlow } = require('./hr-flow-browser-checks.cjs');
-    await checkHrFlow({ origin, fixture, capture, backendRequest, checks });
+    await checkHrFlow({
+      origin, fixture, capture, backendRequest, checks,
+      captureFollowup: (page, name) => capture(page, name, '010b', followupScreens),
+    });
     assert.deepEqual(errors, [], 'No uncaught browser errors');
     console.log(JSON.stringify({
       result: 'PASS', real_backend: true, fixtureDirectory, checks, screenshots: captures, uncaughtBrowserErrors: errors.length,

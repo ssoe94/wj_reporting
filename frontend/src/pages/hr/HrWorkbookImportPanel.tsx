@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, RotateCcw, Upload, X } from 'lucide-react';
 import { useLang } from '../../i18n';
@@ -6,6 +6,7 @@ import { getHrClassificationReference, getHrWorkspace, importHrWorkbookBatch, pr
 import { readWorkbook } from '../../domains/hr/import';
 import { hrFlowHref } from '../../domains/hr/flow';
 import { parseClassificationReference, parseCompanyPayroll } from '../../domains/hr/workbook-import';
+import { workbookPreviewBlocker } from '../../domains/hr/workbook-preview';
 import { hrAssignmentPath } from '../../domains/hr/labels';
 import type { HrWorkbook } from '../../domains/hr/import';
 import type { HrClassificationReference, HrClassificationReferenceState, HrEmploymentType, HrWorkbookBatch, HrWorkbookBatchPreview, HrWorkbookIssue, HrWorkbookRow, HrRosterEntry, HrRosterDecision, HrCodeReview } from '../../domains/hr/workbook-types';
@@ -67,6 +68,8 @@ export default function HrWorkbookImportPanel({
   const request = useRef(0);
   const busyRef = useRef(false);
   const previewPayload = useRef<HrWorkbookBatch | null>(null);
+  const previewTitle = useRef<HTMLHeadingElement>(null);
+  const validationHintId = useId();
   const monthRef = useRef(workspace.month);
   monthRef.current = workspace.month;
 
@@ -88,6 +91,12 @@ export default function HrWorkbookImportPanel({
   const hasDraft = inputs.length > 0 || preview !== null || referenceDirty;
   useEffect(() => { draftChange.current?.(hasDraft); }, [hasDraft]);
   useEffect(() => { previewPayload.current = null; setPreview(null); setConflict(false); }, [workspace.month]);
+  useEffect(() => {
+    const title = previewTitle.current;
+    if (!preview || !title) return;
+    title.focus({ preventScroll: true });
+    title.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  }, [preview]);
   function invalidate() { request.current += 1; previewPayload.current = null; setPreview(null); setConflict(false); setError(''); setNotice(''); setSavedMonths([]); }
   function begin() { const id = ++request.current; busyRef.current = true; setBusy(true); busyChange.current(true); setError(''); return id; }
   function finish(id: number) { if (mounted.current && id === request.current) { busyRef.current = false; setBusy(false); busyChange.current(false); } }
@@ -247,7 +256,12 @@ export default function HrWorkbookImportPanel({
   const targetDepartments = workspace.company_structure.classification.nodes;
   const departmentPath = (id: string) => hrAssignmentPath(id, targetDepartments, lang);
   const referenceReady = referenceStatus === 'ready' && Boolean(storedReference?.reference) && !referenceDirty && !referenceConflict;
-  const canPreview = Boolean(referenceReady && inputs.length && selectedMonths.length && !unknownKind && !parsed.failure && !incompleteDecision && !selectedIssues.length && !disabled && !busy);
+  const previewBlocker = workbookPreviewBlocker({
+    hasFiles: inputs.length > 0, hasSelectedMonths: selectedMonths.length > 0,
+    unknownEmployment: unknownKind, parseFailed: Boolean(parsed.failure), incompleteDecision,
+    issueCount: selectedIssues.length, referenceReady, disabled, busy,
+  });
+  const canPreview = previewBlocker === null;
   async function inspect() {
     if (!canPreview || !storedReference?.reference) return;
     const payload: HrWorkbookBatch = { classification_version: storedReference.version, files: parsed.files,
@@ -342,10 +356,29 @@ export default function HrWorkbookImportPanel({
       payrollDropReason = ko ? '기본 분류표를 먼저 등록해 주세요.' : '请先登记基础分类表。';
     }
   }
+  const validationHint = previewBlocker && {
+    busy: busyReason,
+    disabled: blocked,
+    reference: payrollDropReason,
+    files: ko ? '급여 파일을 선택하세요.' : '请选择工资文件。',
+    employment: ko ? '고용 형태를 고르세요.' : '请选择用工类型。',
+    parse: ko ? '위에 표시된 원본 파일 오류를 확인하세요.' : '请检查上方显示的原始文件错误。',
+    months: ko ? '저장할 월을 하나 이상 고르세요.' : '请至少选择一个保存月份。',
+    decision: ko ? '명부 변경 확인: 사번과 사유를 둘 다 입력하거나 둘 다 비우세요.' : '名册变更确认：请同时填写工号和原因，或将两项留空。',
+    issues: ko ? `사번 문제 ${selectedIssues.length}건을 먼저 고치세요.` : `请先更正 ${selectedIssues.length} 项工号问题。`,
+  }[previewBlocker];
+  const currentStep = preview && !conflict ? 3 : inputs.length > 0 ? 2 : 1;
+  const steps = ko ? ['파일 선택', '검증', '저장'] : ['选择文件', '验证', '保存'];
 
   return <section className="hr-panel hr-workbook-import">
     <div className="hr-workbook-heading"><div><h2><FileSpreadsheet size={17} />{ko ? '회사 임금표 업로드' : '上传公司工资表'}</h2><span>{ko ? '계약직·시간제 원본 · 시스템 기본 분류로 월별 저장' : '合同工·小时工原始表 · 使用系统基础分类按月保存'}</span></div>
       <button className="hr-button" disabled={busy} aria-expanded={open} onClick={() => setOpen((value) => !value)}><Upload size={15} />{open ? (ko ? '접기' : '收起') : (ko ? '파일 선택' : '选择文件')}</button></div>
+    <ol className="hr-workbook-steps" aria-label={ko ? '급여 파일 처리 순서' : '工资文件处理步骤'}>
+      {steps.map((label, index) => <li key={label} aria-current={currentStep === index + 1 ? 'step' : undefined}>
+        {index > 0 && <span className="hr-workbook-step-arrow" aria-hidden="true">→</span>}
+        <span className="hr-workbook-step-label">{index + 1} {label}</span>
+      </li>)}
+    </ol>
     <div className={`hr-workbook-system-status${referenceStatus === 'error' || referenceConflict ? ' is-error' : registeredReference ? ' is-ready' : ''}`} role="status">
       <span>{referenceStatus === 'loading' ? (ko ? '시스템 기본 분류를 확인하는 중입니다.' : '正在确认系统基础分类。')
         : referenceStatus === 'error' ? (ko ? '기본 분류를 확인하지 못했습니다. 다시 불러와 주세요.' : '无法确认基础分类，请重新加载。')
@@ -404,7 +437,6 @@ export default function HrWorkbookImportPanel({
             {chosen.code && <label>{ko ? '변경 사유' : '变更原因'} <input maxLength={500} value={chosen.reason} disabled={busy || disabled} onChange={(event) => update({ ...chosen, reason: event.target.value })} /></label>}
           </div>;
         })}
-        {incompleteDecision && <p role="status">{ko ? '사유를 입력하고 비교할 월을 선택하거나 확인을 보류하세요.' : '请填写原因并选择相关月份，或暂不确认。'}</p>}
       </details>}
       {issueRows.length > 0 && <details className="hr-disclosure" open><summary>{ko ? '사번 확인·수정' : '确认及更正工号'} ({selectedIssues.length} {ko ? '선택 월 문제' : '所选月份问题'})</summary><p className="hr-muted">{ko ? '선택한 월의 문제만 저장을 막습니다. 원본 행으로 확인하고 올바른 사번을 입력하세요.' : '仅所选月份的问题会阻止保存，请核对原始行并输入正确工号。'}</p><div className="hr-table-scroll hr-workbook-issue-scroll"><table><thead><tr><th>{ko ? '파일' : '文件'}</th><th>{ko ? '시트·행' : '工作表·行'}</th><th>{ko ? '월' : '月份'}</th><th>{ko ? '원본 사번' : '原始工号'}</th><th>{ko ? '확인 사항' : '确认事项'}</th><th>{ko ? '수정 사번' : '更正工号'}</th></tr></thead><tbody>{issueRows.map((issue) => <tr key={issue.key} className={selectedSet.has(issue.month) || !monthPattern.test(issue.month) ? '' : 'is-excluded'}><td>{issue.file}</td><td>{issue.sheet} · {issue.row}</td><td>{issue.month || '—'}</td><td>{rowKeys.get(issue.key)?.original_code || '—'}</td><td>{issueLabel(parsed.issues.find((current) => current.key === issue.key))}
         {issue.evidence && <div><strong>{issue.evidence.code}</strong>{issue.evidence.roster && <span> · {ko ? '등록 명부 일치' : '与名册一致'}</span>}
@@ -413,9 +445,23 @@ export default function HrWorkbookImportPanel({
         {issue.suggested_code && <button className="hr-button" disabled={busy || disabled || corrections[issue.key] === issue.suggested_code} onClick={() => {
           invalidate(); setCorrections((current) => ({ ...current, [issue.key]: issue.suggested_code! }));
         }}>{ko ? '추천 적용' : '应用建议'}</button>}</div></td></tr>)}</tbody></table></div></details>}
-      <div className="hr-workbook-policy"><label className="hr-field">{ko ? '인원 배치 적용' : '人员配置方式'}<select value={policy} disabled={busy || disabled} onChange={(event) => { invalidate(); setPolicy(event.target.value as 'preserve' | 'reference'); }}><option value="preserve">{ko ? '같은 월의 기존 배치 유지 · 신규 인원은 기본 분류 적용' : '保留同月现有配置 · 新人员按基础分类配置'}</option><option value="reference">{ko ? '저장된 기본 분류로 다시 배치' : '按已保存基础分类重新配置'}</option></select></label><button className="hr-button" disabled={!canPreview} onClick={() => void inspect()}>{busy ? (ko ? '처리 중…' : '处理中…') : (ko ? '선택 월 미리보기' : '预览所选月份')}</button></div>
+      <div className="hr-workbook-policy">
+        <label className="hr-field">{ko ? '인원 배치 적용' : '人员配置方式'}
+          <select value={policy} disabled={busy || disabled} onChange={(event) => { invalidate(); setPolicy(event.target.value as 'preserve' | 'reference'); }}>
+            <option value="preserve">{ko ? '같은 월의 기존 배치 유지 · 신규 인원은 기본 분류 적용' : '保留同月现有配置 · 新人员按基础分类配置'}</option>
+            <option value="reference">{ko ? '저장된 기본 분류로 다시 배치' : '按已保存基础分类重新配置'}</option>
+          </select>
+        </label>
+        {(!preview || conflict) && <div className="hr-workbook-validation">
+          <button type="button" className={`hr-button hr-workbook-validate${inputs.length ? ' is-primary' : ''}`}
+            disabled={!canPreview} aria-describedby={validationHint ? validationHintId : undefined} onClick={() => void inspect()}>
+            {ko ? `선택 ${selectedMonths.length}개월 검증하기` : `验证所选 ${selectedMonths.length} 个月`}
+          </button>
+          <span id={validationHintId} className="hr-muted" role="status">{validationHint}</span>
+        </div>}
+      </div>
       {error && <p role="alert" className="hr-alert is-error">{error}</p>}
-      {preview && <div className="hr-workbook-preview"><h3><CheckCircle2 size={16} />{ko ? '선택 월 검증 결과' : '所选月份验证结果'}</h3><div className="hr-table-scroll"><table><thead><tr><th>{ko ? '월' : '月份'}</th><th>{ko ? '가져올 인원' : '导入人数'}</th><th>{ko ? '다른 고용 형태 유지' : '保留其他用工类型'}</th><th>{ko ? '미분류' : '未分类'}</th><th>{ko ? '금액 미입력' : '金额未填写'}</th><th className="hr-number">{ko ? '월 합계 (CNY)' : '月合计（CNY）'}</th></tr></thead><tbody>{preview.months.map((month) => <tr key={month.month}><td>{month.month}</td><td>{month.imported_count}</td><td>{month.retained_count}</td><td>{month.unassigned_count}</td><td>{month.missing_cost_count}</td><td className="hr-number">{month.total === null ? (ko ? '미확정' : '待确认') : compactMoney(month.total, 'CNY', lang)}{month.total === null && <small className="hr-workbook-known-total">{ko ? '입력분' : '已录入'} {compactMoney(month.known_total, 'CNY', lang)}</small>}</td></tr>)}</tbody></table></div>
+      {preview && <div className="hr-workbook-preview"><h3 ref={previewTitle} tabIndex={-1}><CheckCircle2 size={16} aria-hidden="true" />{ko ? '선택 월 검증 결과' : '所选月份验证结果'}</h3><div className="hr-table-scroll"><table><thead><tr><th>{ko ? '월' : '月份'}</th><th>{ko ? '가져올 인원' : '导入人数'}</th><th>{ko ? '다른 고용 형태 유지' : '保留其他用工类型'}</th><th>{ko ? '미분류' : '未分类'}</th><th>{ko ? '금액 미입력' : '金额未填写'}</th><th className="hr-number">{ko ? '월 합계 (CNY)' : '月合计（CNY）'}</th></tr></thead><tbody>{preview.months.map((month) => <tr key={month.month}><td>{month.month}</td><td>{month.imported_count}</td><td>{month.retained_count}</td><td>{month.unassigned_count}</td><td>{month.missing_cost_count}</td><td className="hr-number">{month.total === null ? (ko ? '미확정' : '待确认') : compactMoney(month.total, 'CNY', lang)}{month.total === null && <small className="hr-workbook-known-total">{ko ? '입력분' : '已录入'} {compactMoney(month.known_total, 'CNY', lang)}</small>}</td></tr>)}</tbody></table></div>
         {preview.months.some((month) => month.version > 0) && <p className="hr-muted">{ko ? '기존 자료가 있는 월은 올린 고용 형태의 자료를 교체합니다. 다른 고용 형태의 인원은 유지합니다.' : '已存在资料的月份会替换此次上传类型的数据，其他用工类型人员予以保留。'}</p>}
         <div className="hr-workbook-save"><span>{ko ? '선택 월의 원본·기본 분류·합계를 확인한 뒤 저장하세요.' : '核对所选月份的原始资料、基础分类及合计后保存。'}</span><button className="hr-button is-primary" disabled={busy || disabled || conflict || !referenceReady || !preview.months.length} onClick={() => void save()}>{busy ? (ko ? '저장 중…' : '正在保存…') : (ko ? `선택 ${preview.months.length}개월 저장` : `保存所选 ${preview.months.length} 个月`)}</button></div>
       </div>}

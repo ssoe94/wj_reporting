@@ -4,6 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import test from 'node:test';
 import * as jsxRuntime from 'react/jsx-runtime';
 import ts from 'typescript';
+import { workbookPreviewBlocker } from '../src/domains/hr/workbook-preview.ts';
 import type { HrEmploymentType, HrRosterEntry, HrWorkbookBatch } from '../src/domains/hr/workbook-types.ts';
 
 const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/hr/HrWorkbookImportPanel.tsx', import.meta.url), 'utf8'), {
@@ -51,6 +52,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
       },
       useMemo: (callback: () => unknown) => callback(),
       useCallback: (callback: unknown) => callback,
+      useId: () => 'validation-hint',
     },
     'react-router-dom': { Link: 'a' },
     'lucide-react': Object.fromEntries(['CheckCircle2', 'FileSpreadsheet', 'RefreshCw', 'RotateCcw', 'Upload', 'X'].map((name) => [name, name])),
@@ -67,6 +69,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
     },
     '../../domains/hr/import': { readWorkbook: async (file: { name: string }) => ({ filename: file.name, sheets: [{ name: 'payroll', rows: [] }] }) },
     '../../domains/hr/flow': { hrFlowHref: () => '' },
+    '../../domains/hr/workbook-preview': { workbookPreviewBlocker },
     '../../domains/hr/workbook-import': {
       parseCompanyPayroll: (inputs: { id: string; book: { filename: string }; employment_type: HrEmploymentType }[]) => ({
         files: inputs.map((input) => ({ id: input.id, filename: input.book.filename, employment_type: input.employment_type })),
@@ -111,7 +114,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
     { name: 'synthetic-小时工.xlsx', size: 100 }, { name: 'synthetic-合同工.xlsx', size: 100 },
   ]);
   await setImmediate();
-  const previewButton = () => render().find((node) => node.type === 'button' && text(node) === (lang === 'ko' ? '선택 월 미리보기' : '预览所选月份'))!;
+  const previewButton = () => render().find((node) => node.type === 'button' && node.props.className?.includes('hr-workbook-validate'))!;
   const review = () => render().find((node) => node.props.className === 'hr-compact-toolbar');
   return {
     render, requests, review, previewButton, nextSteps,

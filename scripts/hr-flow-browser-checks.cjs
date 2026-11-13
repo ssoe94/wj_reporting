@@ -43,6 +43,15 @@ const other = workbook('synthetic-single.xlsx', [
   ['月份', '工号', '姓名', '职务', '部门', '应发工资'],
   ['2026-02', 'SYN-B', '合成测试员乙', '测试操作员', '注塑', 400.51],
 ]);
+const followupMonths = Array.from({ length: 10 }, (_, index) => index + 1);
+const followupContract = workbook('synthetic-010b-合同工.xlsx', [
+  ['2026年', '工号', '姓名', '职务', '部门', '应发工资', '实发工资'],
+  ...followupMonths.map(month => [`${month}月`, month === 10 ? '90991' : '90001', '测试甲', '测试操作员', '注塑', 1200.35, 997.35]),
+]);
+const followupHourly = workbook('synthetic-010b-小时工.xlsx', [
+  ['2026年', '部门', '工号', '姓名', '小时数', '应发工资'],
+  ...followupMonths.map(month => [`${month}月`, '注塑', 'SYN-C', '合成测试员丙', 20, 400.51]),
+]);
 
 async function transfer(page, target, type, files, { text = '' } = {}) {
   return page.locator(target).evaluate((element, { type, files, text }) => {
@@ -117,7 +126,7 @@ async function changeStepWithDraft(page, step) {
   assert.equal(dialog, null, 'Assignment and cost share the same draft without prompting');
 }
 
-async function checkHrFlow({ origin, fixture, capture, backendRequest, checks }) {
+async function checkHrFlow({ origin, fixture, capture, captureFollowup, backendRequest, checks }) {
   const close = (step, month = closeMonth) => `${origin}/hr/personnel?${step ? `step=${step}&` : ''}month=${month}`;
   const work = (step, month = workMonth, date = day) => `${origin}/hr/work?${step ? `step=${step}&` : ''}month=${month}&date=${date}`;
   const seed = await backendRequest('/api/analytics/hr/classification-reference/', {
@@ -263,7 +272,7 @@ async function checkHrFlow({ origin, fixture, capture, backendRequest, checks })
   await referenceManagement.getByRole('button', { name: '분류 변경 취소', exact: true }).click();
   await transfer(page, upload, 'drop', [payroll]);
   await page.locator('.hr-workbook-file-table').getByText(payroll.name, { exact: true }).waitFor();
-  await page.getByRole('button', { name: '선택 월 미리보기', exact: true }).click();
+  await page.getByRole('button', { name: '선택 1개월 검증하기', exact: true }).click();
   await page.locator('.hr-workbook-preview').waitFor();
   assert.ok(ko.calls.some(call => call.pathname === payrollPath && call.status === 200 && call.body.files[0].filename === payroll.name));
   await cancelDraftNavigation(page, () => stepLink(page, 'roster').click());
@@ -276,7 +285,7 @@ async function checkHrFlow({ origin, fixture, capture, backendRequest, checks })
 
   await transfer(page, upload, 'drop', [requiresReview]);
   await page.locator('.hr-workbook-file-table').getByText(requiresReview.name, { exact: true }).waitFor();
-  await page.getByRole('button', { name: '선택 월 미리보기', exact: true }).click();
+  await page.getByRole('button', { name: '선택 1개월 검증하기', exact: true }).click();
   await page.locator('.hr-workbook-preview').waitFor();
   await page.getByRole('button', { name: /선택 1개월 저장/ }).click();
   const rosterNext = page.locator('.hr-upload-next').getByRole('link', { name: '사번 확인으로 이동' });
@@ -379,6 +388,132 @@ async function checkHrFlow({ origin, fixture, capture, backendRequest, checks })
   await dark.context.close();
   await ko.context.close();
   checks.push('390px has no document overflow and every step has a 44px touch target, and the work flow renders in dark mode');
+
+  await checkWorkbookFollowup({ url: close('upload'), fixture, capture: captureFollowup, checks });
+}
+
+async function checkWorkbookFollowup({ url, fixture, capture, checks }) {
+  const selectors = {
+    panel: '.hr-workbook-import',
+    step: '.hr-workbook-steps [aria-current="step"] .hr-workbook-step-label',
+    validate: '.hr-workbook-validate',
+    preview: '.hr-workbook-preview',
+  };
+  async function open(options) {
+    const session = await fixture(options);
+    const { page } = session;
+    await page.goto(url);
+    await page.locator(`${upload} button:enabled`).waitFor();
+    return session;
+  }
+  async function dropPair(page) {
+    await transfer(page, upload, 'drop', [followupContract, followupHourly]);
+    const files = page.locator('.hr-workbook-file-table tbody tr');
+    for (const input of [followupContract, followupHourly]) {
+      await files.getByText(input.name, { exact: true }).waitFor();
+    }
+    assert.equal(await files.count(), 2);
+    assert.equal(await files.nth(0).locator('select').inputValue(), 'contract');
+    assert.equal(await files.nth(1).locator('select').inputValue(), 'hourly');
+  }
+  async function verifyValidateButton(page, name) {
+    const button = page.locator(selectors.validate);
+    await button.waitFor();
+    assert.equal((await button.innerText()).trim(), name);
+    assert.match(await button.getAttribute('class'), /\bis-primary\b/);
+    assert.equal(await button.isEnabled(), true);
+    return button;
+  }
+  async function assertStep(page, expected) {
+    assert.equal((await page.locator(selectors.step).innerText()).trim().replace(/\s+/gu, ' '), expected);
+  }
+
+  const ko = await open();
+  const page = ko.page;
+  await assertStep(page, '1 파일 선택');
+  await dropPair(page);
+  const validate = await verifyValidateButton(page, '선택 10개월 검증하기');
+  await assertStep(page, '2 검증');
+  const policy = page.locator(`${selectors.panel} .hr-workbook-policy select`);
+  assert.equal(await validate.evaluate(element => {
+    const select = element.closest('.hr-workbook-import').querySelector('.hr-workbook-policy select');
+    return Boolean(select.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), true, 'The assignment policy is read before validation');
+  assert.ok((await validate.boundingBox()).x < (await page.locator(selectors.panel).boundingBox()).x + 50,
+    'The primary action starts at the left edge of the upload panel');
+  await validate.scrollIntoViewIfNeeded();
+  await capture(page, 'files-ready');
+
+  const rosterDecision = page.locator(`${selectors.panel} .hr-compact-toolbar`).filter({ hasText: '사번 변경' });
+  await rosterDecision.locator('select').selectOption('90991');
+  const reason = page.getByLabel('변경 사유', { exact: true });
+  await reason.waitFor();
+  assert.equal(await reason.inputValue(), '');
+  assert.equal(await validate.isDisabled(), true);
+  const reasonId = await validate.getAttribute('aria-describedby');
+  assert.ok(reasonId, 'Disabled action is associated with its visible explanation');
+  const explanation = page.locator(`[id="${reasonId}"]`);
+  assert.equal(await explanation.isVisible(), true);
+  assert.match(await explanation.innerText(), /사번과 사유를 둘 다 입력하거나 둘 다 비우세요/);
+  await explanation.scrollIntoViewIfNeeded();
+  await capture(page, 'disabled-reason');
+  await reason.fill('Synthetic roster code confirmation');
+
+  async function validateAndCheckResult() {
+    await validate.click();
+    const heading = page.locator(`${selectors.preview} h3`);
+    await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), `${selectors.preview} h3`);
+    assert.equal(await heading.getAttribute('tabindex'), '-1');
+    assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
+    assert.equal(await heading.evaluate(element => {
+      const { top, bottom } = element.getBoundingClientRect();
+      const headerBottom = document.querySelector('.main-topbar')?.getBoundingClientRect().bottom ?? 0;
+      return top >= headerBottom && bottom <= innerHeight;
+    }), true, 'The focused validation result heading is scrolled into view');
+    await assertStep(page, '3 저장');
+    assert.equal(await validate.isVisible(), false, 'Save is the sole primary action after validation');
+    const save = page.getByRole('button', { name: '선택 10개월 저장', exact: true });
+    assert.match(await save.getAttribute('class'), /\bis-primary\b/);
+    assert.equal(await page.locator(`${selectors.preview} tbody tr`).count(), 10);
+    return save;
+  }
+
+  await validateAndCheckResult();
+  await policy.selectOption('reference');
+  await page.locator(selectors.preview).waitFor({ state: 'hidden' });
+  await assertStep(page, '2 검증');
+  await verifyValidateButton(page, '선택 10개월 검증하기');
+  const save = await validateAndCheckResult();
+  await capture(page, 'validated');
+  await save.click();
+  const next = page.locator('.hr-upload-next').getByRole('link', { name: '부서·파트 배치로 이동' });
+  await next.waitFor();
+  await waitForStep(page, 'upload');
+  assert.equal(new URL(await next.getAttribute('href'), page.url()).searchParams.get('step'), 'assign');
+  assert.ok(ko.calls.some(call => call.pathname === payrollPath && call.status === 200
+    && call.body.files.length === 2 && call.body.months.length === 10 && call.body.roster_decisions[0]?.code === '90991'));
+  assert.ok(ko.calls.some(call => call.pathname === '/api/analytics/hr/workbook-import/' && call.status === 200
+    && call.body.confirmations.length === 10));
+  await ko.context.close();
+  checks.push('Two synthetic XLSX files produce a left-aligned primary action for ten months, and an incomplete roster decision explains why validation is disabled');
+  checks.push('Validation scrolls to and focuses the result, input changes return to validation, and saving shows the assignment link without auto-navigation');
+
+  const zh = await open({ lang: 'zh' });
+  await dropPair(zh.page);
+  const zhButton = await verifyValidateButton(zh.page, '验证所选 10 个月');
+  await assertStep(zh.page, '2 验证');
+  await zhButton.scrollIntoViewIfNeeded();
+  await capture(zh.page, 'zh');
+  await zh.context.close();
+  const mobile = await open({ mobile: true });
+  await dropPair(mobile.page);
+  const mobileButton = await verifyValidateButton(mobile.page, '선택 10개월 검증하기');
+  assert.ok((await mobileButton.boundingBox()).height >= 44);
+  assert.equal(await mobile.page.evaluate(() => document.documentElement.scrollWidth), 390);
+  await mobileButton.scrollIntoViewIfNeeded();
+  await capture(mobile.page, 'mobile-390');
+  await mobile.context.close();
+  checks.push('The primary validation action remains localized in Chinese and visible with a 44px touch target at 390px');
 }
 
 module.exports = { checkHrFlow };
