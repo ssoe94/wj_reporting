@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from .hr_identity import code_key, identity
+
 
 class MartProductionDailyProgress(models.Model):
     PROCESS_CHOICES = [
@@ -290,3 +292,174 @@ class HrClassificationHistory(models.Model):
     class Meta:
         ordering = ['-id']
         constraints = [models.UniqueConstraint(fields=['reference', 'version'], name='hr_reference_history_version')]
+
+
+class HrRosterEmployee(models.Model):
+    """Company-wide employee identity, independent of historical payroll rows."""
+    code = models.CharField(max_length=64)
+    name = models.CharField(max_length=100)
+    normalized_code = models.CharField(max_length=64, editable=False)
+    normalized_name = models.CharField(max_length=300, editable=False)
+    employment_type = models.CharField(max_length=8)
+    department = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=8, default='active')
+    first_month = models.CharField(max_length=7)
+    last_month = models.CharField(max_length=7)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['code', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['employment_type', 'normalized_name'], name='hr_roster_person_unique'),
+            models.UniqueConstraint(fields=['normalized_code'], name='hr_roster_code_unique'),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.normalized_name = identity(self.name)
+        self.normalized_code = code_key(self.code)
+        if kwargs.get('update_fields') is not None:
+            fields = set(kwargs['update_fields'])
+            for source, normalized in [('name', 'normalized_name'), ('code', 'normalized_code')]:
+                if source in fields:
+                    fields.add(normalized)
+            kwargs['update_fields'] = fields
+        return super().save(*args, **kwargs)
+
+
+class HrRosterCodeHistory(models.Model):
+    """Confirmed roster changes retain before/after identity and attribute values."""
+    employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='code_history')
+    previous_code = models.CharField(max_length=64)
+    new_code = models.CharField(max_length=64)
+    previous_status = models.CharField(max_length=8)
+    new_status = models.CharField(max_length=8)
+    previous_employment_type = models.CharField(max_length=8)
+    new_employment_type = models.CharField(max_length=8)
+    previous_department = models.CharField(max_length=100, blank=True)
+    new_department = models.CharField(max_length=100, blank=True)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class HrLaborStandard(models.Model):
+    """A company rule set effective from this month until the next stored start."""
+    month = models.CharField(max_length=7, primary_key=True)
+    rules = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborCalendar(models.Model):
+    """Explicit date overrides only; no inferred public-holiday schedule."""
+    month = models.CharField(max_length=7, primary_key=True)
+    days = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborStandardHistory(models.Model):
+    standard = models.ForeignKey(HrLaborStandard, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['standard', 'version'], name='hr_labor_standard_audit_unique')]
+
+
+class HrLaborCalendarHistory(models.Model):
+    calendar = models.ForeignKey(HrLaborCalendar, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['calendar', 'version'], name='hr_labor_calendar_audit_unique')]
+
+
+class HrLaborActualPayment(models.Model):
+    """Actual employer invoice payments, separate from estimated contribution rates."""
+    month = models.CharField(max_length=7, primary_key=True)
+    payment = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+
+
+class HrLaborActualPaymentHistory(models.Model):
+    actual_payment = models.ForeignKey(HrLaborActualPayment, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['actual_payment', 'version'], name='hr_labor_payment_audit_unique')]
+
+
+class HrPersonnelEvent(models.Model):
+    """An append-only effective-dated change or a cancellation of one change."""
+
+    employee = models.ForeignKey(HrRosterEmployee, on_delete=models.PROTECT, related_name='personnel_events')
+    date = models.DateField(db_index=True)
+    kind = models.CharField(max_length=24)
+    target = models.OneToOneField('self', null=True, on_delete=models.PROTECT, related_name='cancellation')
+    changes = models.JSONField(default=dict)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['date', 'id']
+
+
+class HrDailyWork(models.Model):
+    """One date's explicit overrides. Unentered cells use the projected defaults."""
+
+    date = models.DateField(primary_key=True)
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=10)
+    overrides = models.JSONField(default=dict)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class HrDailyWorkHistory(models.Model):
+    workday = models.ForeignKey(HrDailyWork, on_delete=models.PROTECT, related_name='history')
+    version = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['workday', 'version'], name='hr_daily_work_audit_unique')]

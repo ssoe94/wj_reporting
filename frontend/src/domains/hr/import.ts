@@ -146,6 +146,10 @@ export function suggestColumnMapping(headers: HrHeaderColumn[]): HrColumnMapping
 export type HrPayrollMapping = { headerRowIndex: number; columns: HrColumnMapping; targetMonth: string; classificationMode: 'preserve' | 'file'; allowMissingCost: boolean };
 export type HrPayrollParseResult = { rows: HrImportRow[]; excluded_row_count: number; missing_cost_count: number };
 
+export function normalizeHrJobTitle(title: string): string {
+  return title.replace(/\s+/gu, '');
+}
+
 export function parsePayrollPeriod(value: string, targetMonth: string, header: string): string {
   const text = value.replace(/\s+/g, '');
   const full = text.match(/^((?:19|20|21)\d{2})[-/年](\d{1,2})月?$/);
@@ -177,7 +181,7 @@ export function parsePayrollRows(rows: HrImportCell[][], mapping: HrPayrollMappi
       if (period !== targetMonth) { excluded += 1; continue; }
       if (result.length >= MAX_IMPORT_ROWS) throw new Error(`직원은 ${MAX_IMPORT_ROWS}명까지 올릴 수 있습니다.`);
       const code = cellText(row[columns.code!]); const name = cellText(row[columns.name!]);
-      const title = columns.title == null ? '' : cellText(row[columns.title]);
+      const title = columns.title == null ? '' : normalizeHrJobTitle(cellText(row[columns.title]));
       const sourceDepartment = columns.source_department == null ? '' : cellText(row[columns.source_department]);
       if (!code) throw new Error('사번이 비어 있습니다.');
       if (!name) throw new Error('이름이 비어 있습니다.');
@@ -223,7 +227,7 @@ export function parseMappedRows(rows: HrImportCell[][], mapping: HrImportMapping
     try {
       const code = cellText(row[mapping.columns.code]);
       const name = cellText(row[mapping.columns.name]);
-      const title = mapping.columns.title === null ? "" : cellText(row[mapping.columns.title]);
+      const title = mapping.columns.title === null ? "" : normalizeHrJobTitle(cellText(row[mapping.columns.title]));
       if (!code) throw new Error("사번이 비어 있습니다.");
       if (!name) throw new Error("이름이 비어 있습니다.");
       if (code.length > 64 || name.length > 100 || title.length > 100) {

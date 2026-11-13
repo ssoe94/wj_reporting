@@ -14,6 +14,7 @@ from .hr_service import check_version, lock_month, persist
 from .hr_workbook_contract import code_key, identity
 from .hr_reference_service import lock_reference, stored_reference
 from .models import HrMonthWorkspace
+from .hr_roster_service import codes_for, lock_roster, person_key, plan_roster, sync_roster
 
 
 def digest(value):
@@ -62,7 +63,8 @@ def company_departments(workspace):
     return validate_departments(departments)
 
 
-def build_preview(data, workspaces=None):
+def build_preview(data, workspaces=None, roster_plan=None):
+    people, _, grouped, decisions, aliases = roster_plan if roster_plan is not None else plan_roster(data)
     if workspaces is None:
         workspaces = {workspace.month: workspace for workspace in HrMonthWorkspace.objects.filter(month__in=[item['month'] for item in data['months']])}
     reference = (stored_reference(data['classification_version']) if 'classification_version' in data
@@ -88,8 +90,14 @@ def build_preview(data, workspaces=None):
             old = previous.get(key)
             if old and identity(old['name']) != identity(row['name']):
                 raise serializers.ValidationError('기존 자료와 같은 사번의 직원 정보가 다릅니다. 사번을 확인해 주세요.')
-            matched = by_code.get(key) or by_name.get((identity(row['name']), row['employment_type']))
-            if matched and (identity(matched['name']) != identity(row['name']) or matched['employment_type'] != row['employment_type'] or (matched.get('code') and code_key(matched['code']) != key)):
+            person = person_key(row['name'], row['employment_type'])
+            roster_person = aliases.get(person, person)
+            employee = people.get(roster_person)
+            confirmed_codes = {code_key(code) for code in [employee.code, *codes_for(employee)]} if employee else set()
+            if roster_person in decisions:
+                confirmed_codes.update(code_key(entry['code']) for entry in grouped[roster_person])
+            matched = by_code.get(key) or by_name.get(person)
+            if matched and (identity(matched['name']) != identity(row['name']) or (matched['employment_type'] != row['employment_type'] and code_key(matched.get('code', '')) != key) or (matched.get('code') and code_key(matched['code']) != key and not {code_key(matched['code']), key} <= confirmed_codes)):
                 raise serializers.ValidationError('분류표와 임금표의 직원 정보 또는 사번이 다릅니다. 원본을 확인해 주세요.')
             row['department_id'] = old['department_id'] if old and data['assignment_policy'] == 'preserve' else matched['department_id'] if matched else None
             rows.append(row)
@@ -110,11 +118,13 @@ def build_preview(data, workspaces=None):
             'unassigned_count': sum(row['department_id'] is None for row in rows),
             'fingerprint': fingerprint, 'rows': rows,
         })
-    return {'classification': reference, 'months': months, 'preview_token': digest({'classification': reference, 'classification_version': data.get('classification_version'), 'months': months, 'assignment_policy': data['assignment_policy']})}
+    return {'classification': reference, 'months': months, 'preview_token': digest({'classification': reference, 'classification_version': data.get('classification_version'), 'months': months, 'assignment_policy': data['assignment_policy'], 'roster_decisions': data.get('roster_decisions', []),
+        'roster_versions': sorted((item.id, item.version) for key, item in people.items() if key in grouped)})}
 
 
 @transaction.atomic
 def save_batch(data, user):
+    lock_roster()
     if 'classification_version' in data:
         check_version(lock_reference(), data['classification_version'])
     # Every writer uses the same month locks. Sort before locking to avoid
@@ -123,7 +133,8 @@ def save_batch(data, user):
     confirmations = {item['month']: item for item in data['confirmations']}
     for month, workspace in workspaces.items():
         check_version(workspace, confirmations[month]['version'])
-    preview = build_preview(data, workspaces)
+    roster_plan = plan_roster(data)
+    preview = build_preview(data, workspaces, roster_plan)
     if preview['preview_token'] != data['preview_token']:
         raise serializers.ValidationError('자료가 미리보기 이후 변경되었습니다. 미리보기를 다시 실행해 주세요.')
     for item in preview['months']:
@@ -156,4 +167,5 @@ def save_batch(data, user):
             'currency': 'CNY', 'cost_basis': 'gross_salary', 'cost_basis_label': '应发工资',
             'departments': company_departments(workspace), 'employees': item['rows'], 'source': source,
         }, user, 'import'))
+    sync_roster(roster_plan, user)
     return saved

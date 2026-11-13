@@ -1,19 +1,9 @@
 """Company payroll intake: explicit roster, source coordinates and bounded batches."""
-import re
-import unicodedata
-
 from rest_framework import serializers
 
 from .hr_company_structure import COMPANY_DEPARTMENTS
-from .hr_contract import AmountField, StrictSerializer, validate_month
-
-
-def identity(value):
-    return re.sub(r'\s+', '', unicodedata.normalize('NFC', value))
-
-
-def code_key(value):
-    return str(int(value)) if re.fullmatch(r'[0-9]+', value) else value
+from .hr_contract import AmountField, JobTitleField, StrictSerializer, validate_month
+from .hr_identity import code_key, identity
 
 
 class ReferenceRowSerializer(StrictSerializer):
@@ -56,10 +46,23 @@ class SaveReferenceSerializer(StrictSerializer):
     reference = ReferenceSerializer()
 
 
+class PayrollComponentsSerializer(StrictSerializer):
+    base_salary = AmountField(allow_null=True)
+    fixed_overtime = AmountField(allow_null=True)
+    weekday_overtime = AmountField(allow_null=True, required=False)
+    weekend_overtime = AmountField(allow_null=True, required=False)
+    holiday_overtime = AmountField(allow_null=True, required=False)
+    # Payroll deductions are stored as nonnegative source amounts. The fixed
+    # pay reconstruction adds them back; intake never changes their sign.
+    personal_leave = AmountField(allow_null=True, required=False)
+    sick_leave = AmountField(allow_null=True, required=False)
+    absence = AmountField(allow_null=True, required=False)
+
+
 class PayrollRowSerializer(StrictSerializer):
     code = serializers.CharField(max_length=64)
     name = serializers.CharField(max_length=100)
-    title = serializers.CharField(max_length=100, allow_blank=True, default='')
+    title = JobTitleField(max_length=100, allow_blank=True, default='')
     amount = AmountField()
     period = serializers.CharField(max_length=7)
     source_department = serializers.CharField(max_length=100, allow_blank=True, default='')
@@ -68,6 +71,12 @@ class PayrollRowSerializer(StrictSerializer):
     source_sheet = serializers.CharField(max_length=100)
     source_row = serializers.IntegerField(min_value=1, max_value=5100)
     original_code = serializers.CharField(max_length=500, allow_blank=True)
+    payroll_components = PayrollComponentsSerializer(required=False)
+
+    def validate(self, data):
+        if 'payroll_components' in data and data['employment_type'] != 'contract':
+            raise serializers.ValidationError('계약직 급여 원본의 항목만 저장할 수 있습니다.')
+        return data
 
 
 class MonthSerializer(StrictSerializer):
@@ -78,11 +87,20 @@ class MonthSerializer(StrictSerializer):
         return validate_month(value)
 
 
+class RosterDecisionSerializer(StrictSerializer):
+    name = serializers.CharField(max_length=100)
+    employment_type = serializers.ChoiceField(choices=['contract', 'hourly'])
+    code = serializers.CharField(max_length=64)
+    reason = serializers.CharField(max_length=500)
+    version = serializers.IntegerField(min_value=0)
+
+
 class WorkbookBatchSerializer(StrictSerializer):
     classification = ReferenceSerializer(required=False)
     classification_version = serializers.IntegerField(min_value=1, max_value=2147483647, required=False)
     files = SourceSerializer(many=True, allow_empty=False, max_length=10)
     months = MonthSerializer(many=True, allow_empty=False, max_length=24)
+    roster_decisions = RosterDecisionSerializer(many=True, max_length=5000, required=False)
     assignment_policy = serializers.ChoiceField(choices=['preserve', 'reference'])
 
     def validate(self, data):

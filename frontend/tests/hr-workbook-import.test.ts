@@ -29,11 +29,108 @@ test('two explicit employment files split seven months and retain source facts w
   assert.equal(result.months[0].rows.length, 2);
   assert.deepEqual(result.months[0].rows[0], { code: '00011', name: '合成员工甲', title: '合成职务',
     amount: '10.00', period: '2026-01', source_department: '合成部门', employment_type: 'contract',
-    source_file: 'contract', source_sheet: '工资', source_row: 2, original_code: '00011' });
+    source_file: 'contract', source_sheet: '工资', source_row: 2, original_code: '00011',
+    payroll_components: { base_salary: null, fixed_overtime: null } });
   assert.equal(result.months[0].rows[1].title, '');
   assert.ok(result.months.flatMap(({ rows }) => rows).every((row) => !Object.hasOwn(row, 'department_id')));
   assert.deepEqual(result.issues, []);
   assert.deepEqual(result.warnings, []);
+});
+
+test('contract payroll components retain only explicit source amounts, including zero and missing values', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班'];
+  const result = parseCompanyPayroll([source([headers,
+    [...contract('1月', '90001', '合成甲', '5000.00'), '3000.25', 0],
+    [...contract('2月', '90001', '合成甲', '4000.00'), '', '125.50'],
+    [...contract('3月', '90001', '合成甲', '6000.00'), null, '  '],
+  ])]);
+  assert.deepEqual(result.months.map(({ rows }) => rows[0].payroll_components), [
+    { base_salary: '3000.25', fixed_overtime: '0.00' },
+    { base_salary: null, fixed_overtime: '125.50' },
+    { base_salary: null, fixed_overtime: null },
+  ]);
+  assert.deepEqual(result.months.map(({ rows }) => rows[0].amount), ['5000.00', '4000.00', '6000.00']);
+  assert.equal(result.months[1].rows[0].source_row, 3);
+});
+
+test('missing or differently named component columns never infer a breakdown from gross salary', () => {
+  for (const headers of [contractHeaders, [...contractHeaders, '实发工资明细', '平时加班费合计', '基本工资合计']]) {
+    const result = parseCompanyPayroll([source([headers, [...contract(), '3000.00', '200.00', '4000.00']])]);
+    assert.deepEqual(result.months[0].rows[0].payroll_components, { base_salary: null, fixed_overtime: null });
+  }
+  const baseOnly = parseCompanyPayroll([source([[...contractHeaders, '基本工资'], [...contract(), '3000.00']])]);
+  assert.deepEqual(baseOnly.months[0].rows[0].payroll_components, { base_salary: '3000.00', fixed_overtime: null });
+  const hourly = parseCompanyPayroll([source([[...hourlyHeaders, '基本工资', '固定平时加班'],
+    ['1月', '合成部门', '90002', '合成乙', 8, '200.00', '100.00', '50.00']], 'hourly', 'hourly')]);
+  assert.equal(Object.hasOwn(hourly.months[0].rows[0], 'payroll_components'), false);
+});
+
+test('component formulas require numeric caches and exact optional headers must not be ambiguous', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班'];
+  const result = parseCompanyPayroll([source([headers, [...contract(),
+    { value: 3000.25, formula: 'A1' }, { value: 125.555, formatted: '125.56', formula: 'A2' }]])]);
+  assert.deepEqual(result.months[0].rows[0].payroll_components, { base_salary: '3000.25', fixed_overtime: '125.56' });
+  assert.match(result.warnings[0], /固定平时加班.*Excel 표시 금액/);
+  for (const invalid of [-1, true, '1.005', { value: undefined, formula: 'A1' },
+    { value: '', formula: 'A1' }, { value: 10, error: true }]) {
+    assert.throws(() => parseCompanyPayroll([source([headers, [...contract('1月', '90001', 'PRIVATE_SYNTHETIC_NAME'), invalid, 0]])]),
+      (error: Error) => error.message.includes('2행:') && !error.message.includes('PRIVATE_SYNTHETIC_NAME'));
+  }
+  for (const label of ['基本工资', '固定平时加班']) {
+    assert.throws(() => parseCompanyPayroll([source([[...headers, label], [...contract(), 3000, 0, 1]])]), /제목이 여러 개/);
+  }
+});
+
+test('contract adjustment columns retain each source amount and positive deduction sign', () => {
+  const headers = [...contractHeaders, '基本工资', '固定平时加班', '平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资'];
+  const result = parseCompanyPayroll([source([headers,
+    [...contract('1月', '90001', '合成甲', '4500.25'), '3000.00', '125.50', '120.25', '80.50', '40.75', '10.25', '20.50', '30.75'],
+  ])]);
+  const row = result.months[0].rows[0];
+  assert.deepEqual(row.payroll_components, {
+    base_salary: '3000.00', fixed_overtime: '125.50',
+    weekday_overtime: '120.25', weekend_overtime: '80.50', holiday_overtime: '40.75',
+    personal_leave: '10.25', sick_leave: '20.50', absence: '30.75',
+  });
+  assert.equal(row.amount, '4500.25');
+  assert.equal(row.period, '2026-01');
+  assert.equal(row.source_row, 2);
+});
+
+test('adjustment column absence, blank cells and explicit zero remain different evidence', () => {
+  const result = parseCompanyPayroll([source([[...contractHeaders, '平时加班费', '事假'],
+    [...contract(), 0, '  '],
+  ])]);
+  assert.deepEqual(result.months[0].rows[0].payroll_components, {
+    base_salary: null, fixed_overtime: null, weekday_overtime: '0.00', personal_leave: null,
+  });
+  const unrelated = parseCompanyPayroll([source([[...contractHeaders, '周末加班', '节日加班费合计', '病假小时', '缺勤'],
+    [...contract(), 10, 20, 30, 40],
+  ])]);
+  assert.deepEqual(unrelated.months[0].rows[0].payroll_components, { base_salary: null, fixed_overtime: null });
+});
+
+test('all six optional adjustment headers reject ambiguity and unsafe source amounts', () => {
+  for (const label of ['平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资']) {
+    assert.throws(() => parseCompanyPayroll([source([[...contractHeaders, label, label], [...contract(), 1, 2]])]), /제목이 여러 개/);
+    for (const invalid of [-1, '-0.01', true, '1000000000.00', '1.005', { value: undefined, formula: 'A1' }]) {
+      assert.throws(() => parseCompanyPayroll([source([[...contractHeaders, label], [...contract(), invalid]])]), /2행:/);
+    }
+  }
+  const result = parseCompanyPayroll([source([[...contractHeaders, '事假', '缺勤工资'],
+    [...contract(), { value: 12.345, formatted: '12.35', formula: 'A1' }, '999999999.99'],
+  ])]);
+  assert.equal(result.months[0].rows[0].payroll_components?.personal_leave, '12.35');
+  assert.equal(result.months[0].rows[0].payroll_components?.absence, '999999999.99');
+  assert.match(result.warnings[0], /事假.*Excel 표시 금액/);
+});
+
+test('hourly import still stores gross only even when contract adjustment labels are supplied', () => {
+  const result = parseCompanyPayroll([source([[...hourlyHeaders, '平时加班费', '周末加班费', '节日加班费', '事假', '病假', '缺勤工资'],
+    ['1月', '合成部门', '90002', '合成乙', 8, '200.00', 10, 20, 30, 40, 50, 60],
+  ], 'hourly', 'hourly')]);
+  assert.equal(result.months[0].rows[0].amount, '200.00');
+  assert.equal(Object.hasOwn(result.months[0].rows[0], 'payroll_components'), false);
 });
 
 test('header detection accepts first twenty rows and newline aliases but always selects 应发工资', () => {
@@ -112,12 +209,15 @@ test('one code linked to different names across months blocks all involved rows 
   assert.equal(resolved.months[1].rows[0].code, '00245');
 });
 
-test('different codes for one identity across months warn without guessing or changing either key', () => {
+test('different codes for one identity across months create one review without changing either key', () => {
   const result = parseCompanyPayroll([source([contractHeaders, contract('1月', '00011'), contract('2月', '00245')])]);
   assert.deepEqual(result.issues, []);
   assert.deepEqual(result.months.map(({ rows }) => rows[0].code), ['00011', '00245']);
-  assert.equal(result.warnings.length, 2);
-  assert.ok(result.warnings.every((warning) => !warning.includes('合成员工甲')));
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.codeReviews.length, 1);
+  assert.deepEqual(result.codeReviews[0].codes, [
+    { code: '00011', months: ['2026-01'] }, { code: '00245', months: ['2026-02'] },
+  ]);
   const ambiguous = parseCompanyPayroll([source([contractHeaders, contract('1月', ''), contract('2月', '00011'), contract('3月', '00245')])]);
   assert.equal(ambiguous.issues[0].suggested_code, undefined);
 });
@@ -137,7 +237,7 @@ test('formula results are read from numeric caches; error and missing-cache cell
 test('text formulas accept saved strings, including an optional empty title, without weakening amount caches', () => {
   const row = contract();
   row[2] = { value: '合成员工甲', formula: 'VLOOKUP(B2,名单!A:B,2,FALSE)' };
-  row[3] = { value: '合成职务', formula: 'VLOOKUP(B2,名单!A:C,3,FALSE)' };
+  row[3] = { value: '合成\n职\t　务', formula: 'VLOOKUP(B2,名单!A:C,3,FALSE)' };
   row[4] = { value: '合成部门', formula: 'VLOOKUP(B2,名单!A:D,4,FALSE)' };
   const result = parseCompanyPayroll([source([contractHeaders, row])]);
   assert.equal(result.months[0].rows[0].name, '合成员工甲');
@@ -284,4 +384,62 @@ test('synthetic SheetJS workbook preserves padded keys and cached display precis
   assert.equal(parsed.months[0].rows[0].title, '合成职务');
   assert.equal(parsed.months[0].rows[0].source_department, '合成部门');
   assert.equal(parsed.warnings.length, 1);
+});
+
+test('only the conflicting and missing rows are flagged when adjacent months establish ownership', () => {
+  const inputs = [source([contractHeaders,
+    contract('4月', '90001', '测试甲'), contract('4月', '90002', '测试乙'),
+    contract('5月', '90002', '测试甲'), contract('5月', '', '测试乙'),
+    contract('6月', '90001', '测试甲'), contract('6月', '90002', '测试乙'),
+  ])];
+  const result = parseCompanyPayroll(inputs);
+  assert.deepEqual(result.issues.map(({ month, suggested_code }) => [month, suggested_code]), [
+    ['2026-05', '90001'], ['2026-05', '90002'],
+  ]);
+  assert.deepEqual(result.codeReviews, []);
+  const corrections = Object.fromEntries(result.issues.map(({ key, suggested_code }) => [key, suggested_code!]));
+  assert.deepEqual(parseCompanyPayroll(inputs, corrections).issues, []);
+});
+
+test('same normalized code and name across employment types creates one nonblocking transition review', () => {
+  const inputs = [source([contractHeaders, contract('10月', '90001', '测试甲')]),
+    source([hourlyHeaders, ...[6, 7, 8, 9].map((month) => [`${month}月`, '合成部门', '00090001', '测试 甲', 20, '0.20'])], 'hourly', 'hourly')];
+  const result = parseCompanyPayroll(inputs);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.codeReviews.length, 1);
+  assert.equal(result.codeReviews[0].employment_type, 'contract');
+  assert.deepEqual(result.codeReviews[0].employment_types, [
+    { employment_type: 'contract', months: ['2026-10'] },
+    { employment_type: 'hourly', months: ['2026-06', '2026-07', '2026-08', '2026-09'] },
+  ]);
+  assert.deepEqual(result.months.map(({ month, rows }) => [month, rows.length, rows[0].amount]), [
+    ['2026-06', 1, '0.20'], ['2026-07', 1, '0.20'], ['2026-08', 1, '0.20'], ['2026-09', 1, '0.20'], ['2026-10', 1, '10.00'],
+  ]);
+  const roster = [{ id: 1, code: '00090001', name: '测试 甲', employment_type: 'hourly' as const,
+    department: '合成部门', status: 'active' as const, first_month: '2026-06', last_month: '2026-09',
+    version: 1, previous_codes: [], in_month: false }];
+  const existing = parseCompanyPayroll(inputs, {}, roster);
+  assert.deepEqual(existing.issues, []);
+  assert.equal(existing.codeReviews.length, 1);
+  const october = parseCompanyPayroll(inputs.slice(0, 1), {}, roster);
+  assert.deepEqual(october.issues, []);
+  assert.equal(october.codeReviews.length, 1);
+  assert.deepEqual(october.codeReviews[0].employment_types, [
+    { employment_type: 'contract', months: ['2026-10'] }, { employment_type: 'hourly', months: [] },
+  ]);
+  const confirmed = parseCompanyPayroll(inputs, {}, [{ ...roster[0], employment_type: 'contract', last_month: '2026-10', version: 2 }]);
+  assert.deepEqual(confirmed.issues, []);
+  assert.deepEqual(confirmed.codeReviews, []);
+});
+
+test('different names still conflict across types; same-name employees with distinct codes stay separate', () => {
+  const hourly = source([hourlyHeaders, ...[6, 7, 8, 9].map((month) => [`${month}月`, '合成部门', '90001', '测试甲', 20, '0.20'])], 'hourly', 'hourly');
+  const conflict = parseCompanyPayroll([hourly, source([contractHeaders, contract('10月', '00090001', '测试乙')])]);
+  assert.equal(conflict.issues.length, 1);
+  assert.ok(conflict.issues[0].message.includes('서로 다른 성명'));
+  assert.equal(conflict.issues[0].suggested_code, undefined);
+  assert.deepEqual(conflict.codeReviews, []);
+  const separate = parseCompanyPayroll([hourly, source([contractHeaders, contract('10月', '90002', '测试甲')])]);
+  assert.deepEqual(separate.issues, []);
+  assert.deepEqual(separate.codeReviews, []);
 });

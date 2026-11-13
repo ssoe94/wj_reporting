@@ -1,9 +1,22 @@
 from django.urls import path
-from .hr_views import HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
+from .hr_views import HrRosterView, HrRosterDetailView, HrClassificationReferenceView, HrWorkbookPreviewView, HrWorkbookImportView, HrMonthListView, HrWorkspaceView, HrImportPreviewView, HrImportView, HrAccessView, HrAccessDetailView
+from .hr_views import HrLaborStandardView, HrLaborCalendarView, HrLaborActualPaymentView
 from injection.admin_approvals import AdminUserCreateView, SignupApprovalRequestsView, SignupApprovalApproveView
 from injection.views import UserProfileViewSet
 
+from .hr_views import HrDailyWorkView, HrDailyWorkPreviewView, HrPersonnelEventView, HrLaborForecastView, HrDashboardView
+
 urlpatterns = [
+    path('api/analytics/hr/dashboard/<str:month>/', HrDashboardView.as_view()),
+    path('api/analytics/hr/labor-forecast/<str:month>/', HrLaborForecastView.as_view()),
+    path('api/analytics/hr/daily-work/<str:day>/', HrDailyWorkView.as_view()),
+    path('api/analytics/hr/daily-work/<str:day>/preview/', HrDailyWorkPreviewView.as_view()),
+    path('api/analytics/hr/daily-work/<str:day>/events/', HrPersonnelEventView.as_view()),
+    path('api/analytics/hr/labor-actual-payments/<str:month>/', HrLaborActualPaymentView.as_view()),
+    path('api/analytics/hr/labor-standards/<str:month>/', HrLaborStandardView.as_view()),
+    path('api/analytics/hr/labor-calendar/<str:month>/', HrLaborCalendarView.as_view()),
+    path('api/analytics/hr/roster/<str:month>/', HrRosterView.as_view()),
+    path('api/analytics/hr/roster/<str:month>/<int:employee_id>/', HrRosterDetailView.as_view()),
     path('api/analytics/hr/classification-reference/', HrClassificationReferenceView.as_view()),
     path('api/analytics/hr/workbook-preview/', HrWorkbookPreviewView.as_view()),
     path('api/analytics/hr/workbook-import/', HrWorkbookImportView.as_view()),

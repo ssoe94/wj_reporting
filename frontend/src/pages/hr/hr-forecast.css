@@ -1,0 +1,79 @@
+.hr-forecast { display:grid; min-width:0; gap:12px; }
+.hr-forecast .hr-panel { margin:0; padding:14px 16px; min-width:0; }
+.hr-forecast h2, .hr-forecast h3, .hr-forecast p, .hr-forecast dl, .hr-forecast dd { margin:0; }
+.hr-forecast h2 { font-size:17px; font-weight:700; }
+.hr-forecast h3 { font-size:14px; font-weight:650; }
+.hr-forecast small { display:block; font-size:13px; font-weight:450; color:var(--hr-muted); }
+.hr-forecast-note, .hr-forecast-heading > span { font-size:13px; color:var(--hr-muted); }
+.hr-forecast-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
+.hr-forecast-money { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hr-forecast-metric { display:inline-flex; flex-direction:column; }
+.hr-forecast .hr-forecast-missing { color:var(--wj-warning); }
+.hr-forecast-summary { display:grid; grid-template-columns:minmax(230px, .8fr) minmax(0, 1.2fr); align-items:center; gap:16px; }
+.hr-forecast-total { min-width:0; }
+.hr-forecast-total > strong { display:block; margin-top:5px; font-size:28px; line-height:1.25; }
+.hr-forecast-total small { margin-top:4px; }
+.hr-forecast-summary > dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.hr-forecast-summary dl > div { padding-inline-start:12px; border-inline-start:1px solid var(--hr-border); }
+.hr-forecast-summary dt, .hr-forecast-card dt, .hr-forecast-employee-components dt, .hr-forecast-basis dt { font-size:13px; color:var(--hr-muted); }
+.hr-forecast-summary dd { margin-top:3px; font-weight:650; overflow-wrap:anywhere; }
+.hr-forecast-card-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.hr-forecast-card-value { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 8px; margin:6px 0; }
+.hr-forecast-card-value strong { font-size:17px; }
+.hr-forecast-card-value > span { color:var(--hr-muted); font-size:13px; }
+.hr-forecast-card dl { display:grid; gap:3px; margin-top:8px; padding-top:8px; border-top:1px solid var(--hr-border); }
+.hr-forecast-card dl > div { display:flex; justify-content:space-between; gap:4px; }
+.hr-forecast-card dd { text-align:right; font-size:14px; }
+.hr-forecast-empty { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; background:var(--wj-surface-muted); }
+.hr-forecast-deductions { display:flex; flex-wrap:wrap; gap:4px 12px; padding:8px 12px; color:var(--wj-warning); background:var(--wj-warning-bg); border:1px solid var(--wj-warning-border); border-radius:6px; }
+.hr-forecast-switch { display:flex; flex-wrap:wrap; gap:4px; }
+.hr-forecast-switch .hr-button { min-height:38px; padding:6px 8px; font-size:14px; }
+.hr-forecast-switch .hr-button[aria-pressed=true] { background:var(--wj-accent-soft); color:var(--hr-accent); }
+.hr-forecast-departments table { min-width:900px; }
+.hr-forecast .hr-table-scroll { margin-top:8px; }
+.hr-forecast th, .hr-forecast td { vertical-align:middle; }
+.hr-forecast-expand { display:inline-flex; min-height:38px; padding:4px; margin-inline-start:-4px; align-items:center; gap:4px; border:0; background:transparent; text-align:start; color:var(--hr-text); font:inherit; font-weight:650; }
+.hr-forecast-expand svg { flex-shrink:0; }
+.hr-forecast [data-expanded=true] > * { background:var(--wj-accent-soft); }
+.hr-forecast .hr-forecast-expanded > td { padding:0; }
+.hr-forecast-expanded > td > div { position:sticky; left:0; width:min(100%, calc(100vw - 80px)); }
+.hr-forecast-employees { padding:8px 12px; background:var(--wj-surface-muted); }
+.hr-forecast-employees > p { font-size:13px; color:var(--hr-muted); }
+.hr-forecast-employees details + details { border-top:1px solid var(--hr-border); }
+.hr-forecast-employees summary { display:flex; min-height:44px; gap:8px; justify-content:space-between; align-items:center; padding:6px 0; cursor:pointer; }
+.hr-forecast-employees summary > span:first-child { overflow-wrap:anywhere; }
+.hr-forecast-employee-components, .hr-forecast-basis dl { display:flex; flex-wrap:wrap; gap:8px 18px; padding:8px 0; }
+.hr-forecast-basis { margin-bottom:8px; border-top:1px solid var(--hr-border); padding-top:8px; }
+.hr-forecast-period { display:flex; flex-wrap:wrap; gap:4px 12px; margin:2px 0 4px; }
+.hr-forecast-period small { flex-basis:100%; }
+.hr-forecast-chart-plot { height:230px; min-width:0; }
+.hr-forecast-legend { display:flex; flex-wrap:wrap; gap:6px 16px; list-style:none; padding:0; margin:7px 0; }
+.hr-forecast-legend li { display:flex; align-items:baseline; gap:6px; }
+.hr-forecast-legend-mark { align-self:center; width:18px; border-top:2px solid var(--wj-info); }
+.hr-forecast-legend-mark.is-default { border-top:2px dashed var(--wj-violet); }
+.hr-forecast-tooltip { display:grid; gap:4px; padding:8px 12px; color:var(--hr-text); background:var(--hr-surface); border:1px solid var(--hr-border); border-radius:6px; }
+.hr-forecast-chart-data > summary, .hr-forecast-previous > summary { min-height:44px; align-content:center; cursor:pointer; }
+.hr-forecast-total-row { font-weight:700; background:var(--wj-surface-muted); }
+.hr-forecast-comparison table { min-width:520px; }
+.hr-forecast-comparison h3 { margin-top:12px; }
+.hr-forecast-reasons { margin:10px 0; padding-inline-start:20px; color:var(--hr-muted); }
+.hr-forecast-previous { margin-top:8px; border-top:1px solid var(--hr-border); }
+
+@media (max-width:1200px) {
+  .hr-forecast-card-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width:700px) {
+  .hr-forecast:lang(ko) { word-break:keep-all; }
+  .hr-forecast .hr-panel { padding:10px 12px; }
+  .hr-forecast-summary { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .hr-forecast-summary > dl { padding-top:8px; border-top:1px solid var(--hr-border); }
+  .hr-forecast-summary dl > div:first-child { padding-inline-start:0; border-inline-start:0; }
+  .hr-forecast-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hr-forecast-card-value strong { font-size:16px; }
+  .hr-forecast-switch .hr-button, .hr-forecast-expand { min-height:44px; }
+  .hr-forecast-expanded > td > div { width:min(100%, calc(100vw - 52px)); }
+  .hr-forecast-chart-plot { height:200px; }
+}
+.hr-forecast-variable-basis ul { margin:4px 0 8px; padding-inline-start:20px; }
+.hr-forecast-variable-basis > summary { display:list-item; min-height:44px; align-content:center; }
+.hr-forecast-comparison > .hr-forecast-note { margin-top:6px; }

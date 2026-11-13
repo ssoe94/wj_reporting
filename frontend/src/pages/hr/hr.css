@@ -11,7 +11,7 @@
 .hr-work-title h1 { margin:0; color:var(--hr-navy); font-size:22px; font-weight:750; white-space:nowrap; }
 .hr-work-header .hr-tabs a { min-height:38px; padding:7px 11px; font-size:14px; white-space:nowrap; }
 .hr-work-header .hr-month { font-size:13px; gap:7px; }
-.hr-work-header .hr-month input { min-height:38px; max-width:164px; padding:6px 8px; }
+.hr-work-header .hr-month select { min-height:38px; max-width:164px; padding:6px 8px; }
 .hr-summary-strip { display:grid; grid-template-columns:minmax(240px,1.5fr) repeat(3,minmax(120px,1fr)); background:var(--wj-surface-solid); border:1px solid var(--hr-border); border-radius:8px; margin:10px 0 14px; overflow:hidden; }
 .hr-summary-strip > div, .hr-summary-strip > button, .hr-summary-strip > a { min-width:0; padding:11px 16px; background:transparent; border:0; border-inline-end:1px solid var(--hr-border); text-align:start; text-decoration:none; }
 .hr-summary-strip > :last-child { border-inline-end:0; }
@@ -82,7 +82,7 @@
 .hr-tabs a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px; border-radius: 7px; color: var(--hr-muted); text-decoration: none; }
 .hr-tabs a.is-active { color: var(--hr-accent); background: var(--wj-accent-soft); font-weight: 750; }
 .hr-month { display: flex; align-items: center; gap: 10px; font-weight: 650; }
-.hr-month input { min-height: 44px; max-width: 190px; padding: 7px 10px; background: var(--wj-surface-solid); border: 1px solid var(--hr-border); border-radius: 6px; color-scheme: inherit; }
+.hr-month select { min-height: 44px; max-width: 190px; padding: 7px 10px; background: var(--wj-surface-solid); border: 1px solid var(--hr-border); border-radius: 6px; color-scheme: inherit; }
 .hr-panel { margin-bottom: 17px; padding: 20px; background: var(--hr-surface); border: 1px solid var(--hr-border); border-radius: 10px; }
 .hr-state { padding: 36px 20px; text-align: center; }
 .hr-state svg { margin: 0 auto 8px; color: var(--hr-muted); }
@@ -272,4 +272,198 @@
   .hr-cost-box.is-selected, .hr-department-box.is-drop-target, .hr-roster.is-drop-target { outline-width: 3px; }
 }
 
-@media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month input, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }
+@media (max-width:700px) { .hr-work-header .hr-tabs a, .hr-work-header .hr-month select, .hr-compact-toolbar .hr-button, .hr-import.is-compact .hr-button { min-height:44px; } }
+
+/* Full roster uses the existing HR surfaces and table rhythm. */
+.hr-roster-page-panel { min-width:0; padding:16px; }
+.hr-summary-strip.hr-roster-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.hr-roster-summary > button[aria-pressed=true] { background:var(--wj-accent-soft); }
+.hr-roster-summary span { font-size:14px; }
+.hr-roster-summary > button { border-bottom:0; border-inline-end:1px solid var(--hr-border); }
+.hr-roster-summary > button:last-child { border-inline-end:0; }
+.hr-roster-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin:14px 0; }
+.hr-roster-filters .hr-field { margin:0; min-width:140px; flex:1; }
+.hr-roster-filters .hr-field:first-child { flex:2; min-width:220px; }
+.hr-roster-absent { min-height:44px; }
+.hr-roster-result-count { margin:10px 0; color:var(--hr-muted); font-size:14px; }
+.hr-roster-table { max-width:100%; max-height:65vh; overflow:auto; }
+.hr-roster-table table { min-width:1080px; }
+.hr-roster-table th { position:sticky; top:0; z-index:1; background:var(--hr-soft); white-space:nowrap; }
+.hr-roster-table :is(th, td) { vertical-align:middle; font-size:14px; }
+.hr-roster-expand { display:flex; align-items:center; gap:7px; min-height:44px; padding:6px 4px; border:0; background:transparent; color:var(--hr-accent); text-align:left; white-space:nowrap; }
+.hr-roster-editor { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; padding:14px; border:1px solid var(--hr-border); border-radius:7px; background:var(--hr-soft); }
+.hr-roster-editor > strong { flex-basis:100%; font-size:15px; }
+.hr-roster-editor .hr-field { flex:1; min-width:150px; margin:0; }
+.hr-roster-editor .hr-roster-reason { flex:2; min-width:220px; }
+.hr-roster-history { max-width:1100px; padding:10px; }
+.hr-roster-history h3 { font-size:16px; }
+.hr-roster-history h3 span { margin-left:8px; font-size:14px; font-weight:400; color:var(--hr-muted); }
+.hr-roster-history-list { margin:12px 0 0; padding:0; list-style:none; }
+.hr-roster-history-list > li { padding:12px 0; border-top:1px solid var(--hr-border); }
+.hr-roster-history-meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--hr-muted); }
+.hr-roster-history-list ul { display:flex; flex-wrap:wrap; gap:6px 22px; padding:0; margin:8px 0; list-style:none; }
+.hr-roster-history-list p { margin:5px 0; white-space:normal; overflow-wrap:anywhere; }
+.hr-roster-active-count { display:inline-flex; align-items:center; min-height:44px; font-size:14px; white-space:nowrap; }
+@media (max-width:700px) {
+  .hr-roster-page-panel { padding:12px; }
+  .hr-roster-filters .hr-field:first-child { min-width:0; flex-basis:100%; }
+  .hr-roster-filters .hr-field { min-width:0; flex-basis:calc(50% - 10px); }
+  .hr-roster-summary > button { padding:9px 8px; }
+  .hr-roster-summary span { font-size:14px; }
+  .hr-roster-editor .hr-field, .hr-roster-editor .hr-roster-reason { min-width:0; flex-basis:100%; }
+  .hr-work-header .hr-tabs { gap:2px; }
+  .hr-work-header .hr-tabs a { padding:8px 7px; gap:4px; }
+  .hr-header-actions { flex-wrap:wrap; min-width:0; }
+}
+
+.hr-labor-standards { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(340px,1fr); gap:16px; align-items:start; }
+.hr-labor-standards > * { min-width:0; }
+.hr-labor-rules-form, .hr-labor-calendar-form { padding:16px; }
+.hr-labor-standards .hr-section-heading { align-items:center; flex-wrap:wrap; }
+.hr-labor-standards .hr-section-heading > span { color:var(--hr-muted); font-size:14px; }
+.hr-labor-fieldset { border:0; padding:16px 0 0; margin:16px 0; min-width:0; border-top:1px solid var(--hr-border); }
+.hr-labor-fieldset legend { padding:0 8px 0 0; font-size:16px; font-weight:700; }
+.hr-labor-fields { display:flex; align-items:flex-start; flex-wrap:wrap; gap:12px; }
+.hr-labor-fields > .hr-field { flex:1; min-width:135px; }
+.hr-labor-fields > strong { min-width:62px; font-size:14px; padding-top:30px; }
+.hr-labor-fields .hr-checkbox { flex:1; min-width:180px; padding-top:24px; flex-wrap:wrap; }
+.hr-labor-pending-label { display:inline-block; color:var(--wj-warning); font-size:14px; font-weight:650; }
+.hr-labor-pending { color:var(--wj-warning); border:1px solid var(--wj-warning); border-radius:6px; padding:0 12px; }
+.hr-labor-pending summary, .hr-labor-history summary { min-height:44px; padding:11px 0; cursor:pointer; font-size:14px; font-weight:650; }
+.hr-labor-pending ul { margin:0 0 12px; padding-left:20px; }
+.hr-labor-standards .is-pending { border-color:var(--wj-warning); }
+.hr-labor-departments { width:100%; border-collapse:collapse; margin-bottom:10px; }
+.hr-page .hr-labor-departments { min-width:460px; }
+.hr-labor-departments :is(th, td) { text-align:start; vertical-align:middle; padding:6px; font-size:14px; border-bottom:1px solid var(--hr-border); }
+.hr-labor-departments th:lang(ko) { word-break:keep-all; }
+.hr-labor-departments th:first-child { width:38%; }
+.hr-labor-departments input { width:100%; min-width:0; min-height:44px; border:1px solid var(--hr-border); border-radius:6px; padding:8px; background:var(--hr-surface); }
+.hr-labor-departments td:last-child { width:70px; }
+.hr-labor-departments .hr-button { padding:8px; min-width:44px; }
+.hr-labor-contribution { margin:16px 0; }
+.hr-labor-contribution h3 { font-size:15px; margin-bottom:12px; }
+.hr-labor-save { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.hr-labor-save .hr-field { flex:1; min-width:180px; margin:0; }
+.hr-labor-history { border-top:1px solid var(--hr-border); margin-top:16px; }
+.hr-labor-history ol { list-style:none; padding:0; margin:0; }
+.hr-labor-history ol > li { padding:12px 0; border-top:1px solid var(--hr-border); overflow-wrap:anywhere; font-size:14px; }
+.hr-labor-history-meta { display:flex; flex-wrap:wrap; gap:8px 16px; color:var(--hr-muted); }
+.hr-labor-history p { margin:8px 0; }
+.hr-labor-history ul { padding-left:20px; }
+.hr-labor-history ul li { margin:6px 0; }
+.hr-labor-calendar-scroll { max-width:100%; overflow-x:auto; }
+.hr-labor-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(44px,1fr)); gap:3px; }
+.hr-labor-weekday { text-align:center; padding:5px; color:var(--hr-muted); font-size:14px; }
+.hr-labor-day { display:flex; flex-direction:column; justify-content:center; gap:3px; align-items:center; min-width:44px; min-height:64px; border:1px solid var(--hr-border); border-radius:5px; padding:5px 2px; background:var(--hr-surface); }
+.hr-labor-day strong { font-size:16px; }
+.hr-labor-day span { font-size:14px; white-space:nowrap; }
+.hr-labor-day.is-rest { background:var(--hr-soft); }
+.hr-labor-day[aria-pressed=true] { border-color:var(--hr-accent); outline:2px solid var(--hr-accent); outline-offset:-2px; background:var(--wj-accent-soft); }
+.hr-labor-date-editor { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding-top:16px; }
+.hr-labor-date-editor .hr-field { flex:1; min-width:180px; margin:0; }
+@media (max-width:1100px) { .hr-labor-standards { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:700px) {
+  .hr-work-header .hr-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hr-work-header .hr-tabs a { white-space:normal; }
+  .hr-labor-rules-form, .hr-labor-calendar-form { padding:12px; }
+  .hr-labor-fields > .hr-field { min-width:0; flex-basis:calc(50% - 12px); }
+  .hr-labor-fields > strong { flex-basis:100%; padding:0; }
+  .hr-labor-fields .hr-checkbox { padding-top:0; }
+  .hr-labor-departments :is(th, td) { padding:5px 3px; }
+  .hr-labor-departments th:first-child { width:40%; }
+  .hr-labor-calendar-form .hr-labor-save .hr-field { flex-basis:100%; }
+}
+
+.hr-labor-overview table { width:100%; border-collapse:collapse; min-width:580px; }
+.hr-labor-overview :is(th, td) { font-size:14px; padding:8px 10px; text-align:start; border-bottom:1px solid var(--hr-border); vertical-align:middle; }
+.hr-labor-overview thead th { background:var(--hr-soft); }
+.hr-labor-overview tbody th { font-weight:600; }
+.hr-labor-side-column { min-width:0; }
+.hr-hourly-override { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; padding:12px 0; border-top:1px solid var(--hr-border); }
+.hr-hourly-override .hr-field { min-width:0; margin:0; }
+.hr-hourly-override .hr-button { justify-self:start; }
+.hr-labor-rate-table { width:100%; border-collapse:collapse; margin:12px 0; }
+.hr-labor-rate-table :is(th,td) { padding:6px; text-align:start; font-size:14px; border-bottom:1px solid var(--hr-border); vertical-align:middle; }
+.hr-labor-rate-table input { width:100%; min-width:0; min-height:44px; border:1px solid var(--hr-border); border-radius:6px; padding:8px; background:var(--hr-surface); }
+.hr-labor-rate-table th:first-child { width:22%; }
+.hr-labor-employee-bases { border-inline-start:2px solid var(--hr-border); padding-inline-start:12px; margin:12px 0; }
+.hr-labor-employee-bases .hr-labor-fields { align-items:flex-end; }
+.hr-labor-employee-bases .hr-button { margin-bottom:13px; }
+.hr-labor-actual-form { min-width:0; padding:16px; }
+@media (max-width:700px) {
+  .hr-hourly-override { grid-template-columns:minmax(0,1fr); }
+  .hr-labor-actual-form { padding:12px; }
+  .hr-labor-rate-table :is(th,td) { padding:5px 3px; }
+  .hr-labor-overview { padding:12px; }
+}
+
+.hr-daily-date-nav .hr-actions { align-items:flex-end; }
+.hr-daily-date-nav .hr-field { margin:0; max-width:180px; }
+.hr-daily-date-nav .hr-actions > strong { align-self:center; }
+.hr-daily-date-strip { display:flex; gap:6px; overflow-x:auto; margin-top:14px; padding:3px 1px 8px; }
+.hr-daily-date { display:flex; flex:0 0 92px; flex-direction:column; align-items:center; gap:3px; min-height:76px; padding:7px; border:1px solid var(--hr-border); border-radius:6px; background:var(--hr-surface); }
+.hr-daily-date strong { font-size:17px; }
+.hr-daily-date span, .hr-daily-date small { font-size:14px; white-space:nowrap; }
+.hr-daily-date[aria-current=date] { background:var(--wj-accent-soft); border-color:var(--hr-accent); }
+.hr-daily-state { display:flex; flex-wrap:wrap; gap:8px 18px; font-size:14px; margin:12px 0; }
+.hr-daily-summary { display:grid; grid-template-columns:1fr 1.4fr 1fr 1.3fr; border:1px solid var(--hr-border); border-radius:8px; overflow:hidden; background:var(--hr-surface); }
+.hr-daily-summary > div { min-width:0; display:flex; flex-direction:column; gap:6px; padding:12px 16px; border-inline-end:1px solid var(--hr-border); }
+.hr-daily-summary > div:last-child { border:0; }
+.hr-daily-summary span, .hr-daily-summary small { font-size:14px; color:var(--hr-muted); }
+.hr-daily-summary strong { font-size:22px; }
+.hr-daily-preview-state { font-size:14px; color:var(--hr-muted); }
+.hr-daily-bulk { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin:16px 0; }
+.hr-daily-bulk .hr-field { max-width:200px; margin:0; }
+.hr-daily-copy-help { font-size:14px; margin-bottom:16px; }
+.hr-daily-copy-help summary, .hr-daily-history summary { min-height:44px; padding:12px 0; cursor:pointer; }
+.hr-daily-department { padding:14px; }
+.hr-daily-department .hr-section-heading { align-items:center; flex-wrap:wrap; }
+.hr-daily-table table { width:100%; min-width:1280px; border-collapse:collapse; }
+.hr-daily-table :is(th,td) { text-align:start; padding:6px; vertical-align:middle; border-bottom:1px solid var(--hr-border); font-size:14px; }
+.hr-daily-table th { background:var(--hr-soft); white-space:nowrap; }
+.hr-daily-table input:not([type=checkbox]), .hr-daily-table select { width:100%; min-width:74px; min-height:44px; border:1px solid var(--hr-border); border-radius:5px; background:var(--hr-surface); padding:6px; font-size:14px; }
+.hr-daily-table .is-default { color:var(--hr-muted); font-weight:400; }
+.hr-daily-table .is-edited { color:var(--hr-text); font-weight:750; border-color:var(--hr-accent); }
+.hr-daily-table input:disabled, .hr-daily-table select:disabled { background:var(--hr-soft); opacity:.7; }
+.hr-daily-check { display:flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; }
+.hr-daily-check input { width:18px; height:18px; }
+.hr-daily-type { display:block; margin-top:3px; color:var(--hr-muted); font-size:14px; white-space:nowrap; }
+.hr-daily-estimate { min-width:150px; }
+.hr-daily-estimate > span { display:block; font-size:14px; margin-top:5px; }
+.hr-daily-estimate summary { min-height:44px; padding:12px 0; cursor:pointer; }
+.hr-daily-estimate pre, .hr-daily-history pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; max-width:500px; }
+.hr-daily-department-total { text-align:end; margin:10px 0 0; font-size:14px; font-weight:650; }
+.hr-daily-save { display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; }
+.hr-daily-save .hr-field { flex:1; min-width:220px; margin:0; }
+.hr-daily-conflict table { width:100%; min-width:520px; }
+.hr-daily-conflict :is(th,td) { padding:9px; text-align:start; font-size:14px; border-bottom:1px solid var(--hr-border); }
+.hr-daily-event-list { list-style:none; padding:0; margin:0 0 16px; }
+.hr-daily-event-list > li { padding:12px 0; border-bottom:1px solid var(--hr-border); font-size:14px; }
+.hr-daily-event-list p { margin:6px 0; overflow-wrap:anywhere; }
+.hr-daily-event-form fieldset { border:0; padding:0; min-width:0; }
+.hr-daily-event-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:16px; }
+.hr-daily-event-fields .hr-field { min-width:0; }
+.hr-daily-history article { padding:12px 0; border-top:1px solid var(--hr-border); font-size:14px; }
+.hr-daily-history time { display:block; margin-top:6px; color:var(--hr-muted); }
+@media (max-width:900px) {
+  .hr-daily-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hr-daily-summary > div { border-bottom:1px solid var(--hr-border); }
+  .hr-daily-summary > div:nth-child(2) { border-inline-end:0; }
+}
+@media (max-width:700px) {
+  .hr-daily-department, .hr-daily-events, .hr-daily-save, .hr-daily-date-nav { padding:12px; }
+  .hr-daily-summary > div { padding:10px; }
+  .hr-daily-summary strong { font-size:19px; }
+  .hr-daily-table { overflow:visible; }
+  .hr-daily-table table, .hr-daily-table tbody { display:block; width:100%; min-width:0; }
+  .hr-daily-table thead { display:none; }
+  .hr-daily-table .hr-daily-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; padding:12px; border:1px solid var(--hr-border); border-radius:8px; background:var(--hr-surface); }
+  .hr-daily-row td { display:flex; flex-direction:column; align-items:stretch; gap:6px; min-width:0; padding:0; border:0; overflow-wrap:anywhere; }
+  .hr-daily-row td::before { content:attr(data-label); color:var(--hr-muted); font-size:14px; }
+  .hr-daily-row td:first-child { grid-column:1/-1; flex-direction:row; align-items:center; justify-content:space-between; }
+  .hr-daily-row td:nth-child(5), .hr-daily-row td:last-child { grid-column:1/-1; }
+  .hr-daily-row .hr-daily-estimate { min-width:0; }
+  .hr-daily-table input:not([type=checkbox]), .hr-daily-table select { min-width:0; }
+  .hr-daily-event-fields { grid-template-columns:minmax(0,1fr); }
+  .hr-daily-save .hr-field { flex-basis:100%; min-width:0; }
+}

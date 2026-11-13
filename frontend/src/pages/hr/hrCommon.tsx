@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { RefreshCw, Users } from 'lucide-react';
+import { BarChart3, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { canAccessHr } from '../../domains/auth/hr-access';
+import { canAccessHr, HR_DASHBOARD_PATH } from '../../domains/auth/hr-access';
 import { useLang } from '../../i18n';
 import { getHrWorkspace } from '../../domains/hr/api';
 import { amountToCents } from '../../domains/hr/import';
+import { hrMonthYears } from '../../domains/hr/month';
 import type { HrWorkspace, HrCurrency, HrDepartment, HrEmployee } from '../../domains/hr/types';
 import './hr.css';
 
@@ -108,13 +109,15 @@ export function useHrWorkspace(month: string) {
   return { workspace: selectedWorkspace, setWorkspace, loading: loading || (allowed && !selectedWorkspace && !error), error, allowed, refresh: () => setReload((value) => value + 1) };
 }
 
-export function HrShell({ page, month, onMonthChange, monthDisabled, children, actions }: {
-  page: 'personnel' | 'labor-cost'; month: string; onMonthChange: (month: string) => void;
-  monthDisabled?: boolean; children: ReactNode; actions?: ReactNode;
+export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions }: {
+  page: 'dashboard' | 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work' | 'labor-forecast'; month: string; onMonthChange: (month: string) => void;
+  monthDisabled?: boolean; monthLabel?: string; children: ReactNode; actions?: ReactNode;
 }) {
   const { lang } = useLang();
   const ko = lang === 'ko';
   const location = useLocation(); const navigate = useNavigate();
+  const { user } = useAuth();
+  const allowed = canAccessHr(user);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
     if (query.get('month') === month) return;
@@ -124,11 +127,24 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, children, a
   return <main className="hr-page">
     <header className="hr-work-header">
       <div className="hr-work-title"><h1>{ko ? '인원 · 인건비' : '人员 · 人工成本'}</h1></div>
-      <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
+      {allowed && <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
+        <Link className={page === 'dashboard' ? 'is-active' : ''} aria-current={page === 'dashboard' ? 'page' : undefined} to={`${HR_DASHBOARD_PATH}?month=${month}`}><BarChart3 size={16} />{ko ? '인사 대시보드' : '人事总览'}</Link>
         <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
+        <Link className={page === 'daily-work' ? 'is-active' : ''} aria-current={page === 'daily-work' ? 'page' : undefined} to={`/hr/daily-work?month=${month}`}>{ko ? '일별 근무' : '每日出勤'}</Link>
+        <Link className={page === 'roster' ? 'is-active' : ''} aria-current={page === 'roster' ? 'page' : undefined} to={`/hr/roster?month=${month}`}>{ko ? '인원 명부' : '人员名册'}</Link>
         <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
-      </nav>
-      <label className="hr-month">{ko ? '대상 월' : '月份'}<input type="month" value={month} disabled={monthDisabled} onInput={(event) => { if (/^\d{4}-\d{2}$/.test(event.currentTarget.value)) onMonthChange(event.currentTarget.value); }} /></label>
+        <Link className={page === 'labor-forecast' ? 'is-active' : ''} aria-current={page === 'labor-forecast' ? 'page' : undefined} to={`/hr/labor-forecast?month=${month}`}>{ko ? '인건비 예상' : '人工成本预测'}</Link>
+        <Link className={page === 'labor-standards' ? 'is-active' : ''} aria-current={page === 'labor-standards' ? 'page' : undefined} to={`/hr/labor-standards?month=${month}`}>{ko ? '인건비 기준' : '人工成本标准'}</Link>
+      </nav>}
+      <div className="hr-month">
+        <span>{monthLabel ?? (ko ? '대상 월' : '月份')}</span>
+        <select aria-label={ko ? '연도' : '年份'} value={month.slice(0, 4)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${event.target.value}-${month.slice(5)}`)}>
+          {hrMonthYears(month).map((year) => <option key={year}>{year}</option>)}
+        </select>
+        <select aria-label={ko ? '월' : '月份'} value={month.slice(5)} disabled={monthDisabled} onChange={(event) => onMonthChange(`${month.slice(0, 4)}-${event.target.value}`)}>
+          {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map((value) => <option key={value}>{value}</option>)}
+        </select>
+      </div>
       {actions && <div className="hr-header-actions">{actions}</div>}
     </header>
     {children}

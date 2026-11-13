@@ -49,7 +49,10 @@ class NoCacheAPIMiddleware:
             and response.status_code in (200, 204, 304)
             and response.get('Cache-Control', '').startswith('private,')
         ):
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            policy = 'no-store, no-cache, must-revalidate, max-age=0'
+            if response.get('Cache-Control', '').startswith('private,'):
+                policy = f'private, {policy}'
+            response['Cache-Control'] = policy
             response['Pragma'] = 'no-cache'
             response['Expires'] = '0'
         

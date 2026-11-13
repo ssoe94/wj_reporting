@@ -5,6 +5,7 @@ import {
   amountToCents,
   centsToAmount,
   getHeaderColumns,
+  normalizeHrJobTitle,
   parsePayrollPeriod,
   suggestColumnMapping,
 } from './import.ts';
@@ -18,6 +19,8 @@ import type {
   HrWorkbookIssue,
   HrWorkbookMonth,
   HrWorkbookRow,
+  HrRosterEntry,
+  HrCodeReview,
 } from './workbook-types.ts';
 
 const MAX_SOURCE_ROWS = 5100;
@@ -30,15 +33,23 @@ const TITLE_HEADERS = ['title', 'job title', '직책', '직급', '직무', '职�
 
 type CellDetails = { value: unknown; formatted?: string; formula?: string; error?: boolean };
 type Location = { file: string; sheet: string; row: number };
+const FIXED_PAY = ['基本工资', '技能工资', '职务工资', '岗位工资', '工龄工资'];
+const PAYROLL_ADJUSTMENTS = [
+  ['weekday_overtime', '平时加班费'], ['weekend_overtime', '周末加班费'], ['holiday_overtime', '节日加班费'],
+  ['personal_leave', '事假'], ['sick_leave', '病假'], ['absence', '缺勤工资'],
+] as const;
+
 type PayrollHeader = {
   index: number; code: number; name: number; title: number | null;
-  department: number; amount: number; period: number; periodHeader: string;
+  department: number; amount: number; period: number; periodHeader: string; fixedPay: number[];
+  baseSalary: number | null; fixedOvertime: number | null;
+  adjustments: { field: typeof PAYROLL_ADJUSTMENTS[number][0]; label: string; column: number | null }[];
 };
 type ReferenceHeader = {
   index: number; code: number | null; name: number; department: number;
   sourceFunction: number; employment: number;
 };
-type ParsedRow = { key: string; location: Location; row: HrWorkbookRow };
+type ParsedRow = { key: string; location: Location; row: HrWorkbookRow; fixedPay: number | null };
 
 function normalizeHeader(value: string): string {
   return value.replace(/\s+/g, '').toLowerCase();
@@ -144,7 +155,9 @@ function payrollHeader(sheet: HrWorkbookSheet): PayrollHeader {
     if (mapping.code != null && mapping.name != null && mapping.source_department != null
       && amount != null && periodMapping.period != null) {
       return { index, code: mapping.code, name: mapping.name, title: mapping.title,
-        department: mapping.source_department, amount, period: periodMapping.period,
+        department: mapping.source_department, amount, fixedPay: FIXED_PAY.map((label) => uniqueColumn(headers, [label])).filter((column) => column !== null), period: periodMapping.period,
+        baseSalary: uniqueColumn(headers, ['基本工资']), fixedOvertime: uniqueColumn(headers, ['固定平时加班']),
+        adjustments: PAYROLL_ADJUSTMENTS.map(([field, label]) => ({ field, label, column: uniqueColumn(headers, [label]) })),
         periodHeader: normalizeHeader(headers.find((header) => header.index === periodMapping.period)?.label ?? '') };
     }
   }
@@ -221,7 +234,7 @@ function payrollMonth(cell: HrImportCell, header: string): string {
   return parsePayrollPeriod(text, `${fullYear ?? headerYear}-01`, header);
 }
 
-function payrollAmount(cell: HrImportCell): { amount: string; rounded: boolean } {
+function payrollAmount(cell: HrImportCell, label = '应发工资'): { amount: string; rounded: boolean } {
   const item = details(cell);
   assertUsableCell(item, true);
   let cents: number;
@@ -237,14 +250,24 @@ function payrollAmount(cell: HrImportCell): { amount: string; rounded: boolean }
     cents = displayCents;
     rounded = true;
   }
-  if (cents > MAX_EMPLOYEE_AMOUNT_CENTS) throw new Error('应发工资는 999999999.99 이하로 입력해 주세요.');
+  if (cents > MAX_EMPLOYEE_AMOUNT_CENTS) throw new Error(`${label}는 999999999.99 이하로 입력해 주세요.`);
   return { amount: centsToAmount(cents), rounded };
+}
+
+function optionalPayrollAmount(cell: HrImportCell, label: string): { amount: string | null; rounded: boolean } {
+  const item = details(cell);
+  assertUsableCell(item, true);
+  if (item.value == null || (typeof item.value === 'string' && item.value.trim() === '')) {
+    return { amount: null, rounded: false };
+  }
+  return payrollAmount(cell, label);
 }
 
 export function parseCompanyPayroll(
   inputs: { id: string; book: HrWorkbook; employment_type: HrEmploymentType }[],
   corrections: Record<string, string> = {},
-): { files: HrPayrollSource[]; months: HrWorkbookMonth[]; issues: HrWorkbookIssue[]; warnings: string[] } {
+  roster: HrRosterEntry[] = [],
+): { files: HrPayrollSource[]; months: HrWorkbookMonth[]; issues: HrWorkbookIssue[]; warnings: string[]; codeReviews: HrCodeReview[] } {
   if (!inputs.length || inputs.length > MAX_SOURCE_FILES) throw new Error(`급여 파일은 1개부터 ${MAX_SOURCE_FILES}개까지 선택해 주세요.`);
   if (new Set(inputs.map(({ id }) => id)).size !== inputs.length || inputs.some(({ id }) => !id.trim())) {
     throw new Error('급여 파일의 식별자가 중복되거나 비어 있습니다.');
@@ -269,6 +292,15 @@ export function parseCompanyPayroll(
         at({ file: input.book.filename, sheet: sheet.name, row: header.index + 1 },
           new Error('직무 제목이 여러 개입니다. 직무 열을 한 개만 남겨 주세요.'));
       }
+      if (input.employment_type === 'contract') {
+        const headers = getHeaderColumns(sheet, header.index);
+        for (const label of ['基本工资', '固定平时加班', ...PAYROLL_ADJUSTMENTS.map(([, label]) => label)]) {
+          if (headers.filter((column) => normalizeHeader(column.label) === label).length > 1) {
+            at({ file: input.book.filename, sheet: sheet.name, row: header.index + 1 },
+              new Error(`${label} 제목이 여러 개입니다. 원본 열을 한 개만 남겨 주세요.`));
+          }
+        }
+      }
       for (let index = header.index + 1; index < sheet.rows.length; index += 1) {
         const values = sheet.rows[index];
         if (isBlankRow(values)) continue;
@@ -278,7 +310,7 @@ export function parseCompanyPayroll(
           const period = payrollMonth(values[header.period], header.periodHeader);
           const name = requiredText(values[header.name], '성명', 100);
           const sourceDepartment = requiredText(values[header.department], '원본 부서', 100);
-          const title = header.title == null ? '' : cellText(values[header.title]);
+          const title = header.title == null ? '' : normalizeHrJobTitle(cellText(values[header.title]));
           if (title.length > 100) throw new Error('직무는 100자까지 입력할 수 있습니다.');
           const originalCode = cellText(values[header.code]);
           if (originalCode.length > 500) throw new Error('원본 사번은 500자까지 읽을 수 있습니다. 원본 파일을 확인해 주세요.');
@@ -289,7 +321,33 @@ export function parseCompanyPayroll(
           const row: HrWorkbookRow = { code, name, title, amount, period,
             source_department: sourceDepartment, employment_type: input.employment_type,
             source_file: input.id, source_sheet: sheet.name, source_row: index + 1, original_code: originalCode };
-          const item = { key, location, row };
+          if (input.employment_type === 'contract') {
+            const base = optionalPayrollAmount(header.baseSalary == null ? undefined : values[header.baseSalary], '基本工资');
+            const fixed = optionalPayrollAmount(header.fixedOvertime == null ? undefined : values[header.fixedOvertime], '固定平时加班');
+            row.payroll_components = { base_salary: base.amount, fixed_overtime: fixed.amount };
+            for (const [label, component] of [['基本工资', base], ['固定平时加班', fixed]] as const) {
+              if (component.rounded) warnings.add(`${context(location, code)}: ${label} 저장된 소수 금액 대신 Excel 표시 금액(소수 두 자리)을 사용했습니다.`);
+            }
+            for (const { field, label, column } of header.adjustments) {
+              // An absent column is not an observed zero. Leave old source
+              // snapshots distinguishable from a supplied but blank cell.
+              if (column == null) continue;
+              const component = optionalPayrollAmount(values[column], label);
+              row.payroll_components[field] = component.amount;
+              if (component.rounded) warnings.add(`${context(location, code)}: ${label} 저장된 소수 금액 대신 Excel 표시 금액(소수 두 자리)을 사용했습니다.`);
+            }
+          }
+          let fixedPay: number | null = null;
+          if (input.employment_type === 'contract' && header.fixedPay.length === FIXED_PAY.length) {
+            try {
+              fixedPay = header.fixedPay.reduce((total, column) => {
+                const cell = details(values[column]);
+                assertUsableCell(cell, true);
+                return total + (cell.value == null || cell.value === '' ? 0 : amountToCents(payrollAmount(values[column]).amount));
+              }, 0);
+            } catch { /* Unusable fixed pay supplies no corroborating evidence. */ }
+          }
+          const item = { key, location, row, fixedPay };
           parsed.push(item);
           if (parsed.length > MAX_BATCH_ROWS) throw new Error(`급여 직원 행은 전체 ${MAX_BATCH_ROWS}행까지 읽을 수 있습니다.`);
           const rows = monthRows.get(period) ?? [];
@@ -313,55 +371,146 @@ export function parseCompanyPayroll(
     messages.add(message);
     issueMessages.set(item.key, messages);
   };
-  const codeNames = new Map<string, Set<string>>();
+  const identityKey = (name: string, employment: HrEmploymentType) => JSON.stringify([nameIdentity(name), employment]);
+  const rowIdentity = ({ row }: ParsedRow) => identityKey(row.name, row.employment_type);
   const byIdentity = new Map<string, ParsedRow[]>();
+  const sightings = new Map<string, Map<string, Set<string>>>();
   for (const item of parsed) {
-    const { code, name, employment_type: employment } = item.row;
-    if (!code) addIssue(item, '사번이 없습니다. 원본 근거를 확인하고 사번을 입력해 주세요.');
-    if (code.length > 64) addIssue(item, '사번은 64자까지 입력할 수 있습니다.');
-    if (code) {
-      const names = codeNames.get(codeKey(code)) ?? new Set<string>();
-      names.add(nameIdentity(name));
-      codeNames.set(codeKey(code), names);
-    }
-    const identity = JSON.stringify([nameIdentity(name), employment]);
+    const { code, period } = item.row;
+    const identity = rowIdentity(item);
     const people = byIdentity.get(identity) ?? [];
     people.push(item);
     byIdentity.set(identity, people);
+    if (!code) addIssue(item, '사번이 없습니다. 원본 근거를 확인하고 사번을 입력해 주세요.');
+    if (code.length > 64) addIssue(item, '사번은 64자까지 입력할 수 있습니다.');
+    if (!code || code.length > 64) continue;
+    const key = codeKey(code);
+    const owners = sightings.get(key) ?? new Map<string, Set<string>>();
+    const owner = nameIdentity(item.row.name);
+    const months = owners.get(owner) ?? new Set<string>();
+    months.add(period);
+    owners.set(owner, months);
+    sightings.set(key, owners);
   }
-  for (const [month, rows] of monthRows) {
+  const registeredOwners = new Map(roster.flatMap((entry) =>
+    [entry.code, ...entry.previous_codes].map((code) => [codeKey(code), nameIdentity(entry.name)] as const)));
+  const ownerOf = (code: string): string | undefined => {
+    const key = codeKey(code);
+    if (registeredOwners.has(key)) return registeredOwners.get(key);
+    const ranked = [...(sightings.get(key) ?? [])].sort((a, b) => b[1].size - a[1].size);
+    if (ranked[0] && (!ranked[1] || ranked[0][1].size > ranked[1][1].size)) return ranked[0][0];
+    return undefined;
+  };
+  for (const item of parsed) {
+    if (item.row.code && item.row.code.length <= 64 && ownerOf(item.row.code) !== nameIdentity(item.row.name)) {
+      addIssue(item, '같은 사번이 서로 다른 성명에 연결되어 있습니다.');
+    }
+  }
+  for (const items of byMonth.values()) {
+    const remaining = items.filter((item) => item.row.code && (!ownerOf(item.row.code) || ownerOf(item.row.code) === nameIdentity(item.row.name)));
     const counts = new Map<string, number>();
-    for (const { code } of rows) if (code) counts.set(codeKey(code), (counts.get(codeKey(code)) ?? 0) + 1);
-    const collisions = getEmployeeCodeCollisions(rows.map(({ code }) => code));
-    for (const item of byMonth.get(month) ?? []) {
+    for (const { row } of remaining) counts.set(codeKey(row.code), (counts.get(codeKey(row.code)) ?? 0) + 1);
+    const collisions = getEmployeeCodeCollisions(remaining.map(({ row }) => row.code));
+    for (const item of remaining) {
       if ((counts.get(codeKey(item.row.code)) ?? 0) > 1) addIssue(item, '같은 월에 같은 사번이 여러 번 있습니다.');
       if (collisions.has(item.row.code)) addIssue(item, '다른 원본 사번과 화면 표시 사번이 같습니다. 원본 근거를 확인해 주세요.');
     }
   }
-  for (const item of parsed) {
-    if ((codeNames.get(codeKey(item.row.code))?.size ?? 0) > 1) addIssue(item, '같은 사번이 서로 다른 성명에 연결되어 있습니다.');
+  const validByIdentity = new Map([...byIdentity].map(([identity, items]) =>
+    [identity, items.filter((item) => !issueMessages.has(item.key))]));
+  // Only a shared exact code/name connects identities across employment types.
+  // Keep the original type-specific groups for missing-code recommendations.
+  const aliases = new Map<string, string>();
+  const canonical = (key: string): string => {
+    const parent = aliases.get(key);
+    if (!parent || parent === key) return key;
+    const root = canonical(parent);
+    aliases.set(key, root);
+    return root;
+  };
+  const codePeople = new Map<string, string>();
+  const connect = (name: string, employment: HrEmploymentType, code: string) => {
+    const key = identityKey(name, employment);
+    const evidence = JSON.stringify([nameIdentity(name), codeKey(code)]);
+    const owner = codePeople.get(evidence) ?? key;
+    aliases.set(canonical(key), canonical(owner));
+    codePeople.set(evidence, owner);
+  };
+  for (const entry of roster) for (const code of [entry.code, ...entry.previous_codes]) connect(entry.name, entry.employment_type, code);
+  for (const items of validByIdentity.values()) for (const { row } of items) connect(row.name, row.employment_type, row.code);
+  const reviewGroups = new Map<string, ParsedRow[]>();
+  for (const [key, items] of validByIdentity) {
+    const group = canonical(key);
+    reviewGroups.set(group, [...(reviewGroups.get(group) ?? []), ...items]);
   }
-  for (const people of byIdentity.values()) {
-    const months = new Set(people.map(({ row }) => row.period));
-    const codes = new Set(people.map(({ row }) => codeKey(row.code)).filter(Boolean));
-    if (months.size > 1 && codes.size > 1) {
-      for (const item of people) warnings.add(`${context(item.location, item.row.code)}: 다른 달의 같은 성명·고용 형태에 다른 사번이 있습니다. 자동 수정하지 않았습니다.`);
+  const codeReviews: HrCodeReview[] = [];
+  for (const [identity, items] of reviewGroups) {
+    const observed = new Map<string, { code: string; months: Set<string> }>();
+    for (const { row } of items) {
+      const key = codeKey(row.code);
+      const entry = observed.get(key) ?? { code: row.code, months: new Set<string>() };
+      entry.months.add(row.period);
+      observed.set(key, entry);
+    }
+    const registered = roster.find((entry) => canonical(identityKey(entry.name, entry.employment_type)) === identity);
+    if (registered && [...observed.keys()].some((code) => !registeredOwners.has(code))) {
+      const key = codeKey(registered.code);
+      if (!observed.has(key)) observed.set(key, { code: registered.code, months: new Set() });
+    }
+    const codes = [...observed.values()].map(({ code, months }) => ({ code, months: [...months].sort() }));
+    const row = items.reduce<HrWorkbookRow | undefined>((latest, item) => !latest || item.row.period > latest.period ? item.row : latest, undefined);
+    const hasConcurrentCodes = new Set(items.map(({ row }) => row.period)).size !== items.length;
+    const employmentMonths = new Map<HrEmploymentType, Set<string>>();
+    for (const { row: entry } of items) {
+      const months = employmentMonths.get(entry.employment_type) ?? new Set<string>();
+      months.add(entry.period);
+      employmentMonths.set(entry.employment_type, months);
+    }
+    if (registered && !employmentMonths.has(registered.employment_type)) employmentMonths.set(registered.employment_type, new Set());
+    const employmentChanged = row && employmentMonths.size > 1 && (!registered
+      || (row.period >= registered.last_month && row.employment_type !== registered.employment_type));
+    const codeChanged = codes.length > 1 && (registered || new Set(codes.flatMap(({ months }) => months)).size > 1)
+      && (!registered || codes.some(({ code }) => ![registered.code, ...registered.previous_codes].some((known) => codeKey(known) === codeKey(code))));
+    if (row && !hasConcurrentCodes && (codeChanged || employmentChanged)) {
+      codeReviews.push({ key: identity, name: row.name, employment_type: row.employment_type, codes,
+        ...(employmentChanged ? { employment_types: [...employmentMonths].map(([employment_type, months]) => ({ employment_type, months: [...months].sort() })) } : {}) });
     }
   }
+  const monthIndex = (period: string) => Number(period.slice(0, 4)) * 12 + Number(period.slice(5));
   const issues: HrWorkbookIssue[] = [];
   for (const item of parsed) {
     const messages = issueMessages.get(item.key);
     if (!messages) continue;
-    const identity = JSON.stringify([nameIdentity(item.row.name), item.row.employment_type]);
-    const candidates = new Set((byIdentity.get(identity) ?? [])
-      .filter(({ row }) => row.period !== item.row.period && row.code && row.code.length <= 64
-        && codeNames.get(codeKey(row.code))?.size === 1)
-      .map(({ row }) => row.code));
-    const candidate = candidates.size === 1 ? [...candidates][0] : undefined;
+    const identity = rowIdentity(item);
+    const targetMonth = monthIndex(item.row.period);
+    const candidates = new Map<string, NonNullable<HrWorkbookIssue['evidence']>>();
+    const registered = roster.filter((entry) => identityKey(entry.name, entry.employment_type) === identity);
+    for (const entry of registered) {
+      if (item.row.employment_type === 'hourly' && nameIdentity(entry.department) !== nameIdentity(item.row.source_department ?? '')) continue;
+      if (ownerOf(entry.code) === nameIdentity(item.row.name)) candidates.set(codeKey(entry.code), { code: entry.code, months: [], roster: true });
+    }
+    for (const other of validByIdentity.get(identity) ?? []) {
+      const distance = Math.abs(monthIndex(other.row.period) - targetMonth);
+      if (distance === 0 || ownerOf(other.row.code) !== nameIdentity(item.row.name)) continue;
+      const sameDepartment = nameIdentity(other.row.source_department ?? '') === nameIdentity(item.row.source_department ?? '');
+      if (item.row.employment_type === 'hourly' && (!sameDepartment || distance !== 1)) continue;
+      const delta = item.fixedPay !== null && other.fixedPay !== null ? item.fixedPay - other.fixedPay : null;
+      const key = codeKey(other.row.code);
+      const evidence = candidates.get(key) ?? { code: other.row.code, months: [] };
+      if (!evidence.months.some((month) => month.period === other.row.period && month.fixedPayDifference === delta)) {
+        evidence.months.push({ period: other.row.period, fixedPayDifference: delta });
+      }
+      candidates.set(key, evidence);
+    }
+    const corroborated = [...candidates.values()].filter((value) =>
+      value.roster || value.months.some((month) => month.fixedPayDifference === 0));
+    const available = corroborated.length ? corroborated : [...candidates.values()];
+    for (const value of available) value.months.sort((a, b) => Math.abs(monthIndex(a.period) - targetMonth) - Math.abs(monthIndex(b.period) - targetMonth));
+    const evidence = available.length === 1 && (available[0].roster || available[0].months.some((month) => Math.abs(monthIndex(month.period) - targetMonth) === 1)) && codeKey(available[0].code) !== codeKey(item.row.code) ? available[0] : undefined;
     issues.push({ key: item.key, file: item.location.file, sheet: item.location.sheet,
       row: item.location.row, month: item.row.period, code: item.row.code,
-      ...(candidate && codeKey(candidate) !== codeKey(item.row.code) ? { suggested_code: candidate } : {}), message: [...messages].join(' ') });
+      ...(evidence ? { suggested_code: evidence.code, evidence } : {}), message: [...messages].join(' ') });
   }
   return { files, months: [...monthRows].sort(([a], [b]) => a.localeCompare(b)).map(([month, rows]) => ({ month, rows })),
-    issues, warnings: [...warnings] };
+    issues, codeReviews, warnings: [...warnings] };
 }

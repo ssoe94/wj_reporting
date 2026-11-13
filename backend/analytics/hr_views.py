@@ -9,20 +9,30 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import hr_permissions
 from .hr_contract import ImportSerializer, SaveImportSerializer, LayoutSerializer, preview_payload, validate_month
-from .hr_permissions import IsHrAuthorized, IsHrSuperuser
+from .hr_permissions import IsHrAuthorized, IsHrSuperuser, IsHrLaborAuthorized
 from .hr_access_service import set_hr_access
 from .hr_service import save_import, save_layout, workspace_payload
 from .models import HrAccessGrant, HrMonthWorkspace
 from .hr_workbook_contract import SaveReferenceSerializer, WorkbookBatchSerializer, WorkbookCommitSerializer
 from .hr_workbook_service import build_preview, save_batch
+from .hr_roster_service import RosterUpdateSerializer, edit_roster, roster_payload, roster_history_payload
 from .hr_reference_service import reference_payload, save_reference
+from .hr_labor_contract import LaborStandardSaveSerializer, LaborCalendarSaveSerializer, LaborActualPaymentSaveSerializer
+from .hr_labor_service import standard_payload, calendar_payload, save_standard, save_calendar, actual_payment_payload, save_actual_payment
+
+from .hr_daily_contract import validate_day, DailyPreviewSerializer, DailySaveSerializer, PersonnelEventSerializer
+from .hr_daily_work import daily_work_payload, preview_daily_work, save_daily_work
+from .hr_personnel_events import append_personnel_event
+from .hr_forecast_service import forecast_payload, shanghai_today
+from .hr_dashboard_service import dashboard_payload
 
 
-def validated_input(request, serializer_type):
+def validated_input(request, serializer_type, *, context=None):
     if len(json.dumps(request.data, ensure_ascii=False).encode('utf-8')) > 6_000_000:
         raise serializers.ValidationError({'detail': '입력 크기는 6MB 이하여야 합니다.'})
-    serializer = serializer_type(data=request.data)
+    serializer = serializer_type(data=request.data, context=context or {})
     serializer.is_valid(raise_exception=True)
     return dict(serializer.validated_data)
 
@@ -114,3 +124,95 @@ class HrAccessDetailView(HrBaseView):
         except serializers.ValidationError as error:
             raise serializers.ValidationError({'granted': error.detail['can_manage_hr']}) from error
         return Response(access_payload())
+
+
+class HrRosterView(HrBaseView):
+    def get(self, request, month):
+        validate_month(month)
+        return Response(roster_payload(month))
+
+
+class HrRosterDetailView(HrBaseView):
+    def get(self, request, month, employee_id):
+        validate_month(month)
+        return Response(roster_history_payload(employee_id))
+
+    def patch(self, request, month, employee_id):
+        validate_month(month)
+        edit_roster(employee_id, validated_input(request, RosterUpdateSerializer), request.user)
+        return Response(roster_payload(month))
+
+
+class HrLaborStandardView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, month):
+        validate_month(month)
+        return Response(standard_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        return Response(save_standard(month, validated_input(request, LaborStandardSaveSerializer), request.user))
+
+
+class HrLaborCalendarView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, month):
+        validate_month(month)
+        return Response(calendar_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        data = validated_input(request, LaborCalendarSaveSerializer, context={'month': month})
+        return Response(save_calendar(month, data, request.user))
+
+
+class HrLaborActualPaymentView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, month):
+        validate_month(month)
+        return Response(actual_payment_payload(month))
+
+    def put(self, request, month):
+        validate_month(month)
+        return Response(save_actual_payment(month, validated_input(request, LaborActualPaymentSaveSerializer), request.user))
+
+
+class HrDailyWorkView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    def get(self, request, day):
+        return Response(daily_work_payload(validate_day(day), can_edit=hr_permissions.can_edit_hr_labor(request.user)))
+
+    def put(self, request, day):
+        day = validate_day(day)
+        return Response(save_daily_work(day, validated_input(request, DailySaveSerializer), request.user))
+
+
+class HrDailyWorkPreviewView(HrBaseView):
+    def post(self, request, day):
+        day = validate_day(day)
+        data = validated_input(request, DailyPreviewSerializer)
+        return Response(preview_daily_work(day, data, can_edit=hr_permissions.can_edit_hr_labor(request.user)))
+
+
+class HrPersonnelEventView(HrBaseView):
+    permission_classes = [IsHrLaborAuthorized]
+
+    @transaction.atomic
+    def post(self, request, day):
+        day = validate_day(day)
+        append_personnel_event(day, validated_input(request, PersonnelEventSerializer), request.user)
+        return Response(daily_work_payload(day, can_edit=True), status=201)
+
+
+class HrLaborForecastView(HrBaseView):
+    def get(self, request, month):
+        return Response(forecast_payload(validate_month(month), shanghai_today()))
+
+
+class HrDashboardView(HrBaseView):
+    def get(self, request, month):
+        return Response(dashboard_payload(validate_month(month), shanghai_today()))

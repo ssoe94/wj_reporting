@@ -22,3 +22,15 @@ class IsHrSuperuser(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         return bool(user and user.is_authenticated and user.is_active and user.is_superuser)
+
+
+def can_edit_hr_labor(user):
+    """Single future separation point for standards, calendars and actual payments."""
+    return can_access_hr(user)
+
+
+class IsHrLaborAuthorized(BasePermission):
+    message = IsHrAuthorized.message
+
+    def has_permission(self, request, view):
+        return can_access_hr(request.user) if request.method in ('GET', 'HEAD', 'OPTIONS') else can_edit_hr_labor(request.user)
