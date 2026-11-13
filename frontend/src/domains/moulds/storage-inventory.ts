@@ -16,7 +16,7 @@ type DisplayCategorizedMould = { summaryCategory: MouldDisplayCategory; inventor
 export type MouldInventory = {
   site: InventorySite;
   vendor: InventoryVendor | null;
-  basis: "confirmed_list" | "mes_location" | "last_movement" | "unconfirmed";
+  basis: "confirmed_list" | "team_confirmation" | "mes_location" | "last_movement" | "unconfirmed";
   sourceRanges: string[];
   sourceLocations: string[];
   confirmedOn: string | null;
@@ -125,7 +125,7 @@ export function normalizeMouldInventory(value: unknown): MouldInventory | null {
   return {
     site: location,
     vendor: normalizeVendor(raw.vendor, location),
-    basis: raw.basis === "confirmed_list" || raw.basis === "mes_location" || raw.basis === "last_movement" ? raw.basis : "unconfirmed",
+    basis: raw.basis === "confirmed_list" || raw.basis === "team_confirmation" || raw.basis === "mes_location" || raw.basis === "last_movement" ? raw.basis : "unconfirmed",
     sourceRanges: strings(field(raw, "source_ranges", "sourceRanges")),
     sourceLocations: strings(field(raw, "source_locations", "sourceLocations")),
     confirmedOn: string(field(raw, "confirmed_on", "confirmedOn")) || null,

@@ -17,18 +17,22 @@ def _key(value):
 
 
 _SPECS = (
-    ("TIANLU", "天路", "external", ("南京天路新材料科技有限公司", "天路", "天路仓库", "天路倉庫", "TIANLU", "TIAN LU")),
+    ("TIANLU", "天路", "external", ("南京天路新材料科技有限公司", "天路", "南京天路", "天路仓库", "天路倉庫", "TIANLU", "TIAN LU")),
     ("VENDOR:GUANGLI", "广立", "repair", ("丹阳广立模塑有限公司", "广立", "廣立", "GUANGLI", "GUANG LI")),
-    ("VENDOR:ZIJIN", "紫金", "external", ("句容紫金辰龙塑料电子有限公司", "紫金", "紫金辰龙", "ZIJIN", "ZI JIN")),
+    ("VENDOR:ZIJIN", "紫金", "external", ("句容紫金辰龙塑料电子有限公司", "紫金", "南京紫金", "紫金辰龙", "ZIJIN", "ZI JIN")),
     ("VENDOR:TAIZHIKE", "泰之科", "repair", ("苏州泰之科模具有限公司", "泰之科", "TAIZHIKE", "TAI ZHI KE")),
-    ("VENDOR:YUEHEBAO", "跃和保", "external", ("南京跃和保电子有限公司", "跃和保", "躍和保")),
-    ("VENDOR:PINJIE", "品捷", "external", ("滁州品捷模塑有限公司", "品捷")),
-    ("VENDOR:SUOBOTE", "索博特", "external", ("苏州索博特模具有限公司", "索博特")),
+    ("VENDOR:YUEHEBAO", "跃和保", "external", ("南京跃和保电子有限公司", "跃和保", "南京跃和保", "躍和保")),
+    ("VENDOR:PINJIE", "品捷", "external", ("滁州品捷模塑有限公司", "滁州品捷", "品捷")),
+    ("VENDOR:SUOBOTE", "索博特", "external", ("苏州索博特模具有限公司", "苏州索博特", "索博特")),
     ("VENDOR:LG", "LG", "external", ("LG电子", "LG電子", "LG")),
-    ("VENDOR:HUASHAN", "华山", "external", ("南京华山喷涂有限公司", "华山", "華山")),
+    ("VENDOR:HUASHAN", "华山", "external", ("南京华山喷涂有限公司", "南京华山", "华山", "華山")),
     ("VENDOR:SUHONG", "速鸿", "external", ("南京速鸿电子科技有限公司", "速鸿", "速鴻")),
     ("VENDOR:YINGCHANG", "映昌", "external", ("映昌",)),
     ("VENDOR:HAILE", "海勒", "external", ("南京海勒汽车电子科技有限公司", "海勒")),
+    ("VENDOR:洗王", "洗王", "external", ("洗王",)),
+    ("VENDOR:金洙", "金洙", "external", ("南京金洙", "金洙")),
+    ("VENDOR:力普", "力普", "external", ("力普",)),
+    ("VENDOR:冠齐", "冠齐", "external", ("冠齐",)),
 )
 _BY_KEY = {key: {"key": key, "name": name, "category": category} for key, name, category, _ in _SPECS}
 _ALIASES = {_key(alias): key for key, _, _, aliases in _SPECS for alias in aliases}

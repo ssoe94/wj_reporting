@@ -1,7 +1,10 @@
 """Vendor destinations refine inventory without changing MES repair/status facts."""
 
 import copy
+import hashlib
+import json
 import unittest
+from unittest.mock import patch
 
 from injection.mould_inventory import (
     decorate_inventory_board,
@@ -238,3 +241,40 @@ class MouldVendorMovementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MouldTeamLocationTests(unittest.TestCase):
+    @patch("injection.mould_inventory._team_location_catalog")
+    def test_team_location_matches_board_and_detail_until_mes_evidence_changes(self, catalog):
+        instance_id = "101"
+        evidence = ["TEST-ASSET", "TEST-DRAWING", "2026-11-12T09:00:00+08:00", None, None, None, None]
+        entry = {
+            "site": "TIANLU",
+            "source_row": 2,
+            "evidence_sha256": hashlib.sha256(json.dumps(evidence, separators=(",", ":")).encode()).hexdigest(),
+        }
+        catalog.return_value = {
+            "source": {"reviewed_on": "2026-11-13"},
+            "entries": {hashlib.sha256(instance_id.encode()).hexdigest(): entry},
+        }
+        row = mould(instance_id, evidence[0], drawing_no=evidence[1], status="使用中", record_updated_at=evidence[2])
+        inventory = decorate_inventory_board(board(row))["moulds"][0]["inventory"]
+        self.assertEqual(inventory["site"], entry["site"])
+        self.assertEqual(inventory["basis"], "team_confirmation")
+        self.assertEqual(inventory["source_ranges"], [f'G{entry["source_row"]}'])
+        self.assertEqual(
+            decorate_inventory_detail({"mould": row, "movement_history": []})["mould"]["inventory"],
+            inventory,
+        )
+        self.assertEqual(row["location"]["code"], "厂外")
+
+        for change, expected in (
+            ({"record_updated_at": "2026-11-14T10:00:00+08:00"}, "UNCONFIRMED"),
+            ({"drawing_no": "DIFFERENT-DRAWING"}, "UNCONFIRMED"),
+            ({"status": "已报废"}, "UNCONFIRMED"),
+            ({"location": {"code": "B4-7", "kind": "storage"}}, None),
+            ({"last_movement": latest_movement([movement("苏州泰之科模具有限公司")])}, "VENDOR:TAIZHIKE"),
+        ):
+            with self.subTest(change=change):
+                updated = decorate_inventory_board(board({**row, **change}))
+                self.assertEqual(updated["moulds"][0]["inventory"]["site"], expected)

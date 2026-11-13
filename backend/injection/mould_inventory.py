@@ -13,6 +13,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime, time
 from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -124,6 +125,25 @@ def _newer_position(mould):
         return False
 
 
+@lru_cache(maxsize=1)
+def _team_location_catalog():
+    return json.loads((Path(__file__).parent / "data" / "mould_team_locations_20261112.json").read_text(encoding="utf-8"))
+
+
+def _team_location(mould, movement):
+    catalog = _team_location_catalog()
+    instance_key = sha256(str(mould.get("instance_id") or "").encode()).hexdigest()
+    entry = catalog["entries"].get(instance_key)
+    if not entry or mould.get("status") != "使用中":
+        return None
+    # The team's location fills a gap in the reviewed MES record. Revert to
+    # MES evidence when the identity, source version or movement evidence changes.
+    fields = [mould.get(field) for field in ("asset_code", "drawing_no", "record_updated_at")]
+    fields.extend((movement or {}).get(field) for field in ("occurred_at", "to_location", "time_quality", "ambiguous"))
+    fingerprint = sha256(json.dumps(fields, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    return entry if fingerprint == entry["evidence_sha256"] else None
+
+
 def _inventory(mould, entries):
     current_site = _location_site(mould)
     movement = mould.get("last_movement")
@@ -155,16 +175,19 @@ def _inventory(mould, entries):
     )
     use_confirmation = bool(entries) and not newer_position
     identity = _identity_confirmation(mould.get("asset_code"))
-    site = "SVC" if use_confirmation else current_site
+    team_entry = _team_location(mould, movement) if current_site == "UNCONFIRMED" and not entries else None
+    site = "SVC" if use_confirmation else team_entry["site"] if team_entry else current_site
+    basis = "confirmed_list" if use_confirmation else "team_confirmation" if team_entry else (
+        "last_movement" if from_history else "unconfirmed" if current_site == "UNCONFIRMED" else "mes_location"
+    )
+    team_source = _team_location_catalog()["source"] if team_entry else None
     return {
         "site": site,
         "vendor": vendor_for_key(site),
-        "basis": "confirmed_list" if use_confirmation else (
-            "last_movement" if from_history else "unconfirmed" if current_site == "UNCONFIRMED" else "mes_location"
-        ),
-        "source_ranges": [entry["source_range"] for entry in entries],
+        "basis": basis,
+        "source_ranges": [f'G{team_entry["source_row"]}'] if team_entry else [entry["source_range"] for entry in entries],
         "source_locations": [f'{entry["rack"]} / {entry["position"]}' for entry in entries],
-        "confirmed_on": _catalog()["source"]["confirmed_on"] if entries else None,
+        "confirmed_on": team_source["reviewed_on"] if team_source else _catalog()["source"]["confirmed_on"] if entries else None,
         "location_conflict": conflict,
         "last_movement": copy.deepcopy(movement),
         "identity_pending": identity is not None,
