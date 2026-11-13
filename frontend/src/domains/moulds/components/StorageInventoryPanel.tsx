@@ -16,7 +16,7 @@ const COPY = {
     empty: "검색 결과가 없습니다.", unavailable: "보관 분류 자료를 아직 불러오지 못했습니다.",
     sourceRange: "원본 위치", rack: "랙 / 위치", part: "품번", mouldNo: "금형 번호", cavity: "Cavity",
     currentLocation: "MES 기록 위치", model: "모델", name: "금형명", confirmed: "확인", noLocation: "위치 미확인",
-    classified: "현재 위치·마지막 이동 기록 기준", unknownHint: "현재 기록으로 위치를 확인할 수 없는 금형",
+    classified: "MES 위치·이동 기록·금형팀 확인 기준", teamConfirmation: "금형팀 확인", unknownHint: "현재 기록으로 위치를 확인할 수 없는 금형",
     svcHint: "SVC 확인 목록 · 실제 위치와 MES 기록을 구분해 표시합니다.",
     lastMovement: "마지막 이동 기록", ambiguousMovement: "이동 기록 확인 필요", movementBasis: "현재 위치는 별도 확인 필요",
     additionalSvc: "추가 SVC 위치 기록",
@@ -35,7 +35,7 @@ const COPY = {
     empty: "没有匹配结果。", unavailable: "暂未取得存放分类数据。",
     sourceRange: "原表位置", rack: "货架 / 位置", part: "零件号", mouldNo: "模具号", cavity: "穴数",
     currentLocation: "MES 记录位置", model: "机型", name: "模具名称", confirmed: "确认", noLocation: "位置未确认",
-    classified: "按当前位置及最后移动记录分类", unknownHint: "当前记录无法确认位置的模具",
+    classified: "按 MES 位置、移动记录及模具组确认分类", teamConfirmation: "模具组确认", unknownHint: "当前记录无法确认位置的模具",
     svcHint: "SVC 已确认清单 · 实际位置与 MES 记录分别显示。",
     lastMovement: "最后移动记录", ambiguousMovement: "需确认移动记录", movementBasis: "当前位置需另行确认",
     additionalSvc: "其他 SVC 位置记录",
@@ -161,6 +161,7 @@ export function StorageInventoryPanel({ inventory, moulds, language, site, onSit
       <span className={styles.rowHeading}><strong>{mould.assetCode || mould.mouldCode}</strong><span>{mould.location.label || mould.location.code || copy.noLocation}</span></span>
       <span className={styles.rowDescription}>{[mould.model, mould.name].filter(Boolean).join(" · ") || "—"}</span>
       <span className={styles.rowPart}>{mould.drawingNo || mould.mouldCode}</span>
+      {mould.inventory?.basis === "team_confirmation" ? <span className={styles.movement}>{copy.teamConfirmation} · {mould.inventory.confirmedOn}</span> : null}
       {mould.inventory?.lastMovement ? <span className={styles.movement}>
         {copy.lastMovement} → <strong>{mould.inventory.lastMovement.toLocation || copy.noLocation}</strong>
         <span>{movementTime(mould.inventory.lastMovement.occurredAt)}{mould.inventory.lastMovement.ambiguous ? ` · ${copy.ambiguousMovement}` : ""}</span>

@@ -4,12 +4,12 @@ const EXPORT_LABELS = {
   ko: {
     sheet: "금형 목록", asset: "자산코드", drawing: "도면번호", model: "모델",
     shots: "최종 누적 Shot 수", location: "현재 위치", unknown: "미확인",
-    movement: "마지막 이동 기록 기준", repair: "수리중",
+    movement: "마지막 이동 기록 기준", team: "금형팀 확인", repair: "수리중",
   },
   zh: {
     sheet: "模具清单", asset: "资产编号", drawing: "图号", model: "机型",
     shots: "最终累计 Shot 数", location: "当前位置", unknown: "未确认",
-    movement: "按最后移动记录", repair: "维修中",
+    movement: "按最后移动记录", team: "模具组确认", repair: "维修中",
   },
 };
 
@@ -23,6 +23,7 @@ function exportLocation(mould: MouldRecord, copy: typeof EXPORT_LABELS.ko): stri
     const qualifiers = [
       inventory.vendor.category === "repair" ? copy.repair : "",
       inventory.basis === "last_movement" ? copy.movement : "",
+      inventory.basis === "team_confirmation" ? [copy.team, inventory.confirmedOn].filter(Boolean).join(" ") : "",
     ].filter(Boolean);
     return qualifiers.length ? `${inventory.vendor.name} (${qualifiers.join(" · ")})` : inventory.vendor.name;
   }
