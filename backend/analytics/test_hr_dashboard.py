@@ -105,6 +105,10 @@ class HrDashboardTests(TestCase):
         self.assertIn(('roster_empty', '2026-10'), notices)
         self.assertIn(('employment_unknown', '2026-10'), notices)
         self.assertEqual(notices['hourly_rate_unconfirmed', '2026-11']['metric']['value'], '24.50')
+        self.assertEqual(notices['reupload_components', '2026-10']['link'], '/hr/personnel?step=upload&month=2026-10')
+        self.assertEqual(notices['roster_empty', '2026-10']['link'], '/hr/personnel?step=upload&month=2026-10')
+        self.assertEqual(notices['hourly_rate_unconfirmed', '2026-11']['link'], '/hr/work?step=standards&month=2026-11')
+        self.assertEqual(notices['missing_daily_sheets', '2026-11']['link'], '/hr/work?step=daily&month=2026-11')
         for model in (HrRosterEmployee, HrRosterCodeHistory, HrPersonnelEvent, HrDailyWork, HrLaborStandard,
                       HrLaborActualPayment, HrLaborCalendar, HrWorkspaceHistory):
             self.assertFalse(model.objects.exists(), model.__name__)
@@ -208,6 +212,11 @@ class HrDashboardTests(TestCase):
         self.assertIsNone(data['trends'][-1]['overtime_share']['value'])
         self.assertEqual([item['code'] for item in data['insights']],
                          ['department_change', 'hourly_turnover', 'highest_load', 'above_reference', 'unassigned'])
+        self.assertEqual([item['link'] for item in data['insights']], [
+            '/hr/personnel?step=assign&month=2026-10', '/hr/personnel?step=roster&month=2026-10',
+            '/hr/personnel?step=cost&month=2026-10', '/hr/personnel?step=cost&month=2026-10',
+            '/hr/personnel?step=assign&month=2026-10',
+        ])
         self.assertLessEqual(len(data['insights']), 8)
         self.assertTrue(all({'month', 'formula', 'estimated'} <= set(item['metric']['basis']) for item in data['insights']))
 

@@ -4,6 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import test from 'node:test';
 import * as jsxRuntime from 'react/jsx-runtime';
 import ts from 'typescript';
+import { workbookPreviewBlocker } from '../src/domains/hr/workbook-preview.ts';
 import type { HrEmploymentType, HrRosterEntry, HrWorkbookBatch } from '../src/domains/hr/workbook-types.ts';
 
 const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/hr/HrWorkbookImportPanel.tsx', import.meta.url), 'utf8'), {
@@ -29,6 +30,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
   const effects: (() => void)[] = [];
   let cursor = 0;
   const requests: HrWorkbookBatch[] = [];
+  const nextSteps: { step: 'roster' | 'assign'; month: string }[] = [];
   const reference = { filename: 'synthetic-reference.xlsx', rows: [] };
   const dependencies: Record<string, unknown> = {
     'react/jsx-runtime': jsxRuntime,
@@ -50,6 +52,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
       },
       useMemo: (callback: () => unknown) => callback(),
       useCallback: (callback: unknown) => callback,
+      useId: () => 'validation-hint',
     },
     'react-router-dom': { Link: 'a' },
     'lucide-react': Object.fromEntries(['CheckCircle2', 'FileSpreadsheet', 'RefreshCw', 'RotateCcw', 'Upload', 'X'].map((name) => [name, name])),
@@ -58,10 +61,15 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
       getHrClassificationReference: async () => ({ reference, version: 3, updated_at: null }),
       previewHrWorkbookBatch: async (payload: HrWorkbookBatch) => {
         requests.push(payload);
-        return { classification: reference, months: [], preview_token: 'synthetic' };
+        return { classification: reference, months: payload.months.map(({ month }) => ({
+          month, version: 1, total: '10.00', fingerprint: 'synthetic', rows: [],
+        })), preview_token: 'synthetic' };
       },
+      importHrWorkbookBatch: async (payload: HrWorkbookBatch) => ({ workspaces: payload.months }),
     },
     '../../domains/hr/import': { readWorkbook: async (file: { name: string }) => ({ filename: file.name, sheets: [{ name: 'payroll', rows: [] }] }) },
+    '../../domains/hr/flow': { hrFlowHref: () => '' },
+    '../../domains/hr/workbook-preview': { workbookPreviewBlocker },
     '../../domains/hr/workbook-import': {
       parseCompanyPayroll: (inputs: { id: string; book: { filename: string }; employment_type: HrEmploymentType }[]) => ({
         files: inputs.map((input) => ({ id: input.id, filename: input.book.filename, employment_type: input.employment_type })),
@@ -81,6 +89,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
     },
     '../../domains/hr/labels': { hrAssignmentPath: () => '' },
     './hrCommon': { isHrConflict: () => false, compactMoney: String },
+    './HrFileDrop': { default: 'HrFileDrop' },
     './hr-workbook-import.css': {},
   };
   const exports: Record<string, any> = {};
@@ -90,6 +99,7 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
   const props = {
     roster, workspace: { month: '2026-10', company_structure: { classification: { nodes: [] } } },
     disabled: false, onImported() {}, onBusyChange() {}, onConflict() {},
+    onNextStep(step: 'roster' | 'assign', month: string) { nextSteps.push({ step, month }); },
   };
   const render = () => {
     cursor = 0;
@@ -100,14 +110,14 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
   render();
   await setImmediate();
   render().find((node) => node.type === 'button' && 'aria-expanded' in node.props)!.props.onClick();
-  render().find((node) => node.type === 'input' && node.props.multiple)!.props.onChange({ target: {
-    files: [{ name: 'synthetic-小时工.xlsx', size: 100 }, { name: 'synthetic-合同工.xlsx', size: 100 }],
-  } });
+  render().find((node) => node.type === 'HrFileDrop' && node.props.id === 'payroll')!.props.onFiles([
+    { name: 'synthetic-小时工.xlsx', size: 100 }, { name: 'synthetic-合同工.xlsx', size: 100 },
+  ]);
   await setImmediate();
-  const previewButton = () => render().find((node) => node.type === 'button' && text(node) === (lang === 'ko' ? '선택 월 미리보기' : '预览所选月份'))!;
+  const previewButton = () => render().find((node) => node.type === 'button' && node.props.className?.includes('hr-workbook-validate'))!;
   const review = () => render().find((node) => node.props.className === 'hr-compact-toolbar');
   return {
-    render, requests, review, previewButton,
+    render, requests, review, previewButton, nextSteps,
     confirm: (reason = '  Synthetic transition  ') => {
       nodes(review()).find((node) => node.type === 'select')!.props.onChange({ target: { value: '90001' } });
       nodes(review()).find((node) => node.type === 'input' && node.props.maxLength === 500)!.props.onChange({ target: { value: reason } });
@@ -117,6 +127,10 @@ async function panel({ lang = 'ko', months = originalMonths, roster = [originalR
       nodes(label).find((node) => node.type === 'input')!.props.onChange({ target: { checked } });
     },
     preview: async () => { previewButton().props.onClick(); await setImmediate(); },
+    save: async () => {
+      render().find((node) => node.type === 'button' && /선택 \d+개월 저장/.test(text(node)))!.props.onClick();
+      await setImmediate();
+    },
   };
 }
 
@@ -137,6 +151,19 @@ test('one-code transition confirmation uses normalized name/code and the existin
   assert.deepEqual(form.requests[0].roster_decisions, [{
     name: 'SyntheticPerson', employment_type: 'contract', code: '90001', reason: 'Synthetic transition', version: 7,
   }]);
+});
+
+test('saved workbook recommends the roster for a deferred review and assignment for a confirmed review', async () => {
+  const deferred = await panel();
+  await deferred.preview();
+  await deferred.save();
+  assert.deepEqual(deferred.nextSteps, [{ step: 'roster', month: '2026-10' }]);
+
+  const confirmed = await panel();
+  confirmed.confirm();
+  await confirmed.preview();
+  await confirmed.save();
+  assert.deepEqual(confirmed.nextSteps, [{ step: 'assign', month: '2026-10' }]);
 });
 
 test('a historical code also resolves the current employee version for transition confirmation', async () => {

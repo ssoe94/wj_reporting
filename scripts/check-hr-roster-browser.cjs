@@ -23,7 +23,8 @@ const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
 const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep), 'Keep screenshots outside the repository.');
+assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
+  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
 fs.mkdirSync(screens, { recursive: true });
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
@@ -131,7 +132,7 @@ async function fixture({ lang = 'ko', mobile = false, denied = false, scenario =
 }
 const rowCount = page => page.locator('.hr-roster-table > table > tbody > tr:not([id])').count();
 async function waitRows(page, count) { await page.waitForFunction(expected => document.querySelectorAll('.hr-roster-table > table > tbody > tr:not([id])').length === expected, count); }
-async function roster(page) { await page.goto(`${origin}/hr/roster?month=${MONTH}`); await page.locator('.hr-roster-page-panel').waitFor(); }
+async function roster(page) { await page.goto(`${origin}/hr/personnel?step=roster&month=${MONTH}`); await page.locator('.hr-roster-page-panel').waitFor(); }
 async function capture(page, name) { const file = path.join(screens, `003-${name}.png`); await page.screenshot({ path: file, fullPage: false }); captures.push(file); }
 async function reset(page, ko = true) { await page.getByRole('button', { name: ko ? '초기화' : '重置', exact: true }).click(); await waitRows(page, 24); }
 
@@ -140,8 +141,9 @@ async function reset(page, ko = true) { await page.getByRole('button', { name: k
   browser = await playwright.chromium.launch({ headless: true });
   const ko = await fixture();
   await roster(ko.page); await waitRows(ko.page, 24);
-  assert.equal(await ko.page.locator('.hr-tabs a[href^="/hr/labor-forecast?month="]').count(), 1);
-  assert.equal(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), `/hr/roster?month=${MONTH}`);
+  assert.equal(await ko.page.locator('.hr-tabs a').count(), 3);
+  assert.match(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), /^\/hr\/personnel\?/);
+  assert.match(await ko.page.locator('[aria-current="step"]').getAttribute('href'), /[?&]step=roster(?:&|$)/);
   assert.deepEqual(await ko.page.locator('.hr-roster-summary strong').allTextContents(), ['18명', '6명', '5명']);
   await capture(ko.page, 'desktop-ko');
   for (const [index, count] of [[0, 18], [1, 6], [2, 5]]) {
@@ -194,12 +196,13 @@ async function reset(page, ko = true) { await page.getByRole('button', { name: k
   assert.deepEqual(ko.state.patches, [{ version: 4, reason: 'SYNTHETIC review reason', status: 'departed' }]);
   checks.push('Status edit requires a reason; 409 preserves the draft and blocks stale resubmission');
   await editor.getByRole('button', { name: '취소', exact: true }).click();
-  await ko.page.goto(`${origin}/hr/personnel?month=${MONTH}`);
-  const shortcut = ko.page.getByRole('link', { name: /명부 보기/ }); await shortcut.waitFor();
-  assert.equal(await shortcut.getAttribute('href'), `/hr/roster?month=${MONTH}`);
+  await ko.page.goto(`${origin}/hr/personnel?step=assign&month=${MONTH}`);
+  const shortcut = ko.page.getByRole('link', { name: '명부 보기', exact: true });
+  await shortcut.waitFor();
+  assert.equal(new URL(await shortcut.getAttribute('href'), origin).searchParams.get('month'), MONTH);
   assert.equal(await ko.page.locator('.hr-roster-page-panel').count(), 0);
   await shortcut.click(); await ko.page.locator('.hr-roster-page-panel').waitFor();
-  checks.push('Personnel header opens the same-month roster; the former collapsed roster is absent');
+  checks.push('Personnel step navigation opens the same-month roster from assignment');
   await ko.context.close();
 
   const zh = await fixture({ lang: 'zh' }); await roster(zh.page); await waitRows(zh.page, 24);
@@ -217,7 +220,7 @@ async function reset(page, ko = true) { await page.getByRole('button', { name: k
   const empty = await fixture({ scenario: 'empty' }); await roster(empty.page);
   await empty.page.getByText('등록된 직원이 없습니다.', { exact: true }).waitFor();
   assert.equal(await rowCount(empty.page), 0); await capture(empty.page, 'empty'); await empty.context.close();
-  const failure = await fixture({ scenario: 'error' }); await failure.page.goto(`${origin}/hr/roster?month=${MONTH}`);
+  const failure = await fixture({ scenario: 'error' }); await failure.page.goto(`${origin}/hr/personnel?step=roster&month=${MONTH}`);
   await failure.page.getByRole('alert').filter({ hasText: /명부|인사/ }).first().waitFor();
   await capture(failure.page, 'error'); failure.state.scenario = 'normal';
   await failure.page.getByRole('button', { name: /다시 시도|다시 불러오기/ }).click(); await waitRows(failure.page, 24);
@@ -227,7 +230,7 @@ async function reset(page, ko = true) { await page.getByRole('button', { name: k
   await historyFailure.page.locator('.hr-roster-history').getByText('이력을 불러오지 못했습니다.', { exact: false }).waitFor();
   historyFailure.state.scenario = 'normal'; await historyFailure.page.locator('.hr-roster-history').getByRole('button', { name: '다시 시도' }).click();
   await historyFailure.page.locator('.hr-roster-history-list').waitFor(); checks.push('History error retries independently'); await historyFailure.context.close();
-  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/roster?month=${MONTH}`);
+  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/personnel?step=roster&month=${MONTH}`);
   await denied.page.waitForURL('**/dashboard');
   assert.equal(await denied.page.locator('.hr-roster-page-panel, .hr-tabs').count(), 0);
   assert.equal(await denied.page.locator('a[href^="/hr/"]').count(), 0);

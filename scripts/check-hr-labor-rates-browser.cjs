@@ -23,7 +23,8 @@ const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
 const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep), 'Keep screenshots outside the repository.');
+assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
+  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
 fs.mkdirSync(screens, { recursive: true });
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
@@ -181,7 +182,7 @@ async function capture(page, name) {
   await page.screenshot({ path: file, fullPage: false }); captures.push(file);
 }
 async function standards(page) {
-  await page.goto(`${origin}/hr/labor-standards?month=${MONTH}`);
+  await page.goto(`${origin}/hr/work?step=standards&month=${MONTH}`);
   await page.locator('.hr-labor-rules-form').waitFor();
 }
 async function mobileContainment(page) {
@@ -364,7 +365,7 @@ async function checkCalendar() {
   await mobile.page.locator('.hr-labor-actual-form').scrollIntoViewIfNeeded(); await mobileContainment(mobile.page);
   checks.push('Chinese labels and 390px mobile layout cover exception/base editors and actual payments without overflow or sub-44px targets');
   await mobile.context.close();
-  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/labor-standards?month=${MONTH}`);
+  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/work?step=standards&month=${MONTH}`);
   await denied.page.waitForURL('**/dashboard');
   assert.equal(await denied.page.locator('.hr-labor-overview, .hr-labor-rules-form, .hr-labor-actual-form, .hr-tabs').count(), 0);
   assert.equal(await denied.page.locator('a[href^="/hr/"]').count(), 0);

@@ -8,6 +8,7 @@ import { hrAssignmentPath } from '../../domains/hr/labels';
 import { downloadTemplate, getHeaderColumns, parsePayrollRows, readWorkbook, suggestColumnMapping } from '../../domains/hr/import';
 import type { HrCostBasis, HrCurrency, HrImportPreview, HrWorkspace } from '../../domains/hr/types';
 import { isHrConflict, localHrError, money, safeHrError } from './hrCommon';
+import HrFileDrop from './HrFileDrop';
 
 type Workbook = Awaited<ReturnType<typeof readWorkbook>>;
 type ColumnMapping = ReturnType<typeof suggestColumnMapping>;
@@ -16,9 +17,14 @@ const emptyColumns: ColumnMapping = {
   classification_group: null, classification_function: null, classification_code: null,
 };
 
-export default function HrImportPanel({ workspace, disabled, onImported, onBusyChange, onConflict }: {
+export default function HrImportPanel({
+  workspace, disabled, disabledReason, onImported, onBusyChange, onConflict, onDraftChange, onNextStep,
+}: {
   workspace: HrWorkspace; disabled: boolean; onImported: (workspace: HrWorkspace) => void;
   onBusyChange: (busy: boolean) => void; onConflict: () => void;
+  disabledReason?: string;
+  onDraftChange?: (hasDraft: boolean) => void;
+  onNextStep?: (step: 'roster' | 'assign', month: string) => void;
 }) {
   const { lang } = useLang(); const ko = lang === 'ko';
   const [open, setOpen] = useState(false);
@@ -37,10 +43,20 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   const [excludedRows, setExcludedRows] = useState(0);
   const codeCollisions = useMemo(() => getEmployeeCodeCollisions(preview?.rows.map((row) => row.code) ?? []), [preview]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [error, setError] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const draftChange = useRef(onDraftChange);
+  draftChange.current = onDraftChange;
+  const hasDraft = Boolean(book || preview || pasteText.trim());
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      draftChange.current?.(false);
+    };
+  }, []);
+  useEffect(() => { draftChange.current?.(hasDraft); }, [hasDraft]);
   const sheet = book?.sheets[sheetIndex];
   const headerResult = useMemo(() => {
     if (!sheet || !sheet.rows.length) return { headers: [], error: null };
@@ -59,14 +75,22 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
     if (label === '应发工资' || label === '應發工資') { setBasis('gross_salary'); setBasisLabel('应发工资'); }
     if (label === '实发工资' || label === '實發工資') { setBasis('custom'); setBasisLabel('实发工资'); }
   }, [columns.amount, headers]);
-  const start = () => { setBusy(true); onBusyChange(true); setError(''); };
-  const finish = () => { if (mounted.current) setBusy(false); onBusyChange(false); };
+  const start = () => {
+    busyRef.current = true;
+    setBusy(true);
+    onBusyChange(true);
+    setError('');
+  };
+  const finish = () => {
+    busyRef.current = false;
+    if (mounted.current) setBusy(false);
+    onBusyChange(false);
+  };
 
   async function selectFile(file: File | undefined) {
-    if (!file) return;
+    if (!file || disabled || busyRef.current) return;
     start(); setPreview(null); setBook(null); setExcludedRows(0); setAllowMissingCost(false);
     try {
-      if (!/\.(xlsx|csv|tsv|txt)$/i.test(file.name)) throw new Error(ko ? 'XLSX, CSV, TSV 또는 TXT 파일을 선택해 주세요.' : '请选择 XLSX、CSV、TSV 或 TXT 文件。');
       if (file.size > 10 * 1024 * 1024) throw new Error(ko ? '파일 크기는 10 MB 이하여야 합니다.' : '文件大小不得超过 10 MB。');
       const parsed = await readWorkbook(file);
       if (!parsed.sheets.length) throw new Error(ko ? '읽을 수 있는 시트가 없습니다.' : '没有可读取的工作表。');
@@ -79,7 +103,7 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   }
 
   async function inspect() {
-    if (!book || !sheet) return;
+    if (!book || !sheet || disabled || busyRef.current) return;
     start(); setPreview(null);
     try {
       if (columns.code === null || columns.name === null) throw new Error(ko ? '사번과 이름 열을 선택해 주세요.' : '请选择员工编号与姓名列。');
@@ -114,7 +138,7 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   }
 
   async function confirmImport() {
-    if (!preview || !book) return;
+    if (!preview || !book || disabled || busyRef.current) return;
     start();
     try {
       const result = await importHrWorkspace(workspace.month, {
@@ -125,7 +149,7 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
       });
       if (mounted.current) {
         onImported(result); setBook(null); setPreview(null); setPasteText(''); setOpen(false);
-        if (fileInput.current) fileInput.current.value = '';
+        onNextStep?.('assign', result.month);
       }
     } catch (failure) {
       if (mounted.current) {
@@ -162,18 +186,21 @@ export default function HrImportPanel({ workspace, disabled, onImported, onBusyC
   }
   const missingCount = preview?.missing_cost_count ?? 0;
   const knownCount = preview?.known_cost_count ?? 0;
+  const blocked = disabledReason || (ko ? '배치 변경을 저장하거나 버린 뒤 업로드하세요.' : '保存或放弃配置更改后再上传。');
+  const dropDisabledReason = busy ? (ko ? '가져오기 처리 중입니다.' : '正在处理导入。') : disabled ? blocked : undefined;
 
   return <section className="hr-panel hr-import is-compact">
     <div className="hr-import-heading">
       <h2>{ko ? '월별 자료' : '月度资料'}</h2><span className="hr-muted">{workspace.month}{book ? ` · ${book.filename}` : ''}</span>
       <div className="hr-actions"><button className="hr-button" onClick={downloadTemplate} disabled={busy}><Download size={15} />{ko ? '양식' : '模板'}</button>
-        <button className="hr-button" disabled={disabled || busy} aria-expanded={open} onClick={() => setOpen(!open)}><Upload size={15} />{open ? (ko ? '접기' : '收起') : (ko ? '자료 올리기' : '上传资料')}</button></div>
+        <button className="hr-button" disabled={busy} aria-expanded={open} onClick={() => setOpen(!open)}><Upload size={15} />{open ? (ko ? '접기' : '收起') : (ko ? '기타 형식 · 단일 월 가져오기' : '其他格式 · 单月导入')}</button></div>
     </div>
-    {disabled && <p className="hr-muted">{ko ? '배치 변경을 저장하거나 버린 뒤 업로드하세요.' : '保存或放弃配置更改后再上传。'}</p>}
+    {!open && disabled && <p className="hr-muted">{blocked}</p>}
     {open && <div className="hr-import-body">
-      <div className="hr-field hr-file-field">{ko ? '파일 · XLSX / CSV / TSV / TXT · 최대 10 MB' : '文件 · XLSX / CSV / TSV / TXT · 最大 10 MB'}
-        <button type="button" className="hr-button" disabled={busy || disabled} onClick={() => fileInput.current?.click()}>{ko ? '파일 선택' : '选择文件'}</button>
-        <input hidden ref={fileInput} type="file" accept=".xlsx,.csv,.tsv,.txt" disabled={busy || disabled} onChange={(event) => void selectFile(event.target.files?.[0])} /></div>
+      <HrFileDrop id="single" label={ko ? '단일 월 자료' : '单月资料'} ko={ko}
+        hint={ko ? 'XLSX, CSV, TSV 또는 TXT 1개 · 최대 10 MB' : '1 个 XLSX、CSV、TSV 或 TXT 文件 · 最大 10 MB'}
+        extensions={['.xlsx', '.csv', '.tsv', '.txt']} disabledReason={dropDisabledReason}
+        onFiles={([file]) => void selectFile(file)} />
       <details className="hr-disclosure"><summary>{ko ? '표 붙여넣기' : '粘贴表格'}</summary>
         <label className="hr-field">{ko ? '제목 행 포함' : '包含表头'}<textarea rows={3} maxLength={10 * 1024 * 1024} value={pasteText} disabled={busy || disabled}
           onChange={(event) => setPasteText(event.target.value)} placeholder={ko ? 'Excel에서 복사한 표' : '从 Excel 复制的表格'} /></label>
