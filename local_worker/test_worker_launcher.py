@@ -11,18 +11,6 @@ class WorkerLauncherTests(unittest.TestCase):
                      autostart="true", manager_exit=0, manager_exists=True):
         directory = Path(directory)
         repository = Path(__file__).resolve().parents[1]
-        fixture_repo = directory / "launcher-fixture"
-        fixture_script = fixture_repo / "scripts/local_ai/run-worker.sh"
-        fixture_script.parent.mkdir(parents=True)
-        fixture_worker = fixture_repo / "local_worker/worker.py"
-        fixture_worker.parent.mkdir()
-        fixture_worker.touch()
-        fake_launchctl = directory / "fake-launchctl"
-        fake_launchctl.write_text("#!/bin/sh\nexit 1\n")
-        fake_launchctl.chmod(0o700)
-        source = (repository / "scripts/local_ai/run-worker.sh").read_text()
-        # Keep the tests on the no-service path on macOS as well as on CI.
-        fixture_script.write_text(source.replace("/bin/launchctl", '"$FAKE_LAUNCHCTL"'))
         worker_python = directory / "fake-python"
         worker_python.write_text(
             '#!/bin/sh\ntouch "$WORKER_STARTED"\n'
@@ -49,7 +37,6 @@ class WorkerLauncherTests(unittest.TestCase):
         capture = directory / "manager-args"
         environment = {
             **os.environ, "WORKER_PYTHON": str(worker_python),
-            "FAKE_LAUNCHCTL": str(fake_launchctl),
             "AI_WORKER_TOKEN": "test-only-no-network-token", "AI_WORKER_USE_LLM": "true",
             "LOCAL_LLM_BASE_URL": model_url, "AI_WORKER_AUTOSTART_RUNTIME": autostart,
             "LOCAL_AI_RUNTIME_REPO": str(runtime_repo), "LOCAL_AI_UV_BIN": str(uv),
@@ -57,7 +44,7 @@ class WorkerLauncherTests(unittest.TestCase):
             "WORKER_STARTED": str(directory / "worker-started"),
         }
         result = subprocess.run(
-            ["/bin/bash", str(fixture_script), "--once"],
+            ["/bin/bash", str(repository / "scripts/local_ai/run-worker.sh"), "--once"],
             capture_output=True, text=True, timeout=10, env=environment,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
