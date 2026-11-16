@@ -1,4 +1,4 @@
-"""Loopback operator screen, status stream and optional barcode controls."""
+"""Loopback operator screen, status stream and local app controls."""
 
 import json
 import shutil
@@ -18,6 +18,7 @@ _ASSETS = {
     '/agent.css': ('agent.css', 'text/css; charset=utf-8'),
     '/agent.js': ('agent.js', 'text/javascript; charset=utf-8'),
     '/barcode.js': ('barcode.js', 'text/javascript; charset=utf-8'),
+    '/weigh.js': ('weigh.js', 'text/javascript; charset=utf-8'),
 }
 _SESSION_HEADER = 'X-WJ-Local'
 _SSE_CLIENTS = 4
@@ -27,6 +28,13 @@ _BARCODE_ACTIONS = {
     '/api/barcode/config/': 'config',
 }
 _BARCODE_CSV = '/api/barcode/export.csv'
+_WEIGH_ACTIONS = {
+    '/api/weigh/product/': 'product',
+    '/api/weigh/resume/': 'resume',
+    '/api/weigh/acknowledge/': 'acknowledge',
+    '/api/weigh/flush/': 'flush',
+    '/api/weigh/peel/': 'peel',
+}
 _MAX_ACTION_BYTES = 2048
 _CSV_COPY_BYTES = 65536
 _LANES = ('A', 'B')
@@ -60,6 +68,26 @@ def _barcode_status(source):
     return public
 
 
+def _weigh_status(source):
+    public = _fields(source, ('mode', 'part_no', 'weight_g', 'stable', 'empty', 'storage_error'))
+    public['products'] = [
+        _fields(product, ('part_no', 'name')) for product in (source.get('products') or [])
+    ]
+    public['last_result'] = _fields(source.get('last_result'), (
+        'result', 'quantity', 'weight_g', 'delta_g', 'reason', 'time', 'reservation_blocked', 'part_no',
+    )) or None
+    public['last_reread'] = _fields(source.get('last_reread'), ('status', 'barcode', 'device', 'time', 'label_origin')) or None
+    queue = source.get('queue') or {}
+    public['queue'] = _fields(queue, (
+        'waiting', 'dispatching', 'submitted', 'uncertain', 'peel_wait', 'partial', 'paused',
+        'pause_reason', 'uncertain_quantity',
+    ))
+    public['queue']['uncertain_ids'] = [
+        value for value in (queue.get('uncertain_ids') or []) if _field_value(value)
+    ]
+    return public
+
+
 def _status_bytes(snapshot):
     # A caller's extra state can contain install details. Never serve it wholesale.
     public = _fields(snapshot, (
@@ -79,6 +107,8 @@ def _status_bytes(snapshot):
     public['backup'] = _fields(snapshot.get('backup'), ('state', 'finished_at', 'reason'))
     if isinstance(snapshot.get('barcode'), dict):
         public['barcode'] = _barcode_status(snapshot['barcode'])
+    if isinstance(snapshot.get('weigh'), dict):
+        public['weigh'] = _weigh_status(snapshot['weigh'])
     return json.dumps(public, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 
@@ -99,7 +129,7 @@ def _field_value(value):
     return type(value) is str and 0 < len(value) <= 512 and value.isprintable()
 
 
-def _valid_action(action, data):
+def _valid_barcode_action(action, data):
     if type(data) is not dict:
         return False
     if action == 'reset':
@@ -119,13 +149,27 @@ def _valid_action(action, data):
     )
 
 
+def _valid_weigh_action(action, data):
+    if type(data) is not dict:
+        return False
+    if action == 'product':
+        return set(data) == {'part_no'} and _field_value(data['part_no'])
+    if action == 'acknowledge':
+        return (
+            set(data) == {'job_id', 'confirmed_quantity'} and _field_value(data['job_id'])
+            and type(data['confirmed_quantity']) is int and 0 <= data['confirmed_quantity'] <= 1000
+        )
+    return action in ('resume', 'flush', 'peel') and not data
+
+
 class _Server(ThreadingHTTPServer):
     request_queue_size = 12
 
-    def __init__(self, port, snapshot, barcode_action, barcode_csv):
+    def __init__(self, port, snapshot, barcode_action, barcode_csv, weigh_action):
         self.snapshot = snapshot
         self.barcode_action = barcode_action
         self.barcode_csv = barcode_csv
+        self.weigh_action = weigh_action
         self.stopping = threading.Event()
         # Leave room for assets/JSON even when the SSE slots are occupied.
         self.request_slots = threading.BoundedSemaphore(16)
@@ -240,7 +284,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._stream()
         elif route == _BARCODE_CSV and self.server.barcode_csv is not None:
             self._export_csv(query)
-        elif route in _BARCODE_ACTIONS and self.server.barcode_action is not None:
+        elif self._action_route(route) is not None:
             self._send(405, b'POST required', allow='POST')
         else:
             self._send(404, b'Not found')
@@ -252,11 +296,19 @@ class _Handler(BaseHTTPRequestHandler):
 
     do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = _mutation
 
+    def _action_route(self, path):
+        if path in _BARCODE_ACTIONS and self.server.barcode_action is not None:
+            return _BARCODE_ACTIONS[path], _valid_barcode_action, self.server.barcode_action
+        if path in _WEIGH_ACTIONS and self.server.weigh_action is not None:
+            return _WEIGH_ACTIONS[path], _valid_weigh_action, self.server.weigh_action
+        return None
+
     def do_POST(self):
-        action = _BARCODE_ACTIONS.get(self.path)
-        if action is None or self.server.barcode_action is None:
+        route = self._action_route(self.path)
+        if route is None:
             self._mutation()
             return
+        action, validator, handler = route
         if self.headers.get_all('Transfer-Encoding'):
             self._send(400, b'Transfer encoding unsupported')
             return
@@ -281,13 +333,13 @@ class _Handler(BaseHTTPRequestHandler):
             payload = json.loads(
                 raw.decode('utf-8'), object_pairs_hook=_unique_keys, parse_constant=_non_json_constant,
             )
-            if not _valid_action(action, payload):
+            if not validator(action, payload):
                 raise ValueError('Invalid payload')
-            self.server.barcode_action(action, payload)
+            handler(action, payload)
         except (ValueError, RecursionError):
-            self._send(400, b'Invalid barcode action')
-        except (OSError, RuntimeError):
-            self._send(503, b'Barcode action could not be saved')
+            self._send(400, b'Invalid local action')
+        except (OSError, RuntimeError, sqlite3.Error):
+            self._send(503, b'Local action could not be saved')
         else:
             self._send(200, b'{"ok":true}', 'application/json; charset=utf-8')
 
@@ -372,7 +424,8 @@ class _Handler(BaseHTTPRequestHandler):
 class LocalUI:
     """Serve the static shell, a cached snapshot, and optional local controls."""
 
-    def __init__(self, snapshot, host='127.0.0.1', port=_DEFAULT_PORT, *, barcode_action=None, barcode_csv=None):
+    def __init__(self, snapshot, host='127.0.0.1', port=_DEFAULT_PORT, *,
+                 barcode_action=None, barcode_csv=None, weigh_action=None):
         if host != '127.0.0.1':
             raise ValueError('Local UI requires 127.0.0.1')
         if type(port) is not int or not 0 <= port <= 65535:
@@ -380,6 +433,7 @@ class LocalUI:
         self._snapshot = snapshot
         self._barcode_action = barcode_action
         self._barcode_csv = barcode_csv
+        self._weigh_action = weigh_action
         self._requested_port = port
         self._server = None
         self._thread = None
@@ -392,7 +446,9 @@ class LocalUI:
 
     def start(self):
         if self._server is None:
-            server = _Server(self._requested_port, self._snapshot, self._barcode_action, self._barcode_csv)
+            server = _Server(
+                self._requested_port, self._snapshot, self._barcode_action, self._barcode_csv, self._weigh_action,
+            )
             thread = threading.Thread(
                 target=server.serve_forever, kwargs={'poll_interval': 0.5},
                 name='field-agent-ui', daemon=True,

@@ -14,14 +14,18 @@ from .local_ui import LocalUI
 from .protocol import timestamp
 from .resources import Resources
 from .uploader import Uploader
+from .weigh.app import WeighApp, make_devices
+from .weigh.legacy import WeighLegacyCollector
 
 
 class Runtime:
     def __init__(self, ledger, transport, *, demo=False, port=None, backup_idle=60,
                  backup_keep=30, min_free_bytes=DEFAULT_MIN_FREE, barcode_config=None,
-                 legacy_barcode_db=None, barcode_backend=None):
-        if sum((demo, barcode_config is not None, legacy_barcode_db is not None)) > 1:
-            raise ValueError("Select only one barcode input mode")
+                 legacy_barcode_db=None, barcode_backend=None, weigh_settings=None,
+                 weigh_devices=None, legacy_weigh_dbs=None):
+        if sum((demo, barcode_config is not None, legacy_barcode_db is not None,
+                weigh_settings is not None, legacy_weigh_dbs is not None)) > 1:
+            raise ValueError("Select only one field input mode")
         self.ledger = ledger
         self.station_id = ledger.station_id
         self._halt = Event()
@@ -45,15 +49,23 @@ class Runtime:
         )
         self.uploader = Uploader(ledger, transport, self._heartbeat_snapshot)
         self.minimum_free = min_free_bytes
-        self.barcode = BarcodeApp(ledger, barcode_config, self._barcode_changed) if barcode_config else None
+        self.barcode = BarcodeApp(ledger, barcode_config, self._work_changed) if barcode_config else None
         self.barcode_devices = None
         if self.barcode:
             self.barcode_devices = BarcodeDevices(self.barcode, self.barcode.scanner_assignments, backend=barcode_backend)
         self.legacy = (LegacyBarcodeCollector(ledger, legacy_barcode_db)
                        if legacy_barcode_db is not None else None)
+        self.legacy_app = "barcode"
+        if legacy_weigh_dbs:
+            self.legacy = WeighLegacyCollector(ledger, *legacy_weigh_dbs)
+            self.legacy_app = "weigh_label"
+        self.weigh = None
+        if weigh_settings:
+            self.weigh = WeighApp(ledger, weigh_settings, weigh_devices or make_devices(weigh_settings),
+                                  self._work_changed)
         self.legacy_status = {"coverage": "unknown", "state": "running", "last_work_at": None}
 
-    def _barcode_changed(self, *, state_changed, activity):
+    def _work_changed(self, *, state_changed, activity):
         if activity:
             with self._lock:
                 self._last_activity = monotonic()
@@ -93,12 +105,14 @@ class Runtime:
     def _app_devices(self):
         if self.barcode:
             return self.barcode.health()
+        if self.weigh:
+            return self.weigh.health()
         if self.legacy:
             with self._lock:
                 status = dict(self.legacy_status)
             # A readable file supplies rows, with no evidence about the live
             # source application's process, version or devices.
-            apps = [{"app": "barcode", "version": None, "mode": "unknown", "state": "unknown",
+            apps = [{"app": self.legacy_app, "version": None, "mode": "unknown", "state": "unknown",
                      "last_work_at": status["last_work_at"]}]
             return apps, [], status["coverage"], False
         if self.app is None:
@@ -141,6 +155,8 @@ class Runtime:
             ports = [{"id": item["id"], "label": " · ".join(filter(None, (item["port"], item["location"])))}
                      for item in self.barcode_devices.ports()]
             snapshot["barcode"] = self.barcode.snapshot(ports)
+        if self.weigh:
+            snapshot["weigh"] = self.weigh.snapshot()
         return snapshot
 
     def _read_device(self):
@@ -180,17 +196,25 @@ class Runtime:
 
     def start(self):
         if self.port is not None:
-            barcode_api = {}
+            app_api = {}
             if self.barcode:
-                barcode_api = {"barcode_action": self.barcode.action, "barcode_csv": self.barcode.csv}
-            self.local_ui = LocalUI(self.snapshot, port=self.port, **barcode_api).start()
+                app_api = {"barcode_action": self.barcode.action, "barcode_csv": self.barcode.csv}
+            if self.weigh:
+                app_api["weigh_action"] = self.weigh.action
+            self.local_ui = LocalUI(self.snapshot, port=self.port, **app_api).start()
         targets = [("field-upload", lambda: self.uploader.run(self._halt)), ("field-backup", self._run_backup)]
         if self.app is not None:
             targets.append(("field-fake-scanner", self._read_device))
         if self.barcode_devices:
             targets.append(("field-barcode", lambda: self.barcode_devices.run(self._halt)))
         if self.legacy:
-            targets.append(("field-barcode-import", self._poll_legacy))
+            targets.append(("field-legacy-import", self._poll_legacy))
+        if self.weigh:
+            targets.extend([
+                ("field-weigh-scale", lambda: self.weigh.run_scale(self._halt)),
+                ("field-weigh-printer", lambda: self.weigh.run_printer(self._halt)),
+                ("field-weigh-scanner", lambda: self.weigh.run_scanner(self._halt)),
+            ])
         for name, target in targets:
             thread = Thread(name=name, target=target, daemon=True)
             thread.start()
@@ -203,9 +227,11 @@ class Runtime:
         if self.local_ui is not None:
             self.local_ui.stop()
         for thread in self._threads:
-            thread.join(10)
+            thread.join(15 if self.weigh else 10)
         if any(thread.is_alive() for thread in self._threads):
             raise RuntimeError("A station worker did not stop")
         if self.barcode:
             # The durable stop marker is delivered on the next start.
             self.barcode.stop()
+        if self.weigh:
+            self.weigh.stop()

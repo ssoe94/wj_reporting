@@ -73,6 +73,7 @@
   let selectedApp = '';
   let connection = 'connecting';
   const barcodeView = window.createBarcodeView(timestamp);
+  const weighView = window.createWeighView(timestamp, code);
 
   function text(key) {
     return words[language][key];
@@ -165,7 +166,8 @@
       ['work', timestamp(app.last_work_at), text('timeZone')],
     ]);
     panel.appendChild(details);
-    if (app.app !== 'barcode' || !state.barcode) {
+    const hasWorkScreen = (app.app === 'barcode' && state.barcode) || (app.app === 'weigh_label' && state.weigh);
+    if (!hasWorkScreen) {
       panel.appendChild(node('p', text('appSlot'), 'muted'));
     }
   }
@@ -204,6 +206,7 @@
     renderDeviceRows();
     renderApps();
     barcodeView.render(state.barcode, language, connection);
+    weighView.render(state.weigh, language, connection);
   }
 
   document.querySelectorAll('[data-lang]').forEach(function (button) {
@@ -223,6 +226,7 @@
     connection = 'disconnected';
     renderConnection();
     barcodeView.render(state.barcode, language, connection);
+    weighView.render(state.weigh, language, connection);
   };
   stream.onmessage = function (event) {
     try {

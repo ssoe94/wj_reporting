@@ -152,6 +152,7 @@ class FieldReadTests(TestCase):
             ('barcode', 'scan.recorded', 'ng', 'scan_wrong_product_group'),
             ('barcode', 'scan.recorded', 'ng', 'scan_wrong_device'),
             ('weigh_label', 'weigh.result', 'ng', 'weight_outside_limit'),
+            ('weigh_label', 'weigh.result', 'ng', 'weight_at_or_below_zero'),
             ('weigh_label', 'label.dispatched', 'error', 'print_uncertain'),
             ('weigh_label', 'label.dispatched', 'error', 'print_rejected_unsent'),
             ('vision_backcover', 'vision.cycle', 'ng', 'operation_not_confirmed'),

@@ -8,6 +8,7 @@
       confirmTest: '시험 모드로 전환할까요? 이후 스캔은 시험 기록으로 저장됩니다.',
       confirmProduction: '생산 모드로 전환할까요? 이후 스캔은 생산 기록으로 저장됩니다.',
       confirmReset: '화면 카운터와 중복 판정 기준을 초기화할까요? 저장한 기록은 남습니다. 화면과 CSV는 새 구간을 표시합니다.',
+      resetCounts: '현재 화면 집계',
       storageError: '저장 실패 · 저장되지 않은 스캔은 집계되지 않습니다.',
       stale: '로컬 연결을 다시 확인하는 중입니다. 표시된 값은 마지막으로 받은 상태입니다.',
       export: 'CSV 내보내기', csvScope: '현재 모드에서 마지막 초기화 이후 저장된 기록',
@@ -33,6 +34,7 @@
       confirmTest: '是否切换到测试模式？后续扫描将记录为测试。',
       confirmProduction: '是否切换到生产模式？后续扫描将记录为生产。',
       confirmReset: '是否重置界面计数和重复判定起点？已保存的记录将保留。界面和 CSV 将显示重置后的新记录。',
+      resetCounts: '当前界面计数',
       storageError: '保存失败 · 未保存的扫描不会计入统计。',
       stale: '正在重新连接本机。当前显示的是上次收到的状态。',
       export: '导出 CSV', csvScope: '当前模式下自上次重置以来保存的记录',
@@ -365,7 +367,13 @@
       }
     });
     reset.addEventListener('click', function () {
-      if (window.confirm(t('confirmReset'))) action('reset', {});
+      const rows = lanes.map(function (lane) {
+        const counts = ((data.lanes || {})[lane] || {}).counts || {};
+        const summary = outcomes.map(function (key) { return t(key) + ' ' + (counts[key] || 0); });
+        return lane + ' · ' + summary.join(' / ');
+      });
+      const prompt = t('confirmReset') + '\n\n' + t('resetCounts') + '\n' + rows.join('\n');
+      if (window.confirm(prompt)) action('reset', {});
     });
     fieldKeys.forEach(function (key) {
       settings[key].addEventListener('change', function () {

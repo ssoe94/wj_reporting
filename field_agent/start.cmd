@@ -6,7 +6,8 @@ set "WJ_AGENT_HOME=%CD%"
 set "WJ_AGENT_PYTHON=%WJ_AGENT_HOME%\python\python.exe"
 set "WJ_AGENT_DATA=%~1"
 if not defined WJ_AGENT_DATA set "WJ_AGENT_DATA=%WJ_AGENT_HOME%\..\data"
-set "WJ_AGENT_BARCODE_CONFIG=%~2"
+set "WJ_AGENT_APP_CONFIG=%~2"
+set "WJ_AGENT_APP_KIND=%~3"
 set "WJ_AGENT_URL=http://127.0.0.1:8769"
 set "PYTHONNOUSERSITE=1"
 set "PYTHONPATH="
@@ -16,8 +17,17 @@ if not exist "%WJ_AGENT_PYTHON%" (
   exit /b 1
 )
 
-if defined WJ_AGENT_BARCODE_CONFIG (
-  start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769 --barcode-config "%WJ_AGENT_BARCODE_CONFIG%"
+if /I "%WJ_AGENT_APP_KIND%"=="weigh" (
+  if not defined WJ_AGENT_APP_CONFIG (
+    echo A weigh app config file is required.
+    exit /b 1
+  )
+  start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769 --weigh-config "%WJ_AGENT_APP_CONFIG%"
+) else if defined WJ_AGENT_APP_KIND (
+  echo Expected weigh as the optional third argument.
+  exit /b 1
+) else if defined WJ_AGENT_APP_CONFIG (
+  start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769 --barcode-config "%WJ_AGENT_APP_CONFIG%"
 ) else (
   start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769
 )

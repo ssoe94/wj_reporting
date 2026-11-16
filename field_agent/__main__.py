@@ -1,6 +1,7 @@
 """Install and run one field station from a portable folder."""
 
 import argparse
+import json
 from pathlib import Path
 from queue import Full
 import signal
@@ -15,6 +16,8 @@ from .ledger import Ledger
 from .protocol import encode
 from .runtime import Runtime
 from .transport import Transport
+from .weigh.app import make_devices
+from .weigh.settings import load as load_weigh_settings
 
 
 def _feed_stdin(runtime, stop):
@@ -33,16 +36,53 @@ def _feed_stdin(runtime, stop):
                 stop.wait(0.05)
 
 
+def _feed_weigh_stdin(runtime, stop):
+    """Local bounded JSON-lines bench input. It is disabled for real equipment."""
+    app = runtime.weigh
+    while not stop.is_set():
+        raw = sys.stdin.buffer.readline(1025)
+        if not raw:
+            return
+        try:
+            if len(raw) > 1024:
+                raise ValueError
+            item = json.loads(raw.decode("utf-8"))
+            kind = item["type"]
+            if kind == "scale":
+                app.scale.add_weight(item["grams"], item.get("status", "ST"), item.get("mode", "GS"))
+            elif kind == "scan":
+                app.scanner.feed(item["device"], item["barcode"])
+            elif kind == "printer":
+                app.printer.inject(item["outcome"])
+            elif kind == "peel":
+                if type(item["waiting"]) is not bool:
+                    raise ValueError
+                app.printer.set_label_waiting(item["waiting"])
+            else:
+                raise ValueError
+        except (ValueError, KeyError, TypeError, AttributeError, BufferError):
+            print("Field Agent: invalid or full synthetic weigh input; input stopped.", file=sys.stderr)
+            return
+
+
 def _run(args):
     if args.backup_keep < 1 or args.backup_idle < 0 or args.min_free_mib < 0 or not 1 <= args.port <= 65535:
         raise ValueError("Invalid port or backup settings")
+    if args.weigh_fake and not args.weigh_config:
+        raise ValueError("--weigh-fake requires --weigh-config")
+    weigh_settings = load_weigh_settings(args.weigh_config) if args.weigh_config else None
+    if args.weigh_fake and weigh_settings.mode != "test":
+        raise ValueError("Synthetic weigh input requires test mode")
     connection = load_connection(args.data_dir)
     ledger = Ledger(args.data_dir / "ledger.sqlite3", connection.station_id)
     try:
         runtime = Runtime(ledger, Transport(connection.server, connection.token), demo=args.fake_stdin,
                           port=args.port, backup_idle=args.backup_idle, backup_keep=args.backup_keep,
                           min_free_bytes=args.min_free_mib * 1024 * 1024,
-                          barcode_config=args.barcode_config, legacy_barcode_db=args.legacy_barcode_db)
+                          barcode_config=args.barcode_config, legacy_barcode_db=args.legacy_barcode_db,
+                          weigh_settings=weigh_settings,
+                          weigh_devices=make_devices(weigh_settings, fake=True) if args.weigh_fake else None,
+                          legacy_weigh_dbs=tuple(map(Path, args.legacy_weigh_dbs)) if args.legacy_weigh_dbs else None)
         stop = Event()
         for signum in (signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, lambda *_args: stop.set())
@@ -50,6 +90,8 @@ def _run(args):
         try:
             if args.fake_stdin:
                 Thread(name="field-stdin", target=_feed_stdin, args=(runtime, stop), daemon=True).start()
+            if args.weigh_fake:
+                Thread(name="field-weigh-stdin", target=_feed_weigh_stdin, args=(runtime, stop), daemon=True).start()
             print("Field Agent: http://127.0.0.1:{}/".format(runtime.local_ui.port), flush=True)
             stop.wait()
         finally:
@@ -69,6 +111,9 @@ def _args():
     barcode.add_argument("--fake-stdin", action="store_true", help="Record test-only core demo frames from stdin")
     barcode.add_argument("--barcode-config", type=Path, help="Run the barcode reader with a local rules file")
     barcode.add_argument("--legacy-barcode-db", type=Path, help="Read the existing barcode SQLite source without opening COM")
+    barcode.add_argument("--weigh-config", type=Path, help="Run the weight and label app with local rules")
+    barcode.add_argument("--legacy-weigh-dbs", nargs=2, metavar=("SCANS", "PRINT"), help="Read existing weigh SQLite sources")
+    run.add_argument("--weigh-fake", action="store_true", help="Use synthetic weigh devices with test-only JSON-lines input")
     run.add_argument("--backup-idle", type=int, default=60)
     run.add_argument("--backup-keep", type=int, default=30)
     run.add_argument("--min-free-mib", type=int, default=DEFAULT_MIN_FREE // (1024 * 1024))

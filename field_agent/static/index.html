@@ -6,6 +6,7 @@
   <title>현장 에이전트</title>
   <link rel="stylesheet" href="/agent.css">
   <script src="/barcode.js" defer></script>
+  <script src="/weigh.js" defer></script>
   <script src="/agent.js" defer></script>
 </head>
 <body>
@@ -32,14 +33,16 @@
         <div class="barcode-actions">
           <button id="barcode-sound" type="button"></button>
           <button id="barcode-toggle-mode" type="button"></button>
-          <button id="barcode-export" type="button" data-barcode-text="export">CSV 내보내기</button>
-          <button id="barcode-reset" type="button" data-barcode-text="reset">카운터 초기화</button>
         </div>
       </div>
       <p id="barcode-storage-error" role="alert" class="barcode-critical" data-barcode-text="storageError" hidden>저장 실패 · 저장되지 않은 스캔은 집계되지 않습니다.</p>
       <p id="barcode-stale" role="status" class="warning" data-barcode-text="stale" hidden>로컬 연결을 다시 확인하는 중입니다. 표시된 값은 마지막으로 받은 상태입니다.</p>
       <p id="barcode-notice" class="barcode-notice" role="status" hidden></p>
       <div id="barcode-lanes" class="barcode-lanes"></div>
+      <div class="card barcode-actions barcode-record-actions">
+        <button id="barcode-export" type="button" data-barcode-text="export">CSV 내보내기</button>
+        <button id="barcode-reset" type="button" data-barcode-text="reset">카운터 초기화</button>
+      </div>
       <details class="card barcode-settings">
         <summary data-barcode-text="settings">바코드 설정</summary>
         <div class="barcode-form">
@@ -76,6 +79,69 @@
         <p class="barcode-frame-errors muted" hidden></p>
       </section>
     </template>
+    <section id="weigh" class="weigh" aria-labelledby="weigh-title" hidden>
+      <div class="card weigh-header">
+        <div>
+          <h2 id="weigh-title" data-weigh-text="title">중량·라벨·재리딩</h2>
+          <p><span data-weigh-text="activePart">적용 PART</span> <strong id="weigh-active-part">—</strong></p>
+        </div>
+        <p class="badge" id="weigh-mode" hidden></p>
+        <div class="weigh-product">
+          <label><span data-weigh-text="partSelect">제품 / PART</span><select id="weigh-product"></select></label>
+          <button type="button" id="weigh-select" data-weigh-text="applyPart">제품 적용</button>
+        </div>
+      </div>
+      <p id="weigh-storage-error" role="alert" class="barcode-critical" data-weigh-text="storageError" hidden>저장 상태를 확인하세요.</p>
+      <p id="weigh-stale" role="status" class="warning" data-weigh-text="stale" hidden>로컬 연결을 다시 확인하는 중입니다.</p>
+      <p id="weigh-notice" role="status" class="barcode-notice" hidden></p>
+      <div class="weigh-details">
+        <section class="card weigh-measurement" aria-labelledby="weigh-scale-title">
+          <h3 id="weigh-scale-title" data-weigh-text="scale">계량</h3>
+          <strong id="weigh-weight" class="weigh-weight">—</strong>
+          <div class="weigh-badges"><span class="badge" id="weigh-stable">—</span><span class="badge" id="weigh-empty">—</span></div>
+          <h4 data-weigh-text="lastResult">마지막 판정</h4>
+          <p class="weigh-verdict" id="weigh-result" role="status">—</p>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="resultPart">판정 PART</dt><dd id="weigh-result-part">—</dd>
+            <dt data-weigh-text="quantity">수량</dt><dd id="weigh-result-quantity">—</dd>
+            <dt data-weigh-text="resultWeight">판정 중량</dt><dd id="weigh-result-weight">—</dd>
+            <dt data-weigh-text="delta">오차</dt><dd id="weigh-result-delta">—</dd>
+            <dt data-weigh-text="time">시각</dt><dd id="weigh-result-time">—</dd>
+          </dl>
+        </section>
+        <section class="card" aria-labelledby="weigh-queue-title">
+          <h3 id="weigh-queue-title" data-weigh-text="queue">인쇄 큐</h3>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="waiting">대기</dt><dd id="weigh-waiting">—</dd>
+            <dt data-weigh-text="dispatching">전송 중</dt><dd id="weigh-dispatching">—</dd>
+            <dt data-weigh-text="submitted">전송 수락</dt><dd id="weigh-submitted">—</dd>
+            <dt data-weigh-text="uncertain">전송 불확실</dt><dd id="weigh-uncertain">—</dd>
+            <dt data-weigh-text="partial">다열 잔량</dt><dd id="weigh-partial">—</dd>
+            <dt data-weigh-text="peel">라벨 박리</dt><dd id="weigh-peel-state">—</dd>
+          </dl>
+          <p id="weigh-paused" class="warning weigh-paused" role="status" hidden></p>
+          <div class="weigh-actions">
+            <button type="button" id="weigh-resume" data-weigh-text="resume">전송 재개</button>
+            <button type="button" id="weigh-flush" data-weigh-text="flush">잔량 출력</button>
+            <button type="button" id="weigh-peel" data-weigh-text="clearPeel">박리 확인</button>
+          </div>
+          <div id="weigh-uncertain-controls" class="weigh-uncertain-controls" hidden>
+            <p id="weigh-uncertain-label"></p>
+            <label><span data-weigh-text="confirmedQuantity">실제로 확인한 라벨 수</span><input id="weigh-confirmed-quantity" type="number" inputmode="numeric" min="0" step="1"></label>
+            <button type="button" id="weigh-acknowledge" data-weigh-text="acknowledge">불확실 확인 기록</button>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="weigh-reread-title">
+          <h3 id="weigh-reread-title" data-weigh-text="reread">마지막 재리딩</h3>
+          <p class="weigh-verdict" id="weigh-reread-result" role="status">스캔 대기 중</p>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="barcode">바코드</dt><dd id="weigh-reread-barcode">—</dd>
+            <dt data-weigh-text="source">입력 장치</dt><dd id="weigh-reread-device">—</dd>
+            <dt data-weigh-text="time">시각</dt><dd id="weigh-reread-time">—</dd>
+          </dl>
+        </section>
+      </div>
+    </section>
     <div class="details">
       <section class="card" aria-labelledby="outbox-title">
         <h2 id="outbox-title" data-text="outbox">전송</h2>

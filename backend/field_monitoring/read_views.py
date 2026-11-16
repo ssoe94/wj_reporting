@@ -27,7 +27,7 @@ CSV_LIMIT = 10_000
 RESULTS = ('ok', 'ng', 'error', 'info')
 FORMULA_PREFIXES = ('=', '+', '-', '@', '＝', '＋', '－', '＠')
 RESULT_EXCEPTION_TYPES = {
-    'weigh.result': ('weight_outside_limit',),
+    'weigh.result': ('weight_outside_limit', 'weight_at_or_below_zero'),
     'label.dispatched': ('print_uncertain', 'print_rejected_unsent'),
     'vision.cycle': ('operation_not_confirmed', 'vision_incomplete'),
     'device.state': ('vision_device_fault', 'vision_runtime_fault'),

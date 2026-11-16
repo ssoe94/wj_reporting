@@ -74,6 +74,7 @@ class LocalUITests(unittest.TestCase):
             ('/agent.css', 'text/css', b'.device-row'),
             ('/agent.js', 'text/javascript', b"new EventSource('/api/events')"),
             ('/barcode.js', 'text/javascript', b'createBarcodeView'),
+            ('/weigh.js', 'text/javascript', b'createWeighView'),
         ):
             with self.subTest(path=path):
                 response, body = self.request(path=path)
@@ -258,3 +259,70 @@ class LocalUITests(unittest.TestCase):
         self.assertEqual(barcode['lanes']['A']['recent'][0]['status'], 'duplicate')
         self.assertEqual(set(barcode['lanes']), {'A', 'B'})
         self.assertEqual(barcode['alert'], {'seq': 1, 'status': 'duplicate'})
+
+    def test_weigh_snapshot_keeps_evidence_and_omits_private_fields(self):
+        self.snapshot['weigh'] = {
+            'mode': 'production', 'part_no': 'SYNTH-1', 'weight_g': '57.00', 'stable': True, 'empty': False,
+            'products': [{'part_no': 'SYNTH-1', 'name': 'Synthetic', 'template': 'SENSITIVE-SENTINEL'}],
+            'last_result': {'result': 'ng', 'quantity': 1, 'delta_g': '2.50', 'private': 'SENSITIVE-SENTINEL'},
+            'queue': {'paused': True, 'uncertain_ids': ['SYNTH-JOB-1', {'private': 'SENSITIVE-SENTINEL'}],
+                      'uncertain_quantity': 2, 'pause_reason': 'print_uncertain', 'raw': 'SENSITIVE-SENTINEL'},
+            'last_reread': {'status': 'duplicate', 'device': 'W', 'barcode': 'SYNTH-200', 'raw': 'SENSITIVE-SENTINEL'},
+            'private': 'SENSITIVE-SENTINEL',
+        }
+        response, raw = self.request()
+        self.assertEqual(response.status, 200)
+        self.assertNotIn(b'SENSITIVE-SENTINEL', raw)
+        weigh = json.loads(raw)['weigh']
+        self.assertEqual(weigh['weight_g'], '57.00')
+        self.assertTrue(weigh['stable'])
+        self.assertEqual(weigh['last_result'], {'result': 'ng', 'quantity': 1, 'delta_g': '2.50'})
+        self.assertEqual(weigh['queue']['uncertain_ids'], ['SYNTH-JOB-1'])
+        self.assertEqual(weigh['last_reread'], {'status': 'duplicate', 'device': 'W', 'barcode': 'SYNTH-200'})
+
+    def test_weigh_actions_are_loopback_only_and_validate_before_callback(self):
+        calls = []
+
+        def action(name, data):
+            calls.append((name, data))
+            if name == 'resume':
+                raise sqlite3.OperationalError('SENSITIVE-SENTINEL')
+
+        self.ui.stop()
+        self.ui = LocalUI(lambda: self.snapshot, port=0, weigh_action=action).start()
+        self.addCleanup(self.ui.stop)
+        origin = 'http://127.0.0.1:{}'.format(self.ui.port)
+        headers = {'Origin': origin, 'X-WJ-Local': '1', 'Content-Type': 'application/json'}
+
+        def post(name, body, local_headers=headers):
+            return self.request('POST', '/api/weigh/{}/'.format(name), body=body, headers=local_headers)
+
+        route = '/api/weigh/resume/'
+        response, _ = self.request(path=route)
+        self.assertEqual(response.status, 405)
+        self.assertEqual(response.getheader('Allow'), 'POST')
+        self.assertEqual(post('resume', b'{}', dict(headers, Origin='http://bad.example'))[0].status, 403)
+        self.assertEqual(post('resume', b'{}', {'Origin': origin})[0].status, 403)
+        self.assertEqual(post('resume', b'{}', dict(headers, Host='bad.example'))[0].status, 403)
+        for name, body in (
+            ('product', b'{"part_no":""}'), ('product', b'{"part_no":"SYNTH-1","extra":1}'),
+            ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":true}'),
+            ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":-1}'),
+            ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":1.0}'),
+            ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":0,"confirmed_quantity":2}'),
+            ('flush', b'{"quantity":3}'), ('peel', b'{"cleared":false}'),
+        ):
+            with self.subTest(name=name, body=body):
+                self.assertEqual(post(name, body)[0].status, 400)
+        self.assertEqual(calls, [])
+        self.assertEqual(post('product', b'{"part_no":"SYNTH-2"}')[0].status, 200)
+        self.assertEqual(post('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":0}')[0].status, 200)
+        self.assertEqual(post('flush', b'{}')[0].status, 200)
+        self.assertEqual(post('peel', b'{}')[0].status, 200)
+        response, raw = post('resume', b'{}')
+        self.assertEqual(response.status, 503)
+        self.assertNotIn(b'SENSITIVE-SENTINEL', raw)
+        self.assertEqual(calls, [
+            ('product', {'part_no': 'SYNTH-2'}), ('acknowledge', {'job_id': 'SYNTH-JOB-1', 'confirmed_quantity': 0}),
+            ('flush', {}), ('peel', {}), ('resume', {}),
+        ])

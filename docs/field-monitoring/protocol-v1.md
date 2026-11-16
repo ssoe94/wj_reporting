@@ -78,8 +78,8 @@ flowchart LR
 | `backup.completed`, `backup.failed` | 검증을 마친 로컬 백업 또는 실패. `detail.backup_id`와 검사 상태. 백업 경로와 기밀 데이터 제외. |
 | `scan.recorded` | A/B/ANY 바코드 판정 INSERT commit. 바코드, device, 있음이 확인된 제품군/`detail.expected_device` 및 `ref.source_key`. 마지막 초기화 이전 정상 바코드가 같은 모드에서 다시 정상 처리되면 `detail.seen_before_reset=true`를 추가한다. 중앙 예외는 생산 모드의 이 표시를 집계하며 판정은 OK로 유지한다. 단순 입력 오류는 신규 앱 `device.state` 또는 실제로 커밋된 오류 시도로 구분. |
 | `weigh.result` | 한 안정 적재의 PASS/NG 결정 및 지속 기록. `ref.cycle_id`, g의 실제/기준/허용폭, `detail.quantity`, `detail.rule`. 기존 DB는 예약 성공에 딸린 PASS만 복원 가능. 빈 저울·불안정·latched는 시도에서 제외. |
-| `label.reserved` | 시리얼·작업·고정 payload 예약 commit 후 작업당 1건. `ref.job_id`, `ref.cycle_id`(있을 때), `detail.quantity`, `detail.payload_sha256`. 개별 시리얼은 로컬 작업과 연결. |
-| `label.dispatched` | 실제 전송 시도 결과의 commit 후 1건. `ref.attempt_id`, 작업 ID 또는 물리 인쇄 행 ID(`detail.row_id`), 최대 3개 `detail.job_ids`, `detail.quantity`, `detail.delivery_status`. 같은 물리 행의 시도를 회원 작업에 각각 더하지 않는다. |
+| `label.reserved` | 시리얼·작업·고정 payload 예약 commit 후 작업당 1건. `ref.job_id`, `ref.cycle_id`(있을 때), `detail.quantity`, `detail.payload_sha256`. 개별 시리얼은 로컬 작업과 연결. 다열에서 `detail.payload_basis=frozen_label_cells_v1`이면 예약 해시는 고정된 열별 데이터의 해시이며 실제 전송 행 해시는 별도다. |
+| `label.dispatched` | 실제 전송 시도 결과의 commit 후 1건. `ref.attempt_id`, 작업 ID 또는 물리 인쇄 행 ID(`detail.row_id`), 최대 3개 `detail.job_ids`, `detail.quantity`, `detail.delivery_status`. 같은 물리 행의 시도를 회원 작업에 각각 더하지 않는다. 행을 전송할 때 고정한 바이트 해시는 `detail.payload_sha256`에 남긴다. |
 | `label.reread` | 재리딩과 중복/라벨 확인 트랜잭션 commit. 바코드, `ref.job_id`(현장 발급 시), `detail.label_index`, `detail.label_origin=local/external/unknown`, 입력 출처, 기대 장치. 외부 라벨 `ok`는 해당 PC 출력 건의 닫힘으로 집계하지 않는다. |
 | `queue.partial_flush` | 운영자가 잔량 인쇄를 선택한 뒤 물리 행의 `flush_note`와 멤버가 저장된 시점. 행 ID, 실제 라벨 수, 열 수, 허용한 조작 코드. 배치 대기·버튼 눌림 자체는 발행 경계가 아니다. |
 | `vision.cycle` | 백커버 반출 확정 OK/NG 또는 진행 중단 INCOMPLETE가 History에 commit된 때. `ref.cycle_id`(세션 포함 연결), camera/video 출처, 프로필 버전/해시, 증거 ID. 반출 전 `WORK_RECORDED`는 최종 제품 수에서 제외한다. 기존 백커버의 History commit 후 safety checkpoint 교체 전에 중단되면 같은 제품의 확정과 재시작 INCOMPLETE가 모두 남을 수 있다. 원장행 키로 각각 보존하고 제품 단위 충돌을 예외로 표시하여 확정 집계를 보류한다. |
