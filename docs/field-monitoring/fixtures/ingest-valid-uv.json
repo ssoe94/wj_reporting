@@ -1,0 +1,55 @@
+{
+  "contract": "wj.field.v1",
+  "batch_id": "11111111-1111-4111-8111-111111111112",
+  "station_id": "SYNTH-STATION-01",
+  "database_id": "22222222-2222-4222-8222-222222222222",
+  "events": [
+    {
+      "seq": 13,
+      "type": "vision.batch",
+      "occurred_at": "2026-01-02T08:10:01+08:00",
+      "app": "vision_uv",
+      "app_version": "1.0.0",
+      "agent_version": "1.0.0",
+      "config_version": "synthetic-recipe",
+      "mode": "test",
+      "result": "ng",
+      "reason": "uv_batch_fail",
+      "status_raw": "false",
+      "ref": {
+        "batch_id": "SYNTH-UV-13"
+      },
+      "detail": {
+        "slot_count": 3
+      },
+      "products": [
+        {
+          "position": 1,
+          "barcode": "SYNTH-UV-001",
+          "result": "ok",
+          "reasons": [],
+          "point_1_percent": "75.0",
+          "point_2_percent": "82.3"
+        },
+        {
+          "position": 2,
+          "barcode": "SYNTH-UV-002",
+          "result": "ng",
+          "reasons": [
+            "point_1"
+          ],
+          "point_1_percent": "12.1",
+          "point_2_percent": "80.4"
+        },
+        {
+          "position": 3,
+          "barcode": "SYNTH-UV-003",
+          "result": "ok",
+          "reasons": [],
+          "point_1_percent": "87.4",
+          "point_2_percent": "82.9"
+        }
+      ]
+    }
+  ]
+}

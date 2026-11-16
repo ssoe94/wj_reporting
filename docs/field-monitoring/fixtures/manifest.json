@@ -1,0 +1,116 @@
+{
+  "cases": [
+    {
+      "name": "ingest-valid-weigh",
+      "endpoint": "ingest",
+      "file": "ingest-valid-weigh.json",
+      "expected": {
+        "status": 200,
+        "ack": {
+          "contract": "wj.field.v1",
+          "batch_id": "11111111-1111-4111-8111-111111111111",
+          "station_id": "SYNTH-STATION-01",
+          "database_id": "22222222-2222-4222-8222-222222222222",
+          "accepted": 1,
+          "duplicates": 0,
+          "max_seq": 12
+        }
+      }
+    },
+    {
+      "name": "ingest-valid-uv",
+      "endpoint": "ingest",
+      "file": "ingest-valid-uv.json",
+      "expected": {
+        "status": 200,
+        "ack": {
+          "contract": "wj.field.v1",
+          "batch_id": "11111111-1111-4111-8111-111111111112",
+          "station_id": "SYNTH-STATION-01",
+          "database_id": "22222222-2222-4222-8222-222222222222",
+          "accepted": 1,
+          "duplicates": 0,
+          "max_seq": 13
+        }
+      }
+    },
+    {
+      "name": "ingest-invalid-seq-type",
+      "endpoint": "ingest",
+      "file": "ingest-invalid-seq-type.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    },
+    {
+      "name": "ingest-invalid-naive-time",
+      "endpoint": "ingest",
+      "file": "ingest-invalid-naive-time.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    },
+    {
+      "name": "ingest-invalid-uv-position",
+      "endpoint": "ingest",
+      "file": "ingest-invalid-uv-position.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    },
+    {
+      "name": "ingest-invalid-uv-length",
+      "endpoint": "ingest",
+      "file": "ingest-invalid-uv-length.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    },
+    {
+      "name": "ingest-invalid-contract",
+      "endpoint": "ingest",
+      "file": "ingest-invalid-contract.json",
+      "expected": {
+        "status": 400,
+        "code": "contract_unsupported"
+      }
+    },
+    {
+      "name": "heartbeat-valid",
+      "endpoint": "heartbeat",
+      "file": "heartbeat-valid.json",
+      "expected": {
+        "status": 200,
+        "ack": {
+          "contract": "wj.field.v1",
+          "station_id": "SYNTH-STATION-01",
+          "database_id": "22222222-2222-4222-8222-222222222222",
+          "heartbeat_id": "33333333-3333-4333-8333-333333333333",
+          "current": true
+        }
+      }
+    },
+    {
+      "name": "heartbeat-invalid-pending",
+      "endpoint": "heartbeat",
+      "file": "heartbeat-invalid-pending.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    },
+    {
+      "name": "heartbeat-invalid-naive-time",
+      "endpoint": "heartbeat",
+      "file": "heartbeat-invalid-naive-time.json",
+      "expected": {
+        "status": 400,
+        "code": "invalid_payload"
+      }
+    }
+  ]
+}

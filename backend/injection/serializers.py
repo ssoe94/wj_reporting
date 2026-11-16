@@ -364,6 +364,7 @@ class UserSerializer(serializers.ModelSerializer):
     is_staff = serializers.BooleanField(read_only=True)
     is_superuser = serializers.BooleanField(read_only=True)
     can_access_hr = serializers.SerializerMethodField()
+    can_access_field_monitoring = serializers.SerializerMethodField()
     groups = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     is_using_temp_password = serializers.SerializerMethodField()
@@ -373,7 +374,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'is_staff', 'is_superuser', 'can_access_hr', 'groups',
+            'is_staff', 'is_superuser', 'can_access_hr', 'can_access_field_monitoring', 'groups',
             'permissions',
             'is_using_temp_password', 'password_reset_required',
             'profile',
@@ -388,6 +389,10 @@ class UserSerializer(serializers.ModelSerializer):
     def get_can_access_hr(self, obj):
         from analytics.hr_permissions import can_access_hr
         return can_access_hr(obj)
+
+    def get_can_access_field_monitoring(self, obj):
+        from field_monitoring.permissions import can_view_field_monitoring
+        return can_view_field_monitoring(obj)
 
     def _get_profile(self, obj):
         try:

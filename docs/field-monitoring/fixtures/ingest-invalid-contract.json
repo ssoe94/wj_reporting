@@ -1,0 +1,36 @@
+{
+  "contract": "wj.field.v999",
+  "batch_id": "11111111-1111-4111-8111-111111111117",
+  "station_id": "SYNTH-STATION-01",
+  "database_id": "22222222-2222-4222-8222-222222222222",
+  "events": [
+    {
+      "seq": 12,
+      "type": "weigh.result",
+      "occurred_at": "2026-01-02T08:10:00+08:00",
+      "app": "weigh_label",
+      "app_version": "1.0.0",
+      "agent_version": "1.0.0",
+      "config_version": "synthetic-r1",
+      "mode": "test",
+      "result": "ok",
+      "reason": "weight_within_limit",
+      "status_raw": "accepted",
+      "part_no": "SYNTH-PART",
+      "device": "scale",
+      "ref": {
+        "cycle_id": "SYNTH-CYCLE-12"
+      },
+      "measure": {
+        "value": "101.2",
+        "unit": "g",
+        "expected": "100.0",
+        "tolerance": "5.0"
+      },
+      "detail": {
+        "quantity": 1,
+        "rule": "unit_5pct_sqrt_quantity_v1"
+      }
+    }
+  ]
+}

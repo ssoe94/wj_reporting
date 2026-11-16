@@ -72,6 +72,7 @@ ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host]
 
 # First-password activation is separate from existing-user MES connections.
 ACCOUNT_ACTIVATION_ENABLED = config('ACCOUNT_ACTIVATION_ENABLED', default=False, cast=bool)
+FIELD_MONITORING_CLOCK_HOLD_SECONDS = config('FIELD_MONITORING_CLOCK_HOLD_SECONDS', default=3600, cast=int)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -104,6 +105,7 @@ INSTALLED_APPS = [
     'ai_core',
     'lgent',
     'analytics',
+    'field_monitoring',
     'mes_oauth',
 ]
 if ACCOUNT_ACTIVATION_ENABLED:

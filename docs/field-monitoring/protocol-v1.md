@@ -1,6 +1,31 @@
 # WJ 현장 앱 프로토콜 v1
 
-2026-11-16 · 단계 A에서 확정한 구현 기준. 모든 새 현장 앱은 이 규약에 따라 관측 기록을 전송한다. 배포·현장 수락은 단계 H에서 별도로 확인한다. 예시의 장비, 값, 계정은 합성 데이터다.
+2026-11-16 · 현장 앱 관측 및 전송 규격. 예시의 장비, 값, 계정은 합성 데이터다.
+
+## 한눈에 보기
+
+- 현장 프로그램은 인터넷 단절 중에도 장치 제어·판정·출력·로컬 기록을 계속한다.
+- 에이전트는 장치와 원장을 소유하고 브라우저는 같은 PC의 loopback에서 실행한다.
+- 작업 이벤트는 저장 확정 후 생성하고, 요청 본문 그대로 보존한 묶음을 별도 송신기로 보낸다.
+- 원장 세대와 순번으로 이벤트를 식별한다. ACK를 잃으면 같은 묶음을 재전송한다.
+- 기계 인증은 장비별 토큰을 사용한다. 사람의 조회·등록 권한은 서버에서 확인한다.
+- heartbeat는 최신 상태다. 접속, 장치 입력, 생산 작업은 각각 자체 기록으로 확인한다.
+- 업무일은 발생 시각의 Asia/Shanghai 08:00 기준이다. 큰 시계 이상은 검색에서 확인할 수 있다.
+- 운영 지표에는 유효한 생산 모드 이벤트만 넣는다. 원천 판정과 실물 검증은 서로 다른 증거다.
+
+```mermaid
+flowchart LR
+    A["장치 / 현장 앱"] -->|"저장 확정"| B["로컬 원장"]
+    B --> C["송신 대기열"]
+    C -->|"이벤트 묶음"| D["WJ 서버"]
+    D -->|"묶음 ACK"| C
+    A -->|"현재 상태"| E["heartbeat 송신"]
+    E --> D
+    B --> F["현장 브라우저"]
+    D --> G["현장 모니터링"]
+```
+
+서버 구현은 [서버 설계](server-design.md), 공유 예제와 기대 응답은 [fixture 목록](fixtures/manifest.json)에서 확인한다.
 
 ## 적용 범위
 
@@ -14,7 +39,7 @@
 - 이벤트 키는 `(station_id, database_id, seq)`. `seq`는 세대 안에서 DB가 배정한 양의 단조 증가 정수(최대 `9007199254740991`)다. 전송 배치 안에서는 오름차순이며 유일하다. 롤백 등으로 생긴 간극을 손실 건수로 해석하지 않는다. 서로 다른 배치의 도착 순서는 바뀔 수 있다. 바코드, 실물 번호, 공정 참조는 검색·상관용이다.
 - `batch_id`는 송신기가 생성하고 원장에 보존한 UUID. 배치 생성 시 UTF-8 JSON 바이트를 확정하고, 재시도 때 같은 바이트를 전송한다. 서버는 해당 station과 batch ID에 묶인 요청 SHA-256과 최초 ACK를 저장한다. 같은 ID와 같은 바이트는 최초 ACK를 반환한다. 다른 바이트면 `batch_conflict`로 묶음 전체를 거절한다.
 - 새로운 batch 안에 기존 이벤트 키가 있으면 검증된 이벤트 객체의 의미를 비교한다. 객체 키 순서만 다른 경우는 같으며 문자열, 값, 형식 및 보존된 확장 필드가 다른 경우 `event_conflict`다. 비교용 파싱은 중복 객체 키, 비표준 수(`NaN`, `Infinity`), 부동소수 JSON 수를 거절한다. 측정 소수는 문자열로 기록한다. 이벤트 키 충돌은 원장 복구 또는 이중 송신 여부를 확인한다.
-- UTF-8 `application/json`, 압축 없는 본문 최대 512 KiB(524,288 bytes), ingest는 1–200건, heartbeat도 같은 바이트 제한. 빈 배열, 중복 키, 잘못된 타입, 200건 초과는 받지 않는다. 장비 식별자는 ASCII 1–64자, 버전·코드 최대 64자, 원천 상태/품번/시리얼/참조 값 최대 128자, 바코드 최대 UTF-8 256 bytes. 초과 원천값은 로컬에 보관하고 원격에는 허용 범위의 오류 코드와 `source_value_omitted`를 남긴다. 업무 식별값을 조용히 자르지 않는다.
+- UTF-8 `application/json`, 압축 없는 본문 최대 512 KiB(524,288 bytes), ingest는 1–200건, heartbeat도 같은 바이트 제한. 빈 배열, 중복 키, 잘못된 타입, 200건 초과는 받지 않는다. 장비 식별자는 ASCII 영문·숫자·밑줄·하이픈 1–64자, 버전·코드 최대 64자, 원천 상태/품번/시리얼/참조 값 최대 128자, 바코드 최대 UTF-8 256 bytes. 초과 원천값은 로컬에 보관하고 원격에는 허용 범위의 오류 코드와 `source_value_omitted`를 남긴다. 업무 식별값을 조용히 자르지 않는다.
 - `detail`은 UTF-8 JSON 객체 최대 2 KiB(2,048 bytes), 중첩 깊이 최대 4, 텍스트는 명시한 항목만 포함. `products`와 `evidence`는 아래 스키마의 별도 제한을 받는다. 익명화·저장 정책은 운영 활성화 전에 승인한다. 로그에는 토큰, 바코드 원문, 본문, 로컬 절대경로, 함부로 복사된 장비 설정을 남기지 않는다.
 
 ## 이벤트 필드
@@ -23,7 +48,7 @@
 | --- | --- |
 | `seq`, `type`, `occurred_at` | 필수. 이벤트 순번, 아래 이벤트 유형, 오프셋이 있는 ISO 8601 발생 시각(최대 ms). 표준 송신 표현은 `+08:00`. `received_at`은 서버 기록. |
 | `app` | 필수. `barcode`, `weigh_label`, `vision_backcover`, `vision_capture`, `vision_uv`. 새 앱은 서버와 합의한 코드를 등록한다. |
-| `app_version`, `agent_version`, `config_version` | 앱 버전, 송신 에이전트 버전, 판정에 쓴 설정의 버전/해시. 새 앱의 판정 이벤트는 모두 필수. 기존 기록에서 알 수 없는 값에는 null과 수집 출처를 명시한다. |
+| `app_version`, `agent_version`, `config_version` | 앱 버전, 송신 에이전트 버전, 판정에 쓴 설정의 버전/해시. 새 앱의 판정 이벤트는 모두 필수. 기존 기록에서 알 수 없는 값에는 null과 원천 참조(`ref.source_key`)를 명시한다. |
 | `mode`, `result`, `reason`, `status_raw` | 모드, `ok/ng/error/info`, 아래 안정 코드, 원천 상태값. 상태가 기록된 경우 raw 보존. `ok`의 의미는 이벤트 유형으로 한정된다. |
 | `part_no`, `barcode`, `serial`, `device` | 해당 시 기입. `device`는 물리 입력(`A/B/W/KEYBOARD/scale/printer/camera` 등)이다. 과거 호환 A/B 슬롯은 `detail.legacy_slot`에 보존하고 물리 입력을 모르면 null. 활성이 증명되지 않은 품번·장치·코드를 추정해서 채우지 않는다. |
 | `ref` | 해당 시 `cycle_id`, `job_id`, `batch_id`, `pair_id`, `attempt_id`, `parent_attempt_id`, `source_key` 등을 사용. 최대 8개 키. 라벨은 작업 ID와 `detail.label_index`, 재인쇄·재검사는 새 attempt와 부모 참조. `source_key`는 원천 종류·세대·원천 ID를 연결하는 안정 키다. |
@@ -33,7 +58,12 @@
 
 `mode`는 `production/test/demo/preview/manual`이다. 기존 자료에서 증거가 모자라면 어댑터만 `unknown`으로 보낸다. 운영 조건·설정이 확인된 로컬 실작업만 `production`이다. 화면 버튼, 수기 입력, 검증된 실운영이라는 개념은 별개다. 수동 입력·외부 배정 우회는 `manual`로 기록하고 카메라 영상 replay는 `test` 또는 `demo`다. UV의 수동 시운전도 파일럿 인수 전 `manual`이다. 물리 스캐너가 `KEYBOARD`로 들어왔다는 이유로 모드를 추정하지 않는다. 동일 앱에서 모드가 바뀌면 `mode.changed`를 남긴다.
 
-서버는 Asia/Shanghai 기준으로 발생 시각의 08:00부터 다음 날 08:00 직전까지를 업무일로 계산한다. 예를 들어 `2026-01-02T07:59:59+08:00`는 1월 1일, `08:00:00`는 1월 2일이다. 레거시 naive 시간은 현장 시차 설정이 확인된 경우에만 오프셋을 붙이고 `detail.time_basis=legacy_local`을 남긴다. 시차 근거가 없으면 adapter에 보류한다. 문법상 유효하나 수신 시각보다 5분 넘게 미래이거나 최근의 최신 heartbeat에서 수신 시각과 PC 시각의 차이가 절댓값 5분을 초과한 상태가 확인되면 `clock_suspect`를 서버 메타로 저장한다. 지연된 이벤트에는 새 발생 시각을 붙이지 않는다. 의심 시각의 이벤트는 검토 대상으로 표시하고 자동 일 집계에서 보류한다. 의심 해제는 데이터 정정 기록 또는 근거에 바탕을 둔 별도 정책으로 처리한다.
+서버는 Asia/Shanghai 기준으로 발생 시각의 08:00부터 다음 날 08:00 직전까지를 업무일로 계산한다. 예를 들어 `2026-01-02T07:59:59+08:00`는 1월 1일, `08:00:00`는 1월 2일이다. 레거시 naive 시간은 현장 시차 설정이 확인된 경우에만 오프셋을 붙이고 `detail.time_basis=legacy_local`을 남긴다. 시차 근거가 없으면 어댑터에서 보류한다.
+
+- 업무일은 수신한 `occurred_at`으로 계산한다. 서버는 발생 시각을 보정하지 않는다. `received_at`은 서버가 따로 기록한다.
+- heartbeat의 `client_at - received_at`을 초로 계산한다. 양수면 PC 시계가 앞선다. 네트워크 지연이 섞인 추정값이다. 이벤트 수신 때 마지막 heartbeat의 추정값을 `clock_offset_seconds`에 고정한다. heartbeat가 없으면 null이다.
+- 추정값의 절댓값이 5분을 넘으면 PC 시계차 경고를 표시한다. 경고만 있는 이벤트는 해당 업무일 집계에 포함된다. 현장 에이전트 화면에도 경고를 표시한다.
+- 발생 시각이 수신 시각보다 5분 넘게 미래이거나, 시계차 절댓값이 서버 설정값(기본 60분)을 넘으면 `clock_suspect`로 표시한다. 두 조건 중 하나에 해당하는 이벤트는 집계에서 보류하고 기록 검색에 표시한다.
 
 ## 이벤트 발행 경계와 reason 매핑
 
@@ -55,9 +85,9 @@
 | `vision.cycle` | 백커버 반출 확정 OK/NG 또는 진행 중단 INCOMPLETE가 History에 commit된 때. `ref.cycle_id`(세션 포함 연결), camera/video 출처, 프로필 버전/해시, 증거 ID. 반출 전 `WORK_RECORDED`는 최종 제품 수에서 제외한다. 기존 백커버의 History commit 후 safety checkpoint 교체 전에 중단되면 같은 제품의 확정과 재시작 INCOMPLETE가 모두 남을 수 있다. 원장행 키로 각각 보존하고 제품 단위 충돌을 예외로 표시하여 확정 집계를 보류한다. |
 | `capture.pair` | 앞·뒤 두 sidecar가 모두 보존된 쌍의 `complete`, 또는 재시작 등으로 쌍 누락이 확정된 `incomplete`. `ref.pair_id`, 앞/뒤 evidence, `detail.assignment_source`와 당시 배정 품번(있을 때). |
 | `capture.single` | 단독 촬영 sidecar의 최종 publish. `detail.capture_id`, evidence 및 당시 배정 출처. 쌍 완료 대수에서 제외. |
-| `vision.batch` | UV 임시 폴더에서 최종 폴더 rename 완료 후 한 배치 1건. `ref.batch_id`, recipe 버전, `products`는 현재 1–10 범위 위치가 유일한 **10개** 객체. 각 `{position, barcode, result, reasons, point_1_percent, point_2_percent}`로 `reasons` 최대 5개, 측정값은 0–100 십진 문자열. 품목·배치·제품 수를 분리. 키 충돌 없이 같은 배치 재검사는 새 attempt만 만든다. |
+| `vision.batch` | UV 임시 폴더에서 최종 폴더 rename 완료 후 한 배치 1건. `ref.batch_id`, recipe 버전, `detail.slot_count`는 1–16의 정수. `products`는 정확히 그 수의 객체로, 각 `position`은 1부터 `slot_count`까지 한 번씩 나타난다. 기존 10칸 앱은 10을 보낸다. 각 `{position, barcode, result, reasons, point_1_percent, point_2_percent}`로 `reasons` 최대 5개, 측정값은 0–100 십진 문자열. 품목·배치·제품 수를 분리. 키 충돌 없이 같은 배치 재검사는 새 attempt만 만든다. |
 
-원천 상태는 아래를 기본 매핑으로 쓴다. 안정 reason은 번역하거나 상세 메시지에서 만들지 않는다. 새 코드가 필요하면 같은 유형에서 확장하고 다음 버전의 매핑에 기록한다. 레거시의 알 수 없는 상태는 `info/source_status_unknown`으로 분리한다.
+원천 상태는 아래를 기본 매핑으로 쓴다. 안정 reason은 번역하거나 상세 메시지에서 만들지 않는다. 새 코드가 필요하면 같은 유형에서 확장하고 호환 규격에 기록한다. 레거시의 알 수 없는 상태는 `info/source_status_unknown`으로 분리한다.
 
 | 앱·원천 상태 | `result/reason` |
 | --- | --- |
@@ -87,7 +117,7 @@
 
 ## API와 인증
 
-운영은 HTTPS. 테스트용 HTTP는 격리된 loopback fixture에만 사용한다. 장비는 `Authorization: WJField <token>` 전용 헤더를 사용하며, JWT 사용자 인증과 분리한다. 등록 시 서버가 충분히 무작위인 토큰(예: 32바이트)을 한 번만 반환한다. 공개 키 ID로 토큰 레코드를 찾고 서버에는 비밀값의 해시만 저장해 시간 일정 비교를 수행한다. 토큰은 한 station에 묶고 요청 station과 일치해야 한다. 폐기·재발급 이력을 남기고 폐기한 토큰은 데이터나 heartbeat를 변경할 수 없다. 일반 사용자 요청에 토큰과 해시가 노출되지 않게 한다. 송신기는 redirect를 따르지 않는다.
+운영은 HTTPS. 테스트용 HTTP는 격리된 loopback fixture에만 사용한다. 장비는 `Authorization: WJField <key_id>.<secret>` 전용 헤더를 사용하며, JWT 사용자 인증과 분리한다. 등록 시 서버가 충분히 무작위인 토큰(예: 32바이트)을 한 번만 반환한다. 공개 키 ID로 토큰 레코드를 찾고 서버에는 비밀값의 해시만 저장해 시간 일정 비교를 수행한다. 토큰은 한 station에 묶고 요청 station과 일치해야 한다. 폐기·재발급 이력을 남기고 폐기한 토큰은 데이터나 heartbeat를 변경할 수 없다. 일반 사용자 요청에 토큰과 해시가 노출되지 않게 한다. 송신기는 redirect를 따르지 않는다.
 
 `POST /api/field/v1/ingest/` 요청 예시.
 
@@ -126,14 +156,16 @@
 
 송신기는 HTTP 200 + JSON, `contract/batch_id/station_id/database_id`, 정수 타입과 `accepted >= 0`, `duplicates >= 0`, `accepted + duplicates == events.length`, `max_seq == 이 묶음의 마지막 seq`를 모두 확인한다. `max_seq`는 서버의 전역 커서가 아니다. 일치하면 로컬에서 해당 묶음만 ACK 처리한다. 같은 ID의 정확한 재시도는 최초 ACK 그대로 반환하므로 새 이벤트가 다시 증가하지 않는다. 다른 배치의 동일 이벤트는 `duplicates`에 반영한다.
 
-`POST /api/field/v1/heartbeat/`는 시작할 때, 기본 60초마다, 상태가 바뀌면 디바운스해 보낸다. 응답은 수신을 확인한다. 이벤트 ACK로 처리할 수 없다. 이벤트 묶음처럼 오래된 heartbeat를 큐에 쌓아 재생하지 않는다. 단절 후에는 최신 상태를 만든다. 한 station에서 관측 송신기는 하나다. `session_epoch`는 station에 바인딩된 송신 상태에서 재시작마다 영속적으로 1 증가하고 `heartbeat_seq`는 그 세션에서 매 전송마다 증가한다. 서버는 자격 세대와 이 두 순번의 순서로 최신 여부를 판정한다. 같은 순번·동일 heartbeat의 반복 및 이전 순번의 도착은 최근 접속 시각을 갱신하지 않는다. 동일 순번에 다른 ID/내용은 `409 heartbeat_conflict`, 카운터 복원 불가 시 station 자격을 회전해 새 자격 세대로 시작한다. 서버는 시계 추정과 무관하게 마지막 최신 상태와 수신 시각을 보존한다.
+`POST /api/field/v1/heartbeat/`는 시작할 때, 기본 60초마다, 상태가 바뀌면 디바운스해 보낸다. 응답은 이 상태를 받았음을 확인한다. 단절 중 heartbeat를 큐에 쌓지 않고 복구 후 최신 상태를 만든다. 이벤트의 묶음 ACK는 별도로 확인한다.
+
+서버는 station별로 수신 시각(`received_at`)이 최신인 스냅샷을 저장한다. `session_id`와 세션별 `heartbeat_seq`는 진단에 사용한다. 같은 station에서 10분 안에 다른 세션으로 전환되었다가 이전 세션이 다시 수신되는 경우(예: A→B→A), `duplicate_sender` 경고를 표시하고 스냅샷은 수신한다. 정상적인 한 번의 재시작(A→B)으로는 경고를 만들지 않는다.
 
 ```json
 {
   "contract": "wj.field.v1", "station_id": "SYNTH-STATION-01",
   "database_id": "22222222-2222-4222-8222-222222222222",
   "heartbeat_id": "33333333-3333-4333-8333-333333333333",
-  "session_id": "44444444-4444-4444-8444-444444444444", "session_epoch": 2, "heartbeat_seq": 3,
+  "session_id": "44444444-4444-4444-8444-444444444444", "heartbeat_seq": 3,
   "started_at": "2026-01-02T08:00:00+08:00", "client_at": "2026-01-02T08:11:00+08:00", "agent_version": "1.0.0",
   "apps": [{"app": "weigh_label", "version": "1.0.0", "mode": "test", "state": "running", "last_work_at": "2026-01-02T08:10:00+08:00"}],
   "devices": [{"app": "weigh_label", "device": "scale", "state": "connected", "last_input_at": "2026-01-02T08:10:00+08:00"}],
@@ -151,12 +183,12 @@
 }
 ```
 
-장비와 앱 목록은 각각 최대 64개와 16개, 모르는 리소스와 마지막 수신은 null. `coverage`는 `known/partial/unknown`이며 `known`은 해당 에이전트 원장의 관측 범위다. `outbox.state`는 `ready/backoff/blocked/storage_pressure`, 장치는 `connected/disconnected/fault/unknown`, 앱은 `running/stopped/fault/unknown`. heartbeat는 연결 증거이며 현장 생산량 집계에는 커밋 이벤트가 필요하다. HTTP 수신 시각에서 PC 시각을 비교한 시계차는 네트워크 지연을 포함한 추정치로 표시한다.
+장비와 앱 목록은 각각 최대 64개와 16개, 모르는 리소스와 마지막 수신은 null. `coverage`는 `known/partial/unknown`이며 `known`은 해당 에이전트 원장의 관측 범위다. `outbox.state`는 `ready/backoff/blocked/storage_pressure`, 장치는 `connected/disconnected/fault/unknown`, 앱은 `running/stopped/fault/unknown`. heartbeat는 연결 증거이며 현장 생산량 집계에는 커밋 이벤트가 필요하다. 응답의 `received_at`은 서버 시각이며 현장 화면의 시계차 추정에 사용할 수 있다. `current`는 받은 스냅샷이 최신본인지 표시한다.
 
 | 응답 | 송신 처리 |
 | --- | --- |
 | `408/425/429/5xx`, 네트워크 실패 | 동일 묶음 유지. 지수 backoff + jitter, 최초 기준 2초·최대 기준 300초. 유효한 `Retry-After`의 초 또는 HTTP date보다 먼저 재개하지 않는다. |
-| `400` (`invalid_payload`, `contract_unsupported`), `409` (`batch_conflict`, `event_conflict`, `heartbeat_conflict`), `413` (`payload_too_large`), `415` (`unsupported_media_type`) | 해당 묶음 보류. 응답은 최소화한 `code`, 필요 시 `event_index`. 원인 처리 뒤 합의된 재구성으로 새 batch ID를 발급할 수 있으며, 동일 이벤트 키에 내용을 덮어쓰지 않는다. |
+| `400` (`invalid_payload`, `contract_unsupported`), `409` (`batch_conflict`, `event_conflict`), `413` (`payload_too_large`), `415` (`unsupported_media_type`) | 해당 묶음 보류. 응답은 최소화한 `code`, 필요 시 `event_index`. 원인 처리 뒤 합의된 재구성으로 새 batch ID를 발급할 수 있으며, 동일 이벤트 키에 내용을 덮어쓰지 않는다. |
 | `401` (`invalid_token`), `403` (`station_denied`), `404`, 그 밖의 영구 4xx | 자동 재전송 중지, 로컬에 오류 기록. 정상 자격이 있는 경우만 가능한 heartbeat에 사유를 포함한다. |
 | `3xx`, 예상 밖 2xx, invalid/mismatched ACK | 영구 확인 대기. HTTP 성공만으로 로컬에서 지우지 않는다. |
 
@@ -177,10 +209,3 @@
 - [ ] ACK 유실, 같은 batch 재송신, 다른 batch의 같은 이벤트, 키 충돌, 429와 5xx, 영구 거절, 불일치 ACK에서 중복 집계와 원장 손실이 없다.
 - [ ] 업무일 08:00 경계, 미래 시계, 재전송 지연, preview/demo/manual/unknown, 미완료·부분출력·불확실 상태의 집계가 예상과 같다.
 - [ ] 토큰 격리/폐기, loopback 접근 제한, payload 제한, 로그/CSV 보안, 수집량과 CPU/RSS/디스크/처리 지연의 현장 시험을 통과한다.
-
-## 단계 B 구현 제안
-
-- 신규 Django 앱 `field_monitoring`. 최초 additive migration에 `FieldStation`, 장비 자격·회수 이력, `FieldIngestBatch`(`station,batch_id` unique), `FieldEvent`(`station,database_id,seq` unique), `FieldStationHeartbeat`(station별 최신 상태)를 추가한다. 이벤트에는 원천 JSON과 typed filter 필드를 둔다. 인덱스는 `(station,business_date,occurred_at)`, `(business_date,app,result)`, 제한된 품번/바코드/시리얼 정확 검색부터 사용한다. 사용량을 확인해 추가한다. MES·기존 현장 원장과 운영 DB 데이터 이관은 별도 결정한다.
-- 신규 ingest/heartbeat, JWT `GET /api/field/v1/{overview,exceptions,events}/` 및 제한된 CSV, superuser `POST /api/field/v1/stations/`와 등록/회수/회전 액션. 최근 결과·접속·장치 입력·송신 지연을 분리 표시한다. `mode=production`과 검증된 시간/수집 범위에서만 생산 시도 지표를 만든다. MES shot은 참고이며 검사 모집단은 별도 근거로 확인한다. 분모가 없으면 누락률과 검사 정확성은 미확인으로 표시한다.
-- 조회는 활성 superuser 및 명시적으로 승인된 사출 운영 조회 권한으로 시작한다. 현장 단말은 사람 API에서 거부하고 station 등록·회수는 활성 superuser로 제한한다. 경로 권한과 서버 조회 권한을 일치시킨다. 기존 [현장 기록 집계](../../backend/analytics/field_operations.py)는 MES·수기 체크포인트의 업무일/검증 패턴 참고용. [AI 토큰 권한](../../backend/ai_core/views.py)의 사람-기계 분리 원칙을 따르고 공통 설정 토큰 대신 PC별 자격을 쓴다.
-- [사출 메뉴](../../frontend/src/App.tsx) 아래 [준비 페이지](../../frontend/src/pages/injection/FieldMonitoringPage.tsx)에 현황·예외·기록검색·등록을 제공한다. 기존 `/field` 단말 및 `/mes/monitoring` 설비 모니터링은 각자의 목적을 유지한다. 단계 B의 수락은 격리 Django·프런트에서 가짜 장비로 인증·재전송·중복·ACK 및 한 업무일 검색까지 확인한다.

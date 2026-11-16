@@ -24,6 +24,7 @@ api_urlpatterns = [
     path('api/production/', include('production.urls')),
     path('api/ai/', include('ai_core.urls')),
     path('api/analytics/', include('analytics.urls')),
+    path('api/field/v1/', include('field_monitoring.urls')),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.health_check, name='health_check_no_slash'),
     path('api/signup-request/', SignupRequestView.as_view(), name='signup_request'),

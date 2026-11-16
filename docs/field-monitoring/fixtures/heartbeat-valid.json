@@ -1,0 +1,42 @@
+{
+  "contract": "wj.field.v1",
+  "station_id": "SYNTH-STATION-01",
+  "database_id": "22222222-2222-4222-8222-222222222222",
+  "heartbeat_id": "33333333-3333-4333-8333-333333333333",
+  "session_id": "44444444-4444-4444-8444-444444444444",
+  "heartbeat_seq": 3,
+  "started_at": "2026-01-02T08:00:00+08:00",
+  "client_at": "2026-01-02T08:11:00+08:00",
+  "agent_version": "1.0.0",
+  "apps": [
+    {
+      "app": "weigh_label",
+      "version": "1.0.0",
+      "mode": "test",
+      "state": "running",
+      "last_work_at": "2026-01-02T08:10:00+08:00"
+    }
+  ],
+  "devices": [
+    {
+      "app": "weigh_label",
+      "device": "scale",
+      "state": "connected",
+      "last_input_at": "2026-01-02T08:10:00+08:00"
+    }
+  ],
+  "outbox": {
+    "pending_count": 0,
+    "oldest_occurred_at": null,
+    "last_ack_at": "2026-01-02T08:10:02+08:00",
+    "state": "ready",
+    "last_error_code": null,
+    "coverage": "known"
+  },
+  "resources": {
+    "disk_free_bytes": 4000000000,
+    "ledger_bytes": 102400,
+    "cpu_pct": "0.8",
+    "rss_bytes": 33554432
+  }
+}
