@@ -190,7 +190,10 @@ export function FieldExceptionsView({ rows, onSearch, tx }: {
         </span>
         <span className={`row-start-2 min-w-0 break-words text-sm ${muted} sm:row-start-auto`}>
           <span className="block">{row.display_name} · {row.station_id}</span>
-          <span className="block">{row.filters.app ? fieldText(row.filters.app, tx) : tx('PC 공통', '电脑通用')}</span>
+          <span className="block">
+            {row.filters.app ? fieldText(row.filters.app, tx) : tx('PC 공통', '电脑通用')}
+            {row.filters.mode && row.filters.mode !== 'production' && ` · ${fieldText(row.filters.mode, tx)}`}
+          </span>
         </span>
         <span className="col-start-2 row-start-1 tabular-nums text-sm sm:col-start-auto sm:row-start-auto">
           {row.count} <span className={muted}>{tx('건', '条')}</span> <span aria-hidden>›</span>
@@ -255,7 +258,7 @@ function FieldEventOutcome({ row, tx }: { row: FieldEvent; tx: Tx }) {
 }
 
 function FieldEventIdentifiers({ row }: { row: FieldEvent }) {
-  const refs = [...new Set([row.ref?.job_id, row.ref?.cycle_id].filter((id): id is string => typeof id === 'string'))];
+  const refs = [...new Set([row.ref?.job_id, row.ref?.cycle_id, row.ref?.pair_id, row.ref?.batch_id, row.ref?.capture_id].filter((id): id is string => typeof id === 'string'))];
   return <div className="break-all font-mono">
     {row.barcode && <div>{row.barcode}</div>}
     {refs.length > 0 && <div className={muted}>{refs.join(' · ')}</div>}

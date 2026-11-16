@@ -17,6 +17,7 @@ from .launcher import prepare_layout, save_layout
 from .protocol import encode
 from .runtime import Runtime
 from .transport import Transport
+from .vision_sources import load_sources, prepare_sources, save_sources
 from .weigh.app import make_devices
 from .weigh.settings import load as load_weigh_settings
 from .weigh.serial_authority import confirm_no_issuance, local_admin_actor
@@ -76,6 +77,7 @@ def _run(args):
     if args.weigh_fake and weigh_settings.mode != "test":
         raise ValueError("Synthetic weigh input requires test mode")
     connection = load_connection(args.data_dir)
+    sources = load_sources(args.data_dir)
     ledger = Ledger(args.data_dir / "ledger.sqlite3", connection.station_id)
     try:
         runtime = Runtime(ledger, Transport(connection.server, connection.token), demo=args.fake_stdin,
@@ -84,7 +86,8 @@ def _run(args):
                           barcode_config=args.barcode_config, legacy_barcode_db=args.legacy_barcode_db,
                           weigh_settings=weigh_settings,
                           weigh_devices=make_devices(weigh_settings, fake=True) if args.weigh_fake else None,
-                          legacy_weigh_dbs=tuple(map(Path, args.legacy_weigh_dbs)) if args.legacy_weigh_dbs else None)
+                          legacy_weigh_dbs=tuple(map(Path, args.legacy_weigh_dbs)) if args.legacy_weigh_dbs else None,
+                          vision_sources=sources)
         stop = Event()
         for signum in (signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, lambda *_args: stop.set())
@@ -109,6 +112,7 @@ def _args():
     install.add_argument("--connection", type=Path, required=True)
     install.add_argument("--language", choices=LANGUAGES, help="Initial operator screen language")
     install.add_argument("--layout-config", type=Path, help="Install a validated Windows companion layout")
+    install.add_argument("--vision-config", type=Path, help="Install read-only vision sources for this PC")
     run = commands.add_parser("run", help="Run the station and its localhost screen")
     run.add_argument("--port", type=int, default=8769)
     barcode = run.add_mutually_exclusive_group()
@@ -142,9 +146,12 @@ def main():
     try:
         if args.command == "configure":
             layout = prepare_layout(args.layout_config) if args.layout_config else None
+            sources = prepare_sources(args.vision_config) if args.vision_config else None
             configure(args.data_dir, args.connection, language=args.language)
             if layout is not None:
                 save_layout(args.data_dir, layout)
+            if sources is not None:
+                save_sources(args.data_dir, sources)
             print("Field connection stored.")
         elif args.command == "verify-backup":
             print(encode(verify_snapshot(args.backup)).decode())

@@ -53,6 +53,8 @@ SEARCH_FIELDS = {
     'seen_before_reset': ('payload__detail__seen_before_reset', 4),
 }
 JOB_DETAIL_SLOTS = tuple(f'payload__detail__job_ids__{idx}' for idx in range(3))
+VISION_APPS = ('vision_backcover', 'vision_capture', 'vision_uv')
+VISION_REVIEW_MODES = ('production', 'unknown', 'manual')
 VISION_CYCLE_REF = 'payload__ref__cycle_id'
 VISION_VERDICT = Q(result='ok', reason='occlusion_confirmed') | Q(result='ng', reason='operation_not_confirmed')
 VISION_INCOMPLETE = Q(result='error', reason='vision_incomplete')
@@ -143,7 +145,8 @@ def _vision_cycles(query):
     return (
         query.filter(
             VISION_VERDICT | VISION_INCOMPLETE,
-            app='vision_backcover', event_type='vision.cycle', mode='production', clock_suspect=False,
+            app='vision_backcover', event_type='vision.cycle',
+            mode__in=VISION_REVIEW_MODES, clock_suspect=False,
         )
         .annotate(cycle_key=_json_text(VISION_CYCLE_REF))
         .filter(cycle_key__isnull=False)
@@ -228,15 +231,17 @@ def _reread_overdue(events, now):
 
 def _collect_exceptions(stations, heartbeats, events, now, add):
     production = events.filter(mode='production')
-    exception_types = Q(app='barcode', event_type='scan.recorded', result='ng')
+    exception_types = (Q(app='barcode', event_type='scan.recorded', result='ng')
+                       | Q(app__in=VISION_APPS, event_type='operator.action', reason='vision_source_gap'))
     for event_type, reasons in RESULT_EXCEPTION_TYPES.items():
         exception_types |= Q(event_type=event_type, reason__in=reasons)
-    for item in _clean_production(events).filter(exception_types).values(
-        'station_id', 'app', 'event_type', 'reason', 'result',
+    reviewable = events.filter(Q(mode='production') | Q(app__in=VISION_APPS, mode__in=VISION_REVIEW_MODES))
+    for item in reviewable.exclude(pk__in=_conflicted_vision_cycles(events).values('pk')).filter(exception_types).values(
+        'station_id', 'app', 'event_type', 'reason', 'result', 'mode',
     ).annotate(count=Count('pk')):
         add(
             item['station_id'], item['reason'], item['count'], app=item['app'], type=item['event_type'],
-            reason=item['reason'], result=item['result'], mode='production',
+            reason=item['reason'], result=item['result'], mode=item['mode'],
         )
 
     rescans = production.filter(
@@ -247,13 +252,15 @@ def _collect_exceptions(stations, heartbeats, events, now, add):
             type='scan.recorded', result='ok', mode='production', seen_before_reset='true')
 
     related = _same_vision_cycle()
-    vision_conflicts = _conflicted_vision_cycles(production).annotate(
+    vision_conflicts = _conflicted_vision_cycles(events).annotate(
         first_day=Subquery(related.order_by('business_date').values('business_date')[:1]),
         last_day=Subquery(related.order_by('-business_date').values('business_date')[:1]),
-    ).values_list('station_id', 'cycle_key', 'first_day', 'last_day').distinct()
-    for station_id, cycle_id, first_day, last_day in vision_conflicts.iterator(chunk_size=1_000):
-        add(station_id, 'vision_cycle_conflict', 1, app='vision_backcover', type='vision.cycle',
-            cycle_id=cycle_id, mode='production', **{'from': first_day.isoformat(), 'to': last_day.isoformat()})
+        has_non_production=Exists(related.exclude(mode='production')),
+    ).values_list('station_id', 'cycle_key', 'first_day', 'last_day', 'has_non_production').distinct()
+    for station_id, cycle_id, first_day, last_day, has_non_production in vision_conflicts.iterator(chunk_size=1_000):
+        scope = {} if has_non_production else {'mode': 'production'}
+        add(station_id, 'vision_cycle_conflict', 1, app='vision_backcover', type='vision.cycle', cycle_id=cycle_id,
+            **{'from': first_day.isoformat(), 'to': last_day.isoformat(), **scope})
 
     for station_id, job_id in _reread_overdue(production, now).iterator(chunk_size=1_000):
         add(station_id, 'print_reread_overdue', 1, app='weigh_label', job_id=job_id, mode='production')

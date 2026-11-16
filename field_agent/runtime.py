@@ -12,10 +12,11 @@ from .barcode_legacy import LegacyBarcodeCollector
 from .config import LanguagePreferences
 from .devices import FakeBarcodeApp, FakeLineDevice
 from .local_ui import LocalUI
-from .launcher import read_launch_status
+from .launcher import launched_vision_app, read_launch_status
 from .protocol import timestamp
 from .resources import Resources
 from .uploader import Uploader
+from .vision_sources import create_collectors
 from .weigh.app import WeighApp, make_devices
 from .weigh.legacy import WeighLegacyCollector
 
@@ -24,7 +25,7 @@ class Runtime:
     def __init__(self, ledger, transport, *, demo=False, port=None, backup_idle=60,
                  backup_keep=30, min_free_bytes=DEFAULT_MIN_FREE, barcode_config=None,
                  legacy_barcode_db=None, barcode_backend=None, weigh_settings=None,
-                 weigh_devices=None, legacy_weigh_dbs=None):
+                 weigh_devices=None, legacy_weigh_dbs=None, vision_sources=None):
         if sum((demo, barcode_config is not None, legacy_barcode_db is not None,
                 weigh_settings is not None, legacy_weigh_dbs is not None)) > 1:
             raise ValueError("Select only one field input mode")
@@ -68,6 +69,9 @@ class Runtime:
             self.weigh = WeighApp(ledger, weigh_settings, weigh_devices or make_devices(weigh_settings),
                                   self._work_changed)
         self.legacy_status = {"coverage": "unknown", "state": "running", "last_work_at": None}
+        self.vision = create_collectors(ledger, vision_sources)
+        self._vision_status = {}
+        self._launched_vision = None
 
     def _work_changed(self, *, state_changed, activity):
         if activity:
@@ -96,6 +100,56 @@ class Runtime:
         finally:
             self.legacy.close()
 
+    def _poll_vision(self):
+        next_process_check = 0
+        try:
+            while not self._halt.is_set():
+                for app, collector in self.vision.items():
+                    if self._halt.is_set():
+                        break
+                    count = 0
+                    try:
+                        count = collector.poll()
+                        source = collector.status()
+                    except (OSError, ValueError, sqlite3.Error):
+                        source = {"coverage": "partial", "state": "fault", "last_work_at": None}
+                    with self._lock:
+                        previous = self._vision_status.get(app, {})
+                        # Keep last durable work time when a temporary error
+                        # prevents the adapter from reading the source.
+                        source = dict(source)
+                        if not source.get("last_work_at"):
+                            source["last_work_at"] = previous.get("last_work_at")
+                        self._vision_status[app] = source
+                        if count:
+                            self._committed += count
+                    changed = self._vision_signal(previous) != self._vision_signal(source)
+                    if count or changed:
+                        self._work_changed(state_changed=changed, activity=bool(count))
+                now = monotonic()
+                if now >= next_process_check:
+                    next_process_check = now + 60
+                    started = launched_vision_app(self.ledger.path.parent)
+                    with self._lock:
+                        changed = started != self._launched_vision
+                        self._launched_vision = started
+                    if changed:
+                        self._work_changed(state_changed=True, activity=False)
+                self._halt.wait(5)
+        finally:
+            for collector in self.vision.values():
+                collector.close()
+
+    @staticmethod
+    def _vision_signal(status):
+        return (status.get("coverage"), status.get("state"), status.get("mode"), tuple(
+            (item["device"], item["state"], bool(item.get("last_input_at"))) for item in status.get("devices", [])
+        ))
+
+    def _vision_health(self):
+        with self._lock:
+            return [(app, self._vision_status.get(app, {}), self._launched_vision == app) for app in self.vision]
+
     def _backup_changed(self):
         self.uploader.wake(state_changed=True)
 
@@ -107,6 +161,18 @@ class Runtime:
             return self._committed
 
     def _app_devices(self):
+        apps, devices, coverage, write_pressure = self._base_app_devices()
+        coverages = {coverage} if apps else set()
+        for app, source, launched in self._vision_health():
+            apps.append({"app": app, "version": None, "mode": source.get("mode", "unknown"),
+                         "state": "running" if launched else "unknown", "last_work_at": source.get("last_work_at")})
+            devices.extend(source.get("devices", []))
+            coverages.add(source.get("coverage", "unknown"))
+        if coverages:
+            coverage = next(iter(coverages)) if len(coverages) == 1 else "partial"
+        return apps, devices, coverage, write_pressure
+
+    def _base_app_devices(self):
         if self.barcode:
             return self.barcode.health()
         if self.weigh:
@@ -168,6 +234,13 @@ class Runtime:
             snapshot["barcode"] = self.barcode.snapshot(ports)
         if self.weigh:
             snapshot["weigh"] = self.weigh.snapshot()
+        if self.vision:
+            snapshot["vision"] = [
+                {"app": app, "coverage": source.get("coverage", "unknown"), "mode": source.get("mode", "unknown"),
+                 "state": source.get("state", "unknown"), "last_work_at": source.get("last_work_at"),
+                 "process": "running" if launched else "unknown"}
+                for app, source, launched in self._vision_health()
+            ]
         return snapshot
 
     def _read_device(self):
@@ -222,6 +295,8 @@ class Runtime:
             targets.append(("field-barcode", lambda: self.barcode_devices.run(self._halt)))
         if self.legacy:
             targets.append(("field-legacy-import", self._poll_legacy))
+        if self.vision:
+            targets.append(("field-vision-import", self._poll_vision))
         if self.weigh:
             targets.extend([
                 ("field-weigh-scale", lambda: self.weigh.run_scale(self._halt)),

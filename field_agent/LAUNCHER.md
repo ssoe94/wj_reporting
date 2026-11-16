@@ -35,7 +35,7 @@ python -m field_agent.launcher --data-dir "<data>" --legacy-weigh-dbs "<기존 �
 python -m field_agent.launcher --data-dir "<data>" --show-agent
 ```
 
-`companion_full`에서 숨기는 것은 에이전트 창입니다. 사용 가능한 백그라운드 수집 종류는 현장 에이전트 명령과 동일하며 V49 자체의 이벤트 수집 연결은 F 단계 대상입니다.
+`companion_full`에서 숨기는 것은 에이전트 창입니다. 사용 가능한 백그라운드 수집 종류는 현장 에이전트 명령과 동일합니다. [비전 읽기 전용 수집](VISION.md)에서 V49, 양면 촬영, UV의 원본을 지정할 수 있습니다.
 
 ## 동반 앱 종류
 

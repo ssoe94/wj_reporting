@@ -19,6 +19,8 @@
       heartbeat: '서버 상태 전송', backupState: '백업 상태', backupTime: '마지막 백업',
       backupAttempt: '최근 백업 시도', devices: '장치 및 마지막 입력', apps: '현장 앱',
       noDevices: '확인된 장치가 없습니다.', noApps: '활성 앱이 없습니다.', appSlot: '이 영역에 현장 앱 화면이 연결됩니다.',
+      visionTitle: '비전 수집 현황', visionSource: '기록 수집', visionCoverage: '관측 범위', visionProcess: '실행기 확인',
+      visionMode: '최근 모드', visionObserved: '읽기 확인', visionUnreadable: '읽기 오류',
       mode: '모드', appState: '앱 상태', work: '마지막 작업', timeZone: '상하이 시각',
       clock: function (amount, ahead) {
         return 'PC 시계가 서버보다 약 ' + amount + '분 ' + (ahead ? '빠릅니다.' : '느립니다.');
@@ -41,6 +43,8 @@
       heartbeat: '服务器状态上报', backupState: '备份状态', backupTime: '最后备份',
       backupAttempt: '最近备份尝试', devices: '设备和最后输入', apps: '现场程序',
       noDevices: '暂无已识别的设备。', noApps: '暂无活动程序。', appSlot: '现场程序的界面将在此处显示。',
+      visionTitle: '视觉采集状态', visionSource: '记录采集', visionCoverage: '观测范围', visionProcess: '启动器确认',
+      visionMode: '最近模式', visionObserved: '读取正常', visionUnreadable: '读取错误',
       mode: '模式', appState: '程序状态', work: '最后作业', timeZone: '上海时间',
       clock: function (amount, ahead) {
         return '电脑时钟比服务器约' + (ahead ? '快 ' : '慢 ') + amount + ' 分钟。';
@@ -51,7 +55,8 @@
   const codes = {
     barcode: ['바코드 리더', '条码读取'], weigh_label: ['중량·라벨', '称重与标签'],
     vision_backcover: ['백커버 비전', '后盖视觉'], vision_capture: ['양면 촬영', '双面拍摄'],
-    vision_uv: ['UV 배치 검사', 'UV 批次检查'],
+    vision_uv: ['UV 배치 검사', 'UV 批次检查'], signal_light: ['신호등', '信号灯'],
+    partial: ['부분 관측', '部分观测'], known: ['확인됨', '已确认'],
     A: ['스캐너 A', '扫描器 A'], B: ['스캐너 B', '扫描器 B'], W: ['무선 스캐너 W', '无线扫描器 W'],
     KEYBOARD: ['키보드', '键盘'], scale: ['저울', '电子秤'], printer: ['프린터', '打印机'], camera: ['카메라', '相机'],
     ready: ['전송 가능', '可以发送'], backoff: ['재시도 대기', '等待重试'],
@@ -216,7 +221,7 @@
     ]);
     panel.appendChild(details);
     const hasWorkScreen = (app.app === 'barcode' && state.barcode) || (app.app === 'weigh_label' && state.weigh);
-    if (!hasWorkScreen) {
+    if (!hasWorkScreen && !(state.vision || []).some(function (source) { return source.app === app.app; })) {
       panel.appendChild(node('p', text('appSlot'), 'muted'));
     }
   }
@@ -292,6 +297,37 @@
     }
   }
 
+  let openedVision = false;
+
+  function renderVision() {
+    const view = byId('vision');
+    const sources = state.vision || [];
+    view.hidden = sources.length === 0;
+    if (view.hidden) return;
+    if (!openedVision) {
+      view.open = !state.barcode && !state.weigh;
+      openedVision = true;
+    }
+    const list = byId('vision-sources');
+    list.textContent = '';
+    sources.forEach(function (source) {
+      const row = node('li', '');
+      row.appendChild(node('strong', code(source.app)));
+      const facts = node('dl', '');
+      const health = source.state === 'fault' ? text('visionUnreadable')
+        : source.state === 'running' ? text('visionObserved') : code('unknown');
+      entries(facts, [
+        ['visionSource', health],
+        ['visionCoverage', code(source.coverage)],
+        ['visionProcess', code(source.process)],
+        ['visionMode', code(source.mode)],
+        ['work', timestamp(source.last_work_at), text('timeZone')],
+      ]);
+      row.appendChild(facts);
+      list.appendChild(row);
+    });
+  }
+
   function render() {
     document.documentElement.lang = language === 'zh' ? 'zh-Hans' : 'ko';
     document.title = text('heading');
@@ -311,6 +347,7 @@
     byId('station').textContent = text('station') + ' ' + (state.station_id || '—') + ' · ' + text('version') + ' ' + (state.agent_version || '—');
     renderConnection();
     renderHealth();
+    renderVision();
     barcodeView.render(state.barcode, language, connection);
     weighView.render(state.weigh, language, connection);
   }

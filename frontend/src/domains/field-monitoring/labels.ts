@@ -100,6 +100,7 @@ const labels: Record<string, Pair> = {
   vision_incomplete: ['비전 검사 미완료', '视觉检查未完成'],
   vision_device_fault: ['비전 장치 오류', '视觉设备故障'],
   vision_runtime_fault: ['비전 실행 오류', '视觉程序故障'],
+  vision_source_gap: ['비전 기록 수집 단절', '视觉记录采集中断'],
   capture_pair_saved: ['양면 사진 쌍 저장', '双面照片已保存'],
   capture_pair_incomplete: ['양면 촬영 미완료', '双面拍摄未完成'],
   uv_batch_pass: ['UV 배치 검사 OK', 'UV 批次检查 OK'],
@@ -123,6 +124,7 @@ export function fieldText(code: string, tx: Tx) {
 const deviceLabels: Record<string, Pair> = {
   SCALE: ['저울', '电子秤'],
   CAMERA: ['카메라', '相机'],
+  SIGNAL_LIGHT: ['신호등', '信号灯'],
   PRINTER: ['프린터', '打印机'],
   A: ['스캐너 A', 'A 扫码枪'],
   B: ['스캐너 B', 'B 扫码枪'],

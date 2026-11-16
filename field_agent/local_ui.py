@@ -148,6 +148,11 @@ def _status_bytes(snapshot, language):
         public['barcode'] = _barcode_status(snapshot['barcode'])
     if isinstance(snapshot.get('weigh'), dict):
         public['weigh'] = _weigh_status(snapshot['weigh'])
+    if isinstance(snapshot.get('vision'), list):
+        public['vision'] = [
+            _fields(source, ('app', 'coverage', 'mode', 'state', 'last_work_at', 'process'))
+            for source in snapshot['vision'][:3]
+        ]
     return json.dumps(public, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 

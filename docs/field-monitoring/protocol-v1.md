@@ -87,6 +87,8 @@ flowchart LR
 | `capture.single` | 단독 촬영 sidecar의 최종 publish. `detail.capture_id`, evidence 및 당시 배정 출처. 쌍 완료 대수에서 제외. |
 | `vision.batch` | UV 임시 폴더에서 최종 폴더 rename 완료 후 한 배치 1건. `ref.batch_id`, recipe 버전, `detail.slot_count`는 1–16의 정수. `products`는 정확히 그 수의 객체로, 각 `position`은 1부터 `slot_count`까지 한 번씩 나타난다. 기존 10칸 앱은 10을 보낸다. 각 `{position, barcode, result, reasons, point_1_percent, point_2_percent}`로 `reasons` 최대 5개, 측정값은 0–100 십진 문자열. 품목·배치·제품 수를 분리. 키 충돌 없이 같은 배치 재검사는 새 attempt만 만든다. |
 
+비전 어댑터는 소스의 교체·단절이 관측되면 `operator.action`의 `info/vision_source_gap`을 기록한다. 양면 촬영의 기존 소스에는 포기 표시가 없으므로 앞면만 남은 쌍은 보류하고 저장 기록에서 면 중복 또는 배정 충돌이 확인되면 미완료를 기록한다. UV의 증거 SHA-256은 결과 manifest의 해시다.
+
 원천 상태는 아래를 기본 매핑으로 쓴다. 안정 reason은 번역하거나 상세 메시지에서 만들지 않는다. 새 코드가 필요하면 같은 유형에서 확장하고 호환 규격에 기록한다. 레거시의 알 수 없는 상태는 `info/source_status_unknown`으로 분리한다.
 
 | 앱·원천 상태 | `result/reason` |

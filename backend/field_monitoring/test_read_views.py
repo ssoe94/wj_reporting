@@ -289,6 +289,40 @@ class FieldReadTests(TestCase):
         self.assertEqual(search.status_code, 200)
         self.assertEqual([row['id'] for row in search.data['results']], [incomplete.pk, verdict.pk])
 
+    def test_vision_review_keeps_observation_modes_and_cross_mode_conflicts(self):
+        v49 = {'app': 'vision_backcover', 'event_type': 'vision.cycle'}
+        self.event(**v49, ref={'cycle_id': 'SYNTH-CROSS'}, result='ok', reason='occlusion_confirmed')
+        self.event(**v49, ref={'cycle_id': 'SYNTH-CROSS'}, mode='unknown', result='error', reason='vision_incomplete')
+        self.event(**v49, ref={'cycle_id': 'SYNTH-LIVE'}, mode='unknown', result='ng', reason='operation_not_confirmed')
+        self.event(**v49, ref={'cycle_id': 'SYNTH-VIDEO'}, mode='demo', result='ng', reason='operation_not_confirmed')
+        self.event(app='vision_backcover', event_type='device.state', mode='unknown',
+                   result='error', reason='vision_device_fault')
+        self.event(app='vision_backcover', event_type='operator.action', mode='unknown',
+                   result='info', reason='vision_source_gap')
+        self.event(app='vision_capture', event_type='capture.pair', mode='unknown',
+                   result='error', reason='capture_pair_incomplete')
+        self.event(app='vision_uv', event_type='vision.batch', mode='manual', result='ng', reason='uv_batch_fail')
+        self.event(app='vision_uv', event_type='vision.batch', mode='demo', result='ng', reason='uv_batch_fail')
+        scope = {'station': self.station.station_id, 'business_date': self.current_day}
+        overview = self.client.get(BASE + 'overview/', scope).data['stations'][0]
+        self.assertEqual(overview['production_counts'], {'ok': 0, 'ng': 0, 'error': 0, 'info': 0})
+        rows = self.client.get(BASE + 'exceptions/', scope).data['exceptions']
+        by_reason = {row['reason']: row for row in rows}
+        for reason, app, mode in (
+            ('operation_not_confirmed', 'vision_backcover', 'unknown'),
+            ('vision_device_fault', 'vision_backcover', 'unknown'),
+            ('vision_source_gap', 'vision_backcover', 'unknown'),
+            ('capture_pair_incomplete', 'vision_capture', 'unknown'),
+            ('uv_batch_fail', 'vision_uv', 'manual'),
+        ):
+            row = by_reason[reason]
+            self.assertEqual((row['count'], row['filters']['app'], row['filters']['mode']), (1, app, mode))
+            self.assertEqual(len(self.client.get(BASE + 'events/', row['filters']).data['results']), 1)
+        conflict = by_reason['vision_cycle_conflict']['filters']
+        self.assertNotIn('mode', conflict)
+        self.assertEqual({row['mode'] for row in self.client.get(BASE + 'events/', conflict).data['results']},
+                         {'production', 'unknown'})
+
     def test_search_cursor_is_tied_to_filters_and_reaches_all_timestamp_ties(self):
         barcode = 'SYNTH-CODE'
         a = self.event(barcode=barcode, reason='scan_match', suspect=True)

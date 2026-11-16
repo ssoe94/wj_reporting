@@ -35,7 +35,7 @@ _BROWSER_TITLES = {
 _BROWSER_SUFFIXES = (" - Google Chrome", " - Microsoft Edge")
 _NATIVE_TITLES = {
     "capture_cell": {"WJ VISION | 품질 검사실 촬영 셀", "WJ VISION | 质量检验室拍摄单元"},
-    "batch_inspection": {"WJ Vision | 컨베이어 배치 검사"},
+    "batch_inspection": {"WJ Vision | 컨베이어 배치 검사", "WJ Vision | 输送带批次检测"},
 }
 
 
@@ -203,6 +203,52 @@ def _matches(process, executable):
     return process is not None and _identity_path(process.exe) == _identity_path(executable)
 
 
+def _process_records(path):
+    try:
+        data = json.loads(_limited_read(path, 8192).decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _validated_process(record, identify):
+    if (not isinstance(record, dict) or type(record.get("pid")) is not int
+            or record["pid"] <= 0 or type(record.get("started")) is not int
+            or not isinstance(record.get("exe"), str) or not isinstance(record.get("key"), str)):
+        return None
+    current = identify(record["pid"])
+    if _matches(current, record["exe"]) and current.started == record["started"]:
+        return current
+    return None
+
+
+def launched_vision_app(data_dir, *, identify=None):
+    """At most one launcher-started process, with no executable or window scan."""
+    root = Path(data_dir)
+    apps = {"backcover_v49": "vision_backcover", "capture_cell": "vision_capture", "batch_inspection": "vision_uv"}
+    try:
+        companion = load_layout(root).companion
+        if companion is None:
+            return None
+        is_v49 = companion.kind == "backcover_v49"
+        role = "backend" if is_v49 else "companion_window"
+        expected = ("backcover" if is_v49 else companion.kind) + ":" + _identity_path(companion.work_dir)
+        record = _process_records(root / _PROCESSES).get(role)
+        if (not isinstance(record, dict) or record.get("spawned") is not True or record.get("key") != expected):
+            return None
+        if identify is None:
+            if sys.platform != "win32":
+                return None
+            from .launcher_win32 import WindowsDesktop
+            identify = WindowsDesktop().identify
+        current = _validated_process(record, identify)
+        if _matches(current, companion.python):
+            return apps[companion.kind]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def companion_args(companion, language):
     if companion.kind == "backcover_v49":
         return [companion.python, "app.py", "--no-browser"]
@@ -260,26 +306,17 @@ class Launcher:
         self.monitor_fallback = False
 
     def _read_records(self):
-        try:
-            data = json.loads(_limited_read(self.launch_file, 8192).decode("utf-8"))
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+        return _process_records(self.launch_file)
 
-    def _save_process(self, role, process, key):
-        self.records[role] = {"pid": process.pid, "started": process.started, "exe": process.exe, "key": key}
+    def _save_process(self, role, process, key, *, spawned=False):
+        self.records[role] = {"pid": process.pid, "started": process.started, "exe": process.exe,
+                              "key": key, "spawned": spawned}
         _atomic_file(self.launch_file, encode(self.records))
 
     def _process(self, role):
         record = self.records.get(role)
-        if (not isinstance(record, dict) or type(record.get("pid")) is not int
-                or record["pid"] <= 0 or type(record.get("started")) is not int
-                or not isinstance(record.get("exe"), str) or not isinstance(record.get("key"), str)):
-            return None, None
-        current = self.desktop.identify(record["pid"])
-        if _matches(current, record["exe"]) and current.started == record["started"]:
-            return current, record["key"]
-        return None, None
+        current = _validated_process(record, self.desktop.identify)
+        return (current, record["key"]) if current is not None else (None, None)
 
     def _until(self, check):
         deadline = self.now() + self.timeout
@@ -293,7 +330,7 @@ class Launcher:
         pid = self.desktop.spawn(args, cwd)
         process = self.desktop.identify(pid)
         if _matches(process, args[0]):
-            self._save_process(role, process, key)
+            self._save_process(role, process, key, spawned=True)
         return process if _matches(process, args[0]) else None
 
     def _agent_ready(self):

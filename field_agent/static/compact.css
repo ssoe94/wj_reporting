@@ -71,3 +71,7 @@
   .barcode .barcode-records th:last-child { width: 24%; }
   .barcode .barcode-records th, .barcode .barcode-records td { line-height: 1.25; }
 }
+
+.vision-observation ul { margin: .5rem 0 0; padding: 0; list-style: none; }
+.vision-observation li { padding: .45rem 0; border-top: 1px solid var(--wj-border, #d5dce3); }
+.vision-observation dl { margin: .3rem 0 0; }
