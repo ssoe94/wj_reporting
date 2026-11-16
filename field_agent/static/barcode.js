@@ -12,7 +12,7 @@
       storageError: '저장 실패 · 저장되지 않은 스캔은 집계되지 않습니다.',
       stale: '로컬 연결을 다시 확인하는 중입니다. 표시된 값은 마지막으로 받은 상태입니다.',
       export: 'CSV 내보내기', csvScope: '현재 모드에서 마지막 초기화 이후 저장된 기록',
-      reset: '카운터 초기화', settings: '바코드 설정',
+      reset: '카운터 초기화', settings: '설정·기록 관리', showRecent: '더 보기', hideRecent: '접기',
       apply: '설정 적용', cancelEdit: '편집 취소', unassigned: '미배정',
       scannerA: '스캐너 A', scannerB: '스캐너 B', lastInput: '마지막 입력',
       noInput: '입력 없음', open: '포트 연결됨', closed: '포트 연결 끊김',
@@ -38,7 +38,7 @@
       storageError: '保存失败 · 未保存的扫描不会计入统计。',
       stale: '正在重新连接本机。当前显示的是上次收到的状态。',
       export: '导出 CSV', csvScope: '当前模式下自上次重置以来保存的记录',
-      reset: '重置计数', settings: '条码设置',
+      reset: '重置计数', settings: '设置与记录管理', showRecent: '查看更多', hideRecent: '收起',
       apply: '应用设置', cancelEdit: '取消编辑', unassigned: '未分配',
       scannerA: '扫描器 A', scannerB: '扫描器 B', lastInput: '最后输入',
       noInput: '无输入', open: '端口已连接', closed: '端口已断开',
@@ -59,6 +59,7 @@
   const fieldKeys = ['group', 'A', 'B'];
   const lanes = ['A', 'B'];
   const outcomes = ['ok', 'duplicate', 'error'];
+  const recentLimit = 6;
   const frameErrors = ['decode', 'partial', 'oversize'];
   const reasonCodes = ['duplicate', 'invalid', 'over21', 'wrong_scanner_A', 'wrong_scanner_B',
     'wrong_product_group', 'scan_error', 'scan_input_error'];
@@ -77,7 +78,7 @@
     }));
     const ports = {};
     const save = byId('barcode-save');
-    const summary = section.querySelector('summary');
+    const summary = byId('barcode-settings-summary');
     const cancel = byId('barcode-cancel');
     const toggleMode = byId('barcode-toggle-mode');
     const reset = byId('barcode-reset');
@@ -116,13 +117,23 @@
         pair.append(term, totals[outcome]);
         counts.appendChild(pair);
       });
+      const recent = panel.querySelector('tbody');
+      const more = panel.querySelector('.barcode-history-toggle');
+      recent.id = panel.id + '-records';
+      more.setAttribute('aria-controls', recent.id);
+      more.addEventListener('click', function () {
+        ports[name].expanded = !ports[name].expanded;
+        renderLane(name);
+      });
       ports[name] = {
         device: panel.querySelector('.barcode-device'),
         lastInput: panel.querySelector('.barcode-last-input strong'),
         lastResult: panel.querySelector('.barcode-last-result'),
         totals: totals,
         frames: panel.querySelector('.barcode-frame-errors'),
-        recent: panel.querySelector('tbody'),
+        recent: recent,
+        more: more,
+        expanded: false,
       };
       track.appendChild(lane);
     });
@@ -142,7 +153,11 @@
       block.device.textContent = t(current.connected ? 'open' : 'closed') + (current.port ? ' · ' + current.port : '');
       block.device.dataset.state = current.connected ? 'connected' : 'disconnected';
       block.lastInput.textContent = current.last_input_at ? timestamp(current.last_input_at) : t('noInput');
-      outcomes.forEach(function (key) { block.totals[key].textContent = (current.counts || {})[key] || 0; });
+      outcomes.forEach(function (key) {
+        const amount = (current.counts || {})[key] || 0;
+        block.totals[key].textContent = amount;
+        block.totals[key].parentElement.dataset.active = String(amount > 0);
+      });
       const frames = frameErrors.filter(function (key) { return (current.frame_errors || {})[key] > 0; });
       block.frames.hidden = !frames.length;
       if (frames.length) block.frames.textContent = t('frameErrors') + ' · ' + frames.map(function (key) {
@@ -150,10 +165,16 @@
       }).join(' / ');
 
       const recent = current.recent || [];
-      const signature = JSON.stringify([language, recent]);
+      const expandable = recent.length > recentLimit;
+      if (!expandable) block.expanded = false;
+      const shown = block.expanded ? recent : recent.slice(0, recentLimit);
+      const signature = JSON.stringify([language, recent.length, block.expanded, shown]);
       if (recordsCache.get(block.recent) === signature) return;
       recordsCache.set(block.recent, signature);
       block.recent.textContent = '';
+      block.more.hidden = !expandable;
+      block.more.setAttribute('aria-expanded', String(block.expanded));
+      block.more.textContent = block.expanded ? t('hideRecent') : t('showRecent') + ' (' + recent.length + ')';
       if (!recent.length) {
         block.lastResult.textContent = t('lastResult') + ' · —';
         block.lastResult.dataset.result = 'none';
@@ -166,13 +187,15 @@
       } else {
         block.lastResult.textContent = t('lastResult') + ' · ' + outcomeText(recent[0].status);
         block.lastResult.dataset.result = recent[0].status === 'ok' ? 'ok' : 'ng';
-        recent.forEach(function (record) {
+        shown.forEach(function (record) {
           const row = el('tr', '');
           row.dataset.result = record.status === 'ok' ? 'ok' : 'ng';
           const when = timestamp(record.time);
           const time = el('td', when.slice(-8));
           time.title = when;
-          row.append(time, el('td', record.barcode || '—'), el('td', outcomeText(record.status)));
+          const barcode = el('td', record.barcode || '—');
+          if (record.barcode) barcode.title = record.barcode;
+          row.append(time, barcode, el('td', outcomeText(record.status)));
           block.recent.appendChild(row);
         });
       }
@@ -324,7 +347,7 @@
     async function action(name, payload) {
       if (busy || connection !== 'connected') return false;
       const focus = document.activeElement;
-      const target = name === 'config' ? 'settings' : undefined;
+      const target = name === 'mode' ? undefined : 'settings';
       busy = true;
       renderControls();
       showNotice(null);
@@ -359,21 +382,20 @@
       }
       renderSound();
     });
-    toggleMode.addEventListener('click', function () {
-      if (data.mode === 'test') {
-        if (window.confirm(t('confirmProduction'))) action('mode', {mode: 'production'});
-      } else if (window.confirm(t('confirmTest'))) {
-        action('mode', {mode: 'test'});
+    toggleMode.addEventListener('click', async function () {
+      const mode = data.mode === 'test' ? 'production' : 'test';
+      if (await window.confirmFieldAction(t(mode === 'production' ? 'confirmProduction' : 'confirmTest'), language)) {
+        action('mode', {mode: mode});
       }
     });
-    reset.addEventListener('click', function () {
+    reset.addEventListener('click', async function () {
       const rows = lanes.map(function (lane) {
         const counts = ((data.lanes || {})[lane] || {}).counts || {};
         const summary = outcomes.map(function (key) { return t(key) + ' ' + (counts[key] || 0); });
         return lane + ' · ' + summary.join(' / ');
       });
       const prompt = t('confirmReset') + '\n\n' + t('resetCounts') + '\n' + rows.join('\n');
-      if (window.confirm(prompt)) action('reset', {});
+      if (await window.confirmFieldAction(prompt, language)) action('reset', {});
     });
     fieldKeys.forEach(function (key) {
       settings[key].addEventListener('change', function () {

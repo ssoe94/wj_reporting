@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
+from threading import Lock
 from uuid import uuid4
 
 from .protocol import STATION_ID, encode
@@ -16,6 +17,8 @@ from .transport import normalize_server_url
 TOKEN = re.compile(r"[0-9a-f]{32}\.[A-Za-z0-9_-]{43}", re.ASCII)
 TOKEN_FILE = re.compile(r"token-[0-9a-f]{32}\.txt", re.ASCII)
 CONFIG = "connection.json"
+LANGUAGES = ("ko", "zh")
+UI_PREFERENCES = "ui-preferences.json"
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,43 @@ def _atomic_file(path, body):
         os.replace(stage, path)
     finally:
         stage.unlink(missing_ok=True)
+
+
+def _validate_language(language):
+    if not isinstance(language, str) or language not in LANGUAGES:
+        raise ValueError("Invalid local language preference")
+    return language
+
+
+class LanguagePreferences:
+    """PC-scoped display settings saved independently of connection credentials."""
+
+    def __init__(self, root):
+        self.path = Path(root) / UI_PREFERENCES
+        self.lock = Lock()
+        self.language = "ko"
+        self.persisted = False
+        try:
+            stored = json.loads(_limited_read(self.path, 256).decode("utf-8"))
+            if not isinstance(stored, dict) or set(stored) != {"language"}:
+                return
+            self.language = _validate_language(stored["language"])
+            self.persisted = True
+        except (OSError, ValueError):
+            # Local display settings cannot hold up the device and sender loops.
+            pass
+
+    def get(self):
+        with self.lock:
+            return self.language
+
+    def set(self, language):
+        _validate_language(language)
+        with self.lock:
+            if language != self.language or not self.persisted or not self.path.exists():
+                _atomic_file(self.path, encode({"language": language}))
+                self.language = language
+                self.persisted = True
 
 
 def _stored_config(root):
@@ -103,8 +143,10 @@ def station_lock(root):
         yield
 
 
-def configure(root, import_path):
+def configure(root, import_path, *, language=None):
     root = Path(root)
+    if language is not None:
+        _validate_language(language)
     with station_lock(root):
         try:
             source = json.loads(_limited_read(import_path, 8192).decode("utf-8-sig"))
@@ -134,4 +176,6 @@ def configure(root, import_path):
         # Previous credentials are no longer used; removing this file has no effect on the ledger.
         if previous:
             (root / previous["token_file"]).unlink(missing_ok=True)
+        if language is not None:
+            _atomic_file(root / UI_PREFERENCES, encode({"language": language}))
         return config

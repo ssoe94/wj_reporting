@@ -471,14 +471,10 @@ class _Source:
         if self.connection is None or self.file_id != file_id:
             self.close()
             try:
-                self.connection = sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True,
-                                                  timeout=0.05, isolation_level=None)
+                self.connection = open_readonly(self.path)
             except sqlite3.Error as exc:
                 raise _SourceReadFailed from exc
             self.file_id = file_id
-            self.connection.row_factory = sqlite3.Row
-            _source_rows(self.connection, "PRAGMA query_only=ON")
-            _source_rows(self.connection, "PRAGMA trusted_schema=OFF")
         return self.connection
 
     def poll(self):
@@ -578,6 +574,18 @@ class _Source:
             local.execute("INSERT OR REPLACE INTO legacy_weigh_sources VALUES(?,?,?,?,?,?)",
                           (self.key, generation, file_id, "ready", latest, revision))
         return count, latest, True
+
+
+def open_readonly(path):
+    connection = sqlite3.connect(Path(path).as_uri() + "?mode=ro", uri=True, timeout=0.05, isolation_level=None)
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA trusted_schema=OFF")
+        return connection
+    except BaseException:
+        connection.close()
+        raise
 
 
 class _SourceChanged(Exception):

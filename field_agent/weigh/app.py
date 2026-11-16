@@ -33,7 +33,8 @@ def make_devices(settings, fake=False):
     if printer_config.get("printer_mode") not in ("tcp", "windows_raw", "idprt_usb"):
         raise ValueError("Select a weigh printer or use fake devices")
     if printer_config["printer_mode"] == "idprt_usb" and any(
-        item.layout["language"] != "zpl" for item in settings.products.values()
+        variant["layout"]["language"] != "zpl"
+        for item in settings.products.values() for variant in item.templates.values()
     ):
         raise ValueError("The notebook USBPRINT driver uses native ZPL layouts")
     printer = make_printer_transport(printer_config)
@@ -56,7 +57,7 @@ class WeighApp:
         self.storage_error = False
         self.disk_full = False
         self.coverage = "known"
-        self.state = self.store.queue()
+        self._refresh()
         self.last_result, self.last_reread = self.store.last()
         self.last_work = max((row["time"] for row in (self.last_result, self.last_reread) if row), default=None)
         self.scale_state = "disconnected"
@@ -75,6 +76,8 @@ class WeighApp:
 
     def _refresh(self):
         self.state = self.store.queue()
+        self.jobs = self.store.recent_jobs()
+        self.serial = self.store.serial_status(event_time(self.clock()).date())
 
     def _fault(self, error):
         self.storage_error = True
@@ -164,20 +167,32 @@ class WeighApp:
             try:
                 data = self.store.reread(barcode, device, source=source or ("keyboard" if device == "KEYBOARD" else "serial"),
                                          request_id=request_id, moment=moment)
+                if self.last_reread is None or data["seq"] > self.last_reread["seq"]:
+                    self.jobs = self.store.recent_jobs()
+                    self.last_work, self.last_reread = data["time"], data
+                    self._notify()
+                return data
             except sqlite3.Error as error:
                 self._fault(error)
                 raise
-            self.last_work, self.last_reread = data["time"], data
-            self._notify()
-            return data
 
     def action(self, action, data):
         if not isinstance(data, dict):
             raise ValueError("Invalid weigh action")
         with self.lock:
             try:
+                if action == "reread" and set(data) == {"barcode", "request_id", "source"}:
+                    if data["source"] not in ("keyboard", "manual"):
+                        raise ValueError("Invalid browser input source")
+                    return self.reread(data["barcode"], "KEYBOARD", source=data["source"],
+                                       request_id=data["request_id"])
                 if action == "product" and set(data) == {"part_no"}:
                     if self.store.select(data["part_no"]):
+                        self.gate.reset()
+                        self.stability.reset()
+                        self._stable = self._empty = False
+                elif action == "template" and set(data) == {"template_id", "values"}:
+                    if self.store.select_template(data["template_id"], data["values"]):
                         self.gate.reset()
                         self.stability.reset()
                         self._stable = self._empty = False
@@ -354,6 +369,12 @@ class WeighApp:
     def snapshot(self):
         with self.lock:
             fresh = self._scale_tick is not None and 0 <= self.tick() - self._scale_tick <= 0.5
+            day = event_time(self.clock()).date()
+            if day.isoformat() != self.serial["day"]:
+                try:
+                    self.serial = self.store.serial_status(day)
+                except sqlite3.Error as error:
+                    self._fault(error)
             state = dict(self.state)
             if self.storage_error:
                 state.update(paused=True, pause_reason="storage_error")
@@ -363,6 +384,7 @@ class WeighApp:
                 "weight_g": self._reading.grams if fresh else None, "stable": fresh and self._stable,
                 "empty": fresh and self._empty, "storage_error": self.storage_error, "queue": state,
                 "last_result": self.last_result, "last_reread": self.last_reread,
+                "labels": self.store.label_options(), "jobs": self.jobs, "serial": self.serial,
             }
 
     def health(self):

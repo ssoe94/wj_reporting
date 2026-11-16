@@ -268,12 +268,26 @@ class LocalUITests(unittest.TestCase):
             'queue': {'paused': True, 'uncertain_ids': ['SYNTH-JOB-1', {'private': 'SENSITIVE-SENTINEL'}],
                       'uncertain_quantity': 2, 'pause_reason': 'print_uncertain', 'raw': 'SENSITIVE-SENTINEL'},
             'last_reread': {'status': 'duplicate', 'device': 'W', 'barcode': 'SYNTH-200', 'raw': 'SENSITIVE-SENTINEL'},
+            'serial': {'status': 'serial_floor_required', 'part_no': 'SYNTH-1', 'path': 'SENSITIVE-SENTINEL'},
+            'jobs': [{'id': 'SYNTH-CYCLE', 'reserved': 2, 'raw': 'SENSITIVE-SENTINEL'}],
+            'labels': {'template_id': 'reviewed', 'values': {'rev': 'SYNTH', 'secret': 'SENSITIVE-SENTINEL'},
+                       'templates': [{'id': 'reviewed', 'layout': 'SENSITIVE-SENTINEL',
+                                      'fields': [{'key': 'rev', 'default': 'SYNTH'}]}],
+                       'preview': {'columns': 1, 'cells': [{'barcode': 'SAMPLE', 'text': ['SYNTH']}]},
+                       'private': 'SENSITIVE-SENTINEL'},
             'private': 'SENSITIVE-SENTINEL',
         }
+        self.snapshot['layout_status'] = {'profile': 'split', 'status': 'failed', 'code': 'companion_start_failed',
+                                          'path': 'SENSITIVE-SENTINEL'}
         response, raw = self.request()
         self.assertEqual(response.status, 200)
         self.assertNotIn(b'SENSITIVE-SENTINEL', raw)
-        weigh = json.loads(raw)['weigh']
+        visible = json.loads(raw)
+        self.assertEqual(visible['layout_status']['status'], 'failed')
+        weigh = visible['weigh']
+        self.assertEqual(weigh['serial']['status'], 'serial_floor_required')
+        self.assertEqual(weigh['jobs'][0]['reserved'], 2)
+        self.assertEqual(weigh['labels']['values'], {'rev': 'SYNTH'})
         self.assertEqual(weigh['weight_g'], '57.00')
         self.assertTrue(weigh['stable'])
         self.assertEqual(weigh['last_result'], {'result': 'ng', 'quantity': 1, 'delta_g': '2.50'})
@@ -311,6 +325,9 @@ class LocalUITests(unittest.TestCase):
             ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":1.0}'),
             ('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":0,"confirmed_quantity":2}'),
             ('flush', b'{"quantity":3}'), ('peel', b'{"cleared":false}'),
+            ('pause', b'{"force":true}'), ('cancel_waiting', b'{"all":true}'),
+            ('template', b'{"template_id":"reviewed","values":{"rev":true}}'),
+            ('reread', b'{"barcode":"SYNTH","request_id":"id","source":"serial"}'),
         ):
             with self.subTest(name=name, body=body):
                 self.assertEqual(post(name, body)[0].status, 400)
@@ -319,10 +336,17 @@ class LocalUITests(unittest.TestCase):
         self.assertEqual(post('acknowledge', b'{"job_id":"SYNTH-JOB-1","confirmed_quantity":0}')[0].status, 200)
         self.assertEqual(post('flush', b'{}')[0].status, 200)
         self.assertEqual(post('peel', b'{}')[0].status, 200)
+        self.assertEqual(post('pause', b'{}')[0].status, 200)
+        self.assertEqual(post('cancel_waiting', b'{}')[0].status, 200)
+        self.assertEqual(post('template', b'{"template_id":"reviewed","values":{"rev":"SYNTH"}}')[0].status, 200)
+        self.assertEqual(post('reread', b'{"barcode":"SYNTH","request_id":"id","source":"keyboard"}')[0].status, 200)
+        self.assertEqual(post('confirm-serial-floor', b'{}')[0].status, 405)
         response, raw = post('resume', b'{}')
         self.assertEqual(response.status, 503)
         self.assertNotIn(b'SENSITIVE-SENTINEL', raw)
         self.assertEqual(calls, [
             ('product', {'part_no': 'SYNTH-2'}), ('acknowledge', {'job_id': 'SYNTH-JOB-1', 'confirmed_quantity': 0}),
-            ('flush', {}), ('peel', {}), ('resume', {}),
+            ('flush', {}), ('peel', {}), ('pause', {}), ('cancel_waiting', {}),
+            ('template', {'template_id': 'reviewed', 'values': {'rev': 'SYNTH'}}),
+            ('reread', {'barcode': 'SYNTH', 'request_id': 'id', 'source': 'keyboard'}), ('resume', {}),
         ])

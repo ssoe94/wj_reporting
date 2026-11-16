@@ -9,8 +9,9 @@ from uuid import uuid4
 from .. import __version__
 from ..protocol import encode, event_time, timestamp
 from .reread import CODE, DEVICES, SOURCES, SCAN_RESULTS, classify, expected_lane, scan_slot
-from .serials import make_barcode, int_to_base34
-from .settings import MAX_SERIAL
+from .serials import make_barcode, int_to_base34, get_date_code
+from . import serial_authority
+from .settings import MAX_SERIAL, choose_template
 
 
 QUEUE_LIMIT = 100
@@ -53,6 +54,9 @@ SCHEMA = (
         id INTEGER PRIMARY KEY CHECK(id=1), row_id TEXT NOT NULL REFERENCES weigh_rows(row_id),
         seen_waiting INTEGER NOT NULL DEFAULT 0
     )""",
+    """CREATE TABLE IF NOT EXISTS weigh_template_selection (
+        part_no TEXT PRIMARY KEY, template_id TEXT NOT NULL, label_values TEXT NOT NULL
+    )""",
     """CREATE TABLE IF NOT EXISTS weigh_scans (
         request_id TEXT PRIMARY KEY, seq INTEGER NOT NULL UNIQUE REFERENCES events(seq),
         identity TEXT NOT NULL, raw_barcode TEXT NOT NULL, response TEXT NOT NULL
@@ -63,6 +67,10 @@ SCHEMA = (
     )""",
     "CREATE INDEX IF NOT EXISTS weigh_jobs_state ON weigh_jobs(state, sequence)",
     "CREATE INDEX IF NOT EXISTS weigh_jobs_row ON weigh_jobs(row_id, sequence)",
+    "CREATE INDEX IF NOT EXISTS weigh_jobs_cycle ON weigh_jobs(cycle_id, sequence)",
+    "CREATE INDEX IF NOT EXISTS weigh_jobs_part_date ON weigh_jobs(part_no, print_date, serial)",
+    """CREATE INDEX IF NOT EXISTS weigh_serials_print_code
+        ON weigh_serials(part_no, substr(print_date,6), substr(print_date,4,1), last_serial)""",
     "CREATE INDEX IF NOT EXISTS weigh_rows_state ON weigh_rows(state)",
     "CREATE INDEX IF NOT EXISTS weigh_attempts_pending ON weigh_attempts(outcome) WHERE outcome='dispatching'",
     """CREATE TRIGGER IF NOT EXISTS weigh_jobs_frozen BEFORE UPDATE OF
@@ -107,9 +115,10 @@ class WeighStore:
         with ledger.transaction() as conn:
             for statement in SCHEMA:
                 conn.execute(statement)
+            serial_authority.install(conn)
             state = self._state(conn)
             part = state["part_no"] if state and state["part_no"] in settings.products else settings.default
-            self.product = settings.products[part]
+            self.product = self._load_product(conn, part)
             if state is None:
                 conn.execute("INSERT INTO weigh_state(id,part_no,version,mode) VALUES(1,?,?,?)",
                              (part, self.product.version, settings.mode))
@@ -187,8 +196,10 @@ class WeighStore:
             seq = self._emit(conn, "weigh.result", reason, result=data["result"], moment=moment,
                              status_raw=cycle.status, part_no=part, device="scale",
                              ref={"cycle_id": cycle_id}, detail=detail, **fields)
+            data["seq"] = seq
+            first = None
             if passed:
-                code = self._reservation_blocker(conn, product, moment, decision.quantity)
+                first, code = self._reservation(conn, part, moment, decision.quantity)
                 if code:
                     self._pause(conn, code)
                     self._emit(conn, "operator.action", "weigh_reservation_blocked", moment=moment, result="error",
@@ -196,28 +207,40 @@ class WeighStore:
                     data["reservation_blocked"] = code
             conn.execute("INSERT INTO weigh_cycles VALUES(?,?,?,?)", (cycle_id, seq, part, _json(data)))
             if passed and "reservation_blocked" not in data:
-                self._reserve(conn, cycle_id, product, moment, decision.quantity)
+                self._reserve(conn, cycle_id, product, moment, decision.quantity, first)
         return data
 
-    def _next_serial(self, conn, part, day):
-        previous = conn.execute("SELECT last_serial FROM weigh_serials WHERE print_date=? AND part_no=?",
-                                (day, part)).fetchone()
-        floor = self.settings.serial_floors.get(part, {}).get(day, 0)
-        return max(previous[0] if previous else 0, floor) + 1
-
-    def _reservation_blocker(self, conn, product, moment, quantity):
+    def _reservation(self, conn, part, moment, quantity):
         if self._unresolved(conn):
-            return "uncertain"
+            return None, "uncertain"
         if self._active(conn, ("waiting", "dispatching")) + quantity > QUEUE_LIMIT:
-            return "queue_full"
-        if self._next_serial(conn, product.profile.part_no, event_time(moment).date().isoformat()) + quantity - 1 > MAX_SERIAL:
-            return "serial_exhausted"
-        return None
+            return None, "queue_full"
+        floor, blocked = serial_authority.establish(self.ledger, conn, self.settings, part, moment)
+        if blocked:
+            return None, blocked
+        if floor + quantity > MAX_SERIAL:
+            return None, "serial_exhausted"
+        return floor + 1, None
 
-    def _reserve(self, conn, cycle_id, product, moment, quantity):
+    def serial_status(self, calendar):
+        part = self.product.profile.part_no
+        day = calendar.isoformat()
+        with self.ledger.read() as conn:
+            if (serial_authority.local_today(conn, part, day) is not None
+                    or serial_authority.saved_floor(conn, part, day) is not None):
+                status = "established"
+            elif self._state(conn)["pause"] == serial_authority.UNAVAILABLE:
+                status = serial_authority.UNAVAILABLE
+            else:
+                status = "lookup_pending" if self.settings.legacy_print_db else serial_authority.REQUIRED
+        return {"part_no": part, "day": day, "date_code": get_date_code(calendar), "status": status}
+
+    def confirm_no_issuance(self, part, reason, actor):
+        return serial_authority.confirm_no_issuance(self.ledger, self.settings, part, reason, actor, clock=self.clock)
+
+    def _reserve(self, conn, cycle_id, product, moment, quantity, first):
         calendar_date = event_time(moment).date()
         day, part = calendar_date.isoformat(), product.profile.part_no
-        first = self._next_serial(conn, part, day)
         for serial in range(first, first + quantity):
             barcode = make_barcode(part, serial, self.settings.code, calendar_date)
             job_id = _id("job-")
@@ -277,10 +300,12 @@ class WeighStore:
         conn.executemany("UPDATE weigh_jobs SET row_id=? WHERE job_id=?", [(row_id, job["job_id"]) for job in jobs])
         row = self._row(conn, row_id)
         if flush:
+            detail = {"row_id": row_id, "quantity": row["quantity"], "columns": row["columns"],
+                      "job_ids": [job["job_id"] for job in jobs], "action": "operator_flush"}
             self._emit(conn, "queue.partial_flush", "partial_flush_approved", version=row["config_version"],
-                       mode=row["mode"], ref={"row_id": row_id},
-                       detail={"row_id": row_id, "quantity": row["quantity"], "columns": row["columns"],
-                               "job_ids": [job["job_id"] for job in jobs], "action": "operator_flush"})
+                       mode=row["mode"], ref={"row_id": row_id}, detail=detail)
+            self._emit(conn, "operator.action", "weigh_partial_flush_confirmed", version=row["config_version"],
+                       mode=row["mode"], ref={"row_id": row_id}, detail=detail)
         return row
 
     def begin_dispatch(self):
@@ -369,13 +394,86 @@ class WeighStore:
                    action, mode=row["mode"], version=row["config_version"], device="printer",
                    ref={"row_id": row["row_id"]}, detail={"action": action})
 
+    def _load_product(self, conn, part):
+        base = self.settings.products[part]
+        previous = conn.execute("SELECT template_id,label_values FROM weigh_template_selection WHERE part_no=?", (part,)).fetchone()
+        if previous:
+            try:
+                return choose_template(base, previous["template_id"], json.loads(previous["label_values"]))
+            except (TypeError, ValueError):
+                # An installation can withdraw a template. Keep frozen work
+                # untouched and load the approved default for future reservations.
+                pass
+        return base
+
+    def label_options(self):
+        product = self.product
+        return {
+            "template_id": product.template_id, "values": dict(product.values),
+            "templates": [
+                {"id": item["id"], "name": item["name"], "name_ko": item["name_ko"], "name_zh": item["name_zh"],
+                 "columns": item["columns"], "language": item["layout"]["language"], "fields": item["fields"]}
+                for item in product.templates.values()
+            ],
+            "preview": {"columns": product.columns, "cells": [
+                {"barcode": product.profile.part_no + "-SAMPLE",
+                 "text": [product.profile.part_no, *[value for _key, value in product.values if value]]}
+                for _ in range(product.columns)
+            ]},
+        }
+
+    def select_template(self, template_id, values):
+        part = self.product.profile.part_no
+        product = choose_template(self.settings.products[part], template_id, values)
+        if product.version == self.product.version:
+            return False
+        with self.ledger.transaction() as conn:
+            if self._active(conn, ("waiting", "dispatching", "uncertain")):
+                raise ValueError("Finish or resolve the pending queue before changing templates")
+            conn.execute("""INSERT INTO weigh_template_selection VALUES(?,?,?)
+                ON CONFLICT(part_no) DO UPDATE SET template_id=excluded.template_id,label_values=excluded.label_values""",
+                         (part, template_id, _json(dict(product.values))))
+            conn.execute("UPDATE weigh_state SET version=? WHERE id=1", (product.version,))
+            self._emit(conn, "config.applied", "weigh_template_applied", part_no=part, version=product.version,
+                       detail={"template_id": template_id, "previous_config_version": self.product.version})
+        self.product = product
+        return True
+
+    def recent_jobs(self):
+        with self.ledger.read() as conn:
+            # A load reserves at most five labels. Pick recent cycles from the
+            # queue's chronological index, then expand each complete cycle.
+            recent = conn.execute("SELECT cycle_id FROM weigh_jobs ORDER BY sequence DESC LIMIT 60")
+            cycle_ids = list(dict.fromkeys(row["cycle_id"] for row in recent))[:12]
+            output = []
+            for cycle_id in cycle_ids:
+                rows = conn.execute("""SELECT j.*, issue.occurred_at, confirmation.payload AS reread_payload
+                    FROM weigh_jobs j JOIN weigh_cycles c ON c.id=j.cycle_id JOIN events issue ON issue.seq=c.seq
+                    LEFT JOIN weigh_confirmations latest ON latest.mode=j.mode AND latest.barcode=j.barcode
+                    LEFT JOIN events confirmation ON confirmation.seq=latest.scan_seq
+                    WHERE j.cycle_id=? ORDER BY j.sequence""", (cycle_id,)).fetchall()
+                confirmed, unconfirmed = 0, 0
+                for label in rows:
+                    reread = json.loads(label["reread_payload"]) if label["reread_payload"] else {}
+                    linked = (reread.get("detail", {}).get("label_origin") == "local"
+                              and reread.get("ref", {}).get("job_id") == label["job_id"])
+                    confirmed += int(linked)
+                    unconfirmed += int(label["state"] == "submitted" and not linked)
+                states = {row["state"] for row in rows}
+                state = next((item for item in ("uncertain", "dispatching", "waiting") if item in states),
+                             next(iter(states)) if len(states) == 1 else "mixed")
+                output.append({"id": cycle_id, "part_no": rows[0]["part_no"], "time": rows[0]["occurred_at"],
+                               "reserved": len(rows), "submitted": sum(row["state"] == "submitted" for row in rows),
+                               "confirmed": confirmed, "unconfirmed": unconfirmed, "state": state})
+            return output
+
     def select(self, part):
         if not isinstance(part, str) or part not in self.settings.products:
             raise ValueError("Unknown weigh product")
         if part == self.product.profile.part_no:
             return False
-        product = self.settings.products[part]
         with self.ledger.transaction() as conn:
+            product = self._load_product(conn, part)
             if self._active(conn, ("waiting", "dispatching", "uncertain")):
                 raise ValueError("Finish or resolve the pending queue first")
             conn.execute("UPDATE weigh_state SET part_no=?,version=? WHERE id=1", (part, product.version))
@@ -386,13 +484,23 @@ class WeighStore:
 
     def action(self, action, data, *, storage_recovery=False):
         with self.ledger.transaction() as conn:
-            if action == "resume" and not data:
+            if action == "pause" and not data:
+                if self._state(conn)["pause"]:
+                    raise ValueError("Queue already paused")
+                self._pause(conn, "operator_pause")
+                self._emit(conn, "operator.action", "weigh_queue_paused", detail={"action": "pause"})
+            elif action == "resume" and not data:
                 pause = self._state(conn)["pause"]
                 if (not pause and not storage_recovery) or self._unresolved(conn) or self._active(conn, ("dispatching",)):
                     raise ValueError("Queue cannot resume")
                 waiting = self._waiting(conn)
                 if waiting and waiting[0]["route"] != self.settings.printer_route:
                     raise ValueError("Restore the saved printer route first")
+                if pause in (serial_authority.REQUIRED, serial_authority.UNAVAILABLE):
+                    part = self.product.profile.part_no
+                    _floor, blocked = serial_authority.establish(self.ledger, conn, self.settings, part, self.clock())
+                    if blocked:
+                        raise ValueError("Serial evidence must be established before resuming")
                 self._pause(conn, None)
                 self._emit(conn, "operator.action", "weigh_queue_resumed",
                            detail={"action": "resume", "previous_pause": pause})
@@ -468,7 +576,7 @@ class WeighStore:
                 if (identity != saved["identity"] or barcode != saved["raw_barcode"]
                         or (moment is not None and timestamp(event_time(moment)) != original["time"])):
                     raise ValueError("Scan request ID was reused with different evidence")
-                return original
+                return dict(original, seq=saved["seq"])
             moment = timestamp(event_time(moment)) if moment is not None else self.clock()
             match = None
             try:
@@ -499,6 +607,7 @@ class WeighStore:
             seq = self._emit(conn, "label.reread", reason, result=result, moment=moment, mode=mode, barcode=sent,
                              device=device, part_no=data["part_no"] or None, status_raw=data["status"], detail=detail,
                              ref={"job_id": data["job_id"]} if data["job_id"] else {})
+            data["seq"] = seq
             conn.execute("INSERT INTO weigh_scans VALUES(?,?,?,?,?)", (request_id, seq, identity, barcode, _json(data)))
             if data["status"] == "ok":
                 conn.execute("INSERT INTO weigh_confirmations VALUES(?,?,?)", (self.settings.mode, code, seq))
@@ -523,10 +632,10 @@ class WeighStore:
 
     def last(self):
         with self.ledger.read() as conn:
-            cycle = conn.execute("SELECT part_no, record FROM weigh_cycles ORDER BY rowid DESC LIMIT 1").fetchone()
-            scan = conn.execute("SELECT response FROM weigh_scans ORDER BY seq DESC LIMIT 1").fetchone()
-            last_result = dict(json.loads(cycle["record"]), part_no=cycle["part_no"]) if cycle else None
-            return last_result, json.loads(scan[0]) if scan else None
+            cycle = conn.execute("SELECT part_no, seq, record FROM weigh_cycles ORDER BY rowid DESC LIMIT 1").fetchone()
+            scan = conn.execute("SELECT seq, response FROM weigh_scans ORDER BY seq DESC LIMIT 1").fetchone()
+            last_result = dict(json.loads(cycle["record"]), part_no=cycle["part_no"], seq=cycle["seq"]) if cycle else None
+            return last_result, dict(json.loads(scan["response"]), seq=scan["seq"]) if scan else None
 
     def stop(self):
         with self.ledger.transaction() as conn:

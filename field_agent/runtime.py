@@ -9,8 +9,10 @@ from .backup import Backup, DEFAULT_MIN_FREE
 from .barcode_app import BarcodeApp
 from .barcode_devices import BarcodeDevices
 from .barcode_legacy import LegacyBarcodeCollector
+from .config import LanguagePreferences
 from .devices import FakeBarcodeApp, FakeLineDevice
 from .local_ui import LocalUI
+from .launcher import read_launch_status
 from .protocol import timestamp
 from .resources import Resources
 from .uploader import Uploader
@@ -38,6 +40,8 @@ class Runtime:
         self._coverage = "known"
         self._committed = 0
         self.port = port
+        self._layout_read_at = float("-inf")
+        self._layout_status = None
         self.local_ui = None
         self.device = FakeLineDevice() if demo else None
         self.app = FakeBarcodeApp(ledger, __version__) if demo else None
@@ -151,6 +155,13 @@ class Runtime:
             "heartbeat_error": self.uploader.heartbeat_error, "backup": self.backup.status(),
             "device_error": device_error,
         }
+        layout_at = monotonic()
+        if layout_at - self._layout_read_at >= 1:
+            settings = read_launch_status(self.ledger.path.parent)
+            self._layout_status = {"profile": settings["profile"], "status": settings["companion"],
+                                   "code": settings["code"]}
+            self._layout_read_at = layout_at
+        snapshot["layout_status"] = self._layout_status
         if self.barcode:
             ports = [{"id": item["id"], "label": " · ".join(filter(None, (item["port"], item["location"])))}
                      for item in self.barcode_devices.ports()]
@@ -201,7 +212,9 @@ class Runtime:
                 app_api = {"barcode_action": self.barcode.action, "barcode_csv": self.barcode.csv}
             if self.weigh:
                 app_api["weigh_action"] = self.weigh.action
-            self.local_ui = LocalUI(self.snapshot, port=self.port, **app_api).start()
+            self.local_ui = LocalUI(
+                self.snapshot, port=self.port, language=LanguagePreferences(self.ledger.path.parent), **app_api,
+            ).start()
         targets = [("field-upload", lambda: self.uploader.run(self._halt)), ("field-backup", self._run_backup)]
         if self.app is not None:
             targets.append(("field-fake-scanner", self._read_device))

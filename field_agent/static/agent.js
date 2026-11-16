@@ -3,7 +3,17 @@
 
   const words = {
     ko: {
-      heading: '현장 에이전트', connecting: '로컬 연결 중', connected: '로컬 연결됨', disconnected: '로컬 재연결 중',
+      heading: '현장 에이전트', languageControl: '화면 언어', languageFailed: '화면 언어를 저장하지 못했습니다. 연결과 저장 상태를 확인하세요.',
+      genericReason: '상태 코드의 세부 정보를 확인하세요.', healthControl: '현장 상태',
+      clockSource: '시계', clockNormal: '정상', clockCheck: '확인 필요', clockUnknown: '비교 대기',
+      clockWithin: '서버와 PC 시계 차이가 5분 이내입니다.',
+      deviceSummary: '장치', deviceConnected: '연결', companion: '동반 앱',
+      companionReady: '실행 확인', companionWaiting: '실행 대기', companionFailed: '실행 실패',
+      companionReadyInfo: '동반 앱이 준비되었습니다.',
+      companionWaitingInfo: '동반 앱이 준비되면 상태가 바뀝니다.',
+      companionFailedInfo: '동반 앱 설정과 PC의 실행 상태를 확인하세요.',
+      confirmTitle: '작업 확인', confirmAccept: '확인', confirmCancel: '취소',
+      connecting: '로컬 연결 중', connected: '로컬 연결됨', disconnected: '로컬 재연결 중',
       station: '현장 PC', version: '버전', outbox: '전송', backup: '백업', pending: '미전송 건수',
       oldest: '가장 오래된 미전송', ack: '마지막 ACK', uploadState: '전송 상태', reason: '사유',
       heartbeat: '서버 상태 전송', backupState: '백업 상태', backupTime: '마지막 백업',
@@ -15,7 +25,17 @@
       },
     },
     zh: {
-      heading: '现场代理', connecting: '正在连接本机', connected: '本机已连接', disconnected: '正在重新连接本机',
+      heading: '现场代理', languageControl: '界面语言', languageFailed: '未能保存界面语言。请检查连接和存储状态。',
+      genericReason: '请查看状态代码详情。', healthControl: '现场状态',
+      clockSource: '时钟', clockNormal: '正常', clockCheck: '需核对', clockUnknown: '等待比对',
+      clockWithin: '服务器与电脑的时差在 5 分钟内。',
+      deviceSummary: '设备', deviceConnected: '已连接', companion: '配套程序',
+      companionReady: '已启动', companionWaiting: '等待启动', companionFailed: '启动失败',
+      companionReadyInfo: '配套程序已准备就绪。',
+      companionWaitingInfo: '配套程序准备就绪后会更新状态。',
+      companionFailedInfo: '请检查配套程序设置和电脑上的运行状态。',
+      confirmTitle: '操作确认', confirmAccept: '确认', confirmCancel: '取消',
+      connecting: '正在连接本机', connected: '本机已连接', disconnected: '正在重新连接本机',
       station: '现场电脑', version: '版本', outbox: '发送', backup: '备份', pending: '待发送条数',
       oldest: '最早待发时间', ack: '最后确认', uploadState: '发送状态', reason: '原因',
       heartbeat: '服务器状态上报', backupState: '备份状态', backupTime: '最后备份',
@@ -52,6 +72,15 @@
     event_conflict: ['서버에 다른 내용의 이벤트가 있습니다.', '服务器已有内容不同的事件。'],
     connection_not_configured: ['연결 설정이 필요합니다.', '需要配置连接。'],
     network_error: ['서버와 통신하지 못했습니다.', '无法与服务器通信。'],
+    invalid_payload: ['서버가 전송 데이터 형식을 거부했습니다.', '服务器拒绝了发送数据的格式。'],
+    contract_unsupported: ['서버가 현장 프로토콜 버전을 지원하지 않습니다.', '服务器不支持现场协议版本。'],
+    payload_too_large: ['전송 데이터가 서버 크기 제한을 넘습니다.', '发送数据超出服务器的大小限制。'],
+    unsupported_media_type: ['서버가 전송 형식을 지원하지 않습니다.', '服务器不支持发送格式。'],
+    local_payload_size: ['전송할 데이터가 묶음 크기 제한을 넘습니다.', '待发送数据超出批次大小限制。'],
+    local_event_corrupt: ['로컬 이벤트 내용을 확인하세요.', '请检查本地事件内容。'],
+    local_event_too_large: ['로컬 이벤트가 전송 크기 제한을 넘습니다.', '本地事件超出发送大小限制。'],
+    unexpected_http_status: ['서버가 예상하지 못한 응답을 보냈습니다.', '服务器返回了非预期的响应。'],
+    response_too_large: ['서버 응답의 크기가 제한을 넘습니다.', '服务器响应超出大小限制。'],
     redirect_refused: ['서버 주소를 확인하세요.', '请检查服务器地址。'],
     local_storage_error: ['로컬 원장을 확인하세요.', '请检查本地台账。'],
     local_outbox_corrupt: ['저장된 전송 묶음을 확인하세요.', '请检查本地存储的发送批次。'],
@@ -61,28 +90,48 @@
   };
 
   const byId = document.getElementById.bind(document);
+  const dialog = byId('field-confirmation');
+  const confirmAccept = dialog.querySelector('[data-confirm-accept]');
+  const confirmCancel = dialog.querySelector('[data-confirm-cancel]');
+  confirmAccept.addEventListener('click', function () { dialog.close('accept'); });
+  confirmCancel.addEventListener('click', function () { dialog.close('cancel'); });
+  window.confirmFieldAction = function (message, lang) {
+    if (dialog.open) return Promise.resolve(false);
+    const labels = words[lang];
+    byId('field-confirmation-title').textContent = labels.confirmTitle;
+    byId('field-confirmation-message').textContent = message;
+    confirmAccept.textContent = labels.confirmAccept;
+    confirmCancel.textContent = labels.confirmCancel;
+    dialog.returnValue = 'cancel';
+    return new Promise(function (resolve) {
+      dialog.addEventListener('close', function () { resolve(dialog.returnValue === 'accept'); }, { once: true });
+      dialog.showModal();
+    });
+  };
+
   const localTime = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
-  let language = 'ko';
-  try {
-    if (localStorage.getItem('wj-field-agent-language') === 'zh') language = 'zh';
-  } catch (_) { /* Some shared PC browser profiles block storage. */ }
+  let language = document.documentElement.lang === 'zh-Hans' ? 'zh' : 'ko';
+  let languageBusy = false;
+  let languageFailed = false;
   let state = {};
   let selectedApp = '';
+  let expandedHealth = '';
   let connection = 'connecting';
   const barcodeView = window.createBarcodeView(timestamp);
   const weighView = window.createWeighView(timestamp, code);
+  const healthButtons = Array.from(document.querySelectorAll('[data-health-chip]'));
 
   function text(key) {
     return words[language][key];
   }
 
-  function code(value) {
+  function code(value, fallback) {
     if (!value) return '—';
     const pair = Object.prototype.hasOwnProperty.call(codes, value) && codes[value];
-    return pair ? pair[language === 'ko' ? 0 : 1] : String(value);
+    return pair ? pair[language === 'ko' ? 0 : 1] : (fallback || String(value));
   }
 
   function timestamp(value) {
@@ -172,48 +221,131 @@
     }
   }
 
+  function renderHealth() {
+    const outbox = state.outbox || {};
+    const backup = state.backup || {};
+    const offset = state.clock_offset_seconds;
+    const skewed = typeof offset === 'number' && Math.abs(offset) > 300;
+    const devices = state.devices || [];
+    const connected = devices.filter(function (device) { return device.state === 'connected'; }).length;
+    const faulted = devices.some(function (device) { return device.state === 'fault'; });
+    const disconnected = devices.some(function (device) { return device.state === 'disconnected'; });
+    const layout = state.layout_status || {};
+    const companionLabel = { ready: 'companionReady', waiting: 'companionWaiting', failed: 'companionFailed' }[layout.status];
+    const chips = {
+      outbox: [text('outbox'), code(outbox.state, code('unknown')), outbox.state === 'blocked' || outbox.state === 'storage_pressure'
+        ? 'fault' : outbox.state === 'backoff' ? 'warning' : 'normal'],
+      backup: [text('backup'), code(backup.state, code('unknown')), backup.state === 'failed'
+        ? 'fault' : backup.state === 'skipped' ? 'warning' : 'normal'],
+      clock: [text('clockSource'), text(skewed ? 'clockCheck' : typeof offset === 'number' ? 'clockNormal' : 'clockUnknown'),
+        skewed ? 'warning' : 'normal'],
+      devices: [text('deviceSummary'), devices.length ? connected + '/' + devices.length + ' ' + text('deviceConnected')
+        : code('unknown'), faulted ? 'fault' : disconnected ? 'warning' : 'normal'],
+    };
+    if (companionLabel) {
+      chips.companion = [text('companion'), text(companionLabel), layout.status === 'failed' ? 'fault'
+        : layout.status === 'waiting' ? 'warning' : 'normal'];
+    }
+    if (!chips[expandedHealth]) expandedHealth = '';
+    healthButtons.forEach(function (button) {
+      const name = button.dataset.healthChip;
+      const summary = chips[name];
+      const active = name === expandedHealth;
+      button.hidden = !summary;
+      button.setAttribute('aria-expanded', String(active));
+      if (summary) {
+        button.textContent = summary[0] + ' · ' + summary[1];
+        button.dataset.level = summary[2];
+      }
+      byId(button.getAttribute('aria-controls')).hidden = !active;
+    });
+
+    if (expandedHealth === 'outbox') {
+      const rows = [
+        ['uploadState', code(outbox.state), outbox.state],
+        ['pending', typeof outbox.pending_count === 'number' ? String(outbox.pending_count) : '—'],
+        ['oldest', timestamp(outbox.oldest_occurred_at), text('timeZone')],
+        ['ack', timestamp(outbox.last_ack_at), text('timeZone')],
+        ['reason', code(outbox.last_error_code, text('genericReason')), outbox.last_error_code],
+      ];
+      if (state.heartbeat_error) {
+        rows.push(['heartbeat', code(state.heartbeat_error, text('genericReason')), state.heartbeat_error]);
+      }
+      entries(byId('outbox'), rows);
+    } else if (expandedHealth === 'backup') {
+      entries(byId('backup'), [
+        ['backupState', code(backup.state), backup.state],
+        [backup.state === 'completed' ? 'backupTime' : 'backupAttempt', timestamp(backup.finished_at), text('timeZone')],
+        ['reason', code(backup.reason, text('genericReason')), backup.reason],
+      ]);
+    } else if (expandedHealth === 'clock') {
+      const clock = byId('clock-warning');
+      clock.classList.toggle('warning', skewed);
+      clock.textContent = skewed ? words[language].clock(Math.round(Math.abs(offset) / 60), offset > 0)
+        : text(typeof offset === 'number' ? 'clockWithin' : 'clockUnknown');
+    } else if (expandedHealth === 'devices') {
+      renderDeviceRows();
+      renderApps();
+    } else if (expandedHealth === 'companion') {
+      byId('companion-status').textContent = text(companionLabel + 'Info');
+      byId('companion-status').title = layout.code || '';
+    }
+  }
+
   function render() {
     document.documentElement.lang = language === 'zh' ? 'zh-Hans' : 'ko';
     document.title = text('heading');
     document.querySelectorAll('[data-text]').forEach(function (element) {
       element.textContent = text(element.dataset.text);
     });
+    document.querySelectorAll('[data-aria-text]').forEach(function (element) {
+      element.setAttribute('aria-label', text(element.dataset.ariaText));
+    });
     document.querySelectorAll('[data-lang]').forEach(function (button) {
       button.setAttribute('aria-pressed', String(button.dataset.lang === language));
+      button.disabled = languageBusy;
     });
+    const languageError = byId('language-error');
+    languageError.hidden = !languageFailed;
+    languageError.textContent = languageFailed ? text('languageFailed') : '';
     byId('station').textContent = text('station') + ' ' + (state.station_id || '—') + ' · ' + text('version') + ' ' + (state.agent_version || '—');
     renderConnection();
-    const outbox = state.outbox || {};
-    const backup = state.backup || {};
-    const uploadRows = [
-      ['uploadState', code(outbox.state), outbox.state],
-      ['pending', typeof outbox.pending_count === 'number' ? String(outbox.pending_count) : '—'],
-      ['oldest', timestamp(outbox.oldest_occurred_at), text('timeZone')],
-      ['ack', timestamp(outbox.last_ack_at), text('timeZone')],
-      ['reason', code(outbox.last_error_code), outbox.last_error_code],
-    ];
-    if (state.heartbeat_error) uploadRows.push(['heartbeat', code(state.heartbeat_error), state.heartbeat_error]);
-    entries(byId('outbox'), uploadRows);
-    entries(byId('backup'), [
-      ['backupState', code(backup.state), backup.state],
-      [backup.state === 'completed' ? 'backupTime' : 'backupAttempt', timestamp(backup.finished_at), text('timeZone')],
-      ['reason', code(backup.reason), backup.reason],
-    ]);
-    const clock = byId('clock-warning');
-    const offset = state.clock_offset_seconds;
-    clock.hidden = typeof offset !== 'number' || Math.abs(offset) <= 300;
-    if (!clock.hidden) clock.textContent = words[language].clock(Math.round(Math.abs(offset) / 60), offset > 0);
-    renderDeviceRows();
-    renderApps();
+    renderHealth();
     barcodeView.render(state.barcode, language, connection);
     weighView.render(state.weigh, language, connection);
   }
 
-  document.querySelectorAll('[data-lang]').forEach(function (button) {
+  healthButtons.forEach(function (button) {
     button.addEventListener('click', function () {
-      language = button.dataset.lang;
-      try { localStorage.setItem('wj-field-agent-language', language); } catch (_) { /* Optional. */ }
+      const name = button.dataset.healthChip;
+      expandedHealth = name === expandedHealth ? '' : name;
+      renderHealth();
+    });
+  });
+  document.querySelectorAll('[data-lang]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      const requested = button.dataset.lang;
+      if (languageBusy || (requested === language && !languageFailed)) return;
+      languageBusy = true;
+      languageFailed = false;
       render();
+      try {
+        const response = await fetch('/api/language/', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WJ-Local': '1' },
+          body: JSON.stringify({ language: requested }),
+        });
+        if (!response.ok) throw new Error();
+        // Stream updates are ordered across windows. If the stream is down,
+        // apply the saved choice now and reconcile on the next snapshot.
+        if (connection !== 'connected') language = requested;
+      } catch (_) {
+        languageFailed = true;
+      } finally {
+        languageBusy = false;
+        render();
+        // A disabled button may have briefly lost keyboard focus.
+        if (document.activeElement === document.body) button.focus();
+      }
     });
   });
   render();
@@ -231,6 +363,7 @@
   stream.onmessage = function (event) {
     try {
       state = JSON.parse(event.data);
+      if (state.language === 'ko' || state.language === 'zh') language = state.language;
       render();
     } catch (_) { /* Retain the last complete snapshot. */ }
   };

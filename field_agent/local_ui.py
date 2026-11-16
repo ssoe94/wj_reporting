@@ -10,17 +10,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from .config import LANGUAGES
+
 
 _DEFAULT_PORT = 8769
 _STATIC_ROOT = Path(__file__).resolve().parent / 'static'
 _ASSETS = {
     '/': ('index.html', 'text/html; charset=utf-8'),
     '/agent.css': ('agent.css', 'text/css; charset=utf-8'),
+    '/compact.css': ('compact.css', 'text/css; charset=utf-8'),
     '/agent.js': ('agent.js', 'text/javascript; charset=utf-8'),
     '/barcode.js': ('barcode.js', 'text/javascript; charset=utf-8'),
     '/weigh.js': ('weigh.js', 'text/javascript; charset=utf-8'),
 }
 _SESSION_HEADER = 'X-WJ-Local'
+_LANGUAGE = '/api/language/'
+_NO_SCRIPT = {
+    'ko': '상태 화면을 사용하려면 JavaScript를 켜세요.',
+    'zh': '请启用 JavaScript 查看状态。',
+}
 _SSE_CLIENTS = 4
 _BARCODE_ACTIONS = {
     '/api/barcode/reset/': 'reset',
@@ -30,6 +38,10 @@ _BARCODE_ACTIONS = {
 _BARCODE_CSV = '/api/barcode/export.csv'
 _WEIGH_ACTIONS = {
     '/api/weigh/product/': 'product',
+    '/api/weigh/template/': 'template',
+    '/api/weigh/pause/': 'pause',
+    '/api/weigh/cancel_waiting/': 'cancel_waiting',
+    '/api/weigh/reread/': 'reread',
     '/api/weigh/resume/': 'resume',
     '/api/weigh/acknowledge/': 'acknowledge',
     '/api/weigh/flush/': 'flush',
@@ -74,9 +86,33 @@ def _weigh_status(source):
         _fields(product, ('part_no', 'name')) for product in (source.get('products') or [])
     ]
     public['last_result'] = _fields(source.get('last_result'), (
-        'result', 'quantity', 'weight_g', 'delta_g', 'reason', 'time', 'reservation_blocked', 'part_no',
+        'seq', 'result', 'quantity', 'weight_g', 'delta_g', 'reason', 'time', 'reservation_blocked', 'part_no',
     )) or None
-    public['last_reread'] = _fields(source.get('last_reread'), ('status', 'barcode', 'device', 'time', 'label_origin')) or None
+    public['last_reread'] = _fields(source.get('last_reread'), ('seq', 'status', 'barcode', 'device', 'time', 'label_origin')) or None
+    public['jobs'] = [
+        _fields(job, ('id', 'part_no', 'time', 'reserved', 'submitted', 'confirmed', 'unconfirmed', 'state'))
+        for job in (source.get('jobs') or [])[:12]
+    ]
+    public['serial'] = _fields(source.get('serial'), ('part_no', 'day', 'date_code', 'status'))
+    labels = source.get('labels')
+    if isinstance(labels, dict):
+        result = _fields(labels, ('template_id',))
+        result['templates'] = []
+        keys = set()
+        for entry in labels.get('templates', [])[:11]:
+            projected = _fields(entry, ('id', 'name', 'name_ko', 'name_zh', 'columns', 'language'))
+            projected['fields'] = [_fields(field, ('key', 'label_ko', 'label_zh', 'max_length', 'default'))
+                                   for field in entry.get('fields', [])[:5]]
+            keys.update(field['key'] for field in projected['fields'] if 'key' in field)
+            result['templates'].append(projected)
+        result['values'] = _fields(labels.get('values'), keys)
+        preview = labels.get('preview') or {}
+        result['preview'] = _fields(preview, ('columns',))
+        result['preview']['cells'] = [
+            dict(_fields(cell, ('barcode',)), text=[line for line in cell.get('text', [])[:6] if _field_value(line)])
+            for cell in preview.get('cells', [])[:3]
+        ]
+        public['labels'] = result
     queue = source.get('queue') or {}
     public['queue'] = _fields(queue, (
         'waiting', 'dispatching', 'submitted', 'uncertain', 'peel_wait', 'partial', 'paused',
@@ -88,11 +124,14 @@ def _weigh_status(source):
     return public
 
 
-def _status_bytes(snapshot):
+def _status_bytes(snapshot, language):
     # A caller's extra state can contain install details. Never serve it wholesale.
     public = _fields(snapshot, (
         'station_id', 'agent_version', 'clock_offset_seconds', 'heartbeat_error',
     ))
+    public['language'] = language
+    if isinstance(snapshot.get('layout_status'), dict):
+        public['layout_status'] = _fields(snapshot['layout_status'], ('profile', 'status', 'code'))
     public['apps'] = [
         _fields(app, ('app', 'version', 'state', 'mode', 'last_work_at'))
         for app in (snapshot.get('apps') or [])
@@ -159,17 +198,30 @@ def _valid_weigh_action(action, data):
             set(data) == {'job_id', 'confirmed_quantity'} and _field_value(data['job_id'])
             and type(data['confirmed_quantity']) is int and 0 <= data['confirmed_quantity'] <= 1000
         )
-    return action in ('resume', 'flush', 'peel') and not data
+    if action == 'template':
+        return (set(data) == {'template_id', 'values'} and _field_value(data['template_id'])
+                and isinstance(data['values'], dict) and len(data['values']) <= 5
+                and all(_field_value(key) and isinstance(value, str) and len(value) <= 96
+                        for key, value in data['values'].items()))
+    if action == 'reread':
+        return (set(data) == {'barcode', 'request_id', 'source'} and _field_value(data['barcode'])
+                and _field_value(data['request_id']) and data['source'] in ('keyboard', 'manual'))
+    return action in ('resume', 'pause', 'cancel_waiting', 'flush', 'peel') and not data
+
+
+def _valid_language_action(_action, data):
+    return type(data) is dict and set(data) == {'language'} and data['language'] in LANGUAGES
 
 
 class _Server(ThreadingHTTPServer):
     request_queue_size = 12
 
-    def __init__(self, port, snapshot, barcode_action, barcode_csv, weigh_action):
+    def __init__(self, port, snapshot, barcode_action, barcode_csv, weigh_action, language):
         self.snapshot = snapshot
         self.barcode_action = barcode_action
         self.barcode_csv = barcode_csv
         self.weigh_action = weigh_action
+        self.language = language
         self.stopping = threading.Event()
         # Leave room for assets/JSON even when the SSE slots are occupied.
         self.request_slots = threading.BoundedSemaphore(16)
@@ -183,6 +235,9 @@ class _Server(ThreadingHTTPServer):
         bound_port = self.server_address[1]
         self.hosts = ('127.0.0.1', '127.0.0.1:80') if bound_port == 80 else ('127.0.0.1:{}'.format(bound_port),)
         self.origin = 'http://{}'.format(self.hosts[0])
+
+    def language_code(self):
+        return self.language.get() if self.language is not None else 'ko'
 
     def get_request(self):
         client, address = super().get_request()
@@ -269,10 +324,15 @@ class _Handler(BaseHTTPRequestHandler):
         route, _, query = self.path.partition('?')
         if route in self.server.assets:
             data, media_type = self.server.assets[route]
+            if route == '/':
+                language = self.server.language_code()
+                if language == 'zh':
+                    data = data.replace(b'<html lang="ko">', b'<html lang="zh-Hans">', 1)
+                data = data.replace(b'<!-- native-script-notice -->', _NO_SCRIPT[language].encode('utf-8'), 1)
             self._send(200, data, media_type)
         elif route == '/api/status':
             try:
-                data = _status_bytes(self.server.snapshot())
+                data = _status_bytes(self.server.snapshot(), self.server.language_code())
             except (AttributeError, TypeError, ValueError):
                 self._send(503, b'Local status unavailable')
                 return
@@ -296,7 +356,12 @@ class _Handler(BaseHTTPRequestHandler):
 
     do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = _mutation
 
+    def _change_language(self, _action, data):
+        self.server.language.set(data['language'])
+
     def _action_route(self, path):
+        if path == _LANGUAGE and self.server.language is not None:
+            return 'language', _valid_language_action, self._change_language
         if path in _BARCODE_ACTIONS and self.server.barcode_action is not None:
             return _BARCODE_ACTIONS[path], _valid_barcode_action, self.server.barcode_action
         if path in _WEIGH_ACTIONS and self.server.weigh_action is not None:
@@ -402,7 +467,7 @@ class _Handler(BaseHTTPRequestHandler):
             previous = None
             keepalive = time.monotonic()
             while not self.server.stopping.is_set():
-                state = _status_bytes(self.server.snapshot())
+                state = _status_bytes(self.server.snapshot(), self.server.language_code())
                 now = time.monotonic()
                 if state != previous:
                     self.wfile.write(b'data: ' + state + b'\n\n')
@@ -425,7 +490,7 @@ class LocalUI:
     """Serve the static shell, a cached snapshot, and optional local controls."""
 
     def __init__(self, snapshot, host='127.0.0.1', port=_DEFAULT_PORT, *,
-                 barcode_action=None, barcode_csv=None, weigh_action=None):
+                 barcode_action=None, barcode_csv=None, weigh_action=None, language=None):
         if host != '127.0.0.1':
             raise ValueError('Local UI requires 127.0.0.1')
         if type(port) is not int or not 0 <= port <= 65535:
@@ -434,6 +499,7 @@ class LocalUI:
         self._barcode_action = barcode_action
         self._barcode_csv = barcode_csv
         self._weigh_action = weigh_action
+        self._language = language
         self._requested_port = port
         self._server = None
         self._thread = None
@@ -448,6 +514,7 @@ class LocalUI:
         if self._server is None:
             server = _Server(
                 self._requested_port, self._snapshot, self._barcode_action, self._barcode_csv, self._weigh_action,
+                self._language,
             )
             thread = threading.Thread(
                 target=server.serve_forever, kwargs={'poll_interval': 0.5},

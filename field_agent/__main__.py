@@ -10,14 +10,16 @@ import sys
 from threading import Event, Thread
 
 from .backup import DEFAULT_MIN_FREE, restore_snapshot, verify_snapshot
-from .config import configure, load_connection, station_lock
+from .config import LANGUAGES, configure, load_connection, station_lock
 from .devices import MAX_FRAME_BYTES
 from .ledger import Ledger
+from .launcher import prepare_layout, save_layout
 from .protocol import encode
 from .runtime import Runtime
 from .transport import Transport
 from .weigh.app import make_devices
 from .weigh.settings import load as load_weigh_settings
+from .weigh.serial_authority import confirm_no_issuance, local_admin_actor
 
 
 def _feed_stdin(runtime, stop):
@@ -105,6 +107,8 @@ def _args():
     commands = parser.add_subparsers(dest="command", required=True)
     install = commands.add_parser("configure", help="Import a server-issued local connection JSON")
     install.add_argument("--connection", type=Path, required=True)
+    install.add_argument("--language", choices=LANGUAGES, help="Initial operator screen language")
+    install.add_argument("--layout-config", type=Path, help="Install a validated Windows companion layout")
     run = commands.add_parser("run", help="Run the station and its localhost screen")
     run.add_argument("--port", type=int, default=8769)
     barcode = run.add_mutually_exclusive_group()
@@ -121,7 +125,12 @@ def _args():
     restore = commands.add_parser("restore", help="Restore a verified same-generation backup into a fresh ledger path")
     restore.add_argument("--backup", type=Path, required=True)
     restore.add_argument("--confirmed-same-generation", action="store_true", required=True)
-    for command in (install, run, resume, restore):
+    serial = commands.add_parser("confirm-serial-floor", help="Attest that a PART has no issuance today")
+    serial.add_argument("--weigh-config", type=Path, required=True)
+    serial.add_argument("--part-no", required=True)
+    serial.add_argument("--reason", required=True)
+    serial.add_argument("--confirm-no-issuance", action="store_true", required=True)
+    for command in (install, run, resume, restore, serial):
         command.add_argument("--data-dir", type=Path, required=True)
     verify = commands.add_parser("verify-backup", help="Verify a backup file and its pending batches")
     verify.add_argument("--backup", type=Path, required=True)
@@ -132,7 +141,10 @@ def main():
     args = _args()
     try:
         if args.command == "configure":
-            configure(args.data_dir, args.connection)
+            layout = prepare_layout(args.layout_config) if args.layout_config else None
+            configure(args.data_dir, args.connection, language=args.language)
+            if layout is not None:
+                save_layout(args.data_dir, layout)
             print("Field connection stored.")
         elif args.command == "verify-backup":
             print(encode(verify_snapshot(args.backup)).decode())
@@ -140,6 +152,16 @@ def main():
             with station_lock(args.data_dir):
                 if args.command == "run":
                     _run(args)
+                elif args.command == "confirm-serial-floor":
+                    actor = local_admin_actor(args.data_dir)
+                    setting = load_weigh_settings(args.weigh_config)
+                    connection = load_connection(args.data_dir)
+                    ledger = Ledger(args.data_dir / "ledger.sqlite3", connection.station_id)
+                    try:
+                        day = confirm_no_issuance(ledger, setting, args.part_no, args.reason, actor)
+                    finally:
+                        ledger.close()
+                    print("Serial authorization recorded for {}.".format(day))
                 elif args.command == "restore":
                     connection = load_connection(args.data_dir)
                     if verify_snapshot(args.backup)["station_id"] != connection.station_id:
