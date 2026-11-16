@@ -1,3 +1,4 @@
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -309,7 +310,7 @@ class LaunchTests(TestCase):
     def test_companion_full_real_runtime_collects_and_sends_without_agent_browser(self):
         layout = self.install("companion_full", "backcover_v49")
         source = self.root / "fixture.db"
-        with sqlite3.connect(source) as conn:
+        with closing(sqlite3.connect(source)) as conn, conn:
             conn.execute("""CREATE TABLE barcodes(id INTEGER PRIMARY KEY, time TEXT, scanner TEXT,
                 barcode TEXT, status TEXT, product_size TEXT, product_group TEXT)""")
             conn.execute("INSERT INTO barcodes VALUES(?,?,?,?,?,?,?)",

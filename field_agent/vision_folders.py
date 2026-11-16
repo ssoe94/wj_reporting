@@ -309,6 +309,9 @@ class _FolderCollector:
                 document = relative + "/result.json" if leaf and self.app == "vision_uv" else relative
                 if document != relative:
                     info = _checked_under(self.root, document, stat.S_ISREG)
+                elif leaf and os.name == "nt":
+                    # Windows DirEntry.stat does not report the file identity.
+                    info = _checked_stat(self.root / document, stat.S_ISREG)
                 mark = _stamp(info)
                 if leaf and document > walk.anchor:
                     walk.anchor, walk.anchor_stamp = document, mark

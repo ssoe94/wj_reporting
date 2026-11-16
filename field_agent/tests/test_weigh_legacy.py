@@ -1,3 +1,4 @@
+from contextlib import closing
 import json
 from datetime import date
 from pathlib import Path
@@ -230,7 +231,7 @@ class WeighLegacyTests(unittest.TestCase):
         self.collector.close()
         self.prints.close()
         copy = self.print_path.with_suffix(".replacement")
-        with sqlite3.connect(self.print_path) as source, sqlite3.connect(copy) as dest:
+        with closing(sqlite3.connect(self.print_path)) as source, closing(sqlite3.connect(copy)) as dest:
             source.backup(dest)
         copy.replace(self.print_path)
         self.assertEqual(self.collector.poll(), 1)

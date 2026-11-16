@@ -1,7 +1,7 @@
 """Synthetic tests of the shared weighing, output and scan ledger."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import timedelta
 
 import json
@@ -322,7 +322,7 @@ class WeighAppTests(unittest.TestCase):
 
     def test_serial_floor_preserves_existing_reservations_on_cutover(self):
         path = self.ledger.path.parent / "legacy-synthetic.sqlite3"
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn, conn:
             conn.executescript("""CREATE TABLE serials(part_no TEXT, print_date TEXT, last_serial INTEGER);
                 CREATE TABLE jobs(part_no TEXT, print_date TEXT, last_serial INTEGER);""")
             conn.execute("INSERT INTO serials VALUES(?,?,?)", (OTHER, NOW[:10], 8))
@@ -474,7 +474,7 @@ class WeighAppTests(unittest.TestCase):
         self.load()
         self.assertEqual(self.queue()["pause_reason"], "serial_source_unavailable")
         self.assertFalse(path.exists())
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn, conn:
             conn.executescript("""CREATE TABLE serials(part_no TEXT, print_date TEXT, last_serial INTEGER);
                 CREATE TABLE jobs(part_no TEXT, print_date TEXT, last_serial INTEGER);""")
         with self.assertRaisesRegex(ValueError, "evidence"):

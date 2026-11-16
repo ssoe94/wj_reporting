@@ -10,7 +10,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from field_agent.ledger import Ledger
-from field_agent.vision_backcover import BackcoverCollector
+from field_agent.vision_backcover import BackcoverCollector, _file_id
 
 
 AT = "2026-11-16T09:00:00+08:00"
@@ -67,8 +67,14 @@ class BackcoverCollectorTests(TestCase):
             hashes = {p.name: p.read_bytes() for p in [self.path, self.path.with_name(self.path.name + "-wal")]}
             self.assertEqual(collector.poll(), 1)
             self.assertEqual(collector.poll(), 0)
-            with self.assertRaises(sqlite3.OperationalError):
-                collector._connection.execute("DELETE FROM events")
+            identity = _file_id(self.path.stat())
+            readonly, offline = collector._source_connection(identity)
+            self.assertFalse(offline)
+            try:
+                with self.assertRaises(sqlite3.OperationalError):
+                    readonly.execute("DELETE FROM events")
+            finally:
+                collector.close()
             self.assertEqual({p.name: p.read_bytes() for p in [self.path, self.path.with_name(self.path.name + "-wal")]}, hashes)
             append(source, record(2, result="NG", reason="operation_not_confirmed"))
             self.assertEqual(collector.poll(), 1)
