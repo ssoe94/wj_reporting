@@ -140,11 +140,12 @@ def _add_uv(uv_patch, pins, destination, source_root):
     return provenance
 
 
-def _copy_application(source_root, release, install):
+def _copy_release_files(source_root, release):
     agent = source_root / "field_agent"
+    excluded = {"__pycache__", "tests", "windows_files", "ci_embedded.py"}
     for path in sorted(agent.rglob("*")):
         relative = path.relative_to(agent)
-        if not path.is_file() or {"__pycache__", "tests", "windows_files"} & set(relative.parts):
+        if not path.is_file() or excluded.intersection(relative.parts):
             continue
         if path.suffix in {".py", ".md"} or relative.parts[0] == "static":
             destination = release / "field_agent" / relative
@@ -157,7 +158,11 @@ def _copy_application(source_root, release, install):
         shutil.copyfile(path, protocol_docs / path.name)
     if (field_docs / "fixtures").is_dir():
         shutil.copytree(field_docs / "fixtures", protocol_docs / "fixtures")
-    wrappers = agent / "packaging" / "windows_files"
+
+
+def _copy_application(source_root, release, install):
+    _copy_release_files(source_root, release)
+    wrappers = source_root / "field_agent" / "packaging" / "windows_files"
     for path in sorted(wrappers.iterdir()):
         if path.is_file():
             shutil.copyfile(path, install / path.name)

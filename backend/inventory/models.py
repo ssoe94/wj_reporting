@@ -298,6 +298,21 @@ class DailyReportSummary(models.Model):
         return f"{self.snapshot_date} - 요약 보고서"
 
 
+class _HistoricalFinishedGoodsIndex(models.Index):
+    """Keep the identifiers installed by inventory migration 0012."""
+
+    max_name_length = 63
+
+    def deconstruct(self):
+        _, args, kwargs = super().deconstruct()
+        return 'django.db.models.Index', args, kwargs
+
+    def __eq__(self, other):
+        if isinstance(other, models.Index):
+            return self.deconstruct() == other.deconstruct()
+        return NotImplemented
+
+
 class FinishedGoodsTransactionSnapshot(models.Model):
     """완성품 창고 입출고 집계 스냅샷 (08:00 / 20:00 기준)"""
 
@@ -328,8 +343,8 @@ class FinishedGoodsTransactionSnapshot(models.Model):
         ordering = ['-scheduled_at']
         unique_together = [('slot', 'report_date')]
         indexes = [
-            models.Index(fields=['slot', 'scheduled_at']),
-            models.Index(fields=['report_date', 'slot']),
+            _HistoricalFinishedGoodsIndex(fields=['slot', 'scheduled_at'], name='inventory_f_slot_schedul_066a24_idx'),
+            _HistoricalFinishedGoodsIndex(fields=['report_date', 'slot'], name='inventory_f_report__slot_c2ec0a_idx'),
         ]
 
     def __str__(self):
@@ -367,8 +382,8 @@ class FinishedGoodsTransaction(models.Model):
         verbose_name_plural = '완성품 입출고 집계'
         ordering = ['material_code']
         indexes = [
-            models.Index(fields=['snapshot', 'material_code']),
-            models.Index(fields=['material_code']),
+            _HistoricalFinishedGoodsIndex(fields=['snapshot', 'material_code'], name='inventory_f_snapshot_mate_f9ce6a_idx'),
+            _HistoricalFinishedGoodsIndex(fields=['material_code'], name='inventory_f_material_code_d7c2ec_idx'),
         ]
 
     def __str__(self):

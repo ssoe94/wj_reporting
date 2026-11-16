@@ -129,15 +129,15 @@ def station_lock(root, *, existing_only=False):
         if os.name == "nt":
             import msvcrt
 
-            if not lock.read(1):
-                if existing_only:
-                    raise ValueError("Station lock is incomplete")
-                lock.write(b"0")
-            lock.seek(0)
             try:
                 msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
                 raise ValueError("This data directory is already in use") from exc
+            # Windows permits locking past EOF and blocks reads on other handles.
+            if os.fstat(lock.fileno()).st_size == 0:
+                if existing_only:
+                    raise ValueError("Station lock is incomplete")
+                lock.write(b"0")
         else:
             import fcntl
 

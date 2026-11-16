@@ -65,3 +65,23 @@ class InstallTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already in use"):
                 configure(self.data, self.input)
         configure(self.data, self.input)
+
+    @unittest.skipUnless(os.name == "nt", "Windows byte-range locks")
+    def test_existing_only_preserves_empty_and_busy_windows_lock_files(self):
+        with station_lock(self.data, existing_only=True):
+            self.assertFalse(self.data.exists())
+        self.data.mkdir()
+        lock_file = self.data / "agent.lock"
+        lock_file.touch()
+        with self.assertRaisesRegex(ValueError, "Station lock is incomplete"):
+            with station_lock(self.data, existing_only=True):
+                self.fail("An incomplete station lock must be refused")
+        self.assertEqual(lock_file.read_bytes(), b"")
+
+        with station_lock(self.data):
+            with self.assertRaisesRegex(ValueError, "already in use"):
+                with station_lock(self.data, existing_only=True):
+                    self.fail("A busy station lock must be refused")
+        self.assertEqual(lock_file.read_bytes(), b"0")
+        with station_lock(self.data, existing_only=True):
+            pass

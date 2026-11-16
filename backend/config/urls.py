@@ -24,7 +24,6 @@ api_urlpatterns = [
     path('api/production/', include('production.urls')),
     path('api/ai/', include('ai_core.urls')),
     path('api/analytics/', include('analytics.urls')),
-    path('api/field/v1/', include('field_monitoring.urls')),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.health_check, name='health_check_no_slash'),
     path('api/signup-request/', SignupRequestView.as_view(), name='signup_request'),
@@ -36,6 +35,8 @@ api_urlpatterns = [
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth'))
 ]
+if apps.is_installed('field_monitoring'):
+    api_urlpatterns.append(path('api/field/v1/', include('field_monitoring.urls')))
 if apps.is_installed('lgent'):
     api_urlpatterns.append(path('api/lgent/', include('lgent.urls')))
 

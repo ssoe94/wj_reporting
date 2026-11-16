@@ -32,3 +32,77 @@ jobs:
           python -m field_agent --help
       - name: Run field agent regression tests
         run: python -I -m unittest discover -s field_agent/tests -t .
+
+  field-agent-embedded:
+    name: Windows embeddable ${{ matrix.python }} ${{ matrix.architecture }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8.10', '3.12.10']
+        architecture: [amd64, win32]
+    env:
+      EMBEDDED_VERSION: ${{ matrix.python }}
+      EMBEDDED_ARCH: ${{ matrix.architecture }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Download pinned public inputs and stage the test-only runtime
+        shell: pwsh
+        run: |
+          $inputs = Join-Path $env:RUNNER_TEMP 'wj public inputs'
+          $bundle = Join-Path $env:RUNNER_TEMP 'WJ Embedded 한글 test'
+          New-Item -ItemType Directory -Path $inputs | Out-Null
+          $zip = 'python-{0}-embed-{1}.zip' -f $env:EMBEDDED_VERSION, $env:EMBEDDED_ARCH
+          $wheel = 'pyserial-3.5-py2.py3-none-any.whl'
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$env:EMBEDDED_VERSION/$zip" -OutFile (Join-Path $inputs $zip)
+          Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/$wheel" -OutFile (Join-Path $inputs $wheel)
+          python -m field_agent.packaging.ci_embedded --inputs $inputs --destination $bundle --python-version $env:EMBEDDED_VERSION --architecture $env:EMBEDDED_ARCH
+      - name: Run the isolated embeddable Python and import pyserial
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'WJ Embedded 한글 test'
+          $python = Join-Path $bundle 'python/python.exe'
+          $probe = Join-Path $bundle 'runtime_probe.py'
+          @'
+          from pathlib import Path
+          import struct
+          import sys
+          import serial
+
+          version, arch = sys.argv[1:]
+          runtime = Path(sys.executable).resolve().parent
+          stdlib = 'python{}{}.zip'.format(*sys.version_info[:2])
+          expected_path = [runtime / stdlib, runtime, runtime.parent, runtime / 'Lib' / 'site-packages']
+          assert sys.version_info[:3] == tuple(map(int, version.split('.'))), sys.version
+          assert struct.calcsize('P') == {'amd64': 8, 'win32': 4}[arch]
+          assert sys.flags.isolated and 'site' not in sys.modules
+          assert [Path(value).resolve() for value in sys.path] == expected_path, sys.path
+          assert serial.__version__ == '3.5'
+          assert Path(serial.__file__).resolve().parent.parent == expected_path[-1]
+          print('Isolated Python {} {}, pyserial {}'.format(version, arch, serial.__version__))
+          '@ | Set-Content -LiteralPath $probe -Encoding UTF8
+          & $python -B $probe $env:EMBEDDED_VERSION $env:EMBEDDED_ARCH
+      - name: Check boot, settings, ledger and loopback with the embeddable runtime
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'WJ Embedded 한글 test'
+          & (Join-Path $bundle 'python/python.exe') -B -m field_agent selftest --data-dir (Join-Path $bundle 'synthetic station') --windows-package --port 0
+      - name: Run representative field agent tests with the embeddable runtime
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'WJ Embedded 한글 test'
+          $tests = @(
+            'field_agent.tests.test_config',
+            'field_agent.tests.test_ledger_backup',
+            'field_agent.tests.test_uploader',
+            'field_agent.tests.test_issuer_policy',
+            'field_agent.tests.test_weigh_app',
+            'field_agent.tests.test_vision_runtime'
+          )
+          & (Join-Path $bundle 'python/python.exe') -B -m unittest -v @tests

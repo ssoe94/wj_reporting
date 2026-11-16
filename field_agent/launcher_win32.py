@@ -61,10 +61,9 @@ def launcher_lock(root):
         raise ValueError("Invalid launcher lock file")
     handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     with os.fdopen(handle, "r+b", buffering=0) as stream:
-        if not stream.read(1):
-            stream.write(b"0")
-        stream.seek(0)
         msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        if os.fstat(stream.fileno()).st_size == 0:
+            stream.write(b"0")
         yield
 
 
