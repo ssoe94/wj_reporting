@@ -44,6 +44,7 @@ import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth
 import { canAccessHr, HR_DASHBOARD_PATH, HR_PERSONNEL_PATH, HR_WORK_PATH } from './domains/auth/hr-access';
 import { HR_PAGES, LEGACY_HR_ROUTES, hrPageForPath, legacyHrHref } from './domains/hr/flow';
 import { INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
+import { FIELD_MONITORING_PATH } from './domains/auth/field-monitoring-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 const HrDashboardPage = lazy(() => import('./pages/hr/HrDashboardPage'));
@@ -73,6 +74,7 @@ const InspectionRequestsPage = lazy(() => import('./pages/quality/inspection-req
 const AssemblyDashboardPage = lazy(() => import('./pages/assembly/Dashboard'));
 const InjectionDashboardPage = lazy(() => import('./pages/injection/Dashboard'));
 const InjectionMonitoringPage = lazy(() => import('./pages/injection/MonitoringPage'));
+const InjectionFieldMonitoringPage = lazy(() => import('./pages/injection/FieldMonitoringPage'));
 const ProductionStatsPage = lazy(() => import('./pages/production/Stats'));
 
 const ProductionDashboardPage = lazy(() => import('./domains/production/pages/ProductionDashboardPage').then((module) => ({
@@ -149,7 +151,10 @@ function InjectionLegacyRedirect() {
 
 function useNavItems() {
   const { lang, t } = useLang();
-  const { user, hasPermission, canAccessInspection } = useAuth();
+  const { user, hasPermission, canAccessInspection, canAccessRoute } = useAuth();
+  const fieldMonitoringNavigation = canAccessRoute(FIELD_MONITORING_PATH)
+    ? [{ to: FIELD_MONITORING_PATH, label: t('nav_injection_field_monitoring'), icon: ClipboardCheck }]
+    : [];
   const canViewFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_view_development')));
   const canEditFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_edit_development')));
   const taskNavigation = canManageDevelopmentTasks(user) ? [{
@@ -190,6 +195,7 @@ function useNavItems() {
         children: [
           { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
           { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
+          ...fieldMonitoringNavigation,
         ],
       },
       {
@@ -276,6 +282,7 @@ function useNavItems() {
     children: [
       { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
       { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
+      ...fieldMonitoringNavigation,
     ],
   });
   navItems.push({
@@ -531,6 +538,7 @@ function AppContent() {
   else if (pathname.startsWith('/production')) breadcrumbLabel = t('nav_production');
   else if (pathname.startsWith('/injection/moulds')) breadcrumbLabel = lang === 'ko' ? '금형 현황' : '模具现状';
   else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
+  else if (pathname.startsWith('/injection/field-monitoring')) breadcrumbLabel = t('nav_injection_field_monitoring');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/dashboard')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_operations_summary');
@@ -872,6 +880,7 @@ function AppContent() {
             <Route path="/injection/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             <Route path="/injection" element={<PrivateRoute><InjectionLegacyRedirect /></PrivateRoute>} />
             <Route path="/injection/setup" element={<PrivateRoute><Navigate to="/injection/dashboard#cycle-time" replace /></PrivateRoute>} />
+            <Route path={FIELD_MONITORING_PATH} element={<PrivateRoute><PageTransition><InjectionFieldMonitoringPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
             <Route path="/mes/monitoring" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><MesMonitoringPage /></Suspense></PageTransition></PrivateRoute>} />
 

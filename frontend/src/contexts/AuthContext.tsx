@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
 import { canAccessHr, isHrRoute } from '../domains/auth/hr-access';
+import { canAccessFieldMonitoring, isFieldMonitoringRoute } from '../domains/auth/field-monitoring-access';
 import { canUseInspectionBeta, isInspectionBetaRoute, parseInspectionAccess } from '../domains/auth/inspection-beta-access';
 import type { InspectionAccess } from '../domains/auth/inspection-beta-access';
 import { abortAuthActivity, AuthRefreshError, isDefinitiveSessionRejection, recordAuthActivity, refreshAccessToken } from '../domains/auth/auth-refresh';
@@ -59,6 +60,7 @@ interface User {
   is_staff: boolean;
   is_superuser?: boolean;
   can_access_hr?: boolean;
+  can_access_field_monitoring?: boolean;
   groups: string[];
   department?: string;
   is_using_temp_password?: boolean;
@@ -371,6 +373,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (!user) return false;
     if (isLgentRoute(route)) return canAccessLgent(user);
     if (isHrRoute(route)) return canAccessHr(user);
+    if (isFieldMonitoringRoute(route)) {
+      return canAccessFieldMonitoring(user) && (user.is_superuser === true || !parseFieldTerminalUser(user.username));
+    }
     if (isInspectionBetaRoute(route)) return canAccessInspection;
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);
     if (user.is_staff || hasPermission('is_admin')) return true;
