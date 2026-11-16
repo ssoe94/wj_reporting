@@ -1,0 +1,51 @@
+:root {
+  color-scheme: light;
+  font: 16px/1.55 system-ui, "Malgun Gothic", "Microsoft YaHei", sans-serif;
+  color: #222b33;
+  background: #f3f5f7;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(100%, 65rem); margin: 0 auto; padding: 1rem; display: grid; gap: .75rem; }
+.card { min-width: 0; background: #fff; border: 1px solid #ced7df; border-radius: .65rem; padding: 1rem; }
+.header { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem 1.1rem; }
+.header > div:first-child { flex: 1 1 16rem; }
+h1, h2, p, dl { margin: 0; }
+h1 { font-size: 1.55rem; line-height: 1.3; }
+h2 { font-size: 1.2rem; margin-bottom: .5rem; }
+.muted { color: #5d6872; overflow-wrap: anywhere; }
+.languages, .app-tabs { display: flex; flex-wrap: wrap; gap: .5rem; }
+button {
+  color: #222b33; background: #fff; border: 1px solid #82929e; border-radius: .4rem;
+  font: inherit; font-weight: 600; min-height: 2.75rem; min-width: 2.75rem; padding: .35rem .85rem;
+  cursor: pointer;
+}
+button[aria-pressed="true"] { color: #fff; background: #006d91; border-color: #006d91; }
+button:focus-visible { outline: 3px solid #006d91; outline-offset: 2px; }
+.badge { border: 1px solid #ced7df; border-radius: .4rem; padding: .35rem .6rem; }
+.badge[data-state="connected"] { color: #245634; background: #edf8ef; border-color: #98c5a3; }
+.badge[data-state="disconnected"], .warning { color: #754419; background: #fff4de; border: 1px solid #e3b879; }
+.warning { border-radius: .5rem; padding: .65rem .85rem; }
+.details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+dl { display: grid; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); gap: .3rem .75rem; }
+dt { color: #5d6872; }
+dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+#app-panel { margin-top: .7rem; }
+#app-panel p { margin-top: .5rem; }
+.device-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(5.5rem, auto) minmax(9.5rem, auto);
+  align-items: baseline; gap: .4rem .75rem; padding: .6rem 0; border-bottom: 1px solid #e2e8ee;
+  overflow-wrap: anywhere;
+}
+.device-row:last-child { border-bottom: 0; }
+.device-state[data-state="fault"], .device-state[data-state="disconnected"] { color: #8c351f; }
+@media (max-width: 42rem) {
+  .details { grid-template-columns: 1fr; }
+}
+@media (max-width: 26rem) {
+  main { padding: .65rem; }
+  .card { padding: .75rem; }
+  dl { grid-template-columns: minmax(6.5rem, auto) minmax(0, 1fr); }
+  .device-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .device-row .muted { grid-column: 1 / -1; }
+}

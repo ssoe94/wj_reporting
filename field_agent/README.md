@@ -1,0 +1,93 @@
+# WJ 현장 에이전트 C1
+
+SQLite 원장, 전송·heartbeat, 일일 백업, 로컬 화면을 여러 현장 앱에서 공통으로 사용한다. [프로토콜 v1](../docs/field-monitoring/protocol-v1.md)을 사용하며 서버 코드 import 없이 표준 라이브러리로 실행한다. 가짜 스캐너는 시험 모드이고 기존 현장 바코드 판정은 단계 D에서 연결한다. 실기 환경의 시리얼 어댑터를 열 때만 `pyserial`이 필요하다.
+
+```text
+시리얼 장치 / 가짜 줄 입력
+          │
+          ▼
+현장 앱 ── SQLite WAL 트랜잭션 ── 업무 행 + append-only 이벤트
+                                      │
+             ┌────────────────────────┴─────────────────────┐
+             ▼                                              ▼
+      전송 작업 스레드                                 백업 작업 스레드
+      outbox + 커서 (같이 commit)                        유휴 확인 → online backup
+      원본 바이트 → HTTPS → 엄격한 ACK                   quick_check → 날짜별 이미지
+      heartbeat 최신본만
+             │
+             ▼
+      WJ 수신·모니터링
+
+로컬 브라우저 ← 127.0.0.1 상태 JSON/SSE ← 메모리에 캐시된 상태
+```
+
+## 설치와 실행
+
+서버에서 등록·발급한 연결 JSON을 해당 PC의 설치 계정에 전달한다. 구성 예시는 `{"server":"https://field.example.invalid","station_id":"SYNTH-PC","token":"<발급받은 값>"}` 형식이다. 운영 연결은 HTTPS를 사용한다. 로컬 시험은 loopback HTTP를 사용할 수 있다. 입력 JSON에는 토큰 평문이 있으므로 설치가 끝난 뒤 해당 임시 사본을 치운다.
+
+```text
+python -m field_agent configure --data-dir <data> --connection <연결 JSON>
+python -m field_agent run --data-dir <data> --port 8769
+```
+
+구성은 브라우저에서 변경할 수 없다. 구성 파일에는 서버·station·토큰 파일 참조만 남는다. 토큰 파일은 데이터 디렉터리에서 읽으며 에이전트 출력, 상태 API, heartbeat의 데이터에는 들어가지 않는다. 다른 station이나 서버는 별도 데이터 디렉터리를 사용한다. 같은 디렉터리를 쓸 때는 먼저 실행 중인 에이전트를 종료한다. Windows에서는 전용 계정에만 데이터 디렉터리의 읽기·쓰기를 허용하는 NTFS 권한을 적용한다.
+
+브라우저에서 `http://127.0.0.1:8769/`를 연다. 정적 화면은 인터넷 없이 작동한다. 현재 버전은 상태를 읽는 화면이며 앱별 작업 화면을 붙일 탭 자리를 제공한다. JSON은 `/api/status`, 변경 알림은 SSE `/api/events`로 확인한다.
+
+가짜 입력은 설치 파일과 별도인 시험 데이터 디렉터리에서만 사용한다. 한 줄씩 stdin으로 전달한다. 프레임 큐는 제한된 크기이며 입력이 밀리면 생산자가 대기하거나 실패를 처리한다.
+
+```text
+python -m field_agent run --data-dir <격리 시험 데이터> --port 8769 --fake-stdin
+```
+
+장치 연결·업무 행 커밋과 업로드 확인은 별도의 상태다. HTTP 오류 또는 서버 중단 중에도 앱은 로컬 원장에 기록한다. 송신은 SHA-256으로 확인한 동일 묶음 바이트로 재개한다. 영구 오류나 ACK 불일치는 원장에 보류 사유를 남긴다. 원인을 확인하고 필요하면 토큰을 재설치한 뒤, 에이전트를 정지한 상태에서 아래 명령으로 보류를 해제한다. 오류가 있는 묶음 데이터는 별도 검토로 처리하고 원장을 직접 변경하지 않는다.
+
+```text
+python -m field_agent resume --data-dir <data>
+```
+
+## 업무 앱 연결 경계
+
+`Ledger.transaction()`이 넘긴 같은 연결에 업무 행을 쓰고 `Ledger.append(conn, event)`로 이벤트를 추가한다. `seq`는 SQLite가 배정한다. 이 단계에서 시간대와 크기 등 공통 필드를 검사한다. 유형별 업무 규칙과 필드는 해당 어댑터에서 구성한다. 아래 예시에서 `event`는 프로토콜의 필드를 채운 객체다.
+
+```python
+with ledger.transaction() as conn:
+    conn.execute("INSERT INTO app_work(work_id) VALUES (?)", (work_id,))
+    seq = ledger.append(conn, event)
+uploader.wake()
+```
+
+블록이 정상 종료된 시점이 커밋이다. 중간의 예외는 업무 행과 이벤트를 함께 롤백한다. 장치 경로에서 전송·백업 결과를 기다리지 않는다. 일반 입력 뒤에는 전송 작업만 깨우고, 장치·설정 상태가 바뀌면 `wake(state_changed=True)`를 호출해 heartbeat를 디바운스한다. 원장에 미확정 작업이 가려지지 않도록 디스크 오류를 화면에서 알리고 실행·정확성 판단은 별도로 관리한다.
+
+## 백업과 복원
+
+상하이 08:00 업무일이 바뀐 뒤 설정한 유휴 시간에 `backup/YYYY-MM-DD.sqlite3`를 생성한다. 최초 실행일에도 유휴 상태라면 실행한다. 기본 유휴 60초, 같은 원장 세대의 스냅샷 최대 30개, 최소 여유 256 MiB이며 `run --backup-idle`, `--backup-keep`, `--min-free-mib`로 설정할 수 있다. 백업 크기 여유도 추가로 확인한다. 백업은 앱 데이터·원장·outbox를 같은 SQLite 이미지에 담으며, 별도로 보관하는 구성·토큰 파일과 장치 사진은 포함하지 않는다. 백업이 건너뛰어지거나 실패하면 상태가 표시된다. 실패 중 원장 커밋까지 불가능하면 감사 이벤트도 기록될 수 없으며 화면에 그 상태가 남는다.
+
+1. 복원 대상 PC의 에이전트를 끄고 기존 원장, WAL, 구성 및 토큰을 확보한다. WAL이 열린 원장 파일을 복사본으로 복원하지 않는다.
+2. `python -m field_agent verify-backup --backup <스냅샷>`으로 SQLite `quick_check`, station과 원장 UUID, 최대 seq, staging/ACK 위치, 미확인 묶음의 SHA-256과 본문을 확인한다.
+3. **동일 세대 복원**은 이미지 이후에 현장 앱이 기록·전송한 이벤트가 없음을 현장 원장과 중앙 수신 상태를 대조해 확인한 경우에 사용한다. 로컬 체크만으로 중앙에 이후 seq가 있는지 알 수 없다. 일치가 확인되면 같은 station·서버로 구성된 별도 데이터 경로에 아래 명령으로 복원한다. 기존 DB나 WAL이 있는 경로에는 덮어쓰지 않는다.
+4. 이미 더 새로운 이벤트가 있거나 확인할 수 없으면 오래된 이미지를 보존한다. 이후 작업을 새 원장 세대로 시작하고 이전 세대의 미전송 건은 원천 ID와 중앙 수신 목록을 비교해 복구 범위를 결정한다. 옛 이미지의 seq를 그대로 재발행하거나 중앙에서 받은 이벤트를 새 세대로 자동 재발행하면 충돌이나 이중 집계가 생길 수 있다.
+
+```text
+python -m field_agent restore --data-dir <새 경로> --backup <스냅샷> --confirmed-same-generation
+```
+
+동일 세대 복원은 복원 직후의 staging/ACK 위치를 유지한다. 3단계 조건 안에서 장치 입력을 재개하기 전에 기존 미확인 묶음을 확인한다. ACK된 outbox 사본은 이번 버전에서 유지한다. 실제 디스크 증가를 확인한 뒤 보존 정책을 정한다.
+
+## Windows 포터블 폴더
+
+```text
+station/
+  data/                         구성, 자격, SQLite, 백업
+  release-<version>/
+    python/python.exe           동일 아키텍처의 내장 런타임
+    field_agent/                이 모듈과 static HTML/CSS/JS
+    start.cmd                   이 폴더 루트에 배치한 시작 템플릿
+    SHA256SUMS.txt              런타임·코드·시작 파일별 SHA-256
+```
+
+배포 담당자는 대상 Windows와 아키텍처에서 검증한 런타임을 묶는다. 임베디드 Windows Python을 사용하는 경우 런타임의 `._pth` 목록에서 릴리스 루트(`..`)를 모듈 검색에 허용한다. 배치 파일은 localhost 서비스의 상태 응답을 확인한 뒤 설치된 Chrome 또는 Edge를 앱 모드로 연다. 창을 닫거나 다시 열어도 에이전트는 계속 실행한다.
+
+신뢰할 수 있는 패키징 PC에서 릴리스 루트의 각 파일에 대해 SHA-256과 상대 경로를 `<hash>  <relative-path>` 형식으로 기록한다. 매니페스트에는 자기 자신과 `data/`를 포함하지 않는다. 설치 PC에서는 전달받은 목록을 먼저 대조한다. 개별 파일은 Windows의 `certutil -hashfile "<파일>" SHA256`으로 확인할 수 있다. 작업 교대 사이에 이전 버전을 정지하고 검증된 새 버전 폴더를 실행한다. 롤백은 새 런타임이 만든 원장 스키마를 이전 런타임이 읽을 수 있을 때 같은 `data/`와 이전 버전 폴더를 사용한다. 호환성이 확인되지 않은 경우 스냅샷과 복원 범위를 먼저 대조한다.
+
+저장소 루트에서 `python -m unittest discover -s field_agent/tests`로 순수 Python 테스트를 실행한다. Python 3.8 문법 검사, 서버 공유 예제, 루프백 HTTP 시험을 포함한다. Windows EXE·실기 장치·Chrome 109 호환은 대상 PC에서 확인한다.

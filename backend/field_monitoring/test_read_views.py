@@ -98,6 +98,8 @@ class FieldReadTests(TestCase):
         self.event(occurred=boundary - timedelta(microseconds=1), result='ng')
         self.event(mode='test', result='ng')
         self.event(suspect=True, result='ng')
+        self.event(app='weigh_label', event_type='label.dispatched', result='error', reason='print_uncertain')
+        self.event(app='vision_capture', event_type='capture.single', mode='test')
 
         overview = self.client.get(BASE + 'overview/')
         self.assertEqual(overview.status_code, 200)
@@ -105,8 +107,17 @@ class FieldReadTests(TestCase):
         stations = {row['station_id']: row for row in overview.data['stations']}
         a = stations[self.station.station_id]
         self.assertEqual(a['connection'], 'online')
-        self.assertEqual(a['production_counts'], {'ok': 1, 'ng': 0, 'error': 0, 'info': 0})
-        self.assertEqual(a['non_production_count'], 1)
+        self.assertEqual(a['production_counts'], {'ok': 1, 'ng': 0, 'error': 1, 'info': 0})
+        self.assertEqual(a['non_production_count'], 2)
+        self.assertEqual(a['exception_count'], 5)
+        self.assertEqual(a['app_counts'], [
+            {'app': 'barcode', 'production_counts': {'ok': 1, 'ng': 0, 'error': 0, 'info': 0}, 'non_production_count': 1},
+            {'app': 'weigh_label', 'production_counts': {'ok': 0, 'ng': 0, 'error': 1, 'info': 0}, 'non_production_count': 0},
+            {'app': 'vision_capture', 'production_counts': {'ok': 0, 'ng': 0, 'error': 0, 'info': 0}, 'non_production_count': 1},
+        ])
+        self.assertEqual(overview.data['summary'], {
+            'registered_pc_count': 6, 'online_pc_count': 2, 'disconnected_pc_count': 4, 'exception_count': 8,
+        })
         self.assertEqual(a['clock_offset_seconds'], -301)
         self.assertCountEqual(a['warnings'], ['clock_offset', 'duplicate_sender', 'upload_backlog'])
         self.assertEqual(stations[stale.station_id]['connection'], 'stale')
@@ -124,6 +135,9 @@ class FieldReadTests(TestCase):
         })
         self.assertEqual(len(yesterday.data['stations']), 1)
         self.assertEqual(yesterday.data['stations'][0]['production_counts']['ng'], 1)
+        self.assertEqual(yesterday.data['summary'], {
+            'registered_pc_count': 1, 'online_pc_count': 1, 'disconnected_pc_count': 0, 'exception_count': 4,
+        })
 
     def test_exceptions_link_production_records_and_latest_operational_warnings(self):
         self.heartbeat(
@@ -170,6 +184,8 @@ class FieldReadTests(TestCase):
             row['filters']['mode'] for row in result.data['exceptions'] if row['reason'] == 'non_production_activity'
         ]
         self.assertCountEqual(mode_entries, ['test', 'demo', 'manual'])
+        overview = self.client.get(BASE + 'overview/')
+        self.assertEqual(overview.data['summary']['exception_count'], sum(row['count'] for row in result.data['exceptions']))
 
     def submit(self, job_id='', *, occurred=None, jobs=None, station=None):
         return self.event(

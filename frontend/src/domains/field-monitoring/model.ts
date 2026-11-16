@@ -55,11 +55,28 @@ export type FieldOverviewStation = FieldStationDraft & {
   } | null;
   production_counts: Record<FieldResult, number>;
   non_production_count: number;
+  app_counts: {
+    app: string;
+    production_counts: Record<FieldResult, number>;
+    non_production_count: number;
+  }[];
+  exception_count: number;
   clock_offset_seconds: number | null;
   warnings: string[];
 };
 
-export type FieldOverview = { business_date: string; stations: FieldOverviewStation[] };
+export type FieldOverviewSummary = {
+  registered_pc_count: number;
+  online_pc_count: number;
+  disconnected_pc_count: number;
+  exception_count: number;
+};
+
+export type FieldOverview = {
+  business_date: string;
+  stations: FieldOverviewStation[];
+  summary: FieldOverviewSummary;
+};
 
 export type FieldException = {
   station_id: string;

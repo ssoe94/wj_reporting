@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>현장 에이전트</title>
+  <link rel="stylesheet" href="/agent.css">
+  <script src="/agent.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="header card">
+      <div>
+        <h1 data-text="heading">현장 에이전트</h1>
+        <p class="muted" id="station">—</p>
+      </div>
+      <div class="languages" aria-label="언어 / 语言">
+        <button type="button" data-lang="ko" lang="ko" aria-pressed="true">한국어</button>
+        <button type="button" data-lang="zh" lang="zh-Hans" aria-pressed="false">中文</button>
+      </div>
+      <p class="badge" role="status" id="connection">로컬 연결 중</p>
+    </header>
+    <p id="clock-warning" role="status" class="warning" hidden></p>
+    <div class="details">
+      <section class="card" aria-labelledby="outbox-title">
+        <h2 id="outbox-title" data-text="outbox">전송</h2>
+        <dl id="outbox"></dl>
+      </section>
+      <section class="card" aria-labelledby="backup-title">
+        <h2 id="backup-title" data-text="backup">백업</h2>
+        <dl id="backup"></dl>
+      </section>
+    </div>
+    <section class="card" aria-labelledby="devices-title">
+      <h2 id="devices-title" data-text="devices">장치 및 마지막 입력</h2>
+      <div id="devices"></div>
+    </section>
+    <section class="card" aria-labelledby="apps-title">
+      <h2 id="apps-title" data-text="apps">현장 앱</h2>
+      <div id="app-tabs" class="app-tabs"></div>
+      <div id="app-panel"></div>
+    </section>
+    <noscript>상태 화면을 사용하려면 JavaScript를 켜세요. / 请启用 JavaScript 查看状态。</noscript>
+  </main>
+</body>
+</html>

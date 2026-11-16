@@ -171,18 +171,30 @@ def _clean_production(events):
 
 
 def _production_counts(events):
-    counts = defaultdict(Counter)
-    rows = _clean_production(events).values('station_id', 'result').annotate(count=Count('pk'))
+    counts = defaultdict(lambda: defaultdict(Counter))
+    rows = _clean_production(events).values('station_id', 'app', 'result').annotate(count=Count('pk'))
     for row in rows:
-        counts[row['station_id']][row['result']] = row['count']
+        counts[row['station_id']][row['app']][row['result']] = row['count']
     return counts
 
 
 def _non_production_counts(events):
-    return {
-        row['station_id']: row['count']
-        for row in events.exclude(mode='production').values('station_id').annotate(count=Count('pk'))
-    }
+    counts = defaultdict(Counter)
+    rows = events.exclude(mode='production').values('station_id', 'app').annotate(count=Count('pk'))
+    for row in rows:
+        counts[row['station_id']][row['app']] = row['count']
+    return counts
+
+
+def _app_counts(apps, app_status, production, non_production):
+    app_names = dict.fromkeys([*apps, *(item['app'] for item in app_status), *sorted(set(production) | set(non_production))])
+    totals = Counter()
+    rows = []
+    for app in app_names:
+        results = {result: production.get(app, {}).get(result, 0) for result in RESULTS}
+        totals.update(results)
+        rows.append({'app': app, 'production_counts': results, 'non_production_count': non_production[app]})
+    return rows, {result: totals[result] for result in RESULTS}
 
 
 def _reread_overdue(events, now):
@@ -213,21 +225,7 @@ def _reread_overdue(events, now):
     )
 
 
-def _exceptions(stations, heartbeats, events, day, now):
-    by_id = {item.pk: item for item in stations}
-    rows = []
-    lookup_date = day.isoformat()
-
-    def add(station_id, code, count, **filters):
-        station = by_id[station_id]
-        rows.append({
-            'station_id': station.station_id,
-            'display_name': station.display_name,
-            'reason': code,
-            'count': count,
-            'filters': {'from': lookup_date, 'to': lookup_date, 'station': station.station_id, **filters},
-        })
-
+def _collect_exceptions(stations, heartbeats, events, now, add):
     production = events.filter(mode='production')
     exception_types = Q(app='barcode', event_type='scan.recorded', result='ng')
     for event_type, reasons in RESULT_EXCEPTION_TYPES.items():
@@ -273,11 +271,39 @@ def _exceptions(stations, heartbeats, events, day, now):
             for (app, state), count in fault_counts.items():
                 add(station.pk, f'device_{state}', count, app=app, type='device.state')
 
+
+def _exceptions(stations, heartbeats, events, day, now):
+    by_id = {item.pk: item for item in stations}
+    rows = []
+    lookup_date = day.isoformat()
+
+    def add(station_id, code, count, **filters):
+        station = by_id[station_id]
+        rows.append({
+            'station_id': station.station_id,
+            'display_name': station.display_name,
+            'reason': code,
+            'count': count,
+            'filters': {'from': lookup_date, 'to': lookup_date, 'station': station.station_id, **filters},
+        })
+
+    _collect_exceptions(stations, heartbeats, events, now, add)
     return sorted(rows, key=lambda row: (
         row['station_id'], row['reason'], row['filters'].get('app', ''),
         row['filters'].get('mode', ''), row['filters'].get('job_id', ''),
         row['filters'].get('cycle_id', ''),
     ))
+
+
+def _exception_counts(stations, heartbeats, events, now):
+    counts = Counter()
+
+    def add(station_id, _code, count, **_filters):
+        counts[station_id] += count
+
+    if stations:
+        _collect_exceptions(stations, heartbeats, events, now, add)
+    return counts
 
 
 def _event_search(params):
@@ -390,11 +416,18 @@ class OverviewView(FieldReadView):
         events = _day_events(stations, day)
         production_counts = _production_counts(events)
         non_production_counts = _non_production_counts(events)
+        exception_counts = _exception_counts(stations, heartbeats, events, now)
+        online_count = 0
         output = []
         for station in stations:
             heartbeat = heartbeats.get(station.pk)
             payload = heartbeat.payload if heartbeat is not None else {}
             connection, warnings = _health(station, heartbeat, now)
+            online_count += connection == 'online'
+            app_status = payload.get('apps', [])
+            app_counts, station_totals = _app_counts(
+                station.apps, app_status, production_counts[station.pk], non_production_counts[station.pk],
+            )
             output.append({
                 'station_id': station.station_id,
                 'display_name': station.display_name,
@@ -404,15 +437,26 @@ class OverviewView(FieldReadView):
                 'enabled': station.enabled,
                 'connection': connection,
                 'last_heartbeat_at': heartbeat.received_at if heartbeat is not None else None,
-                'app_status': payload.get('apps', []),
+                'app_status': app_status,
                 'devices': payload.get('devices', []),
                 'outbox': payload.get('outbox'),
-                'production_counts': {result: production_counts[station.pk][result] for result in RESULTS},
-                'non_production_count': non_production_counts.get(station.pk, 0),
+                'production_counts': station_totals,
+                'non_production_count': sum(non_production_counts[station.pk].values()),
+                'app_counts': app_counts,
+                'exception_count': exception_counts[station.pk],
                 'clock_offset_seconds': heartbeat.clock_offset_seconds if heartbeat is not None else None,
                 'warnings': warnings,
             })
-        return Response({'business_date': day, 'stations': output})
+        return Response({
+            'business_date': day,
+            'stations': output,
+            'summary': {
+                'registered_pc_count': len(output),
+                'online_pc_count': online_count,
+                'disconnected_pc_count': len(output) - online_count,
+                'exception_count': sum(exception_counts.values()),
+            },
+        })
 
 
 class ExceptionsView(FieldReadView):

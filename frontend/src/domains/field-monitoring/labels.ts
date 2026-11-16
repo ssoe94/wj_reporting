@@ -98,6 +98,21 @@ export function fieldText(code: string, tx: Tx) {
   return text ? tx(...text) : code;
 }
 
+const deviceLabels: Record<string, Pair> = {
+  SCALE: ['저울', '电子秤'],
+  CAMERA: ['카메라', '相机'],
+  PRINTER: ['프린터', '打印机'],
+  A: ['스캐너 A', 'A 扫码枪'],
+  B: ['스캐너 B', 'B 扫码枪'],
+  W: ['스캐너 W', 'W 扫码枪'],
+  KEYBOARD: ['키보드', '键盘'],
+};
+
+export function fieldDeviceText(code: string, tx: Tx) {
+  const text = deviceLabels[code.toUpperCase()];
+  return text ? tx(...text) : code;
+}
+
 const shanghaiTime = new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',

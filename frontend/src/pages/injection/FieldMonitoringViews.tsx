@@ -5,10 +5,10 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { downloadFieldEvents, fieldEvents } from '@/domains/field-monitoring/api';
-import { clockMinutes, fieldText, formatFieldTime } from '@/domains/field-monitoring/labels';
+import { clockMinutes, fieldDeviceText, fieldText, formatFieldTime } from '@/domains/field-monitoring/labels';
 import type { Tx } from '@/domains/field-monitoring/labels';
 import { FIELD_APPS, FIELD_MODES, FIELD_RESULTS, FIELD_TYPES } from '@/domains/field-monitoring/model';
-import type { FieldEvent, FieldException, FieldFilterKey, FieldFilters, FieldOverviewStation } from '@/domains/field-monitoring/model';
+import type { FieldEvent, FieldException, FieldFilterKey, FieldFilters, FieldOverviewStation, FieldOverviewSummary } from '@/domains/field-monitoring/model';
 
 export const panelClass = 'rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface)]';
 export const selectClass = 'ui-input block min-h-10 w-full min-w-0 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--wj-accent)]';
@@ -64,12 +64,37 @@ export function FieldStationSelect({ stations, value, onChange, tx }: {
   </label>;
 }
 
-export function FieldOverviewView({ stations, tx }: { stations: FieldOverviewStation[]; tx: Tx }) {
-  if (!stations.length) {
-    return <FieldNotice>{tx('등록된 현장 PC가 없습니다.', '暂无已登记的现场电脑。')}</FieldNotice>;
-  }
-  return <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
-    {stations.map(station => <article key={station.station_id} className={`${panelClass} min-w-0`}>
+function OverviewSummary({ summary, tx }: { summary: FieldOverviewSummary; tx: Tx }) {
+  const items = [
+    { label: tx('등록 PC', '已登记电脑'), value: summary.registered_pc_count },
+    { label: tx('접속 중', '在线'), value: summary.online_pc_count },
+    { label: tx('끊김/미접속', '断开/未连接'), value: summary.disconnected_pc_count },
+    { label: tx('선택 업무일 예외', '所选业务日异常'), value: summary.exception_count,
+      title: tx('선택 업무일의 예외와 현재 접속·장치 경고', '所选业务日的异常及当前连接和设备告警') },
+  ];
+  return <dl aria-label={tx('현황 요약', '状态摘要')} className={`${panelClass} flex flex-wrap gap-x-5 gap-y-1 px-4 py-2 text-sm tabular-nums`}>
+    {items.map(({ label, value, title }) => <div key={label} className="flex gap-1.5" title={title}>
+      <dt className={muted}>{label}</dt><dd className="font-semibold">{value}</dd>
+    </div>)}
+  </dl>;
+}
+
+export function FieldOverviewView({ stations, summary, tx }: {
+  stations: FieldOverviewStation[];
+  summary: FieldOverviewSummary;
+  tx: Tx;
+}) {
+  return <div className="grid gap-3">
+    <OverviewSummary summary={summary} tx={tx} />
+    {!stations.length && <FieldNotice>{tx('등록된 현장 PC가 없습니다.', '暂无已登记的现场电脑。')}</FieldNotice>}
+    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
+      {stations.map(station => <StationOverviewCard key={station.station_id} station={station} tx={tx} />)}
+    </div>
+  </div>;
+}
+
+function StationOverviewCard({ station, tx }: { station: FieldOverviewStation; tx: Tx }) {
+  return <article className={`${panelClass} min-w-0`}>
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--wj-border)] px-4 py-3">
         <div className="min-w-0">
           <h2 className="break-words text-base font-semibold">{station.display_name}</h2>
@@ -122,7 +147,7 @@ export function FieldOverviewView({ stations, tx }: { stations: FieldOverviewSta
           <h3 className="mb-1 font-medium">{tx('장치와 마지막 실제 입력', '设备与最后实际输入')}</h3>
           <ul className="divide-y divide-[var(--wj-border)]">
             {station.devices.map(item => <li key={`${item.app}/${item.device}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
-              <span className="break-words">{fieldText(item.app, tx)} · {item.device}</span>
+              <span className="break-words">{fieldText(item.app, tx)} · <span title={item.device}>{fieldDeviceText(item.device, tx)}</span></span>
               <span className={`flex flex-wrap items-center gap-2 ${muted}`}>
                 {formatFieldTime(item.last_input_at)}
                 <FieldBadge tone={resultTone(item.state)}>{fieldText(item.state, tx)}</FieldBadge>
@@ -131,17 +156,21 @@ export function FieldOverviewView({ stations, tx }: { stations: FieldOverviewSta
           </ul>
         </div>}
         <div className="border-t border-[var(--wj-border)] pt-2">
-          <h3 className="mb-1.5 font-medium">{tx('선택 업무일 생산 기록', '所选业务日生产记录')}</h3>
-          <dl className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
-            {FIELD_RESULTS.map(result => <div key={result} className="flex gap-1.5">
-              <dt className={muted}>{fieldText(result, tx)}</dt><dd className="font-semibold">{station.production_counts[result]}</dd>
-            </div>)}
-            <div className="flex gap-1.5"><dt className={muted}>{tx('비생산', '非生产')}</dt><dd>{station.non_production_count}</dd></div>
-          </dl>
+          <h3 className="mb-1.5 font-medium">{tx('앱별 기록 · 선택 업무일', '各程序记录 · 所选业务日')}</h3>
+          <ul className="divide-y divide-[var(--wj-border)]">
+            {station.app_counts.map(app => <li key={app.app} className="flex flex-wrap justify-between gap-x-3 gap-y-1 py-1.5">
+              <span className="break-words">{fieldText(app.app, tx)}</span>
+              <dl className="flex flex-wrap gap-x-3 gap-y-1 tabular-nums">
+                {FIELD_RESULTS.map(result => <div key={result} className="flex gap-1">
+                  <dt className={muted}>{fieldText(result, tx)}</dt><dd className="font-semibold">{app.production_counts[result]}</dd>
+                </div>)}
+                <div className="flex gap-1"><dt className={muted}>{tx('비생산', '非生产')}</dt><dd>{app.non_production_count}</dd></div>
+              </dl>
+            </li>)}
+          </ul>
         </div>
       </div>
-    </article>)}
-  </div>;
+  </article>;
 }
 
 export function FieldExceptionsView({ rows, onSearch, tx }: {
@@ -159,7 +188,10 @@ export function FieldExceptionsView({ rows, onSearch, tx }: {
             {row.filters.job_id || row.filters.cycle_id}
           </span>}
         </span>
-        <span className={`row-start-2 min-w-0 break-words text-sm ${muted} sm:row-start-auto`}>{row.display_name} · {row.station_id}</span>
+        <span className={`row-start-2 min-w-0 break-words text-sm ${muted} sm:row-start-auto`}>
+          <span className="block">{row.display_name} · {row.station_id}</span>
+          <span className="block">{row.filters.app ? fieldText(row.filters.app, tx) : tx('PC 공통', '电脑通用')}</span>
+        </span>
         <span className="col-start-2 row-start-1 tabular-nums text-sm sm:col-start-auto sm:row-start-auto">
           {row.count} <span className={muted}>{tx('건', '条')}</span> <span aria-hidden>›</span>
         </span>

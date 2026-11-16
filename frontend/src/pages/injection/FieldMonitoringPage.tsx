@@ -36,7 +36,9 @@ function FieldMonitoringWorkspace({ authSessionId, superuser }: {
     queryFn: ({ signal }) => fieldOverview({ business_date: businessDate }, { authSessionId, signal }),
     enabled: tab !== 'stations',
     retry: false,
-    refetchInterval: scopeVisible ? 60_000 : false,
+    refetchInterval: tab === 'overview' ? 60_000 : false,
+    refetchOnWindowFocus: tab === 'overview',
+    refetchOnReconnect: tab === 'overview',
   });
   const exceptions = useQuery({
     queryKey: ['field-monitoring', authSessionId, 'exceptions', scope],
@@ -48,6 +50,12 @@ function FieldMonitoringWorkspace({ authSessionId, superuser }: {
   const overviewStations = overview.data?.stations ?? [];
   const filteredStations = station
     ? overviewStations.filter(item => item.station_id === station) : overviewStations;
+  const overviewSummary = station ? {
+    registered_pc_count: filteredStations.length,
+    online_pc_count: filteredStations.filter(item => item.connection === 'online').length,
+    disconnected_pc_count: filteredStations.filter(item => item.connection !== 'online').length,
+    exception_count: filteredStations.reduce((count, item) => count + item.exception_count, 0),
+  } : overview.data?.summary;
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: tx('현황', '状态总览') },
     { id: 'exceptions', label: tx('예외', '异常') },
@@ -57,6 +65,7 @@ function FieldMonitoringWorkspace({ authSessionId, superuser }: {
 
   function changeTab(next: Tab) {
     if (tab === next) return;
+    if (next === 'overview' && tab !== 'stations' && overview.data) void overview.refetch();
     if (next === 'records' && recordFilters === null) {
       setRecordFilters({ from: businessDate, to: businessDate, station });
     }
@@ -88,14 +97,15 @@ function FieldMonitoringWorkspace({ authSessionId, superuser }: {
         <Input className="min-h-10" type="date" value={businessDate} onChange={event => { setSelectedDay(event.target.value); setRecordFilters(null); }} />
       </label>
       <FieldStationSelect stations={overviewStations} value={station} onChange={value => { setStation(value); setRecordFilters(null); }} tx={tx} />
-      <div><Button type="button" variant="secondary" disabled={overview.isFetching || (tab === 'exceptions' && exceptions.isFetching)} onClick={() => {
-        void overview.refetch();
-        if (tab === 'exceptions') void exceptions.refetch();
+      <div><Button type="button" variant="secondary" disabled={tab === 'overview' ? overview.isFetching : exceptions.isFetching} onClick={() => {
+        if (tab === 'overview') void overview.refetch();
+        else void exceptions.refetch();
       }}>{tx('새로고침', '刷新')}</Button></div>
     </div>}
     {tab !== 'stations' && overview.isError && <FieldLoadError tx={tx} retry={() => void overview.refetch()} />}
     {tab === 'overview' && overview.isPending && <FieldNotice>{tx('현황을 불러오는 중입니다.', '正在加载状态。')}</FieldNotice>}
-    {tab === 'overview' && overview.data && <FieldOverviewView stations={filteredStations} tx={tx} />}
+    {tab === 'overview' && overview.data && overviewSummary &&
+      <FieldOverviewView stations={filteredStations} summary={overviewSummary} tx={tx} />}
     {tab === 'exceptions' && exceptions.isPending && <FieldNotice>{tx('예외를 불러오는 중입니다.', '正在加载异常。')}</FieldNotice>}
     {tab === 'exceptions' && exceptions.isError && <FieldLoadError tx={tx} retry={() => void exceptions.refetch()} />}
     {tab === 'exceptions' && exceptions.data && <FieldExceptionsView rows={exceptions.data} onSearch={exceptionSearch} tx={tx} />}
