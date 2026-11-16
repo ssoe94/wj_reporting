@@ -5,11 +5,12 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { useAuth } from '../../contexts/AuthContext';
 import { canAccessHr } from '../../domains/auth/hr-access';
 import { getLaborForecast } from '../../domains/hr/labor-forecast-api';
+import { hrFlowHref } from '../../domains/hr/flow';
 import { comparisonForecastMetric, forecastChartPoints, forecastComponents, forecastMetricLabel, forecastReasonLabel } from '../../domains/hr/labor-forecast';
 import type { ForecastBasis, ForecastComparison, ForecastComponent, ForecastEmployee, ForecastGroup, ForecastMetric, LaborForecast } from '../../domains/hr/labor-forecast';
 import { laborGrossPayLabel } from '../../domains/hr/labor-standards';
 import { useLang } from '../../i18n';
-import { currentHrMonth, HrLoadState, HrShell } from './hrCommon';
+import { HrLoadState, HrShell, useHrMonth } from './hrCommon';
 import './hr-forecast.css';
 
 const labels: Record<ForecastComponent, [string, string]> = {
@@ -373,7 +374,7 @@ function ForecastContent({ month, allowed, ko }: { month: string; allowed: boole
     <Summary forecast={forecast} ko={ko} />
     {!forecast.payroll.uploaded && <section className="hr-panel hr-forecast-empty">
       <p>{ko ? '이달 급여표가 없습니다. 급여표를 올리면 예상과 실제를 비교할 수 있습니다.' : '本月尚未上传工资表。上传后可对比预测与实际。'}</p>
-      <Link className="hr-button" to={`/hr/personnel?month=${month}`}>{ko ? '급여표 올리기' : '上传工资表'}</Link>
+      <Link className="hr-button" to={hrFlowHref('personnel', 'upload', month)}>{ko ? '급여표 올리기' : '上传工资表'}</Link>
     </section>}
     {hasForecast && <Components forecast={forecast} ko={ko} />}
     {forecast.deductions.status === 'unconfirmed' && <p className="hr-forecast-deductions">
@@ -391,7 +392,7 @@ function ForecastContent({ month, allowed, ko }: { month: string; allowed: boole
 export default function LaborForecastPage() {
   const { lang } = useLang();
   const { user } = useAuth();
-  const [month, setMonth] = useState(currentHrMonth);
+  const [month, setMonth] = useHrMonth();
   const allowed = canAccessHr(user);
   return <HrShell page="labor-forecast" month={month} onMonthChange={setMonth}>
     <ForecastContent key={`${user?.id ?? 'anonymous'}:${month}:${allowed}`} month={month} allowed={allowed} ko={lang === 'ko'} />

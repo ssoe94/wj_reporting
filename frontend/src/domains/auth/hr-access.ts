@@ -1,5 +1,6 @@
 export const HR_DASHBOARD_PATH = '/hr/dashboard';
 export const HR_PERSONNEL_PATH = '/hr/personnel';
+export const HR_WORK_PATH = '/hr/work';
 export const HR_DAILY_WORK_PATH = '/hr/daily-work';
 export const HR_ROSTER_PATH = '/hr/roster';
 export const HR_LABOR_STANDARDS_PATH = '/hr/labor-standards';

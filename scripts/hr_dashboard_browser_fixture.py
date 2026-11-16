@@ -12,10 +12,10 @@ def seed_dashboard(mode, actor):
     assert mode in ('legacy', 'rich')
     legacy = mode == 'legacy'
     tree = [
-        {'id': 'synthetic-root', 'name': '测试工厂', 'parent_id': None},
-        {'id': 'synthetic-alpha', 'name': '测试甲组', 'parent_id': 'synthetic-root'},
-        {'id': 'synthetic-alpha-part', 'name': '测试甲小组', 'parent_id': 'synthetic-alpha'},
-        {'id': 'synthetic-beta', 'name': '测试乙组', 'parent_id': 'synthetic-root'},
+        {'id': 'synthetic-root', 'name': '测试工厂', 'parent_id': None, 'function': ''},
+        {'id': 'synthetic-alpha', 'name': '测试甲组', 'parent_id': 'synthetic-root', 'function': ''},
+        {'id': 'synthetic-alpha-part', 'name': '测试甲小组', 'parent_id': 'synthetic-alpha', 'function': ''},
+        {'id': 'synthetic-beta', 'name': '测试乙组', 'parent_id': 'synthetic-root', 'function': ''},
     ]
     people = [
         ('90001', '测试甲', 'contract', '部\n长', '测试甲组', 'synthetic-alpha-part', '4751.23'),

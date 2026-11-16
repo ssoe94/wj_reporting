@@ -23,7 +23,8 @@ const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
 const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep), 'Keep screenshots outside the repository.');
+assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
+  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
 fs.mkdirSync(screens, { recursive: true });
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
@@ -158,7 +159,7 @@ async function capture(page, name) {
   await page.screenshot({ path: file, fullPage: false }); captures.push(file);
 }
 async function standards(page) {
-  await page.goto(`${origin}/hr/labor-standards?month=${MONTH}`);
+  await page.goto(`${origin}/hr/work?step=standards&month=${MONTH}`);
   await page.locator('.hr-labor-rules-form').waitFor();
 }
 async function mobileContainment(page) {
@@ -174,8 +175,9 @@ async function mobileContainment(page) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   browser = await playwright.chromium.launch({ headless: true });
   const ko = await fixture(); await standards(ko.page);
-  assert.equal(await ko.page.locator('.hr-tabs a[href^="/hr/labor-forecast?month="]').count(), 1);
-  assert.equal(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), `/hr/labor-standards?month=${MONTH}`);
+  assert.equal(await ko.page.locator('.hr-tabs a').count(), 3);
+  assert.match(await ko.page.locator('.hr-tabs a[aria-current="page"]').getAttribute('href'), /^\/hr\/work\?/);
+  assert.match(await ko.page.locator('[aria-current="step"]').getAttribute('href'), /[?&]step=standards(?:&|$)/);
   const rulesForm = ko.page.locator('.hr-labor-rules-form');
   assert.equal(await rulesForm.getByLabel('근무일 배수', { exact: true }).inputValue(), '1.5');
   assert.equal(await rulesForm.getByLabel('휴일 배수', { exact: true }).inputValue(), '2');
@@ -281,7 +283,7 @@ async function mobileContainment(page) {
   checks.push('Chinese labels and 390px mobile layout preserve page width and at least 44px touch targets');
   await mobile.context.close();
 
-  const failure = await fixture({ scenario: 'error' }); await failure.page.goto(`${origin}/hr/labor-standards?month=${MONTH}`);
+  const failure = await fixture({ scenario: 'error' }); await failure.page.goto(`${origin}/hr/work?step=standards&month=${MONTH}`);
   await failure.page.getByText('인건비 기준을 불러오지 못했습니다.', { exact: true }).waitFor();
   assert.equal(await failure.page.locator('.hr-labor-rules-form').count(), 0);
   failure.state.scenario = 'normal';
@@ -289,7 +291,7 @@ async function mobileContainment(page) {
   await failure.page.locator('.hr-labor-rules-form').waitFor();
   checks.push('Failed standard loading is explicit and retry restores the form');
   await failure.context.close();
-  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/labor-standards?month=${MONTH}`);
+  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/work?step=standards&month=${MONTH}`);
   await denied.page.waitForURL('**/dashboard');
   assert.equal(await denied.page.locator('.hr-labor-rules-form, .hr-labor-calendar-form, .hr-tabs').count(), 0);
   assert.equal(await denied.page.locator('a[href^="/hr/"]').count(), 0);

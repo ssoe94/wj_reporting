@@ -8,7 +8,8 @@ import { createHrDailyEvent, getHrDailyWork, previewHrDailyWork, saveHrDailyWork
 import { copyPreviousDaily, dailyBulkDefaults, dailyBulkOff, dailyBulkOvertime, dailyDateOffset, dailyDraftKey, dailyLocalChanges, dailyOvertimeField, dailyRowsPayload, effectiveWork, initialDailyDate, overridesFromSheet, reapplyDailyChanges, setDailyWork, todayHrDate, WORK_HOUR_FIELDS } from '../../domains/hr/daily-work';
 import type { HrAttendance, HrDailyEventInput, HrDailyRow, HrDailySheet, HrWork, HrWorkField, HrWorkOverrides } from '../../domains/hr/daily-work';
 import { laborDayLabel } from '../../domains/hr/labor-standards';
-import { currentHrMonth, HrLoadState, HrShell, isHrConflict } from './hrCommon';
+import { HrLoadState, HrShell, isHrConflict } from './hrCommon';
+import { useHrPopGuard } from './useHrPopGuard';
 import HrDailyEvents from './HrDailyEvents';
 
 const dailyWorkLabel = (field: HrWorkField, ko: boolean) => ({ attendance: ko ? '출근 상태' : '出勤状态', regular_hours: ko ? '정규 시간' : '正常工时', weekday_hours: ko ? '평일 야근' : '平日加班', rest_hours: ko ? '휴일 근무' : '休息日工作', holiday_hours: ko ? '공휴일 근무' : '节假日工作', personal_leave_hours: ko ? '개인 휴가 시간' : '事假时数', sick_leave_hours: ko ? '병가 시간' : '病假时数' })[field];
@@ -126,11 +127,17 @@ export function DailySheetEditor({ initial, ko, onActivity, onSheet }: { initial
 
 export default function DailyWorkPage() {
   const { user } = useAuth(); const allowed = canAccessHr(user); const { lang } = useLang(); const ko = lang === 'ko';
-  const [date, setDate] = useState(initialDailyDate); const [dateInput, setDateInput] = useState(date); const [dateError, setDateError] = useState(false);
+  const location = useLocation(); const navigate = useNavigate();
+  const date = initialDailyDate(location.search);
+  const [dateDraft, setDateDraft] = useState<{ base: string; value: string } | null>(null);
+  const [dateError, setDateError] = useState(false);
+  const dateInput = dateDraft?.base === date ? dateDraft.value : date;
   const [result, setResult] = useState<{ scope: string; value: HrDailySheet } | null>(null); const [error, setError] = useState(''); const [reload, setReload] = useState(0);
   const [activity, setActivity] = useState({ dirty: false, busy: false }); const scope = `${user?.id}:${date}`;
   const stripRef = useRef<HTMLDivElement>(null);
-  const location = useLocation(); const navigate = useNavigate(); const sheet = allowed && result?.scope === scope ? result.value : null;
+  const sheet = allowed && result?.scope === scope ? result.value : null;
+  const leaveMessage = ko ? '저장하지 않은 근무·인원 변동 입력을 버리고 이동할까요?' : '放弃未保存的出勤或人员变动输入并离开吗？';
+  useHrPopGuard(activity.dirty, activity.busy, leaveMessage);
   useEffect(() => {
     const controller = new AbortController(); setError(''); setResult(null);
     if (allowed) getHrDailyWork(date, controller.signal).then((value) => { if (!controller.signal.aborted) setResult({ scope, value }); }).catch(() => { if (!controller.signal.aborted) setError(scope); });
@@ -143,22 +150,35 @@ export default function DailyWorkPage() {
     if (button.left < viewport.left) strip.scrollLeft -= viewport.left - button.left;
     else if (button.right > viewport.right) strip.scrollLeft += button.right - viewport.right;
   }, [date, sheet?.date]);
-  useEffect(() => { const query = new URLSearchParams(location.search); if (query.get('date') === date && query.get('month') === date.slice(0, 7)) return; query.set('date', date); query.set('month', date.slice(0, 7)); navigate({ pathname: location.pathname, search: query.toString() }, { replace: true }); }, [date, location.pathname, location.search, navigate]);
+  useEffect(() => {
+    if (!allowed) return;
+    const query = new URLSearchParams(location.search);
+    if (query.get('date') === date && query.get('month') === date.slice(0, 7) && query.get('step') === 'daily') return;
+    query.set('date', date);
+    query.set('month', date.slice(0, 7));
+    query.set('step', 'daily');
+    navigate({ pathname: location.pathname, search: query.toString(), hash: location.hash }, { replace: true });
+  }, [allowed, date, location.pathname, location.search, location.hash, navigate]);
   useEffect(() => {
     if (!activity.dirty && !activity.busy) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    const onLink = (event: MouseEvent) => { const target = event.target instanceof Element ? event.target.closest('a[href]') : null; if (!(target instanceof HTMLAnchorElement) || target.target === '_blank' || target.hasAttribute('download') || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || target.href === window.location.href) return; if (activity.busy || !window.confirm(ko ? '저장하지 않은 근무·인원 변동 입력을 버리고 이동할까요?' : '放弃未保存的出勤或人员变动输入并离开吗？')) { event.preventDefault(); event.stopImmediatePropagation(); } };
+    const onLink = (event: MouseEvent) => { const target = event.target instanceof Element ? event.target.closest('a[href]') : null; if (!(target instanceof HTMLAnchorElement) || target.target === '_blank' || target.hasAttribute('download') || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || target.href === window.location.href) return; if (activity.busy || !window.confirm(leaveMessage)) { event.preventDefault(); event.stopImmediatePropagation(); } };
     window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', onLink, true); return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', onLink, true); };
-  }, [activity, ko]);
+  }, [activity, leaveMessage]);
   function changeDate(next: string) {
     if (activity.busy || next === date) return;
     if (activity.dirty && !window.confirm(ko ? '저장하지 않은 근무·인원 변동 입력을 버리고 날짜를 바꿀까요?' : '放弃未保存的出勤或人员变动输入并切换日期吗？')) return;
-    setActivity({ dirty: false, busy: false }); setDate(next); setDateInput(next); setDateError(false);
+    const query = new URLSearchParams(location.search);
+    query.set('date', next);
+    query.set('month', next.slice(0, 7));
+    query.set('step', 'daily');
+    setActivity({ dirty: false, busy: false }); setDateDraft(null); setDateError(false);
+    navigate({ pathname: location.pathname, search: query.toString(), hash: location.hash }, { replace: true });
   }
   function applyDate() { const valid = /^\d{4}-\d{2}-\d{2}$/.test(dateInput) && !Number.isNaN(new Date(`${dateInput}T12:00:00Z`).getTime()) && new Date(`${dateInput}T12:00:00Z`).toISOString().slice(0, 10) === dateInput; if (!valid) { setDateError(true); return; } changeDate(dateInput); }
   if (!allowed) return <main className="hr-page"><HrLoadState allowed={false} loading={false} error="" retry={() => {}} /></main>;
-  return <HrShell page="daily-work" month={date.slice(0, 7) || currentHrMonth()} onMonthChange={(month) => changeDate(`${month}-01`)} monthDisabled={activity.busy}>
-    <section className="hr-panel hr-daily-date-nav"><div className="hr-actions"><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(dailyDateOffset(date, -1))}>{ko ? '전날' : '前一天'}</button><label className="hr-field">{ko ? '근무 날짜' : '出勤日期'}<input value={dateInput} placeholder="YYYY-MM-DD" maxLength={10} disabled={activity.busy} onChange={(event) => setDateInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') applyDate(); }} /></label><button className="hr-button" disabled={activity.busy} onClick={applyDate}>{ko ? '날짜 적용' : '应用日期'}</button><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(dailyDateOffset(date, 1))}>{ko ? '다음날' : '后一天'}</button><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(todayHrDate())}>{ko ? '오늘' : '今天'}</button><strong>{sheet && laborDayLabel(sheet.day_type, ko)}</strong></div>{dateError && <p role="alert">{ko ? '유효한 날짜를 YYYY-MM-DD로 입력하세요.' : '请按YYYY-MM-DD输入有效日期。'}</p>}
+  return <HrShell page="daily-work" month={date.slice(0, 7)} onMonthChange={(month) => changeDate(`${month}-01`)} monthDisabled={activity.busy}>
+    <section className="hr-panel hr-daily-date-nav"><div className="hr-actions"><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(dailyDateOffset(date, -1))}>{ko ? '전날' : '前一天'}</button><label className="hr-field">{ko ? '근무 날짜' : '出勤日期'}<input value={dateInput} placeholder="YYYY-MM-DD" maxLength={10} disabled={activity.busy} onChange={(event) => setDateDraft({ base: date, value: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') applyDate(); }} /></label><button className="hr-button" disabled={activity.busy} onClick={applyDate}>{ko ? '날짜 적용' : '应用日期'}</button><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(dailyDateOffset(date, 1))}>{ko ? '다음날' : '后一天'}</button><button className="hr-button" disabled={activity.busy} onClick={() => changeDate(todayHrDate())}>{ko ? '오늘' : '今天'}</button><strong>{sheet && laborDayLabel(sheet.day_type, ko)}</strong></div>{dateError && <p role="alert">{ko ? '유효한 날짜를 YYYY-MM-DD로 입력하세요.' : '请按YYYY-MM-DD输入有效日期。'}</p>}
       {sheet && <div ref={stripRef} className="hr-daily-date-strip" aria-label={ko ? '월 날짜 목록' : '本月日期列表'}>{sheet.days.map((day) => <button key={day.date} className="hr-daily-date" data-date={day.date} aria-current={day.date === date ? 'date' : undefined} disabled={activity.busy} onClick={() => changeDate(day.date)}><strong>{Number(day.date.slice(-2))}</strong><span>{laborDayLabel(day.day_type, ko)}</span><small>{statusLabel(day.status, ko)}</small></button>)}</div>}
     </section>
     {sheet ? <DailySheetEditor key={scope} initial={sheet} ko={ko} onActivity={setActivity} onSheet={(value) => setResult({ scope, value })} /> : <HrLoadState allowed={allowed} loading={error !== scope} error={ko ? '일별 근무표를 불러오지 못했습니다.' : '无法加载每日出勤表。'} retry={() => setReload((value) => value + 1)} />}

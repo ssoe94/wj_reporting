@@ -295,10 +295,15 @@ def actual_cost(wages, month, payment):
     }
 
 
+def _flow_link(step, month):
+    page = 'work' if step in ('daily', 'forecast', 'standards') else 'personnel'
+    return f'/hr/{page}?step={step}&month={month}'
+
+
 def dashboard_insights(org, prior, turnover, load, month):
-    def item(code, value, section, label=None, kind='warning'):
+    def item(code, value, step, label=None, kind='warning'):
         return {'code': code, 'kind': kind, 'metric': value,
-                'link': f'/hr/{section}?month={month}', **({'label': label} if label is not None else {})}
+                'link': _flow_link(step, month), **({'label': label} if label is not None else {})}
 
     nodes = [node for node in org['nodes'] if not node['unassigned']]
     roots = [node for node in nodes if node['parent_id'] is None]
@@ -327,7 +332,7 @@ def dashboard_insights(org, prior, turnover, load, month):
             if abs(delta) >= 2:
                 insights.append(item('department_change', metric(
                     delta, month, 'department current inclusive headcount − previous inclusive headcount',
-                    previous_month=previous['month'], threshold_people=2), 'personnel', name))
+                    previous_month=previous['month'], threshold_people=2), 'assign', name))
     if turnover['hourly']['value'] is not None and Decimal(turnover['hourly']['value']) > 0:
         insights.append(item('hourly_turnover', turnover['hourly'], 'roster', kind='info'))
 
@@ -338,22 +343,22 @@ def dashboard_insights(org, prior, turnover, load, month):
 
     busiest = best(parts, 'contract_average', Decimal('.01'))
     if busiest:
-        insights.append(item('highest_load', busiest['load']['contract_average'], 'labor-cost', ' / '.join(busiest['path'])))
+        insights.append(item('highest_load', busiest['load']['contract_average'], 'cost', ' / '.join(busiest['path'])))
     rest = best(roots, 'rest_worker_ratio', 50)
     if rest:
-        insights.append(item('high_rest_share', rest['load']['rest_worker_ratio'], 'labor-cost', rest['name']))
+        insights.append(item('high_rest_share', rest['load']['rest_worker_ratio'], 'cost', rest['name']))
     if load['above_reference']['value']:
-        insights.append(item('above_reference', load['above_reference'], 'labor-cost'))
+        insights.append(item('above_reference', load['above_reference'], 'cost'))
     unassigned = next((node for node in org['nodes'] if node['unassigned']), None)
     if unassigned:
-        insights.append(item('unassigned', unassigned['inclusive']['total'], 'personnel'))
+        insights.append(item('unassigned', unassigned['inclusive']['total'], 'assign'))
     return insights[:8]
 
 
 def dashboard_needs(history, reference_month, today_month, roster_count, rules, missing_days):
-    def item(code, value, month, section, formula, kind='warning', *, partial=False):
+    def item(code, value, month, step, formula, kind='warning', *, partial=False):
         return {'code': code, 'kind': kind, 'month': month, 'metric': metric(value, month, formula, partial=partial),
-                'link': f'/hr/{section}?month={month}'}
+                'link': _flow_link(step, month)}
 
     result = []
     for month, (_, people) in sorted(history.items(), reverse=True):
@@ -363,22 +368,22 @@ def dashboard_needs(history, reference_month, today_month, roster_count, rules, 
                    (person['kind'] == 'unknown' and not person['row'].get('payroll_components'))
                    for person in people)
         if rows:
-            result.append(item('reupload_components', rows, month, 'personnel', 'payroll rows without required components'))
+            result.append(item('reupload_components', rows, month, 'upload', 'payroll rows without required components'))
     if reference_month:
         unclassified = sum(person['kind'] == 'unknown' for person in history[reference_month][1])
         if unclassified:
-            result.append(item('employment_unknown', unclassified, reference_month, 'personnel', 'payroll rows without recorded employment type'))
+            result.append(item('employment_unknown', unclassified, reference_month, 'upload', 'payroll rows without recorded employment type'))
     if not roster_count:
-        result.append(item('roster_empty', 0, reference_month or today_month, 'personnel', 'count(HrRosterEmployee)'))
+        result.append(item('roster_empty', 0, reference_month or today_month, 'upload', 'count(HrRosterEmployee)'))
     for fund, config in rules['contributions'].items():
         if all(applies is False for applies in config['applies_to'].values()):
             continue
         missing = sum(rate is None for sides in config['items'].values() for rate in sides.values())
         if missing:
-            result.append(item(f'{fund}_rates', missing, today_month, 'labor-standards', 'count(unentered employer or employee rates)'))
+            result.append(item(f'{fund}_rates', missing, today_month, 'standards', 'count(unentered employer or employee rates)'))
     rate = rules['hourly_rates']['company_default']
     if rate['amount'] is None or not rate['confirmed']:
-        result.append(item('hourly_rate_unconfirmed', number(rate['amount']), today_month, 'labor-standards',
+        result.append(item('hourly_rate_unconfirmed', number(rate['amount']), today_month, 'standards',
                            'company hourly rate requires confirmation', partial=True))
     configured = rules.get('department_rest_hours', {})
     departments = set(rules['department_overtime'])
@@ -387,11 +392,11 @@ def dashboard_needs(history, reference_month, today_month, roster_count, rules, 
                            if person['row'].get('source_department'))
     unconfigured = sum(configured.get(department) is None for department in departments)
     if unconfigured or not any(value is not None for value in configured.values()):
-        result.append(item('rest_hours_unconfigured', unconfigured, today_month, 'labor-standards', 'departments without a rest-day average', 'info'))
-    result.append(item('deduction_formula', None, today_month, 'daily-work', 'leave and absence deduction formula pending', 'info'))
+        result.append(item('rest_hours_unconfigured', unconfigured, today_month, 'standards', 'departments without a rest-day average', 'info'))
+    result.append(item('deduction_formula', None, today_month, 'daily', 'leave and absence deduction formula pending', 'info'))
     if missing_days['value']:
         result.append({'code': 'missing_daily_sheets', 'kind': 'warning', 'month': today_month,
-                       'metric': missing_days, 'link': f'/hr/daily-work?month={today_month}'})
+                       'metric': missing_days, 'link': _flow_link('daily', today_month)})
     return result
 
 

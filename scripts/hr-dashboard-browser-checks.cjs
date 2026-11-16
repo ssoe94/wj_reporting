@@ -55,6 +55,10 @@ async function checkDashboard({ origin, fixture, capture, backendRequest, startB
   const legacyNotice = await legacyView.page.locator('.hr-dashboard-source-notice').innerText();
   assert.match(legacyNotice, /명부가 비어 있습니다/);
   assert.match(legacyNotice, /급여 구성 항목이 없는/);
+  const upload = new URL(await legacyView.page.locator('.hr-dashboard-source-notice a').getAttribute('href'), origin);
+  assert.equal(upload.pathname, '/hr/personnel');
+  assert.equal(upload.searchParams.get('step'), 'upload');
+  assert.equal(upload.searchParams.get('month'), legacyMonth);
   assert.match(degraded, /재업로드|다시 가져오/);
   assert.match(degraded, /명부/);
   assert.match(degraded, /고용형태 미확인/);
@@ -80,6 +84,7 @@ async function checkDashboard({ origin, fixture, capture, backendRequest, startB
   const ko = await fixture();
   await load(ko.page);
   assert.equal(await ko.page.locator('.hr-tabs a').first().getAttribute('href'), route(month));
+  assert.equal(await ko.page.locator('.hr-tabs a').count(), 3);
   assert.equal(await ko.page.locator('.main-sidebar--desktop a[href^="/hr/"]').first().getAttribute('href'), '/hr/dashboard');
   const top = await ko.page.locator(pageRoot).innerText();
   assert.match(top, /2026-10/);
@@ -90,6 +95,9 @@ async function checkDashboard({ origin, fixture, capture, backendRequest, startB
   assert.match(await reference.innerText(), /36시간 참고선/);
   assert.equal(await reference.getAttribute('data-above'), 'true');
   assert.match(await ko.page.locator('.hr-dash-entered').innerText(), /2\.5시간/);
+  const daily = new URL(await ko.page.locator('.hr-dash-entered a').getAttribute('href'), origin);
+  assert.equal(daily.pathname, '/hr/work');
+  assert.equal(daily.searchParams.get('step'), 'daily');
   const ranking = ko.page.getByRole('region', { name: '개인별 부담 순위 표', exact: true });
   assert.match(await ranking.innerText(), /测试甲[\s\S]*43시간/);
   assert.ok(await ranking.evaluate(el => el.scrollWidth <= el.clientWidth), 'Desktop ranking should show its numeric column');

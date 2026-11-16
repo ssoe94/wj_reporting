@@ -20,6 +20,14 @@ function fixture(): HrDailySheet {
     }; }), summary, departments: [{ department: '测试部门', ...summary }], days: [{ date: '2026-11-12', day_type: 'workday', status: 'draft' }], events: [], history: [] };
 }
 
+test('daily work restores a shared date unless the selected month has changed', () => {
+  const today = '2026-11-13';
+  assert.equal(daily.initialDailyDate('?step=daily&month=2026-10&date=2026-10-27', today), '2026-10-27');
+  assert.equal(daily.initialDailyDate('?step=daily&date=2026-10-27', today), '2026-10-27');
+  assert.equal(daily.initialDailyDate('?step=daily&month=2026-09&date=2026-10-27', today), '2026-09-01');
+  assert.equal(daily.initialDailyDate('?step=daily&month=2026-11&date=2026-11-31', today), today);
+});
+
 test('canonical overrides preserve missing values and ignore attendance-derived zeros', () => {
   const sheet = fixture(); sheet.rows[0].work = { ...sheet.rows[0].work, attendance: 'absent', weekday_hours: '0' }; sheet.rows[0].modified = ['attendance'];
   assert.deepEqual(daily.overridesFromSheet(sheet), { 1: { attendance: 'absent' } });
@@ -105,7 +113,7 @@ function editor(options: { canEdit?: boolean; ko?: boolean } = {}) {
       useRef(initial: unknown) { const index = cursor++; if (!(index in hooks)) hooks[index] = { current: initial }; return hooks[index]; },
       useEffect(effect: () => any, deps: any[]) { const index = cursor++; const previous = hooks[index]; if (!previous || deps.some((value, i) => !Object.is(value, previous.deps[i]))) { hooks[index] = { deps, cleanup: previous?.cleanup }; pending.push({ index, effect }); } },
     },
-    'react-router-dom': { useLocation: () => ({ pathname: '/hr/daily-work', search: '' }), useNavigate: () => () => {} },
+    'react-router-dom': { useLocation: () => ({ pathname: '/hr/work', search: '?step=daily&month=2026-11', hash: '' }), useNavigate: () => () => {} },
     '../../contexts/AuthContext': { useAuth: () => ({ user: { id: 1, is_active: true, can_access_hr: true } }) },
     '../../domains/auth/hr-access': { canAccessHr }, '../../i18n': { useLang: () => ({ lang: options.ko === false ? 'zh' : 'ko' }) },
     '../../domains/hr/daily-work': daily, '../../domains/hr/labor-standards': { laborDayLabel },
@@ -115,7 +123,8 @@ function editor(options: { canEdit?: boolean; ko?: boolean } = {}) {
       saveHrDailyWork: async (_: string, payload: any) => { saves.push(clone(payload)); if (saveFailure) throw saveFailure; return clone(latest); },
       createHrDailyEvent: async () => clone(latest),
     },
-    './hrCommon': { currentHrMonth: () => '2026-11', HrLoadState: 'HrLoadState', HrShell: 'HrShell', isHrConflict: (value: any) => value?.response?.status === 409 },
+    './hrCommon': { HrLoadState: 'HrLoadState', HrShell: 'HrShell', isHrConflict: (value: any) => value?.response?.status === 409 },
+    './useHrPopGuard': { useHrPopGuard: () => {} },
     './HrDailyEvents': { default: 'HrDailyEvents' },
   };
   const exports: Record<string, any> = {};

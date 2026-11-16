@@ -26,7 +26,8 @@ const repo = path.resolve(__dirname, '..');
 const dist = path.resolve(options.dist || path.join(repo, 'frontend/dist'));
 assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'Build frontend/dist before this browser check.');
 const screens = path.resolve(options.screens || path.join(os.homedir(), 'Documents/Codex/2026-11-12/hr-roster/screens'));
-assert.ok(!screens.startsWith(repo + path.sep), 'Keep screenshots outside the repository.');
+assert.ok(!screens.startsWith(repo + path.sep) || screens.startsWith(path.join(repo, 'work') + path.sep),
+  'Keep screenshots outside tracked paths; use the ignored work directory for local regressions.');
 fs.mkdirSync(screens, { recursive: true });
 const playwrightPath = options.playwright || process.env.WJ_HR_PLAYWRIGHT;
 let playwright;
@@ -197,7 +198,7 @@ async function fixture({ lang = 'ko', mobile = false, denied = false } = {}) {
   return { context, page, state };
 }
 async function openDay(page, date = DAY) {
-  await page.goto(`${origin}/hr/daily-work?date=${date}&month=${date.slice(0, 7)}`);
+  await page.goto(`${origin}/hr/work?step=daily&date=${date}&month=${date.slice(0, 7)}`);
   await page.locator('.hr-daily-editor').waitFor();
 }
 async function capture(page, name) { const file = path.join(screens, `006-${name}.png`); await page.screenshot({ path: file, fullPage: false }); captures.push(file); }
@@ -390,9 +391,9 @@ async function writeFixture(value, rows, reason) {
   await capture(zh.page, 'zh'); checks.push('Chinese daily screen, estimates, event inputs and status labels render without Korean UI text');
   await zh.context.close();
 
-  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/daily-work?date=${DAY}`);
+  const denied = await fixture({ denied: true }); await denied.page.goto(`${origin}/hr/work?step=daily&date=${DAY}`);
   await denied.page.waitForURL(url => !url.pathname.startsWith('/hr'));
-  assert.equal(await denied.page.locator('a[href*="/hr/daily-work"]').count(), 0);
+  assert.equal(await denied.page.locator('a[href^="/hr/work"]').count(), 0);
   assert.equal(denied.state.calls.length, 0, 'Denied frontend must not request HR records');
   const forbidden = await backendRequest(dailyPath(DAY), { role: 'denied' }); assert.equal(forbidden.status, 403);
   assert.match(forbidden.headers.get('Cache-Control'), /private/); assert.match(forbidden.headers.get('Cache-Control'), /no-store/);

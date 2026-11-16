@@ -5,16 +5,16 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'rec
 import { useAuth } from '../../contexts/AuthContext';
 import { canAccessHr } from '../../domains/auth/hr-access';
 import { getHrDashboard } from '../../domains/hr/dashboard-api';
+import { hrFlowHref } from '../../domains/hr/flow';
 import { dashboardAncestorIds, dashboardEmployment, dashboardMoney, dashboardNumber, dashboardSearch, dashboardStatus } from '../../domains/hr/dashboard';
 import type { DashboardCounts, DashboardMetric, DashboardNode, DashboardPerson, HrDashboard } from '../../domains/hr/dashboard';
 import { useLang } from '../../i18n';
-import { currentHrMonth, HrLoadState, HrShell } from './hrCommon';
+import { HrLoadState, HrShell, useHrMonth } from './hrCommon';
 import DashboardDetails from './DashboardDetails';
 import './hr-dashboard.css';
 
 const EMPLOYMENT = ['contract', 'hourly'] as const;
 const PAGE_SIZE = 25;
-const sourceHref = (month: string) => `/hr/personnel?month=${month}`;
 const nodeName = (node: DashboardNode, ko: boolean) => node.unassigned ? (ko ? '미배정' : '未分配') : node.name;
 const showCount = (metric: DashboardMetric, ko: boolean) => dashboardNumber(metric.value, ko, ko ? '명' : ' 人');
 const showHours = (metric: DashboardMetric, ko: boolean) => dashboardNumber(metric.value, ko, ko ? '시간' : ' 小时');
@@ -60,7 +60,7 @@ function DashboardKpis({ data, ko }: { data: HrDashboard; ko: boolean }) {
       <h3>{ko ? '이달 예상 인건비' : '本月预计人工成本'}</h3>
       <strong><MetricText metric={forecast.total.value == null && forecast.status !== 'missing' ? forecast.known_amount : forecast.total} ko={ko} format={showMoney} status={false} /></strong>
       <small className={forecast.status === 'ready' ? '' : 'hr-dashboard-warning'}>{forecast.month} · {dashboardStatus(forecast.status, ko)}{forecast.total.value == null && forecast.known_amount.value != null && forecast.status !== 'missing' ? (ko ? ' · 확인 금액' : ' · 已知金额') : ''}</small>
-      <Link className="hr-dashboard-text-link" to={`/hr/labor-forecast?month=${forecast.month}`}>{ko ? '예상 상세' : '预测详情'} <ChevronRight size={14} /></Link>
+      <Link className="hr-dashboard-text-link" to={hrFlowHref('work', 'forecast', forecast.month)}>{ko ? '예상 상세' : '预测详情'} <ChevronRight size={14} /></Link>
     </article>
     <article className="hr-panel">
       <h3>{ko ? '1인당 야근 시간 (추정)' : '人均加班时数（估算）'}</h3>
@@ -245,7 +245,7 @@ function Organization({ data, ko, reveal }: { data: HrDashboard; ko: boolean; re
             <div><h3>{searching ? (ko ? '검색 결과' : '搜索结果') : selected ? nodeName(selected, ko) : (ko ? '사람 목록' : '人员列表')}</h3>
               {searching ? <p className="hr-muted" role="status">{dashboardNumber(matches.length, ko, ko ? '명' : ' 人')}</p>
                 : selected && <p className="hr-dashboard-path"><PathText path={selected.path} unassigned={selected.unassigned} ko={ko} /></p>}</div>
-            <Link className="hr-button" to={sourceHref(sourceMonth)}>{ko ? '인원 배치에서 편집' : '在人员配置中编辑'}</Link>
+            <Link className="hr-button" to={hrFlowHref('personnel', 'assign', sourceMonth)}>{ko ? '인원 배치에서 편집' : '在人员配置中编辑'}</Link>
           </div>
           {!searching && selected && <div className="hr-dashboard-node-facts">
             <div><strong>{ko ? '직속' : '直属'} {showCount(selected.direct.total, ko)}</strong><CountBreakdown counts={selected.direct} ko={ko} /></div>
@@ -293,18 +293,18 @@ function DashboardRequest({ month, ko, allowed, reveal, toggleReveal }: {
     {data.source && (reupload || rosterEmpty) && <aside className="hr-alert is-warning hr-dashboard-source-notice" aria-label={ko ? '기준 자료 확인' : '基准资料待核对'}>
       <div>{reupload && <p>{ko ? '급여 구성 항목이 없는 기록의 야근·휴일 수당과 시간은 확인할 수 없습니다.' : '缺少工资明细的记录无法确认加班及节假日津贴和工时。'}</p>}
         {rosterEmpty && <p>{ko ? '인원 명부가 비어 있습니다. 조직과 인원은 기존 급여 기록을 기준으로 표시합니다.' : '人员名册为空，组织和人数按已有工资记录显示。'}</p>}</div>
-      <Link className="hr-dashboard-text-link" to={sourceHref(data.source.month)}>{ko ? '급여 파일 다시 가져오기' : '重新导入工资表'} <ChevronRight size={14} /></Link>
+      <Link className="hr-dashboard-text-link" to={hrFlowHref('personnel', 'upload', data.source.month)}>{ko ? '급여 파일 다시 가져오기' : '重新导入工资表'} <ChevronRight size={14} /></Link>
     </aside>}
     {data.source ? <><DashboardKpis data={data} ko={ko} /><Organization key={data.source.month} data={data} ko={ko} reveal={reveal} /></>
       : <section className="hr-panel hr-dashboard-empty"><h3>{ko ? '급여가 업로드되지 않았습니다' : '尚未上传工资表'}</h3>
         <p>{ko ? '대상 월까지의 CNY 지급 총액 자료가 없습니다. 인원 배치에서 급여를 가져오면 조직과 인원 지표를 볼 수 있습니다.' : '截至所选月份暂无人民币应发工资资料。在人员配置中导入工资表后即可查看组织和人员指标。'}</p>
-        <Link className="hr-button" to={sourceHref(month)}>{ko ? '인원 배치 열기' : '打开人员配置'}</Link></section>}
+        <Link className="hr-button" to={hrFlowHref('personnel', 'upload', month)}>{ko ? '급여 파일 올리기' : '上传工资表'}</Link></section>}
     <DashboardDetails data={data} ko={ko} reveal={reveal} />
   </div>;
 }
 
 function DashboardSession({ ko, allowed, identity }: { ko: boolean; allowed: boolean; identity: string }) {
-  const [month, setMonth] = useState(currentHrMonth);
+  const [month, setMonth] = useHrMonth();
   const storageKey = `wj:hr-dashboard:reveal:${identity}`;
   const [reveal, setReveal] = useState(() => {
     try { return sessionStorage.getItem(storageKey) === 'yes'; } catch { return false; }

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, RefreshCw, Users } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { canAccessHr, HR_DASHBOARD_PATH } from '../../domains/auth/hr-access';
+import { canAccessHr } from '../../domains/auth/hr-access';
+import { HR_PAGES, PERSONNEL_STEPS, WORK_STEPS, hrFlowHref, hrStepLabel } from '../../domains/hr/flow';
+import type { HrStep, PersonnelStep } from '../../domains/hr/flow';
 import { useLang } from '../../i18n';
 import { getHrWorkspace } from '../../domains/hr/api';
 import { amountToCents } from '../../domains/hr/import';
@@ -13,11 +15,23 @@ import './hr.css';
 
 export type HrLang = 'ko' | 'zh';
 
-export function currentHrMonth() {
-  const selected = new URLSearchParams(window.location.search).get('month');
+export function currentHrMonth(search = window.location.search) {
+  const selected = new URLSearchParams(search).get('month');
   if (selected && /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(selected)) return selected;
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}`;
+}
+
+export function useHrMonth() {
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
+  const month = currentHrMonth(search);
+  function changeMonth(next: string) {
+    const query = new URLSearchParams(search);
+    query.set('month', next);
+    navigate({ pathname, search: query.toString(), hash }, { replace: true });
+  }
+  return [month, changeMonth] as const;
 }
 
 export function money(value: string | number | null, currency: HrCurrency, lang: HrLang) {
@@ -109,32 +123,40 @@ export function useHrWorkspace(month: string) {
   return { workspace: selectedWorkspace, setWorkspace, loading: loading || (allowed && !selectedWorkspace && !error), error, allowed, refresh: () => setReload((value) => value + 1) };
 }
 
-export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions }: {
-  page: 'dashboard' | 'personnel' | 'roster' | 'labor-cost' | 'labor-standards' | 'daily-work' | 'labor-forecast'; month: string; onMonthChange: (month: string) => void;
+const workViewSteps = { 'daily-work': 'daily', 'labor-forecast': 'forecast', 'labor-standards': 'standards' } as const;
+const stepNumbers = ['①', '②', '③', '④'];
+
+export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel, children, actions, personnelStep }: {
+  page: 'dashboard' | 'personnel' | keyof typeof workViewSteps; month: string; onMonthChange: (month: string) => void;
   monthDisabled?: boolean; monthLabel?: string; children: ReactNode; actions?: ReactNode;
+  personnelStep?: PersonnelStep;
 }) {
   const { lang } = useLang();
   const ko = lang === 'ko';
   const location = useLocation(); const navigate = useNavigate();
   const { user } = useAuth();
   const allowed = canAccessHr(user);
+  const flowPage = page === 'dashboard' || page === 'personnel' ? page : 'work';
+  const step: HrStep | undefined = page === 'personnel' ? personnelStep : page === 'dashboard' ? undefined : workViewSteps[page];
+  const steps = flowPage === 'personnel' ? PERSONNEL_STEPS : flowPage === 'work' ? WORK_STEPS : [];
   useEffect(() => {
+    if (!allowed || page === 'daily-work') return;
     const query = new URLSearchParams(location.search);
-    if (query.get('month') === month) return;
-    query.set('month', month);
-    navigate({pathname:location.pathname,search:query.toString()}, {replace:true});
-  }, [month, location.pathname, location.search, navigate]);
-  return <main className="hr-page">
+    if (step && query.get('step') !== step) query.set('step', step);
+    if (query.get('month') !== month) query.set('month', month);
+    if (query.toString() !== location.search.slice(1)) {
+      navigate({ pathname: location.pathname, search: query.toString(), hash: location.hash }, { replace: true });
+    }
+  }, [allowed, page, month, step, location.pathname, location.search, location.hash, navigate]);
+  return <main className="hr-page" lang={ko ? 'ko' : 'zh-CN'}>
     <header className="hr-work-header">
       <div className="hr-work-title"><h1>{ko ? '인원 · 인건비' : '人员 · 人工成本'}</h1></div>
       {allowed && <nav aria-label={ko ? '인사·총무 페이지' : '人事·总务页面'} className="hr-tabs">
-        <Link className={page === 'dashboard' ? 'is-active' : ''} aria-current={page === 'dashboard' ? 'page' : undefined} to={`${HR_DASHBOARD_PATH}?month=${month}`}><BarChart3 size={16} />{ko ? '인사 대시보드' : '人事总览'}</Link>
-        <Link className={page === 'personnel' ? 'is-active' : ''} aria-current={page === 'personnel' ? 'page' : undefined} to={`/hr/personnel?month=${month}`}><Users size={16} />{ko ? '인원 배치' : '人员配置'}</Link>
-        <Link className={page === 'daily-work' ? 'is-active' : ''} aria-current={page === 'daily-work' ? 'page' : undefined} to={`/hr/daily-work?month=${month}`}>{ko ? '일별 근무' : '每日出勤'}</Link>
-        <Link className={page === 'roster' ? 'is-active' : ''} aria-current={page === 'roster' ? 'page' : undefined} to={`/hr/roster?month=${month}`}>{ko ? '인원 명부' : '人员名册'}</Link>
-        <Link className={page === 'labor-cost' ? 'is-active' : ''} aria-current={page === 'labor-cost' ? 'page' : undefined} to={`/hr/labor-cost?month=${month}`}>{ko ? '인건비 집계' : '人工成本汇总'}</Link>
-        <Link className={page === 'labor-forecast' ? 'is-active' : ''} aria-current={page === 'labor-forecast' ? 'page' : undefined} to={`/hr/labor-forecast?month=${month}`}>{ko ? '인건비 예상' : '人工成本预测'}</Link>
-        <Link className={page === 'labor-standards' ? 'is-active' : ''} aria-current={page === 'labor-standards' ? 'page' : undefined} to={`/hr/labor-standards?month=${month}`}>{ko ? '인건비 기준' : '人工成本标准'}</Link>
+        {HR_PAGES.map(item => <Link key={item.page} className={item.page === flowPage ? 'is-active' : ''}
+          aria-current={item.page === flowPage ? 'page' : undefined}
+          to={item.page === flowPage ? location.pathname + location.search + location.hash : hrFlowHref(item.page, undefined, month)}>
+          {item.label[ko ? 0 : 1]}
+        </Link>)}
       </nav>}
       <div className="hr-month">
         <span>{monthLabel ?? (ko ? '대상 월' : '月份')}</span>
@@ -145,8 +167,14 @@ export function HrShell({ page, month, onMonthChange, monthDisabled, monthLabel,
           {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map((value) => <option key={value}>{value}</option>)}
         </select>
       </div>
-      {actions && <div className="hr-header-actions">{actions}</div>}
     </header>
+    {allowed && step && <nav className="hr-flow-steps" aria-label={ko ? '업무 단계' : '工作步骤'}>
+      {steps.map((item, index) => <Link key={item} aria-current={step === item ? 'step' : undefined}
+        to={hrFlowHref(flowPage, item, month, location.search, location.hash)}>
+        <span aria-hidden="true">{stepNumbers[index]}</span>{hrStepLabel(item, ko)}
+      </Link>)}
+    </nav>}
+    {actions && <div className="hr-header-actions hr-flow-actions">{actions}</div>}
     {children}
   </main>;
 }
