@@ -13,6 +13,7 @@ from .config import LanguagePreferences
 from .devices import FakeBarcodeApp, FakeLineDevice
 from .local_ui import LocalUI
 from .launcher import launched_vision_app, read_launch_status
+from .ledger import disk_full_error
 from .protocol import timestamp
 from .resources import Resources
 from .uploader import Uploader
@@ -26,9 +27,9 @@ class Runtime:
                  backup_keep=30, min_free_bytes=DEFAULT_MIN_FREE, barcode_config=None,
                  legacy_barcode_db=None, barcode_backend=None, weigh_settings=None,
                  weigh_devices=None, legacy_weigh_dbs=None, vision_sources=None):
-        if sum((demo, barcode_config is not None, legacy_barcode_db is not None,
-                weigh_settings is not None, legacy_weigh_dbs is not None)) > 1:
-            raise ValueError("Select only one field input mode")
+        native_apps = barcode_config is not None or weigh_settings is not None
+        if sum((demo, native_apps, legacy_barcode_db is not None, legacy_weigh_dbs is not None)) > 1:
+            raise ValueError("Select native apps, demo input, or one legacy input")
         self.ledger = ledger
         self.station_id = ledger.station_id
         self._halt = Event()
@@ -155,10 +156,9 @@ class Runtime:
 
     @property
     def committed(self):
-        if self.barcode:
-            return self.barcode.committed
         with self._lock:
-            return self._committed
+            other = self._committed
+        return other + (self.barcode.committed if self.barcode else 0)
 
     def _app_devices(self):
         apps, devices, coverage, write_pressure = self._base_app_devices()
@@ -173,10 +173,13 @@ class Runtime:
         return apps, devices, coverage, write_pressure
 
     def _base_app_devices(self):
-        if self.barcode:
-            return self.barcode.health()
-        if self.weigh:
-            return self.weigh.health()
+        native = [app.health() for app in (self.barcode, self.weigh) if app is not None]
+        if native:
+            apps = [item for app, _, _, _ in native for item in app]
+            devices = [item for _, app_devices, _, _ in native for item in app_devices]
+            coverages = {item[2] for item in native}
+            coverage = next(iter(coverages)) if len(coverages) == 1 else "partial"
+            return apps, devices, coverage, any(item[3] for item in native)
         if self.legacy:
             with self._lock:
                 status = dict(self.legacy_status)
@@ -258,7 +261,7 @@ class Runtime:
             except (UnicodeError, ValueError):
                 error = "invalid_demo_frame"
             except sqlite3.Error as exc:
-                error = "ledger_full" if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL else "ledger_write_failed"
+                error = "ledger_full" if disk_full_error(exc) else "ledger_write_failed"
             with self._lock:
                 changed = self._device_error != error
                 self._device_error = error

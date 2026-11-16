@@ -11,7 +11,7 @@ import unittest
 
 from field_agent.backup import Backup, restore_snapshot, verify_snapshot
 from field_agent.devices import FakeBarcodeApp
-from field_agent.ledger import Ledger
+from field_agent.ledger import Ledger, disk_full_error
 from field_agent.protocol import SHANGHAI, timestamp
 from field_agent.uploader import stage_batch
 
@@ -94,6 +94,19 @@ class SavedWorkTests(unittest.TestCase):
         self.assertFalse(reopened.due(999, Event()))
         with self.ledger.read() as conn:
             self.assertEqual(conn.execute("SELECT kind FROM events WHERE seq=3").fetchone()[0], "backup.completed")
+
+    def test_disk_full_can_be_classified_on_older_python(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute("PRAGMA page_size=512")
+            conn.execute("CREATE TABLE entry (value BLOB)")
+            conn.execute("PRAGMA max_page_count=2")
+            with self.assertRaises(sqlite3.OperationalError) as error:
+                conn.execute("INSERT INTO entry VALUES(zeroblob(8192))")
+            self.assertTrue(disk_full_error(error.exception))
+            self.assertFalse(disk_full_error(sqlite3.OperationalError("database is locked")))
+        finally:
+            conn.close()
 
     def test_disk_low_skips_without_creating_backup_then_retention_limits_only_own(self):
         folder = self.root / "backup"

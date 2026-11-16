@@ -115,17 +115,23 @@ def load_connection(root):
 
 
 @contextmanager
-def station_lock(root):
+def station_lock(root, *, existing_only=False):
     path = Path(root) / "agent.lock"
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if path.is_symlink():
         raise ValueError("Invalid local lock file")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    if existing_only and not path.exists():
+        yield
+        return
+    if not existing_only:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(path, os.O_RDWR | (0 if existing_only else os.O_CREAT), 0o600)
     with os.fdopen(fd, "r+b", buffering=0) as lock:
         if os.name == "nt":
             import msvcrt
 
             if not lock.read(1):
+                if existing_only:
+                    raise ValueError("Station lock is incomplete")
                 lock.write(b"0")
             lock.seek(0)
             try:

@@ -7,6 +7,7 @@ from time import monotonic
 from uuid import uuid4
 
 from .. import __version__
+from ..ledger import disk_full_error
 from ..protocol import event_time, timestamp
 from .devices import (
     FakePrinter, FakeScale, FakeScanner, ScannerService, SerialScale, SignalWorker, VirtualSignal,
@@ -81,7 +82,7 @@ class WeighApp:
 
     def _fault(self, error):
         self.storage_error = True
-        self.disk_full = self.disk_full or getattr(error, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL
+        self.disk_full = self.disk_full or disk_full_error(error)
         self.coverage = "partial"
         self.gate.reset()
         if self.signal:

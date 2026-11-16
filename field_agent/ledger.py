@@ -54,6 +54,14 @@ CREATE TABLE backup_state (
 """
 
 
+def disk_full_error(error):
+    # Python 3.8 does not expose sqlite_errorcode or SQLITE_FULL.
+    code = getattr(error, "sqlite_errorcode", None)
+    if code is not None:
+        return code & 0xff == 13  # SQLite primary result code SQLITE_FULL.
+    return str(error) == "database or disk is full"
+
+
 def _keep_transaction(action, _name, _arg, _database, _source):
     if action in (sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT):
         return sqlite3.SQLITE_DENY
@@ -90,6 +98,9 @@ class Ledger:
             if metadata.get("schema_version") != SCHEMA_VERSION or not metadata.get("database_id"):
                 raise ValueError("Unsupported field ledger schema")
             anchor.execute("PRAGMA journal_mode=WAL")
+            # A restored DELETE-mode image has no WAL/SHM until a writable
+            # connection first reads the database in WAL mode.
+            anchor.execute("SELECT key FROM meta LIMIT 1").fetchone()
             self.database_id = metadata["database_id"]
         except Exception:
             anchor.close()

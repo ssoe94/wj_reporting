@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from . import __version__
 from .barcode_logic import BarcodeRules, build_field_parts
+from .ledger import disk_full_error
 from .protocol import business_day, encode, event_time, timestamp
 
 
@@ -218,7 +219,7 @@ class BarcodeApp:
         self.storage_error = True
         # sqlite_errorcode is available from Python 3.11. The resource probe
         # still reports low free space on the supported Python 3.8 runtime.
-        self.disk_full = self.disk_full or getattr(error, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL
+        self.disk_full = self.disk_full or disk_full_error(error)
         self.coverage = "partial"
         self.changed(state_changed=True, activity=True)
 

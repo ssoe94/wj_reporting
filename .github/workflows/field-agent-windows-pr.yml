@@ -1,0 +1,34 @@
+name: Field agent Windows checks
+
+on:
+  pull_request:
+    paths:
+      - field_agent/**
+      - docs/field-monitoring/**
+      - .github/workflows/field-agent-windows-pr.yml
+
+permissions:
+  contents: read
+
+jobs:
+  field-agent:
+    name: Windows Python ${{ matrix.python }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8.10', '3.12']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Check runtime imports and compile every agent module
+        run: |
+          python -m compileall -q field_agent
+          python -m field_agent --help
+      - name: Run field agent regression tests
+        run: python -I -m unittest discover -s field_agent/tests -t .

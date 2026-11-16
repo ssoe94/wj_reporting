@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import sqlite3
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from time import monotonic
 
 from . import __version__
@@ -175,9 +175,8 @@ class Backup:
             # Recover a crash after publish and before the audit event.
             self._validate_image(final, halt.is_set)
             return
-        with NamedTemporaryFile(prefix=".backup-", dir=self.directory, delete=False) as handle:
-            stage = Path(handle.name)
-        try:
+        with TemporaryDirectory(prefix=".backup-", dir=self.directory) as temporary:
+            stage = Path(temporary) / "image.sqlite3"
             deadline = monotonic() + 300
 
             def progress(_status, _remaining, _total):
@@ -193,8 +192,6 @@ class Backup:
             with stage.open("r+b") as handle:
                 os.fsync(handle.fileno())
             os.replace(stage, final)
-        finally:
-            stage.unlink(missing_ok=True)
 
     def _record(self, day, state, reason, app):
         moment = timestamp(self.wall_clock())

@@ -73,6 +73,8 @@ def _run(args):
         raise ValueError("Invalid port or backup settings")
     if args.weigh_fake and not args.weigh_config:
         raise ValueError("--weigh-fake requires --weigh-config")
+    if args.stop_file and args.stop_file.exists():
+        return
     weigh_settings = load_weigh_settings(args.weigh_config) if args.weigh_config else None
     if args.weigh_fake and weigh_settings.mode != "test":
         raise ValueError("Synthetic weigh input requires test mode")
@@ -98,7 +100,11 @@ def _run(args):
             if args.weigh_fake:
                 Thread(name="field-weigh-stdin", target=_feed_weigh_stdin, args=(runtime, stop), daemon=True).start()
             print("Field Agent: http://127.0.0.1:{}/".format(runtime.local_ui.port), flush=True)
-            stop.wait()
+            if args.stop_file is None:
+                stop.wait()
+            else:
+                while not stop.wait(0.5) and not args.stop_file.exists():
+                    pass
         finally:
             runtime.stop()
     finally:
@@ -117,10 +123,11 @@ def _args():
     run.add_argument("--port", type=int, default=8769)
     barcode = run.add_mutually_exclusive_group()
     barcode.add_argument("--fake-stdin", action="store_true", help="Record test-only core demo frames from stdin")
-    barcode.add_argument("--barcode-config", type=Path, help="Run the barcode reader with a local rules file")
+    run.add_argument("--barcode-config", type=Path, help="Run the barcode reader with a local rules file")
     barcode.add_argument("--legacy-barcode-db", type=Path, help="Read the existing barcode SQLite source without opening COM")
-    barcode.add_argument("--weigh-config", type=Path, help="Run the weight and label app with local rules")
+    run.add_argument("--weigh-config", type=Path, help="Run the weight and label app with local rules")
     barcode.add_argument("--legacy-weigh-dbs", nargs=2, metavar=("SCANS", "PRINT"), help="Read existing weigh SQLite sources")
+    run.add_argument("--stop-file", type=Path, help=argparse.SUPPRESS)
     run.add_argument("--weigh-fake", action="store_true", help="Use synthetic weigh devices with test-only JSON-lines input")
     run.add_argument("--backup-idle", type=int, default=60)
     run.add_argument("--backup-keep", type=int, default=30)
@@ -136,6 +143,12 @@ def _args():
     serial.add_argument("--confirm-no-issuance", action="store_true", required=True)
     for command in (install, run, resume, restore, serial):
         command.add_argument("--data-dir", type=Path, required=True)
+    check = commands.add_parser("selftest", help="Offline self-test against a copy of the station ledger")
+    check.add_argument("--data-dir", type=Path, required=True)
+    check.add_argument("--windows-package", action="store_true", help=argparse.SUPPRESS)
+    check.add_argument("--stopped", action="store_true", help=argparse.SUPPRESS)
+    check.add_argument("--require-idle", action="store_true")
+    check.add_argument("--port", type=int, default=8769)
     verify = commands.add_parser("verify-backup", help="Verify a backup file and its pending batches")
     verify.add_argument("--backup", type=Path, required=True)
     return parser.parse_args()
@@ -153,6 +166,21 @@ def main():
             if sources is not None:
                 save_sources(args.data_dir, sources)
             print("Field connection stored.")
+        elif args.command == "selftest":
+            from .packaging.selftest import check_station
+            if args.windows_package:
+                try:
+                    import serial
+                except ImportError as exc:
+                    raise ValueError("Packaged serial dependency cannot be imported") from exc
+                if not hasattr(serial, "Serial"):
+                    raise ValueError("Invalid packaged serial dependency")
+            if args.stopped:
+                check_station(args.data_dir, port=args.port, idle=args.require_idle)
+            else:
+                with station_lock(args.data_dir, existing_only=True):
+                    check_station(args.data_dir, port=args.port, idle=args.require_idle)
+            print("Field Agent self-test passed.")
         elif args.command == "verify-backup":
             print(encode(verify_snapshot(args.backup)).decode())
         else:

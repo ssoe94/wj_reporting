@@ -1,6 +1,6 @@
 # WJ 현장 에이전트
 
-SQLite 원장, 전송·heartbeat, 일일 백업, 로컬 화면을 여러 현장 앱에서 공통으로 사용한다. [프로토콜 v1](../docs/field-monitoring/protocol-v1.md)을 사용하며 서버 코드 import 없이 표준 라이브러리로 실행한다. 바코드 앱, 중량·라벨 앱, 합성 입력, 기존 앱 DB 수집 중 한 가지 입력 경로를 선택한다. 실제 스캐너를 열 때는 `pyserial`이 필요하다. [비전 읽기 전용 수집](VISION.md)은 단독으로 실행하거나 같은 에이전트에 추가한다.
+SQLite 원장, 전송·heartbeat, 일일 백업, 로컬 화면을 여러 현장 앱에서 공통으로 사용한다. [프로토콜 v1](../docs/field-monitoring/protocol-v1.md)을 사용하며 서버 코드 import 없이 표준 라이브러리로 실행한다. 바코드·중량 네이티브 앱은 함께 실행할 수 있다. 합성 입력과 기존 앱 DB 수집은 별도 입력 경로로 선택한다. 실제 스캐너를 열 때는 `pyserial`이 필요하다. [비전 읽기 전용 수집](VISION.md)은 단독으로 실행하거나 같은 에이전트에 추가한다.
 
 ```text
 시리얼 장치 / 가짜 줄 입력
@@ -70,7 +70,8 @@ python -m field_agent resume --data-dir <data>
 
 ```text
 python -m field_agent run --data-dir <data> --barcode-config <규칙 JSON>
-start.cmd "<data>" "<규칙 JSON>"
+configure.cmd --barcode-config "<규칙 JSON>"
+start.cmd
 ```
 
 제품군과 A/B 배정은 로컬 화면의 바코드 설정에서 선택한다. 스캐너는 USB ID `26f1:d001`을 발견하고 A/B에 배정한 USB 위치(위치가 없으면 확인 가능한 고유 serial)로 연결한다. Windows 장치 관리자와 실제 입력을 대조해 배정한다. 포트 연결과 최근 입력 시각은 별도다. 시리얼 사용 시 릴리스에 검증된 `pyserial`을 포함하고, 없으면 실기 포트를 열 수 없으므로 합성 시험만 가능하다.
@@ -121,18 +122,6 @@ python -m field_agent restore --data-dir <새 경로> --backup <스냅샷> --con
 
 ## Windows 포터블 폴더
 
-```text
-station/
-  data/                         구성, 자격, SQLite, 백업
-  release-<version>/
-    python/python.exe           동일 아키텍처의 내장 런타임
-    field_agent/                이 모듈과 static HTML/CSS/JS
-    start.cmd                   이 폴더 루트에 배치한 시작 템플릿
-    SHA256SUMS.txt              런타임·코드·시작 파일별 SHA-256
-```
+현장용 ZIP 조립은 [오프라인 빌드](packaging/README.md), 현장 PC 등록·설치·버전 전환은 [한·중 관리자 안내](../docs/field-monitoring/operations/administrator.md)를 따른다. 설치 루트의 `current.txt`가 `versions/<version>/`을 선택한다. 원장·설정·토큰·백업·로그는 공용 `data/`에 보관한다.
 
-배포 담당자는 대상 Windows와 아키텍처에서 검증한 런타임을 묶는다. 임베디드 Windows Python을 사용하는 경우 런타임의 `._pth` 목록에서 릴리스 루트(`..`)를 모듈 검색에 허용한다. 배치 파일은 localhost 서비스의 상태 응답을 확인한 뒤 설치된 Chrome 또는 Edge를 앱 모드로 연다. 창을 닫거나 다시 열어도 에이전트는 계속 실행한다. 설치 시 `configure --layout-config <설정 JSON>`으로 단독·반화면·동반 앱 전체 화면을 지정한다. [Windows 화면 배치와 실행](LAUNCHER.md)
-
-신뢰할 수 있는 패키징 PC에서 릴리스 루트의 각 파일에 대해 SHA-256과 상대 경로를 `<hash>  <relative-path>` 형식으로 기록한다. 매니페스트에는 자기 자신과 `data/`를 포함하지 않는다. 설치 PC에서는 전달받은 목록을 먼저 대조한다. 개별 파일은 Windows의 `certutil -hashfile "<파일>" SHA256`으로 확인할 수 있다. 작업 교대 사이에 이전 버전을 정지하고 검증된 새 버전 폴더를 실행한다. 롤백은 새 런타임이 만든 원장 스키마를 이전 런타임이 읽을 수 있을 때 같은 `data/`와 이전 버전 폴더를 사용한다. 호환성이 확인되지 않은 경우 스냅샷과 복원 범위를 먼저 대조한다.
-
-저장소 루트(또는 `field_agent/`와 테스트를 함께 담은 릴리스 루트)에서 `python -I -m unittest discover -s field_agent/tests -t .`로 테스트를 실행한다. `-t .`가 해당 루트를 unittest import 경로로 올린다. Python 3.8 문법 검사, 서버 공유 예제, 루프백 HTTP 시험을 포함한다. Windows EXE·실기 장치·Chrome 109 호환은 대상 PC에서 확인한다.
+저장소 루트에서 `python -I -m unittest discover -s field_agent/tests -t .`로 테스트한다. Python 3.8 문법 검사, 서버 공유 예제와 루프백 HTTP 시험을 포함한다. Windows 런타임·장치·Chrome 109 호환은 대상 PC에서 확인한다.

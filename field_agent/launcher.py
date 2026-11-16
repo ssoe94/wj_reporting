@@ -333,13 +333,13 @@ class Launcher:
             self._save_process(role, process, key, spawned=True)
         return process if _matches(process, args[0]) else None
 
-    def _agent_ready(self):
+    def _agent_ready(self, *, external_agent=False):
         def station_status(data):
             return data.get("station_id") == self.station and bool(data.get("agent_version"))
 
         if self.probe(_AGENT_PORT, station_status):
             return True
-        if not self.listening(_AGENT_PORT) and self._process("agent_process")[0] is None:
+        if not external_agent and not self.listening(_AGENT_PORT) and self._process("agent_process")[0] is None:
             self._start("agent_process", [self.runner, "-m", "field_agent", "run", "--data-dir", str(self.root),
                         "--port", str(_AGENT_PORT), *self.agent_args], self.cwd, "agent")
         return bool(self._until(lambda: self.probe(_AGENT_PORT, station_status)))
@@ -460,9 +460,9 @@ class Launcher:
         args = ["-m", "field_agent.launcher", "--data-dir", str(self.root), "--show-agent", *self.shortcut_args]
         return self.desktop.shortcut(self.runner, args, self.cwd, self.language)
 
-    def run(self, *, show_agent=False, shortcut=True):
+    def run(self, *, show_agent=False, shortcut=True, external_agent=False):
         try:
-            agent_live = self._agent_ready()
+            agent_live = self._agent_ready(external_agent=external_agent)
         except (OSError, ValueError):
             agent_live = False
         monitor, self.monitor_fallback = select_monitor(self.desktop.monitors(), self.layout.monitor)

@@ -44,7 +44,7 @@ python -m field_agent run --data-dir <data> --weigh-config <규칙 JSON> --weigh
 
 ## 현장 시범 구성
 
-- 실기 경로는 `--weigh-fake`를 뺀다. Windows 런처는 `start.cmd "<data>" "<규칙 JSON>" weigh`로 연다. 대상 PC에서 시리얼 포트 배정과 프린터 언어를 확인한다.
+- 실기 경로는 `--weigh-fake`를 뺀다. Windows 포터블 폴더에서 `configure.cmd --weigh-config "<규칙 JSON>"`으로 설정한 뒤 `start.cmd`로 연다. 대상 PC에서 시리얼 포트 배정과 프린터 언어를 확인한다.
 - `devices.scale`의 `port`에 저울 포트를 지정한다. `devices.scanner`의 `ports` 또는 `identities`에 A/B/W를 배정하고, 필요 시 `auto_detect`를 사용한다. 저울과 신호등 포트는 스캐너 후보에서 제외한다.
 - `devices.printer.printer_mode`는 `idprt_usb`(USBPRINT 네이티브 ZPL), `windows_raw`(Windows RAW spooler), `tcp`(기본 9100) 중 선택한다. 각각 `idprt_device_path`, `windows_printer`, `printer_host`·`printer_port`로 대상을 지정한다. `devices.signal.light_mode`는 `k50l_serial`, `patlite_usb`, `virtual` 중 선택한다. 필요에 따라 `light_serial_port` 또는 `light_device_path`를 사용한다. 시리얼·HID 의존성과 Windows 드라이버는 해당 릴리스에 검증된 버전으로 제공한다.
 - 템플릿의 `cells`는 실제 열 수와 맞춘다. 셀에는 `{barcode}`와 선택적으로 `{part_no}`를 넣는다. ZPL은 한 쌍의 `^XA`·`^XZ`, TSPL은 마지막에 한 번의 `PRINT 1,1`을 사용한다. 센서가 있는 박리 경로는 대기 감지 뒤 준비 상태가 와야 다음 행을 보낸다. 센서 증거를 읽을 수 없는 경로는 실물 제거를 작업자가 확인한다.

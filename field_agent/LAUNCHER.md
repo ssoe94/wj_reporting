@@ -16,14 +16,13 @@
 ```
 
 ```text
-python -m field_agent configure --data-dir <data> --connection <연결 JSON> --language zh --layout-config <위 배치 JSON>
-start.cmd "<data>" "<중량 앱 JSON>" weigh
-start.cmd "<data>" "<바코드 앱 JSON>"
-start.cmd "<data>"
+configure.cmd "<연결 JSON>" --language zh --layout-config "<위 배치 JSON>"
+configure.cmd --weigh-config "<중량 앱 JSON>"
+start.cmd
 ```
 
 - `split`은 에이전트와 동반 앱을 서로 반대쪽에 엽니다. `agent_side`는 `left` 또는 `right`입니다.
-- `companion_full`은 동반 앱을 모니터 작업 영역 전체에 엽니다. 백커버 지그에는 `backcover_v49`, UV 배치에는 `batch_inspection`을 지정합니다. 두 앱은 전체 화면 전용입니다. 에이전트의 로컬 서버는 계속 실행됩니다. 작업 화면이 필요할 때 바탕화면의 **WJ Field Agent** 바로가기를 누르면 설정한 쪽에 에이전트 앱 창을 엽니다. 기본 실행을 다시 호출하면 실행기가 식별한 에이전트 창만 최소화합니다.
+- `companion_full`은 동반 앱을 모니터 작업 영역 전체에 엽니다. 백커버 지그에는 `backcover_v49`, UV 배치에는 `batch_inspection`을 지정합니다. 두 앱은 전체 화면 전용입니다. 에이전트의 로컬 서버는 계속 실행됩니다. 작업 화면이 필요할 때 바탕화면의 **WJ Field Agent Portable - Status** 바로가기를 누르면 설정한 쪽에 에이전트 앱 창을 엽니다. 기본 실행을 다시 호출하면 실행기가 식별한 에이전트 창만 최소화합니다.
 - `agent_only`는 파일이 없는 기존 설치의 기본값입니다. `agent_size`는 `full` 또는 `half`입니다. 이 프로필에서는 `companion`을 생략합니다.
 - `monitor`는 `primary` 또는 Windows 디스플레이 이름인 `DISPLAY2` 등의 값을 씁니다. 지정 모니터가 현재 없으면 주 모니터를 사용합니다. 위치는 작업표시줄을 제외한 Windows 작업 영역을 기준으로 계산합니다. Chromium에는 DPI 환산 크기를 시작값으로 전달하고, 실제 창 배치는 Win32에서 요청합니다. [Microsoft 작업 영역과 모니터](https://learn.microsoft.com/en-us/windows/win32/desktop/gdi/multiple-monitor-system-metrics) · [Win32 창 배치](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)
 
