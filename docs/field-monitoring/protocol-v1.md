@@ -76,7 +76,7 @@ flowchart LR
 | `mode.changed`, `config.applied` | 실제 적용 때 `detail.previous_mode`/`detail.previous_config_version`, 현재 값. 설정 파일 사본은 제외. |
 | `operator.action` | 실제 반영된 초기화·복구·취소·재인쇄 승인·수동 작업·우회, `detail.action`, 필요한 `ref`, 기록된 원인. 기존 판정을 덮어쓰지 않는다. 재판정은 원 이벤트 키를 참조한 새 이벤트. |
 | `backup.completed`, `backup.failed` | 검증을 마친 로컬 백업 또는 실패. `detail.backup_id`와 검사 상태. 백업 경로와 기밀 데이터 제외. |
-| `scan.recorded` | A/B/ANY 바코드 판정 INSERT commit. 바코드, device, 있음이 확인된 제품군/기대 장치 및 `ref.source_key`. 단순 입력 오류는 신규 앱 `device.state` 또는 실제로 커밋된 오류 시도로 구분. |
+| `scan.recorded` | A/B/ANY 바코드 판정 INSERT commit. 바코드, device, 있음이 확인된 제품군/`detail.expected_device` 및 `ref.source_key`. 마지막 초기화 이전 정상 바코드가 같은 모드에서 다시 정상 처리되면 `detail.seen_before_reset=true`를 추가한다. 중앙 예외는 생산 모드의 이 표시를 집계하며 판정은 OK로 유지한다. 단순 입력 오류는 신규 앱 `device.state` 또는 실제로 커밋된 오류 시도로 구분. |
 | `weigh.result` | 한 안정 적재의 PASS/NG 결정 및 지속 기록. `ref.cycle_id`, g의 실제/기준/허용폭, `detail.quantity`, `detail.rule`. 기존 DB는 예약 성공에 딸린 PASS만 복원 가능. 빈 저울·불안정·latched는 시도에서 제외. |
 | `label.reserved` | 시리얼·작업·고정 payload 예약 commit 후 작업당 1건. `ref.job_id`, `ref.cycle_id`(있을 때), `detail.quantity`, `detail.payload_sha256`. 개별 시리얼은 로컬 작업과 연결. |
 | `label.dispatched` | 실제 전송 시도 결과의 commit 후 1건. `ref.attempt_id`, 작업 ID 또는 물리 인쇄 행 ID(`detail.row_id`), 최대 3개 `detail.job_ids`, `detail.quantity`, `detail.delivery_status`. 같은 물리 행의 시도를 회원 작업에 각각 더하지 않는다. |

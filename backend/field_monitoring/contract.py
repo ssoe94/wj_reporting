@@ -255,6 +255,9 @@ def _validate_event(event):
                 _check('job_id' in refs)
         if event_type == 'capture.single':
             _text(detail.get('capture_id'), 128)
+    if 'seen_before_reset' in detail:
+        _check(app == 'barcode' and event_type == 'scan.recorded' and event['result'] == 'ok'
+               and type(detail['seen_before_reset']) is bool)
     if 'label_origin' in detail:
         _enum(detail['label_origin'], {'local', 'external', 'unknown'})
     if 'job_ids' in detail:

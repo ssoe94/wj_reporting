@@ -147,6 +147,14 @@ class DeviceApiTests(TestCase):
         self.assertEqual((response.status_code, response.data.get('event_index')), (400, 0))
         self.assertEqual(self.post_device('ingest', {**payload, 'events': [{**event, 'barcode': '중' * 86}]}).status_code, 400)
         self.assertEqual(self.post_device('ingest', {**payload, 'events': [{**event, 'ref': {}}]}).status_code, 400)
+        accepted_scan = {
+            **event, 'app': 'barcode', 'type': 'scan.recorded', 'result': 'ok',
+            'reason': 'scan_match', 'ref': {'source_key': 'SYNTH-RESCAN'},
+        }
+        for marked in ({**accepted_scan, 'detail': {'seen_before_reset': 'true'}},
+                       {**accepted_scan, 'result': 'ng', 'detail': {'seen_before_reset': True}}):
+            response = self.post_device('ingest', {**payload, 'events': [marked]})
+            self.assertEqual((response.status_code, response.data.get('event_index')), (400, 0))
         self.assertFalse(FieldEvent.objects.exists())
 
     def test_delivery_replay_duplicate_conflict_and_atomic_rejection(self):

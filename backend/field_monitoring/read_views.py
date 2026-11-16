@@ -50,6 +50,7 @@ SEARCH_FIELDS = {
     'part_no': ('part_no', 128),
     'job_id': ('job_id', 128),
     'cycle_id': ('payload__ref__cycle_id', 128),
+    'seen_before_reset': ('payload__detail__seen_before_reset', 4),
 }
 JOB_DETAIL_SLOTS = tuple(f'payload__detail__job_ids__{idx}' for idx in range(3))
 VISION_CYCLE_REF = 'payload__ref__cycle_id'
@@ -238,6 +239,13 @@ def _collect_exceptions(stations, heartbeats, events, now, add):
             reason=item['reason'], result=item['result'], mode='production',
         )
 
+    rescans = production.filter(
+        app='barcode', event_type='scan.recorded', result='ok', payload__detail__seen_before_reset=True,
+    ).values('station_id').annotate(count=Count('pk'))
+    for item in rescans:
+        add(item['station_id'], 'barcode_seen_before_reset', item['count'], app='barcode',
+            type='scan.recorded', result='ok', mode='production', seen_before_reset='true')
+
     related = _same_vision_cycle()
     vision_conflicts = _conflicted_vision_cycles(production).annotate(
         first_day=Subquery(related.order_by('business_date').values('business_date')[:1]),
@@ -322,6 +330,11 @@ def _event_search(params):
         if not value:
             continue
         scope[name] = value
+        if name == 'seen_before_reset':
+            if value != 'true':
+                raise QueryError('seen_before_reset must be true.')
+            query = query.filter(app='barcode', event_type='scan.recorded', result='ok', clock_suspect=False, **{field: True})
+            continue
         lookup = Q(**{field: value})
         if name == 'job_id':
             for slot in JOB_DETAIL_SLOTS:

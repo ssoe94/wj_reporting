@@ -72,6 +72,7 @@
   let state = {};
   let selectedApp = '';
   let connection = 'connecting';
+  const barcodeView = window.createBarcodeView(timestamp);
 
   function text(key) {
     return words[language][key];
@@ -164,7 +165,9 @@
       ['work', timestamp(app.last_work_at), text('timeZone')],
     ]);
     panel.appendChild(details);
-    panel.appendChild(node('p', text('appSlot'), 'muted'));
+    if (app.app !== 'barcode' || !state.barcode) {
+      panel.appendChild(node('p', text('appSlot'), 'muted'));
+    }
   }
 
   function render() {
@@ -200,6 +203,7 @@
     if (!clock.hidden) clock.textContent = words[language].clock(Math.round(Math.abs(offset) / 60), offset > 0);
     renderDeviceRows();
     renderApps();
+    barcodeView.render(state.barcode, language, connection);
   }
 
   document.querySelectorAll('[data-lang]').forEach(function (button) {
@@ -218,6 +222,7 @@
   stream.onerror = function () {
     connection = 'disconnected';
     renderConnection();
+    barcodeView.render(state.barcode, language, connection);
   };
   stream.onmessage = function (event) {
     try {

@@ -13,7 +13,7 @@ export type FieldFilterKey = typeof FIELD_FILTER_KEYS[number];
 export type FieldFilters = Partial<Record<FieldFilterKey, string>> & { from: string; to: string };
 
 const FIELD_FILTER_KEYS = [
-  'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id',
+  'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id', 'seen_before_reset',
 ] as const;
 
 export function recordParams(filters: FieldFilters) {
@@ -45,7 +45,7 @@ export type FieldStation = FieldStationDraft & {
 export type FieldOverviewStation = FieldStationDraft & {
   connection: 'online' | 'stale' | 'offline' | 'never';
   last_heartbeat_at: string | null;
-  app_status: { app: string; version: string; mode: string; state: string; last_work_at: string | null }[];
+  app_status: { app: string; version: string | null; mode: string; state: string; last_work_at: string | null }[];
   devices: { app: string; device: string; state: string; last_input_at: string | null }[];
   outbox: {
     pending_count: number | null;

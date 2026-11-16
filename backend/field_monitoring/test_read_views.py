@@ -187,6 +187,25 @@ class FieldReadTests(TestCase):
         overview = self.client.get(BASE + 'overview/')
         self.assertEqual(overview.data['summary']['exception_count'], sum(row['count'] for row in result.data['exceptions']))
 
+    def test_barcode_rescan_exception_keeps_ok_and_drills_to_the_matching_record(self):
+        details = {'seen_before_reset': True}
+        accepted_again = self.event(detail=details, barcode='SYNTH-RESCAN')
+        self.event(barcode='SYNTH-RESCAN')
+        self.event(detail={'seen_before_reset': False})
+        self.event(mode='test', detail=details)
+        self.event(mode='unknown', detail=details)
+        self.event(detail=details, app='weigh_label', event_type='weigh.result')
+        self.event(detail=details, suspect=True)
+        result = self.client.get(BASE + 'exceptions/')
+        row = next(row for row in result.data['exceptions'] if row['reason'] == 'barcode_seen_before_reset')
+        self.assertEqual(row['count'], 1)
+        overview = self.client.get(BASE + 'overview/')
+        self.assertEqual(overview.data['stations'][0]['production_counts']['ok'], 4)
+        records = self.client.get(BASE + 'events/', row['filters']).data['results']
+        self.assertEqual([(record['id'], record['result'], record['reason']) for record in records],
+                         [(accepted_again.pk, 'ok', 'scan_match')])
+        self.assertEqual(self.client.get(BASE + 'events/', {'seen_before_reset': 'bad'}).status_code, 400)
+
     def submit(self, job_id='', *, occurred=None, jobs=None, station=None):
         return self.event(
             station=station, app='weigh_label', event_type='label.dispatched', result='info', reason='print_submitted',

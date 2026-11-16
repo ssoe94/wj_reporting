@@ -248,6 +248,8 @@ function FieldEventOutcome({ row, tx }: { row: FieldEvent; tx: Tx }) {
   return <div>
     <FieldBadge tone={resultTone(row.result)}>{fieldText(row.result, tx)}</FieldBadge>
     <div className="break-words">{fieldText(row.reason, tx)}</div>
+    {row.detail?.seen_before_reset === true &&
+      <FieldBadge tone="warning">{fieldText('barcode_seen_before_reset', tx)}</FieldBadge>}
     {row.status_raw && <div className={`break-words ${muted}`}>{tx('원천', '原始')} {row.status_raw}</div>}
   </div>;
 }
@@ -323,6 +325,11 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
       <TextFilter label={tx('품번', '料号')} value={draft.part_no ?? ''} onChange={update('part_no')} />
       <TextFilter label={tx('작업 ID', '作业 ID')} value={draft.job_id ?? ''} onChange={update('job_id')} />
       <TextFilter label={tx('사이클 ID', '周期 ID')} value={draft.cycle_id ?? ''} onChange={update('cycle_id')} />
+      <label className="flex min-h-10 items-center gap-2 self-end text-sm">
+        <input type="checkbox" checked={draft.seen_before_reset === 'true'}
+          onChange={event => update('seen_before_reset')(event.target.checked ? 'true' : '')} />
+        {fieldText('barcode_seen_before_reset', tx)}
+      </label>
       <div className="flex flex-wrap items-center gap-2 col-span-2 md:col-span-4">
         <Button type="submit" disabled={invalidDates}>{tx('검색', '查询')}</Button>
         <Button type="button" variant="secondary" disabled={downloading || query.isPending || query.isError} onClick={download}>

@@ -1,10 +1,14 @@
-"""Read-only loopback status and SSE for the portable operator screen."""
+"""Loopback operator screen, status stream and optional barcode controls."""
 
 import json
+import shutil
+import sqlite3
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 
 _DEFAULT_PORT = 8769
@@ -13,9 +17,19 @@ _ASSETS = {
     '/': ('index.html', 'text/html; charset=utf-8'),
     '/agent.css': ('agent.css', 'text/css; charset=utf-8'),
     '/agent.js': ('agent.js', 'text/javascript; charset=utf-8'),
+    '/barcode.js': ('barcode.js', 'text/javascript; charset=utf-8'),
 }
 _SESSION_HEADER = 'X-WJ-Local'
 _SSE_CLIENTS = 4
+_BARCODE_ACTIONS = {
+    '/api/barcode/reset/': 'reset',
+    '/api/barcode/mode/': 'mode',
+    '/api/barcode/config/': 'config',
+}
+_BARCODE_CSV = '/api/barcode/export.csv'
+_MAX_ACTION_BYTES = 2048
+_CSV_COPY_BYTES = 65536
+_LANES = ('A', 'B')
 
 
 def _fields(source, names):
@@ -25,6 +39,25 @@ def _fields(source, names):
         if isinstance(source, dict) and name in source
         and type(source[name]) in (str, int, bool, float, type(None))
     }
+
+
+def _barcode_status(source):
+    public = _fields(source, ('mode', 'production_group', 'reset_id', 'storage_error'))
+    public['groups'] = [group for group in source.get('groups', []) if type(group) is str]
+    public['assignments'] = _fields(source.get('assignments'), _LANES)
+    public['ports'] = [_fields(port, ('id', 'label')) for port in source.get('ports', [])]
+    public['lanes'] = {}
+    for name in _LANES:
+        lane = (source.get('lanes') or {}).get(name) or {}
+        item = _fields(lane, ('connected', 'last_input_at', 'port'))
+        item['counts'] = _fields(lane.get('counts'), ('ok', 'duplicate', 'error'))
+        item['frame_errors'] = _fields(lane.get('frame_errors'), ('decode', 'partial', 'oversize'))
+        item['recent'] = [
+            _fields(record, ('seq', 'time', 'barcode', 'status')) for record in lane.get('recent', [])
+        ]
+        public['lanes'][name] = item
+    public['alert'] = _fields(source.get('alert'), ('seq', 'status')) or None
+    return public
 
 
 def _status_bytes(snapshot):
@@ -44,18 +77,60 @@ def _status_bytes(snapshot):
         'pending_count', 'oldest_occurred_at', 'last_ack_at', 'state', 'last_error_code', 'coverage',
     ))
     public['backup'] = _fields(snapshot.get('backup'), ('state', 'finished_at', 'reason'))
+    if isinstance(snapshot.get('barcode'), dict):
+        public['barcode'] = _barcode_status(snapshot['barcode'])
     return json.dumps(public, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
+
+
+def _unique_keys(pairs):
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError('Duplicate JSON key')
+        data[key] = value
+    return data
+
+
+def _non_json_constant(_value):
+    raise ValueError('Invalid JSON constant')
+
+
+def _field_value(value):
+    return type(value) is str and 0 < len(value) <= 512 and value.isprintable()
+
+
+def _valid_action(action, data):
+    if type(data) is not dict:
+        return False
+    if action == 'reset':
+        return not data
+    if action == 'mode':
+        return set(data) == {'mode'} and data['mode'] in ('production', 'test')
+    if not data or set(data) - {'production_group', 'assignments'}:
+        return False
+    if 'production_group' in data and not _field_value(data['production_group']):
+        return False
+    if 'assignments' not in data:
+        return True
+    assignments = data['assignments']
+    return (
+        type(assignments) is dict and bool(assignments) and not (set(assignments) - set(_LANES))
+        and all(value is None or _field_value(value) for value in assignments.values())
+    )
 
 
 class _Server(ThreadingHTTPServer):
     request_queue_size = 12
 
-    def __init__(self, port, snapshot):
+    def __init__(self, port, snapshot, barcode_action, barcode_csv):
         self.snapshot = snapshot
+        self.barcode_action = barcode_action
+        self.barcode_csv = barcode_csv
         self.stopping = threading.Event()
         # Leave room for assets/JSON even when the SSE slots are occupied.
         self.request_slots = threading.BoundedSemaphore(16)
         self.stream_slots = threading.BoundedSemaphore(_SSE_CLIENTS)
+        self.export_slot = threading.BoundedSemaphore(1)
         self.assets = {
             route: ((_STATIC_ROOT / name).read_bytes(), media_type)
             for route, (name, media_type) in _ASSETS.items()
@@ -96,7 +171,7 @@ class _Handler(BaseHTTPRequestHandler):
         # The browser never needs request logs, and the kiosk can stay quiet.
         pass
 
-    def _headers(self, status, media_type, length=None):
+    def _headers(self, status, media_type, length=None, *, disposition=None, allow=None):
         self.send_response(status)
         self.send_header('Content-Type', media_type)
         if length is not None:
@@ -106,17 +181,20 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+        self.send_header('Permissions-Policy', 'autoplay=(self)')
         self.send_header(
             'Content-Security-Policy',
             "default-src 'none'; script-src 'self'; style-src 'self'; "
             "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
         )
+        if disposition is not None:
+            self.send_header('Content-Disposition', disposition)
         if status == 405:
-            self.send_header('Allow', 'GET, HEAD')
+            self.send_header('Allow', allow or 'GET, HEAD')
         self.end_headers()
 
-    def _send(self, status, body, media_type='text/plain; charset=utf-8'):
-        self._headers(status, media_type, len(body))
+    def _send(self, status, body, media_type='text/plain; charset=utf-8', **headers):
+        self._headers(status, media_type, len(body), **headers)
         if self.command != 'HEAD':
             self.wfile.write(body)
 
@@ -144,7 +222,7 @@ class _Handler(BaseHTTPRequestHandler):
         return self._allowed(mutation=self.command not in ('GET', 'HEAD'))
 
     def do_GET(self):
-        route = self.path.partition('?')[0]
+        route, _, query = self.path.partition('?')
         if route in self.server.assets:
             data, media_type = self.server.assets[route]
             self._send(200, data, media_type)
@@ -160,16 +238,108 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(405, b'GET required')
             else:
                 self._stream()
+        elif route == _BARCODE_CSV and self.server.barcode_csv is not None:
+            self._export_csv(query)
+        elif route in _BARCODE_ACTIONS and self.server.barcode_action is not None:
+            self._send(405, b'POST required', allow='POST')
         else:
             self._send(404, b'Not found')
 
     do_HEAD = do_GET
 
     def _mutation(self):
-        # Future app routes pass the same parse-time guard before processing their body.
         self._send(405, b'Local status is read only')
 
-    do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = _mutation
+    do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = _mutation
+
+    def do_POST(self):
+        action = _BARCODE_ACTIONS.get(self.path)
+        if action is None or self.server.barcode_action is None:
+            self._mutation()
+            return
+        if self.headers.get_all('Transfer-Encoding'):
+            self._send(400, b'Transfer encoding unsupported')
+            return
+        content_type = self.headers.get_all('Content-Type') or []
+        if len(content_type) != 1 or content_type[0].lower() not in (
+            'application/json', 'application/json; charset=utf-8',
+        ):
+            self._send(415, b'JSON required')
+            return
+        lengths = self.headers.get_all('Content-Length') or []
+        if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
+            self._send(400, b'Invalid content length')
+            return
+        if len(lengths[0]) > 4 or int(lengths[0]) > _MAX_ACTION_BYTES:
+            self._send(413, b'Request too large')
+            return
+        length = int(lengths[0])
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError('Incomplete body')
+            payload = json.loads(
+                raw.decode('utf-8'), object_pairs_hook=_unique_keys, parse_constant=_non_json_constant,
+            )
+            if not _valid_action(action, payload):
+                raise ValueError('Invalid payload')
+            self.server.barcode_action(action, payload)
+        except (ValueError, RecursionError):
+            self._send(400, b'Invalid barcode action')
+        except (OSError, RuntimeError):
+            self._send(503, b'Barcode action could not be saved')
+        else:
+            self._send(200, b'{"ok":true}', 'application/json; charset=utf-8')
+
+    def _export_csv(self, query):
+        # The browser sends a custom header via a same-origin fetch, not a navigation.
+        # A foreign page cannot set it through a form/link or the CORS preflight.
+        if self.headers.get_all(_SESSION_HEADER) != ['1']:
+            self._send(403, b'Local request header required')
+            return
+        if self.command != 'GET':
+            self._send(405, b'GET required', allow='GET')
+            return
+        try:
+            params = parse_qs(query, strict_parsing=True, max_num_fields=1)
+            if params not in ({'lang': ['ko']}, {'lang': ['zh']}):
+                raise ValueError('Invalid selection')
+        except ValueError:
+            self._send(400, b'Invalid export language')
+            return
+        if not self.server.export_slot.acquire(blocking=False):
+            self._send(503, b'Barcode export unavailable')
+            return
+        try:
+            try:
+                output = tempfile.TemporaryFile(mode='w+b')
+            except OSError:
+                self._send(503, b'Barcode export unavailable')
+                return
+            with output:
+                try:
+                    source = self.server.barcode_csv(params['lang'][0])
+                    chunks = iter((source,)) if isinstance(source, bytes) else iter(source)
+                    try:
+                        for chunk in chunks:
+                            if not isinstance(chunk, bytes):
+                                raise ValueError('CSV must yield bytes')
+                            output.write(chunk)
+                    finally:
+                        if hasattr(chunks, 'close'):
+                            chunks.close()
+                    size = output.tell()
+                    output.seek(0)
+                except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+                    self._send(503, b'Barcode export unavailable')
+                    return
+                self._headers(
+                    200, 'text/csv; charset=utf-8', size,
+                    disposition='attachment; filename="barcode-records.csv"',
+                )
+                shutil.copyfileobj(output, self.wfile, length=_CSV_COPY_BYTES)
+        finally:
+            self.server.export_slot.release()
 
     def _stream(self):
         if not self.server.stream_slots.acquire(blocking=False):
@@ -200,14 +370,16 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class LocalUI:
-    """Run the static status shell using a fast, cached snapshot callback."""
+    """Serve the static shell, a cached snapshot, and optional local controls."""
 
-    def __init__(self, snapshot, host='127.0.0.1', port=_DEFAULT_PORT):
+    def __init__(self, snapshot, host='127.0.0.1', port=_DEFAULT_PORT, *, barcode_action=None, barcode_csv=None):
         if host != '127.0.0.1':
             raise ValueError('Local UI requires 127.0.0.1')
         if type(port) is not int or not 0 <= port <= 65535:
             raise ValueError('Invalid loopback UI port')
         self._snapshot = snapshot
+        self._barcode_action = barcode_action
+        self._barcode_csv = barcode_csv
         self._requested_port = port
         self._server = None
         self._thread = None
@@ -220,7 +392,7 @@ class LocalUI:
 
     def start(self):
         if self._server is None:
-            server = _Server(self._requested_port, self._snapshot)
+            server = _Server(self._requested_port, self._snapshot, self._barcode_action, self._barcode_csv)
             thread = threading.Thread(
                 target=server.serve_forever, kwargs={'poll_interval': 0.5},
                 name='field-agent-ui', daemon=True,

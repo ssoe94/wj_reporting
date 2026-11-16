@@ -41,7 +41,8 @@ def _run(args):
     try:
         runtime = Runtime(ledger, Transport(connection.server, connection.token), demo=args.fake_stdin,
                           port=args.port, backup_idle=args.backup_idle, backup_keep=args.backup_keep,
-                          min_free_bytes=args.min_free_mib * 1024 * 1024)
+                          min_free_bytes=args.min_free_mib * 1024 * 1024,
+                          barcode_config=args.barcode_config, legacy_barcode_db=args.legacy_barcode_db)
         stop = Event()
         for signum in (signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, lambda *_args: stop.set())
@@ -64,7 +65,10 @@ def _args():
     install.add_argument("--connection", type=Path, required=True)
     run = commands.add_parser("run", help="Run the station and its localhost screen")
     run.add_argument("--port", type=int, default=8769)
-    run.add_argument("--fake-stdin", action="store_true", help="Record test-only barcode frames from stdin")
+    barcode = run.add_mutually_exclusive_group()
+    barcode.add_argument("--fake-stdin", action="store_true", help="Record test-only core demo frames from stdin")
+    barcode.add_argument("--barcode-config", type=Path, help="Run the barcode reader with a local rules file")
+    barcode.add_argument("--legacy-barcode-db", type=Path, help="Read the existing barcode SQLite source without opening COM")
     run.add_argument("--backup-idle", type=int, default=60)
     run.add_argument("--backup-keep", type=int, default=30)
     run.add_argument("--min-free-mib", type=int, default=DEFAULT_MIN_FREE // (1024 * 1024))

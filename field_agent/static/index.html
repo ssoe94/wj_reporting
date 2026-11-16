@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>현장 에이전트</title>
   <link rel="stylesheet" href="/agent.css">
+  <script src="/barcode.js" defer></script>
   <script src="/agent.js" defer></script>
 </head>
 <body>
@@ -21,6 +22,60 @@
       <p class="badge" role="status" id="connection">로컬 연결 중</p>
     </header>
     <p id="clock-warning" role="status" class="warning" hidden></p>
+    <section id="barcode" class="barcode" aria-labelledby="barcode-title" hidden>
+      <div class="card barcode-header">
+        <div>
+          <h2 id="barcode-title" data-barcode-text="title">바코드 리더</h2>
+          <p><span data-barcode-text="group">생산 제품군</span> <strong id="barcode-group"></strong></p>
+        </div>
+        <p id="barcode-mode" class="badge"></p>
+        <div class="barcode-actions">
+          <button id="barcode-sound" type="button"></button>
+          <button id="barcode-toggle-mode" type="button"></button>
+          <button id="barcode-export" type="button" data-barcode-text="export">CSV 내보내기</button>
+          <button id="barcode-reset" type="button" data-barcode-text="reset">카운터 초기화</button>
+        </div>
+      </div>
+      <p id="barcode-storage-error" role="alert" class="barcode-critical" data-barcode-text="storageError" hidden>저장 실패 · 저장되지 않은 스캔은 집계되지 않습니다.</p>
+      <p id="barcode-stale" role="status" class="warning" data-barcode-text="stale" hidden>로컬 연결을 다시 확인하는 중입니다. 표시된 값은 마지막으로 받은 상태입니다.</p>
+      <p id="barcode-notice" class="barcode-notice" role="status" hidden></p>
+      <div id="barcode-lanes" class="barcode-lanes"></div>
+      <details class="card barcode-settings">
+        <summary data-barcode-text="settings">바코드 설정</summary>
+        <div class="barcode-form">
+          <label><span data-barcode-text="group">생산 제품군</span><select id="barcode-setting-group"></select></label>
+          <label><span data-barcode-text="scannerA">스캐너 A</span><select id="barcode-setting-A"></select></label>
+          <label><span data-barcode-text="scannerB">스캐너 B</span><select id="barcode-setting-B"></select></label>
+        </div>
+        <div class="barcode-actions">
+          <button id="barcode-save" type="button" data-barcode-text="apply">설정 적용</button>
+          <button id="barcode-cancel" type="button" data-barcode-text="cancelEdit">편집 취소</button>
+        </div>
+        <p id="barcode-setting-notice" class="barcode-notice" role="status" hidden></p>
+      </details>
+    </section>
+    <template id="barcode-lane-template">
+      <section class="card barcode-lane">
+        <header class="barcode-lane-header">
+          <h3></h3>
+          <p class="badge barcode-device"></p>
+        </header>
+        <p class="barcode-last-input"><span data-barcode-text="lastInput">마지막 입력</span> <strong></strong></p>
+        <p class="barcode-last-result"></p>
+        <p class="barcode-count-label muted" data-barcode-text="sinceReset">마지막 초기화 이후</p>
+        <dl class="barcode-counts"></dl>
+        <h4 data-barcode-text="recent">최근 스캔</h4>
+        <table class="barcode-records">
+          <thead>
+            <tr>
+              <th scope="col" data-barcode-text="time">시각</th><th scope="col" data-barcode-text="barcode">바코드</th><th scope="col" data-barcode-text="result">판정</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="barcode-frame-errors muted" hidden></p>
+      </section>
+    </template>
     <div class="details">
       <section class="card" aria-labelledby="outbox-title">
         <h2 id="outbox-title" data-text="outbox">전송</h2>

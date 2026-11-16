@@ -6,6 +6,7 @@ set "WJ_AGENT_HOME=%CD%"
 set "WJ_AGENT_PYTHON=%WJ_AGENT_HOME%\python\python.exe"
 set "WJ_AGENT_DATA=%~1"
 if not defined WJ_AGENT_DATA set "WJ_AGENT_DATA=%WJ_AGENT_HOME%\..\data"
+set "WJ_AGENT_BARCODE_CONFIG=%~2"
 set "WJ_AGENT_URL=http://127.0.0.1:8769"
 set "PYTHONNOUSERSITE=1"
 set "PYTHONPATH="
@@ -15,7 +16,11 @@ if not exist "%WJ_AGENT_PYTHON%" (
   exit /b 1
 )
 
-start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769
+if defined WJ_AGENT_BARCODE_CONFIG (
+  start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769 --barcode-config "%WJ_AGENT_BARCODE_CONFIG%"
+) else (
+  start "WJ Field Agent" "%WJ_AGENT_PYTHON%" -m field_agent run --data-dir "%WJ_AGENT_DATA%" --port 8769
+)
 if errorlevel 1 exit /b 1
 
 rem Use the local readiness endpoint without any system HTTP proxy.
@@ -38,4 +43,5 @@ if not defined WJ_AGENT_BROWSER (
   echo Open %WJ_AGENT_URL% in Chrome or Edge.
   exit /b 1
 )
-start "" "%WJ_AGENT_BROWSER%" --app="%WJ_AGENT_URL%"
+rem Keep the autoplay override in a dedicated browser process and profile.
+start "" "%WJ_AGENT_BROWSER%" --user-data-dir="%WJ_AGENT_DATA%\browser-profile" --app="%WJ_AGENT_URL%" --autoplay-policy=no-user-gesture-required
