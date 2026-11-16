@@ -10,6 +10,7 @@ class FieldStation(models.Model):
     location = models.CharField(max_length=120, blank=True)
     line_note = models.CharField(max_length=160, blank=True)
     enabled = models.BooleanField(default=True)
+    issuer_policy_revision = models.PositiveBigIntegerField(default=0)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -64,6 +65,8 @@ class FieldEvent(models.Model):
     barcode = models.CharField(max_length=256, blank=True)
     serial = models.CharField(max_length=128, blank=True)
     part_no = models.CharField(max_length=128, blank=True)
+    issuer_namespace = models.CharField(max_length=3, blank=True)
+    label_print_date = models.DateField(null=True)
     job_id = models.CharField(max_length=128, blank=True)
     occurred_at = models.DateTimeField()
     received_at = models.DateTimeField()
@@ -83,6 +86,9 @@ class FieldEvent(models.Model):
             models.Index(fields=['barcode', 'business_date'], name='field_barcode_day'),
             models.Index(fields=['serial', 'business_date'], name='field_serial_day'),
             models.Index(fields=['part_no', 'business_date'], name='field_part_day'),
+            models.Index(fields=['issuer_namespace', 'part_no', 'label_print_date', 'business_date', 'station'],
+                         condition=Q(app='weigh_label', event_type='label.reserved'),
+                         name='field_label_issuer_date'),
         ]
 
 
@@ -94,3 +100,34 @@ class FieldStationHeartbeat(models.Model):
     previous_session_id = models.UUIDField(null=True)
     previous_session_received_at = models.DateTimeField(null=True)
     duplicate_sender_until = models.DateTimeField(null=True)
+
+
+class FieldLabelIssuer(models.Model):
+    namespace = models.CharField(max_length=3)
+    part_no = models.CharField(max_length=32)
+    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT, null=True)
+    program = models.CharField(max_length=80)
+    pc_note = models.CharField(max_length=120, blank=True)
+    predecessor = models.ForeignKey('self', on_delete=models.PROTECT, null=True, related_name='+')
+    assigned_at = models.DateTimeField()
+    assigned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    reason = models.CharField(max_length=240)
+    stopped_at = models.DateTimeField(null=True)
+    stopped_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    stop_reason = models.CharField(max_length=240, blank=True)
+    withdrawal_revision = models.PositiveBigIntegerField(null=True)
+    released_at = models.DateTimeField(null=True)
+    released_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    release_reason = models.CharField(max_length=240, blank=True)
+    ceilings = models.JSONField(default=list)
+    release_proof = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['namespace', 'part_no'], condition=Q(released_at__isnull=True),
+                                    name='field_one_active_label_issuer'),
+        ]
+        indexes = [
+            models.Index(fields=['station', 'stopped_at', 'released_at'], name='field_issuer_station_state'),
+            models.Index(fields=['namespace', 'part_no', 'released_at'], name='field_issuer_key_history'),
+        ]

@@ -9,6 +9,7 @@ from time import monotonic
 
 from .. import __version__
 from ..protocol import event_time, timestamp
+from . import issuer_policy
 from .legacy import open_readonly
 from .serials import get_date_code
 from .settings import MAX_SERIAL
@@ -119,11 +120,13 @@ def local_today(conn, part, day):
 def _record(ledger, conn, settings, part, moment, floor, kind, *, extra):
     calendar = event_time(moment).date()
     day, date_code = calendar.isoformat(), get_date_code(calendar)
+    stored = issuer_policy.current(conn)
+    version = issuer_policy.effective_version(settings.products[part].version, stored["sha256"] if stored else None)
     seq = ledger.append(conn, {
         "app": "weigh_label", "type": "operator.action", "result": "info", "mode": settings.mode,
         "reason": "serial_floor_imported" if kind == "legacy" else "serial_no_issuance_confirmed",
         "occurred_at": moment, "agent_version": __version__, "app_version": __version__,
-        "config_version": settings.products[part].version, "part_no": part,
+        "config_version": version, "part_no": part,
         "detail": dict(extra, action=kind, print_date=day, date_code=date_code, serial_floor=floor),
     })
     conn.execute("INSERT INTO weigh_serial_authority VALUES(?,?,?,?,?,?)", (part, day, date_code, kind, floor, seq))
@@ -158,6 +161,13 @@ def confirm_no_issuance(ledger, settings, part, reason, actor, *, clock=timestam
     day = event_time(moment).date().isoformat()
     with ledger.transaction() as conn:
         install(conn)
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='weigh_issuer_policy'").fetchone() is None:
+            raise ValueError("Import the station issuer policy before confirming a serial floor")
+        assignment_id = issuer_policy.grant(conn, issuer_policy.namespace(settings), part)
+        if assignment_id is None:
+            raise ValueError("This station is not assigned to issue labels for this PART")
+        if issuer_policy.inherited_bound(conn, assignment_id, event_time(moment).date()) is not None:
+            raise ValueError("Confirm the inherited serial ceiling for this assignment")
         if local_today(conn, part, day) is not None or saved_floor(conn, part, day) is not None:
             raise ValueError("Serial evidence is already established")
         if settings.legacy_print_db:

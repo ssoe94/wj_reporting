@@ -212,3 +212,12 @@ flowchart LR
 - [ ] 업무일 08:00 경계, 미래 시계, 재전송 지연, preview/demo/manual/unknown, 미완료·부분출력·불확실 상태의 집계가 예상과 같다.
 - [ ] 토큰 격리/폐기, loopback 접근 제한, payload 제한, 로그/CSV 보안, 수집량과 CPU/RSS/디스크/처리 지연의 현장 시험을 통과한다.
 - [ ] 모든 현장 화면에서 한국어와 중국어를 선택할 수 있다. 화면·오류·확인·알림·빈 상태가 선택 언어로 보이고, 에이전트 재시작과 브라우저 저장소 삭제 후에도 유지된다. 설치할 때 기본 언어를 지정하고 판정 코드·CSV 헤더·라벨 데이터는 그대로 유지한다.
+
+
+## 라벨 발급 주체
+
+등록부의 발급 키는 세 자리 영숫자 네임스페이스와 대문자 PART다. 같은 PC의 수신 자격과 별도로, 중앙 관리자가 지정한 `weigh_label` 또는 외부 프로그램 하나를 기록한다. 현장 파일은 `{station_id, revision, grants}`이며 각 grant는 `namespace`, `part_no`, 숫자 `assignment_id`, 선택된 이전 상한(없으면 `transfer:null`)으로 구성한다. 이전 상한은 `{previous_id, ceilings:[{print_date, serial_floor}]}` 형식이며 날짜는 상하이 달력일이다. 08:00 업무일은 중앙 조회에 사용한다. 파일의 grant는 네임스페이스·품번, 상한은 날짜 순으로 정렬한다. 해시는 키 정렬·공백 없는 UTF-8 JSON의 SHA-256이다.
+
+허용 목록 밖의 품번은 원장에 `weigh_reservation_blocked`와 `issuer_not_allowed` 원인을 기록하고 예약하지 않는다. 전송하는 네이티브 `label.reserved`에는 `detail.issuer_namespace`, 정수 `detail.issuer_assignment_id`, `detail.issuer_policy_sha256`과 `detail.print_date`가 들어간다. `config_version`은 제품 설정·정책 해시를 함께 반영한다. 이전 상한 확인은 `serial_transfer_confirmed`로 기록한다.
+
+정책을 설치한 에이전트의 heartbeat는 `issuer_policy: {revision, sha256, applied_seq, grants}`를 추가한다. 여기서 grants는 네임스페이스·PART·배정 ID의 정렬된 목록이다. `applied_seq`는 같은 원장 세대의 `issuer_policy_applied`에 대응한다. 중앙은 최신 허용 목록을 비교하고, 담당 해제 전에 저장된 적용 이벤트와 미전송 0건을 확인한다. 자세한 조작은 [한·중 담당 이전 안내](operations/issuer-transfer.md)를 따른다.

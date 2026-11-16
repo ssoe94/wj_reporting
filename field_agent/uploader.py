@@ -328,6 +328,8 @@ class Uploader:
             "resources": snapshot["resources"],
             "outbox": self.status(),
         }
+        if snapshot.get("issuer_policy") is not None:
+            payload["issuer_policy"] = snapshot["issuer_policy"]
         try:
             ack = self.transport.post("heartbeat", encode(payload))
             offset = _heartbeat_offset(ack, payload)

@@ -45,3 +45,20 @@ test('record and export filters preserve exact values and omit empty controls', 
     from: '2026-11-15', to: '2026-11-16', mode: 'test', barcode: '00001234',
   });
 });
+
+test('explicit cross-PC issuance evidence keeps both stations in the records and CSV query', () => {
+  const reserved = exceptionRecordFilters('2026-11-17', 'SYNTH-WS', {
+    station: '', part_no: 'SYNTH-PART', type: 'label.reserved', issuer_namespace: 'TST',
+    label_print_date: '2026-11-17', from: '2026-11-16', to: '2026-11-17',
+  });
+  assert.deepEqual(recordParams(reserved), {
+    from: '2026-11-16', to: '2026-11-17', part_no: 'SYNTH-PART', type: 'label.reserved',
+    issuer_namespace: 'TST', label_print_date: '2026-11-17',
+  });
+  const reads = exceptionRecordFilters('2026-11-17', 'SYNTH-WS', {
+    station: '', barcode: '0000123400', issuance_scan: 'true',
+  });
+  assert.deepEqual(recordParams(reads), {
+    from: '2026-11-17', to: '2026-11-17', barcode: '0000123400', issuance_scan: 'true',
+  });
+});

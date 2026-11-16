@@ -14,6 +14,7 @@ export type FieldFilters = Partial<Record<FieldFilterKey, string>> & { from: str
 
 const FIELD_FILTER_KEYS = [
   'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id', 'seen_before_reset',
+  'issuer_namespace', 'label_print_date', 'issuance_scan',
 ] as const;
 
 export function recordParams(filters: FieldFilters) {
@@ -23,7 +24,7 @@ export function recordParams(filters: FieldFilters) {
 export function exceptionRecordFilters(day: string, station: string, filters: Record<string, string>): FieldFilters {
   const from = filters.from || day;
   const to = filters.to || day;
-  return { ...recordParams({ ...filters, from, to }), from, to, station };
+  return { ...recordParams({ ...filters, from, to }), from, to, station: filters.station === '' ? '' : station };
 }
 
 
@@ -40,6 +41,27 @@ export type FieldStation = FieldStationDraft & {
   created_at: string;
   updated_at: string;
   credential_active: boolean;
+};
+
+export type FieldIssuerDraft = {
+  namespace: string;
+  part_no: string;
+  station_id: string | null;
+  program: string;
+  pc_note: string;
+  reason: string;
+};
+
+export type FieldSerialCeiling = { print_date: string; serial_floor: number };
+
+export type FieldIssuerAssignment = FieldIssuerDraft & {
+  id: number;
+  assigned_at: string;
+  stopped_at: string | null;
+  released_at: string | null;
+  stop_reason: string;
+  release_reason: string;
+  ceilings: FieldSerialCeiling[];
 };
 
 export type FieldOverviewStation = FieldStationDraft & {

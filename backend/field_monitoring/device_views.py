@@ -18,6 +18,7 @@ from .contract import (
     CONTRACT, ContractError, read_device_json, validate_envelope, validate_heartbeat,
     validate_ingest,
 )
+from .issuer_rules import reservation_fields
 from .models import FieldCredential, FieldEvent, FieldIngestBatch, FieldStation, FieldStationHeartbeat
 
 
@@ -80,12 +81,14 @@ def _ingest(station, database_id, batch_id, raw_hash, events, timestamps, receiv
             if _canonical_event(existing[seq]) != _canonical_event(event):
                 raise ContractError('event_conflict', 409, event_index=index)
             continue
+        issuer_namespace, label_print_date = reservation_fields(event)
         pending.append(FieldEvent(
             station=station, database_id=database_id, seq=seq,
             app=event['app'], event_type=event['type'], mode=event['mode'], result=event['result'],
             reason=event['reason'], barcode=event.get('barcode') or '', serial=event.get('serial') or '',
             part_no=event.get('part_no') or '', job_id=event.get('ref', {}).get('job_id', ''),
             occurred_at=occurred_at, received_at=received_at, business_date=business_date_at(occurred_at),
+            issuer_namespace=issuer_namespace, label_print_date=label_print_date,
             clock_offset_seconds=offset,
             clock_suspect=offset_suspect or occurred_at > received_at + timedelta(minutes=5),
             payload=event,

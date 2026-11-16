@@ -184,14 +184,14 @@ export function FieldExceptionsView({ rows, onSearch, tx }: {
       <button type="button" className="grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] gap-2 px-4 py-2 text-left hover:bg-[var(--wj-surface-muted)] focus-visible:outline-2 focus-visible:outline-[var(--wj-accent)] focus-visible:outline-offset-[-2px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onClick={() => onSearch(row)}>
         <span className="min-w-0 break-words text-sm font-semibold">
           {fieldText(row.reason, tx)}
-          {(row.filters.job_id || row.filters.cycle_id) && <span className={`mt-1 block break-all font-mono font-normal ${muted}`}>
-            {row.filters.job_id || row.filters.cycle_id}
+          {(row.filters.job_id || row.filters.cycle_id || row.filters.barcode || row.filters.part_no) && <span className={`mt-1 block break-all font-mono font-normal ${muted}`}>
+            {row.filters.job_id || row.filters.cycle_id || row.filters.barcode || [row.filters.issuer_namespace, row.filters.part_no].filter(Boolean).join(' · ')}
           </span>}
         </span>
         <span className={`row-start-2 min-w-0 break-words text-sm ${muted} sm:row-start-auto`}>
           <span className="block">{row.display_name} · {row.station_id}</span>
           <span className="block">
-            {row.filters.app ? fieldText(row.filters.app, tx) : tx('PC 공통', '电脑通用')}
+            {row.filters.station === '' ? tx('여러 PC의 기록', '多台电脑的记录') : row.filters.app ? fieldText(row.filters.app, tx) : tx('PC 공통', '电脑通用')}
             {row.filters.mode && row.filters.mode !== 'production' && ` · ${fieldText(row.filters.mode, tx)}`}
           </span>
         </span>
@@ -333,6 +333,14 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
           onChange={event => update('seen_before_reset')(event.target.checked ? 'true' : '')} />
         {fieldText('barcode_seen_before_reset', tx)}
       </label>
+      {(draft.issuer_namespace || draft.label_print_date || draft.issuance_scan) && <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm md:col-span-4">
+        {draft.issuer_namespace && <FieldBadge>{tx('네임스페이스', '命名空间')} {draft.issuer_namespace}</FieldBadge>}
+        {draft.label_print_date && <FieldBadge>{tx('발급 날짜', '发号日期')} {draft.label_print_date}</FieldBadge>}
+        {draft.issuance_scan && <FieldBadge>{tx('정상 스캔·재리딩', '正常扫码与复扫')}</FieldBadge>}
+        <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(previous => ({
+          ...previous, issuer_namespace: '', label_print_date: '', issuance_scan: '',
+        }))}>{tx('발급 관련 조건 지우기', '清除发号相关条件')}</Button>
+      </div>}
       <div className="flex flex-wrap items-center gap-2 col-span-2 md:col-span-4">
         <Button type="submit" disabled={invalidDates}>{tx('검색', '查询')}</Button>
         <Button type="button" variant="secondary" disabled={downloading || query.isPending || query.isError} onClick={download}>

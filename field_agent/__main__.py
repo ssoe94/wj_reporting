@@ -19,6 +19,10 @@ from .runtime import Runtime
 from .transport import Transport
 from .vision_sources import load_sources, prepare_sources, save_sources
 from .weigh.app import make_devices
+from .weigh.issuer_policy import (
+    apply_to_station, check_restore_checkpoint, check_runtime_checkpoint, confirm_transfer, prepare_policy,
+    save_checkpoint,
+)
 from .weigh.settings import load as load_weigh_settings
 from .weigh.serial_authority import confirm_no_issuance, local_admin_actor
 
@@ -82,6 +86,7 @@ def _run(args):
     sources = load_sources(args.data_dir)
     ledger = Ledger(args.data_dir / "ledger.sqlite3", connection.station_id)
     try:
+        check_runtime_checkpoint(ledger)
         runtime = Runtime(ledger, Transport(connection.server, connection.token), demo=args.fake_stdin,
                           port=args.port, backup_idle=args.backup_idle, backup_keep=args.backup_keep,
                           min_free_bytes=args.min_free_mib * 1024 * 1024,
@@ -115,7 +120,8 @@ def _args():
     parser = argparse.ArgumentParser(prog="python -m field_agent")
     commands = parser.add_subparsers(dest="command", required=True)
     install = commands.add_parser("configure", help="Import a server-issued local connection JSON")
-    install.add_argument("--connection", type=Path, required=True)
+    install.add_argument("--connection", type=Path)
+    install.add_argument("--issuer-policy", type=Path, help="Import an approved station issuer-policy JSON")
     install.add_argument("--language", choices=LANGUAGES, help="Initial operator screen language")
     install.add_argument("--layout-config", type=Path, help="Install a validated Windows companion layout")
     install.add_argument("--vision-config", type=Path, help="Install read-only vision sources for this PC")
@@ -141,7 +147,11 @@ def _args():
     serial.add_argument("--part-no", required=True)
     serial.add_argument("--reason", required=True)
     serial.add_argument("--confirm-no-issuance", action="store_true", required=True)
-    for command in (install, run, resume, restore, serial):
+    transfer = commands.add_parser("confirm-serial-transfer", help="Confirm the inherited issuer ceiling for today")
+    transfer.add_argument("--weigh-config", type=Path, required=True)
+    transfer.add_argument("--part-no", required=True)
+    transfer.add_argument("--reason", required=True)
+    for command in (install, run, resume, restore, serial, transfer):
         command.add_argument("--data-dir", type=Path, required=True)
     check = commands.add_parser("selftest", help="Offline self-test against a copy of the station ledger")
     check.add_argument("--data-dir", type=Path, required=True)
@@ -160,12 +170,19 @@ def main():
         if args.command == "configure":
             layout = prepare_layout(args.layout_config) if args.layout_config else None
             sources = prepare_sources(args.vision_config) if args.vision_config else None
-            configure(args.data_dir, args.connection, language=args.language)
-            if layout is not None:
-                save_layout(args.data_dir, layout)
-            if sources is not None:
-                save_sources(args.data_dir, sources)
-            print("Field connection stored.")
+            policy = prepare_policy(args.issuer_policy) if args.issuer_policy else None
+            if args.connection is None and policy is None:
+                raise ValueError("Provide a connection JSON or an issuer policy for an existing station")
+            if args.connection is not None:
+                configure(args.data_dir, args.connection, language=args.language)
+            with station_lock(args.data_dir):
+                if policy is not None:
+                    apply_to_station(args.data_dir, load_connection(args.data_dir), policy)
+                if layout is not None:
+                    save_layout(args.data_dir, layout)
+                if sources is not None:
+                    save_sources(args.data_dir, sources)
+            print("Field settings stored." if policy is not None else "Field connection stored.")
         elif args.command == "selftest":
             from .packaging.selftest import check_station
             if args.windows_package:
@@ -187,13 +204,15 @@ def main():
             with station_lock(args.data_dir):
                 if args.command == "run":
                     _run(args)
-                elif args.command == "confirm-serial-floor":
+                elif args.command in ("confirm-serial-floor", "confirm-serial-transfer"):
                     actor = local_admin_actor(args.data_dir)
                     setting = load_weigh_settings(args.weigh_config)
                     connection = load_connection(args.data_dir)
                     ledger = Ledger(args.data_dir / "ledger.sqlite3", connection.station_id)
                     try:
-                        day = confirm_no_issuance(ledger, setting, args.part_no, args.reason, actor)
+                        check_runtime_checkpoint(ledger)
+                        confirm = confirm_transfer if args.command == "confirm-serial-transfer" else confirm_no_issuance
+                        day = confirm(ledger, setting, args.part_no, args.reason, actor)
                     finally:
                         ledger.close()
                     print("Serial authorization recorded for {}.".format(day))
@@ -201,7 +220,10 @@ def main():
                     connection = load_connection(args.data_dir)
                     if verify_snapshot(args.backup)["station_id"] != connection.station_id:
                         raise ValueError("Backup belongs to another station")
+                    restored_policy = check_restore_checkpoint(args.data_dir, connection.station_id, args.backup)
                     restore_snapshot(args.backup, args.data_dir / "ledger.sqlite3")
+                    if restored_policy is not None:
+                        save_checkpoint(args.data_dir, connection.station_id, restored_policy)
                     print("Verified snapshot restored.")
                 elif args.command == "resume":
                     connection = load_connection(args.data_dir)

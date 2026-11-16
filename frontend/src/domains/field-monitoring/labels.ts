@@ -114,6 +114,13 @@ const labels: Record<string, Pair> = {
   connection_stale: ['접속 지연', '连接延迟'],
   connection_offline: ['접속 끊김', '已离线'],
   non_production_activity: ['생산 중 비생산 모드 기록', '生产时段的非生产模式记录'],
+  issuer_policy_mismatch: ['라벨 발급 설정 불일치', '标签发号设置不一致'],
+  concurrent_label_issuance: ['같은 품번의 복수 PC 라벨 예약', '同一料号在多台电脑预留标签'],
+  duplicate_barcode_issuance_suspected: ['같은 바코드 다중 발급 의심', '疑似重复签发同一条码'],
+  issuer_not_allowed: ['이 PC에서 발급할 수 없는 품번', '此电脑无权为该料号发号'],
+  issuer_policy_applied: ['라벨 발급 설정 적용', '已应用标签发号设置'],
+  issuer_transfer_required: ['이전 주체의 마지막 번호 확인 필요', '需核对原主体的最后号码'],
+  serial_transfer_confirmed: ['이전 주체의 마지막 번호 확인', '已核对原主体的最后号码'],
 };
 
 export function fieldText(code: string, tx: Tx) {

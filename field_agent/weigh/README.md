@@ -4,7 +4,7 @@
 
 ## 합성 설정과 실행
 
-저장소 또는 릴리스 루트에서 아래 합성 JSON을 별도 데이터 폴더의 규칙 파일에 저장한다. 실제 앱의 보정·품번·출력 설정은 현장 담당자가 해당 PC에 전달한다.
+저장소 또는 릴리스 루트에서 아래 합성 JSON을 별도 데이터 폴더의 규칙 파일에 저장한다. 격리된 시험 서버의 합성 station에 예제 네임스페이스 `SYN`과 PART를 배정하고 해당 station 정책 JSON을 내려받는다. 실제 앱의 보정·품번·출력 설정은 현장 담당자가 해당 PC에 전달한다.
 
 ```json
 {
@@ -35,16 +35,18 @@
 ```
 
 ```text
-python -m field_agent configure --data-dir <data> --connection <연결 JSON> --language ko
+python -m field_agent configure --data-dir <data> --connection <연결 JSON> --language ko --issuer-policy <정책 JSON>
 python -m field_agent confirm-serial-floor --data-dir <data> --weigh-config <규칙 JSON> --part-no TST10000001 --reason "격리 합성 발급" --confirm-no-issuance
 python -m field_agent run --data-dir <data> --weigh-config <규칙 JSON> --weigh-fake
 ```
+
+연결 설정이 이미 있는 PC는 `python -m field_agent configure --data-dir <data> --issuer-policy <정책 JSON>`으로 정책만 적용할 수 있다.
 
 합성 모드는 시험 이벤트를 남긴다. stdin에서 JSON 한 줄씩 받아 저울·스캐너·프린터·박리를 시험한다. 예를 들어 `{"type":"scale","grams":"0"}`을 0.1초마다 1.3초 이상 보내 빈 저울을 안정화한 뒤 `{"type":"scale","grams":"20"}`을 같은 주기로 보낸다. `{"type":"scan","device":"W","barcode":"TST..."}`의 바코드는 합성 예약에 실제로 생성된 값을 사용한다. `{"type":"printer","outcome":"rejected_unsent"}` 또는 `"uncertain"`으로 다음 출력의 실패를 지정하고, `{"type":"peel","waiting":true}`로 가상 박리 상태를 설정한다.
 
 ## 현장 시범 구성
 
-- 실기 경로는 `--weigh-fake`를 뺀다. Windows 포터블 폴더에서 `configure.cmd --weigh-config "<규칙 JSON>"`으로 설정한 뒤 `start.cmd`로 연다. 대상 PC에서 시리얼 포트 배정과 프린터 언어를 확인한다.
+- 실기 경로는 `--weigh-fake`를 뺀다. Windows 포터블 폴더에서 `configure.cmd --weigh-config "<규칙 JSON>" --issuer-policy "<해당 PC용 정책 JSON>"`으로 설정한 뒤 `start.cmd`로 연다. 대상 PC에서 시리얼 포트 배정과 프린터 언어를 확인한다.
 - `devices.scale`의 `port`에 저울 포트를 지정한다. `devices.scanner`의 `ports` 또는 `identities`에 A/B/W를 배정하고, 필요 시 `auto_detect`를 사용한다. 저울과 신호등 포트는 스캐너 후보에서 제외한다.
 - `devices.printer.printer_mode`는 `idprt_usb`(USBPRINT 네이티브 ZPL), `windows_raw`(Windows RAW spooler), `tcp`(기본 9100) 중 선택한다. 각각 `idprt_device_path`, `windows_printer`, `printer_host`·`printer_port`로 대상을 지정한다. `devices.signal.light_mode`는 `k50l_serial`, `patlite_usb`, `virtual` 중 선택한다. 필요에 따라 `light_serial_port` 또는 `light_device_path`를 사용한다. 시리얼·HID 의존성과 Windows 드라이버는 해당 릴리스에 검증된 버전으로 제공한다.
 - 템플릿의 `cells`는 실제 열 수와 맞춘다. 셀에는 `{barcode}`와 선택적으로 `{part_no}`를 넣는다. ZPL은 한 쌍의 `^XA`·`^XZ`, TSPL은 마지막에 한 번의 `PRINT 1,1`을 사용한다. 센서가 있는 박리 경로는 대기 감지 뒤 준비 상태가 와야 다음 행을 보낸다. 센서 증거를 읽을 수 없는 경로는 실물 제거를 작업자가 확인한다.
@@ -53,9 +55,11 @@ python -m field_agent run --data-dir <data> --weigh-config <규칙 JSON> --weigh
 
 ## 첫 시리얼 발급
 
+설치에 적용한 정책이 현재 네임스페이스·PART에 발급을 허용할 때만 최초 발급 근거를 확인한다. 정책을 적용하지 않았거나 해당 PART가 없다면 예약이 보류된다. 담당을 넘겨받았다면 [담당 이전 절차](../../docs/field-monitoring/operations/issuer-transfer.md)에서 이전 주체 상한을 확정한다.
+
 기준은 PART와 상하이 달력 날짜다. 같은 날짜에 이미 이 원장에서 발급했으면 그 번호를 잇는다. 과거에 동일하게 인쇄되는 날짜 코드의 번호가 보관돼 있으면 그 번호도 건너뛴다. 기존 DB의 초기 상한은 첫 발급 전에 한 번 확정되며 이유가 원장에 남는다.
 
-기존 발급이 없음을 다른 프로그램까지 확인한 경우에만 위 `confirm-serial-floor` 명령을 사용한다. 에이전트를 정지한 상태에서 Windows 관리자 셸로 실행한다. 도구가 OS 계정, 시각, 사유를 기록한다. 이후 에이전트를 다시 열고 보류된 큐를 명시적으로 재개한다. 보류 상태에서 측정한 PASS는 다시 빈 저울을 확인한 뒤 재측정한다. 파일을 읽어 가져온 기준은 해당 DB의 관측치다. 전환 전에 다른 PC·프로그램의 동시 발급이 없음을 확인해야 한다.
+현재 정책의 허용 목록에 해당 PART가 있고, 기존 발급이 없음을 다른 프로그램까지 확인한 경우에만 위 `confirm-serial-floor` 명령을 사용한다. 에이전트를 정지한 상태에서 Windows 관리자 셸로 실행한다. 도구가 OS 계정, 시각, 사유를 기록한다. 이후 에이전트를 다시 열고 보류된 큐를 명시적으로 재개한다. 보류 상태에서 측정한 PASS는 다시 빈 저울을 확인한 뒤 재측정한다. 파일을 읽어 가져온 기준은 해당 DB의 관측치다. 전환 전에 다른 PC·프로그램의 동시 발급이 없음을 확인해야 한다.
 
 ## 승인 템플릿
 

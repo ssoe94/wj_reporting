@@ -2,9 +2,11 @@ import api from '@/lib/api';
 import { recordParams } from './model';
 import type {
   FieldEvent, FieldException, FieldFilters, FieldOverview, FieldStation, FieldStationDraft, IssuedToken,
+  FieldIssuerAssignment, FieldIssuerDraft, FieldSerialCeiling,
 } from './model';
 
 const FIELD_API = '/field/v1';
+const ISSUER_API = FIELD_API + '/issuer-assignments/';
 type RequestOptions = { authSessionId: string | null; signal?: AbortSignal };
 type OverviewScope = { business_date: string; station?: string };
 
@@ -30,10 +32,14 @@ export async function downloadFieldEvents(filters: FieldFilters, request: Reques
     ...request, params: recordParams(filters), responseType: 'blob',
   });
   if (!String(headers['content-type']).startsWith('text/csv')) throw new Error('CSV response required');
+  downloadFile(data, `field-events-${filters.from}-${filters.to}.csv`);
+}
+
+function downloadFile(data: Blob, name: string) {
   const url = URL.createObjectURL(data);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `field-events-${filters.from}-${filters.to}.csv`;
+  link.download = name;
   try {
     link.click();
   } finally {
@@ -61,6 +67,29 @@ export function issueFieldToken(id: string, request: RequestOptions) {
 
 export function revokeFieldToken(id: string, request: RequestOptions) {
   return api.post(stationUrl(id) + 'revoke-token/', {}, request);
+}
+
+export function fieldIssuerAssignments(request: RequestOptions) {
+  return api.get<{ assignments: FieldIssuerAssignment[] }>(ISSUER_API, request).then(({ data }) => data.assignments);
+}
+
+export function assignFieldIssuer(draft: FieldIssuerDraft, request: RequestOptions) {
+  return api.post<FieldIssuerAssignment>(ISSUER_API, draft, request);
+}
+
+export function stopFieldIssuer(id: number, reason: string, request: RequestOptions) {
+  return api.post<FieldIssuerAssignment>(`${ISSUER_API}${id}/stop/`, { reason }, request);
+}
+
+export function releaseFieldIssuer(id: number, reason: string, ceilings: FieldSerialCeiling[], request: RequestOptions) {
+  return api.post<FieldIssuerAssignment>(`${ISSUER_API}${id}/release/`, { reason, ceilings }, request);
+}
+
+export async function downloadFieldIssuerPolicy(id: string, request: RequestOptions) {
+  const { data } = await api.get<{ station_id: string }>(stationUrl(id) + 'issuer-policy/', request);
+  if (request.signal?.aborted) return;
+  if (data?.station_id !== id) throw new Error('Station policy response required');
+  downloadFile(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }), `issuer-policy-${id}.json`);
 }
 
 export function fieldServerOrigin() {

@@ -20,6 +20,8 @@ from config.authentication import ScopedJWTAuthentication
 from injection.cycle_time_history import business_date_at
 
 from .base import FieldAPIView
+from .issuer_detection import issuance_exceptions, successful_label_scans
+from .issuer_views import reported_policy_matches, station_policies
 from .models import FieldEvent, FieldStation, FieldStationHeartbeat
 from .permissions import CanViewFieldMonitoring
 
@@ -48,6 +50,9 @@ SEARCH_FIELDS = {
     'barcode': ('barcode', 256),
     'serial': ('serial', 128),
     'part_no': ('part_no', 128),
+    'issuer_namespace': ('issuer_namespace', 3),
+    'label_print_date': ('label_print_date', 10),
+    'issuance_scan': ('event_type', 4),
     'job_id': ('job_id', 128),
     'cycle_id': ('payload__ref__cycle_id', 128),
     'seen_before_reset': ('payload__detail__seen_before_reset', 4),
@@ -97,9 +102,12 @@ def _stations(params, now):
     return day, stations, heartbeats
 
 
-def _health(station, heartbeat, now):
+def _health(station, heartbeat, now, policy):
+    warnings = []
+    if station.enabled and not reported_policy_matches(policy, heartbeat):
+        warnings.append('issuer_policy_mismatch')
     if heartbeat is None:
-        return 'never', []
+        return 'never', warnings
 
     age = now - heartbeat.received_at
     if age <= timedelta(minutes=3):
@@ -109,7 +117,6 @@ def _health(station, heartbeat, now):
     else:
         connection = 'offline'
 
-    warnings = []
     if station.enabled:
         if connection != 'online':
             warnings.append(f'connection_{connection}')
@@ -229,7 +236,7 @@ def _reread_overdue(events, now):
     )
 
 
-def _collect_exceptions(stations, heartbeats, events, now, add):
+def _collect_exceptions(stations, heartbeats, events, day, now, policies, add):
     production = events.filter(mode='production')
     exception_types = (Q(app='barcode', event_type='scan.recorded', result='ng')
                        | Q(app__in=VISION_APPS, event_type='operator.action', reason='vision_source_gap'))
@@ -275,7 +282,7 @@ def _collect_exceptions(stations, heartbeats, events, now, add):
 
     for station in stations:
         heartbeat = heartbeats.get(station.pk)
-        _, warnings = _health(station, heartbeat, now)
+        _, warnings = _health(station, heartbeat, now, policies[station.pk])
         for warning in warnings:
             add(station.pk, warning, 1)
         if station.enabled and heartbeat is not None:
@@ -286,11 +293,14 @@ def _collect_exceptions(stations, heartbeats, events, now, add):
             for (app, state), count in fault_counts.items():
                 add(station.pk, f'device_{state}', count, app=app, type='device.state')
 
+    issuance_exceptions(stations, day, add)
+
 
 def _exceptions(stations, heartbeats, events, day, now):
     by_id = {item.pk: item for item in stations}
     rows = []
     lookup_date = day.isoformat()
+    policies = station_policies(stations)
 
     def add(station_id, code, count, **filters):
         station = by_id[station_id]
@@ -302,7 +312,7 @@ def _exceptions(stations, heartbeats, events, day, now):
             'filters': {'from': lookup_date, 'to': lookup_date, 'station': station.station_id, **filters},
         })
 
-    _collect_exceptions(stations, heartbeats, events, now, add)
+    _collect_exceptions(stations, heartbeats, events, day, now, policies, add)
     return sorted(rows, key=lambda row: (
         row['station_id'], row['reason'], row['filters'].get('app', ''),
         row['filters'].get('mode', ''), row['filters'].get('job_id', ''),
@@ -310,14 +320,14 @@ def _exceptions(stations, heartbeats, events, day, now):
     ))
 
 
-def _exception_counts(stations, heartbeats, events, now):
+def _exception_counts(stations, heartbeats, events, day, now, policies):
     counts = Counter()
 
     def add(station_id, _code, count, **_filters):
         counts[station_id] += count
 
     if stations:
-        _collect_exceptions(stations, heartbeats, events, now, add)
+        _collect_exceptions(stations, heartbeats, events, day, now, policies, add)
     return counts
 
 
@@ -337,6 +347,13 @@ def _event_search(params):
         if not value:
             continue
         scope[name] = value
+        if name == 'issuance_scan':
+            if value != 'true':
+                raise QueryError('issuance_scan must be true.')
+            query = successful_label_scans(query)
+            continue
+        if name == 'label_print_date':
+            value = _date(value, name)
         if name == 'seen_before_reset':
             if value != 'true':
                 raise QueryError('seen_before_reset must be true.')
@@ -436,13 +453,14 @@ class OverviewView(FieldReadView):
         events = _day_events(stations, day)
         production_counts = _production_counts(events)
         non_production_counts = _non_production_counts(events)
-        exception_counts = _exception_counts(stations, heartbeats, events, now)
+        policies = station_policies(stations)
+        exception_counts = _exception_counts(stations, heartbeats, events, day, now, policies)
         online_count = 0
         output = []
         for station in stations:
             heartbeat = heartbeats.get(station.pk)
             payload = heartbeat.payload if heartbeat is not None else {}
-            connection, warnings = _health(station, heartbeat, now)
+            connection, warnings = _health(station, heartbeat, now, policies[station.pk])
             online_count += connection == 'online'
             app_status = payload.get('apps', [])
             app_counts, station_totals = _app_counts(

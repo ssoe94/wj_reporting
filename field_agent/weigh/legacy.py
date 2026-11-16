@@ -1,7 +1,7 @@
 """Bounded, read-only observation of the notebook weighing application's DBs."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from hashlib import sha256
 import json
 import os
@@ -12,6 +12,8 @@ from uuid import UUID
 
 from .. import __version__
 from ..protocol import MAX_SEQUENCE, SHANGHAI, timestamp
+from .serials import get_date_code, int_to_base34
+from .settings import MAX_SERIAL, PART
 
 
 PAGE = 100
@@ -143,6 +145,33 @@ def _digest(value):
     return value if isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) else None
 
 
+def _reserved_label(row):
+    part = row["part_no"]
+    day = row["print_date"]
+    quantity = _small_int(row["quantity"], 1, 5)
+    first = _small_int(row["first_serial"], maximum=MAX_SERIAL)
+    last = _small_int(row["last_serial"], maximum=MAX_SERIAL)
+    raw = row["barcodes_json"]
+    if (not isinstance(part, str) or not PART.fullmatch(part) or not isinstance(day, str)
+            or not isinstance(raw, str) or not quantity or not first or not last or last - first + 1 != quantity):
+        return {}
+    try:
+        printed = date.fromisoformat(day)
+        codes = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {}
+    if (printed.isoformat() != day or not isinstance(codes, list) or len(codes) != quantity
+            or not all(isinstance(code, str) for code in codes)):
+        return {}
+    namespace = codes[0][len(part):len(part) + 3]
+    if not re.fullmatch(r"[A-Z0-9]{3}", namespace, re.ASCII):
+        return {}
+    prefix = part + namespace + get_date_code(printed)
+    if codes != [prefix + int_to_base34(number) for number in range(first, last + 1)]:
+        return {}
+    return {"barcode": codes[-1], "serial": int_to_base34(last)}
+
+
 def _reservation(_conn, row, identity):
     when = _when(row["created_at"])
     job_id = _text(row["job_id"])
@@ -175,7 +204,8 @@ def _reservation(_conn, row, identity):
                  refs=refs, part_no=_text(row["part_no"]),
                  detail={"quantity": _small_int(row["quantity"], 1, 5), "print_date": _text(row["print_date"], 16),
                          "payload_sha256": _digest(row["payload_sha256"]),
-                         "first_serial": _small_int(row["first_serial"]), "last_serial": _small_int(row["last_serial"])})
+                         "first_serial": _small_int(row["first_serial"]), "last_serial": _small_int(row["last_serial"])},
+                 **_reserved_label(row))
 
 
 def _direct_job(conn, row, identity):
@@ -293,8 +323,13 @@ def _print_streams(conn, tables):
     queue = "print_queue" in tables
     queue_columns = ("q.sequence AS queued,q.group_id,q.payload_sha256,q.inspection_json" if queue else
                      "NULL AS queued,NULL AS group_id,NULL AS payload_sha256,NULL AS inspection_json")
+    job_columns = {row[1] for row in _source_rows(conn, "PRAGMA table_info(jobs)")}
+    # The source stores at most five labels per reservation. Older schemas or
+    # unverified barcode lists still produce the original aggregate record.
+    codes = ("CASE WHEN length(a.barcodes_json)<=512 THEN a.barcodes_json END"
+             if "barcodes_json" in job_columns else "NULL")
     jobs = ("SELECT a.rowid AS source_id,a.job_id,a.created_at,a.print_date,a.part_no,a.quantity,a.first_serial,"
-            "a.last_serial,a.status," + queue_columns + " FROM jobs a"
+            "a.last_serial,a.status," + codes + " AS barcodes_json," + queue_columns + " FROM jobs a"
             + (" LEFT JOIN print_queue q ON q.job_id=a.job_id" if queue else ""))
     yield _Stream("jobs", "a.rowid", jobs, ("job_id", "created_at"), _direct_job,
                   lambda row: row["queued"] is None and row["status"] == "prepared")

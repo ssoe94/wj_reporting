@@ -48,6 +48,10 @@
     route_changed: ['프린터 연결 설정 변경', '打印连接设置已更改'],
     payload_corrupt: ['예약된 인쇄 데이터 오류', '已预留的打印数据异常'],
     queue_full: ['인쇄 대기 한도 도달', '打印队列已满'],
+    issuer_not_allowed: ['이 PC에 배정되지 않은 품번 · 발급 중지', '此料号未分配给本机 · 停止发号'],
+    issuer_transfer_required: ['이전 주체의 마지막 예약 번호 확인 필요', '须确认上一发号主体的最后预留号码'],
+    issuerAssignmentAction: ['관리자에게 이 PC의 발급 품번 배정과 허용 목록 적용을 요청하세요.', '请联系管理员为本机分配发号料号并应用允许清单。'],
+    issuerTransferAction: ['관리자에게 이전 주체의 마지막 예약 번호 확인을 요청하세요.', '请联系管理员确认上一发号主体的最后预留号码。'],
     serial_floor_required: ['시리얼 시작 기준 미확정 · 라벨 발급 중지', '流水号起始基准未确认 · 已停止发放标签'],
     serial_source_unavailable: ['기존 발급 기록을 읽을 수 없습니다', '无法读取旧程序的发放记录'],
     serialChecking: ['첫 발급 전에 기존 발급기록을 자동 확인합니다.', '首次发放前将自动核查旧程序的发放记录。'],
@@ -427,11 +431,14 @@
       const status = serial.status || queue().pause_reason;
       const phase = byId('weigh-serial-block');
       const checking = status === 'lookup_pending';
-      const blocked = status === 'serial_floor_required' || status === 'serial_source_unavailable';
+      const blocked = ['serial_floor_required', 'serial_source_unavailable', 'issuer_not_allowed', 'issuer_transfer_required'].includes(status);
       phase.hidden = !blocked && !checking;
       phase.dataset.level = checking ? 'check' : 'ng';
       phase.firstElementChild.textContent = t(checking ? 'serialChecking' : status);
       write('weigh-serial-context', [serial.part_no, serial.day, serial.date_code].filter(Boolean).join(' · '));
+      const guidance = status === 'issuer_not_allowed' ? 'issuerAssignmentAction'
+        : status === 'issuer_transfer_required' ? 'issuerTransferAction' : 'serialAction';
+      phase.lastElementChild.textContent = t(guidance);
       phase.lastElementChild.hidden = !blocked;
     }
 
@@ -550,7 +557,7 @@
       const locked = state.uncertain > 0 || state.dispatching > 0;
       const hasPending = locked || state.waiting > 0;
       select.disabled = select.disabled || hasPending;
-      const missingFloor = data?.serial?.status === 'serial_floor_required';
+      const missingFloor = ['serial_floor_required', 'issuer_not_allowed', 'issuer_transfer_required'].includes(data?.serial?.status);
       pause.hidden = Boolean(state.paused);
       pause.disabled = !available || state.paused;
       resume.hidden = !state.paused || locked;

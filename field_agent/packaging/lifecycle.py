@@ -18,6 +18,7 @@ from zipfile import BadZipFile, ZipFile
 from ..config import LANGUAGES, LanguagePreferences, _atomic_file, _limited_read, configure, load_connection, station_lock
 from ..launcher import load_layout, prepare_layout, save_layout
 from ..vision_sources import prepare_sources, save_sources
+from ..weigh.issuer_policy import apply_to_station, prepare_policy
 from .archive_rules import archive_members, archive_parts, checksum_rows, release_version
 from .station import LEGACY, NATIVE, prepare_inputs, save_inputs
 
@@ -341,13 +342,16 @@ def _configure(root, args):
     settings = prepare_inputs(inputs, Path.cwd())
     layout = prepare_layout(args.layout_config) if args.layout_config else None
     sources = prepare_sources(args.vision_config) if args.vision_config else None
+    policy = prepare_policy(args.issuer_policy) if args.issuer_policy else None
     with station_lock(root):
         if _pointer(root, required=False) is None:
             raise ValueError("Install the portable release first")
         if args.connection:
             configure(data, args.connection, language=args.language)
         with station_lock(data):
-            load_connection(data)
+            connection = load_connection(data)
+            if policy is not None:
+                apply_to_station(data, connection, policy)
             if args.language:
                 LanguagePreferences(data).set(args.language)
             if layout is not None:
@@ -409,6 +413,7 @@ def _args(argv=None):
     settings.add_argument("--language", choices=LANGUAGES)
     settings.add_argument("--layout-config", type=Path)
     settings.add_argument("--vision-config", type=Path)
+    settings.add_argument("--issuer-policy", type=Path)
     for name in (*NATIVE, *LEGACY):
         settings.add_argument("--" + name.replace("_", "-"), nargs=2 if name == "legacy_weigh_dbs" else None)
     settings.add_argument("--agent-only", action="store_true")

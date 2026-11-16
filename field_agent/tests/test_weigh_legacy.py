@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -7,6 +8,7 @@ from unittest.mock import patch
 
 from field_agent.ledger import Ledger
 from field_agent.weigh.legacy import WeighLegacyCollector
+from field_agent.weigh.serials import make_barcode
 
 
 DAY = "2026-01-02"
@@ -114,6 +116,38 @@ class WeighLegacyTests(unittest.TestCase):
         self.assertIsNone(event["device"])
         self.assertEqual(event["detail"]["legacy_slot"], "B")
         self.assertEqual(event["detail"]["label_origin"], "unknown")
+
+    def test_legacy_reservation_carries_verified_namespace_and_last_serial(self):
+        self.reserve("SYNTH-V1", q=2, queued=False)
+        self.reserve("SYNTH-MIXED", q=2, queued=False)
+        self.reserve("SYNTH-FALSE-CEILING", q=2, queued=False)
+        self.reserve("SYNTH-MALFORMED", q=2, queued=False)
+        self.reserve("SYNTH-OLD", q=2, queued=False)
+        printed = date.fromisoformat(DAY)
+        cfg = {"site_code": "X", "vendor_code": "YZ"}
+        other = {"site_code": "Y", "vendor_code": "Z0"}
+        first, last = [make_barcode("SYNTH-PART", serial, cfg, printed) for serial in (1, 2)]
+        with self.prints:
+            self.prints.execute("ALTER TABLE jobs ADD COLUMN barcodes_json TEXT")
+            for job, codes in (
+                ("SYNTH-V1", json.dumps([first, last])),
+                ("SYNTH-MIXED", json.dumps([first, make_barcode("SYNTH-PART", 2, other, printed)])),
+                ("SYNTH-FALSE-CEILING", json.dumps([first, make_barcode("SYNTH-PART", 3, cfg, printed)])),
+                ("SYNTH-MALFORMED", "[" * 600),
+            ):
+                self.prints.execute("UPDATE jobs SET barcodes_json=? WHERE job_id=?", (codes, job))
+
+        self.assertEqual(self.collector.poll(), 5)
+        self.assertEqual(self.collector.poll(), 0)
+        rows = {row["ref"]["job_id"]: row for row in self.events("label.reserved")}
+        self.assertEqual((rows["SYNTH-V1"]["barcode"], rows["SYNTH-V1"]["serial"]), (last, "0002"))
+        self.assertEqual(rows["SYNTH-V1"]["detail"]["last_serial"], 2)
+        self.assertEqual(rows["SYNTH-V1"]["mode"], "unknown")
+        for job in ("SYNTH-MIXED", "SYNTH-FALSE-CEILING", "SYNTH-MALFORMED", "SYNTH-OLD"):
+            with self.subTest(job=job):
+                self.assertNotIn("barcode", rows[job])
+                self.assertNotIn("serial", rows[job])
+                self.assertEqual(rows[job]["detail"]["last_serial"], 2)
 
     def test_group_inspection_once_attempt_transitions_and_reconciliation(self):
         self.reserve("SYNTH-J1")

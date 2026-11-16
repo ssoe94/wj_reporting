@@ -16,6 +16,7 @@ from field_agent.protocol import business_day, event_time, timestamp
 from field_agent.weigh.app import WeighApp, make_devices
 from field_agent.weigh.devices import FakePrinter, FakeScale, FakeScanner
 from field_agent.weigh.hardware_io import HardwareError
+from field_agent.weigh.issuer_policy import apply as apply_issuer_policy
 from field_agent.weigh.label_code import parse_label_code
 from field_agent.weigh.reread import reporting_product
 from field_agent.weigh.serials import make_barcode
@@ -60,6 +61,11 @@ class WeighAppTests(unittest.TestCase):
         self.addCleanup(self.ledger.close)
         self.clock = 0.0
         self.moment = event_time(NOW)
+        apply_issuer_policy(self.ledger, {
+            "station_id": self.ledger.station_id, "revision": 1,
+            "grants": [{"namespace": "SYN", "part_no": part, "assignment_id": index, "transfer": None}
+                       for index, part in enumerate((PART, OTHER), 1)],
+        }, clock=lambda: timestamp(self.moment))
         self.reset()
         self.app.store.confirm_no_issuance(PART, "Synthetic empty station", "SYNTH-ADMIN")
 

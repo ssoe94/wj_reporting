@@ -10,6 +10,9 @@ from django.core.exceptions import RequestDataTooBig
 from django.http import UnreadablePostError
 
 
+from .issuer_rules import MAX_GRANTS, NAMESPACE, PART, reservation_fields
+
+
 CONTRACT = 'wj.field.v1'
 MAX_BODY = 512 * 1024
 MAX_SEQ = 9007199254740991
@@ -255,6 +258,15 @@ def _validate_event(event):
                 _check('job_id' in refs)
         if event_type == 'capture.single':
             _text(detail.get('capture_id'), 128)
+    if event_type == 'label.reserved' and 'issuer_assignment_id' in detail:
+        _int(detail['issuer_assignment_id'], 1)
+        _hash(detail.get('issuer_policy_sha256'))
+        _check(bool(reservation_fields(event)[0]) and detail.get('issuer_namespace') is not None)
+    if event['reason'] == 'issuer_policy_applied':
+        _check(app == 'weigh_label' and event_type == 'operator.action')
+        _int(detail.get('revision'))
+        _hash(detail.get('sha256'))
+        _check(event.get('config_version') == detail['sha256'])
     if 'seen_before_reset' in detail:
         _check(app == 'barcode' and event_type == 'scan.recorded' and event['result'] == 'ok'
                and type(detail['seen_before_reset']) is bool)
@@ -338,4 +350,21 @@ def validate_heartbeat(payload):
     for field in ('disk_free_bytes', 'ledger_bytes', 'rss_bytes'):
         _int(resources.get(field), optional=True)
     _decimal(resources.get('cpu_pct'), optional=True)
+    if 'issuer_policy' in payload:
+        policy = _object(payload['issuer_policy'])
+        _check(set(policy) == {'revision', 'sha256', 'applied_seq', 'grants'})
+        _int(policy['revision'])
+        _hash(policy['sha256'])
+        _int(policy['applied_seq'], 1)
+        keys = []
+        ids = set()
+        for grant in _list(policy['grants'], MAX_GRANTS):
+            _object(grant)
+            _check(set(grant) == {'namespace', 'part_no', 'assignment_id'})
+            _check(isinstance(grant['namespace'], str) and NAMESPACE.fullmatch(grant['namespace']))
+            _check(isinstance(grant['part_no'], str) and PART.fullmatch(grant['part_no']))
+            _int(grant['assignment_id'], 1)
+            ids.add(grant['assignment_id'])
+            keys.append((grant['namespace'], grant['part_no']))
+        _check(keys == sorted(set(keys)) and len(ids) == len(keys) and (policy['revision'] > 0 or not keys))
     return heartbeat_id, client_at

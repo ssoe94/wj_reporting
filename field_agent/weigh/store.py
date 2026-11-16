@@ -1,5 +1,6 @@
 """Persist inspection, reservation, transport attempts and rereads in the field ledger."""
 
+from dataclasses import replace
 from hashlib import sha256
 import json
 import re
@@ -10,7 +11,7 @@ from .. import __version__
 from ..protocol import encode, event_time, timestamp
 from .reread import CODE, DEVICES, SOURCES, SCAN_RESULTS, classify, expected_lane, scan_slot
 from .serials import make_barcode, int_to_base34, get_date_code
-from . import serial_authority
+from . import issuer_policy, serial_authority
 from .settings import MAX_SERIAL, choose_template
 
 
@@ -116,6 +117,10 @@ class WeighStore:
             for statement in SCHEMA:
                 conn.execute(statement)
             serial_authority.install(conn)
+            issuer_policy.install(conn)
+            stored_policy = issuer_policy.current(conn)
+            self.issuer_sha256 = stored_policy["sha256"] if stored_policy else None
+            self.issuer_namespace = issuer_policy.namespace(settings)
             state = self._state(conn)
             part = state["part_no"] if state and state["part_no"] in settings.products else settings.default
             self.product = self._load_product(conn, part)
@@ -211,13 +216,25 @@ class WeighStore:
         return data
 
     def _reservation(self, conn, part, moment, quantity):
+        assignment_id = issuer_policy.grant(conn, self.issuer_namespace, part)
+        if assignment_id is None:
+            return None, issuer_policy.NOT_ALLOWED
+        calendar = event_time(moment).date()
+        transferred, blocked = issuer_policy.transfer_floor(conn, assignment_id, calendar)
+        if blocked:
+            return None, blocked
         if self._unresolved(conn):
             return None, "uncertain"
         if self._active(conn, ("waiting", "dispatching")) + quantity > QUEUE_LIMIT:
             return None, "queue_full"
-        floor, blocked = serial_authority.establish(self.ledger, conn, self.settings, part, moment)
-        if blocked:
-            return None, blocked
+        if transferred is None:
+            floor, blocked = serial_authority.establish(self.ledger, conn, self.settings, part, moment)
+            if blocked:
+                return None, blocked
+        else:
+            day = calendar.isoformat()
+            floor = max(transferred, serial_authority.local_today(conn, part, day) or 0,
+                        serial_authority.historical_max(conn, part, day))
         if floor + quantity > MAX_SERIAL:
             return None, "serial_exhausted"
         return floor + 1, None
@@ -226,7 +243,13 @@ class WeighStore:
         part = self.product.profile.part_no
         day = calendar.isoformat()
         with self.ledger.read() as conn:
-            if (serial_authority.local_today(conn, part, day) is not None
+            assignment_id = issuer_policy.grant(conn, self.issuer_namespace, part)
+            transferred, blocked = issuer_policy.transfer_floor(conn, assignment_id, calendar)
+            if assignment_id is None:
+                status = issuer_policy.NOT_ALLOWED
+            elif blocked:
+                status = blocked
+            elif (transferred is not None or serial_authority.local_today(conn, part, day) is not None
                     or serial_authority.saved_floor(conn, part, day) is not None):
                 status = "established"
             elif self._state(conn)["pause"] == serial_authority.UNAVAILABLE:
@@ -241,6 +264,7 @@ class WeighStore:
     def _reserve(self, conn, cycle_id, product, moment, quantity, first):
         calendar_date = event_time(moment).date()
         day, part = calendar_date.isoformat(), product.profile.part_no
+        assignment_id = issuer_policy.grant(conn, self.issuer_namespace, part)
         for serial in range(first, first + quantity):
             barcode = make_barcode(part, serial, self.settings.code, calendar_date)
             job_id = _id("job-")
@@ -257,7 +281,9 @@ class WeighStore:
                        serial=int_to_base34(serial), status_raw="waiting",
                        ref={"cycle_id": cycle_id, "job_id": job_id},
                        detail={"quantity": 1, "print_date": day, "label_index": 0, "payload_sha256": checksum,
-                               "payload_basis": "frozen_label_cells_v1"})
+                               "payload_basis": "frozen_label_cells_v1",
+                               "issuer_assignment_id": assignment_id, "issuer_namespace": self.issuer_namespace,
+                               "issuer_policy_sha256": self.issuer_sha256})
         conn.execute("""INSERT INTO weigh_serials VALUES(?,?,?)
             ON CONFLICT(print_date,part_no) DO UPDATE SET last_serial=excluded.last_serial""",
             (day, part, first + quantity - 1))
@@ -317,6 +343,12 @@ class WeighStore:
             jobs = self._waiting(conn)
             if not jobs:
                 return None
+            for job in self._prefix(jobs):
+                part = job["part_no"]
+                ns = job["barcode"][len(part):len(part) + 3]
+                if issuer_policy.grant(conn, ns, part) is None:
+                    self._pause(conn, issuer_policy.NOT_ALLOWED)
+                    return None
             if jobs[0]["route"] != self.settings.printer_route:
                 self._pause(conn, "route_changed")
                 return None
@@ -394,8 +426,12 @@ class WeighStore:
                    action, mode=row["mode"], version=row["config_version"], device="printer",
                    ref={"row_id": row["row_id"]}, detail={"action": action})
 
-    def _load_product(self, conn, part):
+    def _base_product(self, part):
         base = self.settings.products[part]
+        return replace(base, version=issuer_policy.effective_version(base.version, self.issuer_sha256))
+
+    def _load_product(self, conn, part):
+        base = self._base_product(part)
         previous = conn.execute("SELECT template_id,label_values FROM weigh_template_selection WHERE part_no=?", (part,)).fetchone()
         if previous:
             try:
@@ -424,7 +460,7 @@ class WeighStore:
 
     def select_template(self, template_id, values):
         part = self.product.profile.part_no
-        product = choose_template(self.settings.products[part], template_id, values)
+        product = choose_template(self._base_product(part), template_id, values)
         if product.version == self.product.version:
             return False
         with self.ledger.transaction() as conn:
@@ -496,6 +532,12 @@ class WeighStore:
                 waiting = self._waiting(conn)
                 if waiting and waiting[0]["route"] != self.settings.printer_route:
                     raise ValueError("Restore the saved printer route first")
+                if pause in (issuer_policy.NOT_ALLOWED, issuer_policy.TRANSFER_REQUIRED):
+                    part = self.product.profile.part_no
+                    assignment_id = issuer_policy.grant(conn, self.issuer_namespace, part)
+                    _floor, blocked = issuer_policy.transfer_floor(conn, assignment_id, event_time(self.clock()).date())
+                    if assignment_id is None or blocked:
+                        raise ValueError("Issuer authority and transfer evidence are required before resuming")
                 if pause in (serial_authority.REQUIRED, serial_authority.UNAVAILABLE):
                     part = self.product.profile.part_no
                     _floor, blocked = serial_authority.establish(self.ledger, conn, self.settings, part, self.clock())

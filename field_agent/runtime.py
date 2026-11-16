@@ -19,6 +19,7 @@ from .resources import Resources
 from .uploader import Uploader
 from .vision_sources import create_collectors
 from .weigh.app import WeighApp, make_devices
+from .weigh.issuer_policy import heartbeat as issuer_heartbeat
 from .weigh.legacy import WeighLegacyCollector
 
 
@@ -31,6 +32,7 @@ class Runtime:
         if sum((demo, native_apps, legacy_barcode_db is not None, legacy_weigh_dbs is not None)) > 1:
             raise ValueError("Select native apps, demo input, or one legacy input")
         self.ledger = ledger
+        self.issuer_policy_status = issuer_heartbeat(ledger)
         self.station_id = ledger.station_id
         self._halt = Event()
         self._lock = Lock()
@@ -211,6 +213,7 @@ class Runtime:
         return {
             "agent_version": __version__, "apps": apps, "devices": devices, "resources": resources,
             "storage_pressure": state, "coverage": coverage,
+            "issuer_policy": self.issuer_policy_status,
         }
 
     def snapshot(self):

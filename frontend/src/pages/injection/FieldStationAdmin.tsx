@@ -12,6 +12,7 @@ import type { Tx } from '@/domains/field-monitoring/labels';
 import { FIELD_APPS } from '@/domains/field-monitoring/model';
 import type { FieldStation, FieldStationDraft, IssuedToken } from '@/domains/field-monitoring/model';
 import { FieldBadge, FieldLoadError, FieldNotice, panelClass } from './FieldMonitoringViews';
+import FieldIssuerAdmin from './FieldIssuerAdmin';
 
 const blankStation: FieldStationDraft = {
   station_id: '', display_name: '', apps: [], location: '', line_note: '', enabled: true,
@@ -209,6 +210,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
         </div>
       </fieldset>
     </form>
+    <FieldIssuerAdmin tx={tx} authSessionId={authSessionId} stations={query.data ?? []} />
     {query.isPending && <FieldNotice>{tx('현장 PC 목록을 불러오는 중입니다.', '正在加载现场电脑列表。')}</FieldNotice>}
     {query.isError && <FieldLoadError tx={tx} retry={() => void query.refetch()} />}
     {query.data?.length === 0 && <FieldNotice>{tx('등록된 현장 PC가 없습니다.', '暂无已登记的现场电脑。')}</FieldNotice>}
