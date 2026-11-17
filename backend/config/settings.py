@@ -113,7 +113,6 @@ if ACCOUNT_ACTIVATION_ENABLED:
 
 MIDDLEWARE = [
     'mes_oauth.security.OAuthQueryRedactionMiddleware',
-    'config.heavy_request_log.HeavyRequestLogMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
