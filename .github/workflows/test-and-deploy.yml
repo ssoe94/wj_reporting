@@ -95,6 +95,10 @@ jobs:
         run: |
           test ! -e .env && test ! -e ../.env
           python manage.py test --no-input
+          # Django discovery from backend/ skips the injection namespace package.
+          python manage.py test --no-input \
+            injection.test_memory_query_goldens injection.test_matrix_loading \
+            injection.test_board_matrix_profile injection.test_parts_query_loading
 
       - name: Validate isolated OAuth and existing authentication contracts
         if: steps.scope.outputs.backend_required != 'false'

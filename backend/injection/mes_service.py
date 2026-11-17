@@ -724,6 +724,8 @@ class MESResourceService:
         columns: int = 13,
         reference_time: Optional[datetime] = None,
         machine_numbers: Optional[List[int]] = None,
+        *,
+        include_telemetry: bool = True,
     ) -> Dict:
         from injection.models import InjectionReport
 
@@ -771,34 +773,41 @@ class MESResourceService:
         interval_minutes = last_slot.get('interval_minutes', 60)
         end_of_last_slot = datetime.fromisoformat(last_slot['time']) + timedelta(minutes=interval_minutes)
         slot_starts = [datetime.fromisoformat(slot['time']) for slot in time_slots]
-        slot_keys = [slot['time'] for slot in time_slots]
+        slot_count = len(time_slots)
         machine_names = [f'{machine_num}호기' for machine_num in machine_numbers]
-        records_by_machine: Dict[int, List[InjectionMonitoringRecord]] = {machine_num: [] for machine_num in machine_numbers}
-        baseline_capacity_by_machine: Dict[int, Optional[InjectionMonitoringRecord]] = {machine_num: None for machine_num in machine_numbers}
-        baseline_power_by_machine: Dict[int, Optional[InjectionMonitoringRecord]] = {machine_num: None for machine_num in machine_numbers}
+        capacity_by_slot = {name: {} for name in machine_names}
+        telemetry_by_slot = {name: {} for name in machine_names} if include_telemetry else {}
+        sample_count = dict.fromkeys(machine_names, 0)
+        latest_capacity = dict.fromkeys(machine_names)
 
+        telemetry_fields = ('oil_temperature', 'power_kwh') if include_telemetry else ()
         db_records = InjectionMonitoringRecord.objects.filter(
             machine_name__in=machine_names,
             timestamp__gte=start_of_first_slot,
             timestamp__lt=end_of_last_slot,
-        ).only(
-            'machine_name', 'device_code', 'timestamp', 'capacity', 'oil_temperature', 'power_kwh',
+        ).values_list(
+            'machine_name', 'device_code', 'timestamp', 'capacity', *telemetry_fields,
         ).order_by('machine_name', 'timestamp', 'pk')
-        for record in db_records:
-            try:
-                machine_num = int(record.machine_name.replace('호기', '').strip())
-            except (TypeError, ValueError):
+        # Keep ordered counter samples and only the final telemetry sample in each slot.
+        for machine_name, device_code, timestamp_at, capacity, *telemetry in db_records.iterator(chunk_size=512):
+            slot_index = bisect_right(slot_starts, timestamp_at) - 1
+            if not 0 <= slot_index < slot_count:
                 continue
-            if machine_num in records_by_machine:
-                records_by_machine[machine_num].append(record)
+            if include_telemetry:
+                temperature, power = telemetry
+                telemetry_by_slot[machine_name][slot_index] = (device_code, temperature, power)
+            if capacity is not None and capacity >= 0:
+                capacity_by_slot[machine_name].setdefault(slot_index, []).append((device_code, capacity))
+                sample_count[machine_name] += 1
+                latest_capacity[machine_name] = timestamp_at
 
         baseline_queryset = InjectionMonitoringRecord.objects.filter(timestamp__lt=start_of_first_slot)
-        # Select at most one valid baseline per machine and counter in SQL.
-        # Iterating the historical queryset, even with a Python break, first
-        # hydrated every earlier sample and was unbounded when power was absent.
+        # Select at most one valid baseline per machine and requested counter in SQL.
         baseline_ids = Q(pk__in=[])
+        counter_fields = ('capacity', 'power_kwh') if include_telemetry else ('capacity',)
+        baselines = {field: {} for field in counter_fields}
         for machine_name in machine_names:
-            for field in ('capacity', 'power_kwh'):
+            for field in counter_fields:
                 latest_baseline = baseline_queryset.filter(
                     machine_name=machine_name,
                     **{f'{field}__isnull': False, f'{field}__gte': 0},
@@ -806,119 +815,78 @@ class MESResourceService:
                 baseline_ids |= Q(pk=Subquery(latest_baseline))
         baseline_records = (
             InjectionMonitoringRecord.objects.filter(baseline_ids)
-            .only('machine_name', 'device_code', 'timestamp', 'capacity', 'power_kwh')
             .order_by('machine_name', '-timestamp', '-pk')
+            .values_list('machine_name', 'device_code', *counter_fields)
         )
-        for record in baseline_records:
-            machine_num = int(record.machine_name.replace('호기', '').strip())
-            if (
-                record.capacity is not None and record.capacity >= 0
-                and baseline_capacity_by_machine[machine_num] is None
-            ):
-                baseline_capacity_by_machine[machine_num] = record
-            if (
-                record.power_kwh is not None and record.power_kwh >= 0
-                and baseline_power_by_machine[machine_num] is None
-            ):
-                baseline_power_by_machine[machine_num] = record
+        for machine_name, device_code, *values in baseline_records:
+            for field, value in zip(counter_fields, values, strict=True):
+                if value is not None and value >= 0:
+                    baselines[field].setdefault(machine_name, (device_code, value))
 
-        for machine_num in machine_numbers:
-            slot_records = {}
-            slot_capacity_values: Dict[str, List[tuple[str, float]]] = {}
-            capacity_records = []
-            for r in records_by_machine[machine_num]:
-                slot_index = bisect_right(slot_starts, r.timestamp) - 1
-                if 0 <= slot_index < len(slot_keys):
-                    slot_records[slot_keys[slot_index]] = r
-                    if r.capacity is not None and r.capacity >= 0:
-                        slot_capacity_values.setdefault(slot_keys[slot_index], []).append((r.device_code, r.capacity))
-                        capacity_records.append(r)
-
-            observed_slots = [bool(slot_capacity_values.get(key)) for key in slot_keys]
-            latest_capacity_at = capacity_records[-1].timestamp if capacity_records else None
+        for machine_num, machine_name in zip(machine_numbers, machine_names, strict=True):
+            machine_key = str(machine_num)
+            slot_capacity_values = capacity_by_slot.pop(machine_name)
+            observed_slots = [index in slot_capacity_values for index in range(slot_count)]
+            latest_capacity_at = latest_capacity[machine_name]
             source_stale = bool(latest_capacity_at and not historical and generated_at - latest_capacity_at > timedelta(minutes=10))
-            capacity_observed_matrix[str(machine_num)] = observed_slots
-            capacity_observed_device_matrix[str(machine_num)] = [
-                {device_code for device_code, _capacity in slot_capacity_values.get(key, [])}
-                for key in slot_keys
+            capacity_observed_matrix[machine_key] = observed_slots
+            capacity_observed_device_matrix[machine_key] = [
+                {device_code for device_code, _capacity in slot_capacity_values.get(index, ())}
+                for index in range(slot_count)
             ]
-            machine_sources[str(machine_num)] = {
+            machine_sources[machine_key] = {
                 'status': 'missing' if latest_capacity_at is None else 'stale' if source_stale else 'ok',
                 'latest_capacity_at': latest_capacity_at.isoformat() if latest_capacity_at else None,
-                'sample_count': len(capacity_records),
+                'sample_count': sample_count[machine_name],
                 'observed_slot_count': sum(observed_slots),
-                'total_slot_count': len(time_slots),
+                'total_slot_count': slot_count,
             }
 
             cum_row: List[float] = []
             act_row: List[float] = []
-            temp_row: List[float] = []
-            power_row: List[float] = []
-            power_act_row: List[float] = []
-            
-            record_before_first_slot = baseline_capacity_by_machine[machine_num]
-            record_before_first_slot_power = baseline_power_by_machine[machine_num]
-            prev_confirmed_cum = record_before_first_slot.capacity if record_before_first_slot else None
-            prev_capacity_device_code = record_before_first_slot.device_code if record_before_first_slot else None
+            prev_capacity_device_code, prev_confirmed_cum = baselines['capacity'].get(machine_name, (None, None))
             prev_display_cum = prev_confirmed_cum if prev_confirmed_cum is not None else 0.0
-            prev_confirmed_power = record_before_first_slot_power.power_kwh if record_before_first_slot_power else None
-            prev_power_device_code = record_before_first_slot_power.device_code if record_before_first_slot_power else None
-            prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
+            if include_telemetry:
+                temp_row: List[float] = []
+                power_row: List[float] = []
+                power_act_row: List[float] = []
+                slot_telemetry = telemetry_by_slot.pop(machine_name)
+                prev_power_device_code, prev_confirmed_power = baselines['power_kwh'].get(machine_name, (None, None))
+                prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
 
-            for slot in time_slots:
-                slot_time_iso = slot['time']
-                record = slot_records.get(slot_time_iso)
-
-                capacity_values = slot_capacity_values.get(slot_time_iso, [])
-                cum_val = capacity_values[-1][1] if capacity_values else None
-                t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
-                p_val = (
-                    record.power_kwh
-                    if record and record.power_kwh is not None and record.power_kwh >= 0
-                    else None
-                )
-
-                # 鞁滉皠雼?靸濎偘霟夓潃 頇曥爼霅?雸勳爜臧?臧勳潣 彀澊搿?瓿勳偘頃╇媹雼?
-                # Bucket deltas after processing all raw samples. Taking only
-                # the last counter loses any reset inside a chart interval.
+            for slot_index in range(slot_count):
+                capacity_values = slot_capacity_values.get(slot_index, ())
                 act_val = 0.0
+                # Ordered samples retain resets and device changes within a single slot.
                 for device_code, capacity in capacity_values:
                     if device_code != prev_capacity_device_code:
                         prev_confirmed_cum = None
                     act_val += calculate_counter_increment(prev_confirmed_cum, capacity)
                     prev_confirmed_cum = capacity
                     prev_capacity_device_code = device_code
-                power_act_val = (
-                    p_val - prev_confirmed_power
-                    if p_val is not None and prev_confirmed_power is not None
-                    and record.device_code == prev_power_device_code and p_val >= prev_confirmed_power
-                    else 0.0
-                )
-                
-                # 頇旊┐鞐?響滌嫓霅?雸勳爜 靸濎偘霟? 順勳灛 鞀’鞐?雿办澊韯瓣皜 鞐嗢溂氅?鞚挫爠 臧掛潉 靷毄頃╇媹雼?
-                display_cum = cum_val if cum_val is not None else prev_display_cum
-                display_power = p_val if p_val is not None else prev_display_power
-
-                cum_row.append(round(display_cum, 3))
+                if capacity_values:
+                    prev_display_cum = capacity_values[-1][1]
+                cum_row.append(round(prev_display_cum, 3))
                 act_row.append(round(act_val, 3))
-                temp_row.append(round(t_val, 3))
-                power_row.append(round(display_power, 3))
-                power_act_row.append(round(power_act_val, 3))
 
-                # 雼れ潓 耄攧毳?鞙勴暣 臧掛潉 鞐呺嵃鞚错姼頃╇媹雼?
-                prev_display_cum = display_cum
-                prev_display_power = display_power
-                if cum_val is not None:
-                    prev_confirmed_cum = cum_val
-                if p_val is not None:
-                    prev_confirmed_power = p_val
-                    prev_power_device_code = record.device_code
+                if include_telemetry:
+                    device_code, temperature, power = slot_telemetry.get(slot_index, (None, None, None))
+                    power_act_val = 0.0
+                    if power is not None and power >= 0:
+                        if prev_confirmed_power is not None and device_code == prev_power_device_code and power >= prev_confirmed_power:
+                            power_act_val = power - prev_confirmed_power
+                        prev_confirmed_power = prev_display_power = power
+                        prev_power_device_code = device_code
+                    temp_row.append(round(temperature if temperature is not None else 0.0, 3))
+                    power_row.append(round(prev_display_power, 3))
+                    power_act_row.append(round(power_act_val, 3))
 
-            cumulative_matrix[str(machine_num)] = cum_row
-            actual_matrix[str(machine_num)] = act_row
-            temperature_matrix[str(machine_num)] = temp_row
-            power_matrix[str(machine_num)] = power_row
-            power_usage_matrix[str(machine_num)] = power_act_row
+            cumulative_matrix[machine_key] = cum_row
+            actual_matrix[machine_key] = act_row
+            if include_telemetry:
+                temperature_matrix[machine_key] = temp_row
+                power_matrix[machine_key] = power_row
+                power_usage_matrix[machine_key] = power_act_row
 
         # --- Machine Info and Final Response ---
         now = datetime.now(cst)
@@ -1001,9 +969,11 @@ class MESResourceService:
             'rollup_production_matrix': rollup_matrix,
             'hourly_production_matrix': rollup_matrix,
             'hourly_rollup_source': has_rollups,
-            'oil_temperature_matrix': temperature_matrix,
-            'power_kwh_matrix': power_matrix,
-            'power_usage_matrix': power_usage_matrix,
+            **({
+                'oil_temperature_matrix': temperature_matrix,
+                'power_kwh_matrix': power_matrix,
+                'power_usage_matrix': power_usage_matrix,
+            } if include_telemetry else {}),
             'mes_source': True
         }
 
