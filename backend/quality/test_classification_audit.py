@@ -586,8 +586,8 @@ class QualityClassificationAuditApiTests(APITestCase):
             status=AiJob.STATUS_COMPLETED,
         )
 
-        # backlog count + reports + part specs + existing jobs
-        with self.assertNumQueries(4):
+        # backlog count + reports + part specs + job metadata + selected completed payloads
+        with self.assertNumQueries(5):
             result = enqueue_stale_quality_report_audits(limit=5)
 
         self.assertEqual(result["created_count"], 0)
@@ -1066,4 +1066,3 @@ class QualityAuditScanGoldenTests(TestCase):
             "available": True, "synthetic_padding": "SYNTHETIC-" * 8192,
         })
         self.assert_scan([], examined=1, eligible=0, report_ids=[report.pk])
-
