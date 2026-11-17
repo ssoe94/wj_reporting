@@ -12,13 +12,16 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date, timedelta
 from itertools import islice
+from time import perf_counter
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Iterable
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Value
 from django.db.models.functions import Replace, Upper
@@ -35,6 +38,7 @@ from ai_core.quality_report_audit import (
     QUALITY_REPORT_AUDIT_TRIGGER,
     QUALITY_REPORT_AUDIT_WORKER_SCHEMA_VERSION,
 )
+from config.heavy_request_log import format_rss, read_rss_mib
 from injection.models import PartSpec
 
 from .daily_attention import _canonical_problem_types, normalize_part_no
@@ -45,6 +49,8 @@ from .injection_terminology import (
 )
 from .models import QualityReport
 
+
+_SCAN_LOG = logging.getLogger("gunicorn.error")
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 QUALITY_REPORT_AUDIT_SCAN_LIMIT = 5
@@ -427,6 +433,19 @@ def enqueue_stale_quality_report_audits(
     bounded_scan: bool = False,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit or 1), QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH))
+    if (bounded_scan and report_ids is None
+            and not getattr(settings, "QUALITY_AUDIT_PERIODIC_SCAN_ENABLED", True)):
+        return {
+            "created_count": 0,
+            "created_job_ids": [],
+            "examined_count": 0,
+            "total_report_count": None,
+            "eligible_count": 0,
+            "remaining_count": 0,
+            "skipped_reason": "periodic_scan_disabled",
+            "backlog_count": 0,
+            "backlog_limit": QUALITY_REPORT_AUDIT_BACKLOG_LIMIT,
+        }
     if report_ids is None:
         backlog_count = pending_quality_report_audit_count()
         if backlog_count >= QUALITY_REPORT_AUDIT_BACKLOG_LIMIT:
@@ -441,6 +460,14 @@ def enqueue_stale_quality_report_audits(
                 "backlog_count": backlog_count,
                 "backlog_limit": QUALITY_REPORT_AUDIT_BACKLOG_LIMIT,
             }
+    try:
+        scan_started = perf_counter()
+        rss_before = read_rss_mib()
+    except Exception:
+        # Telemetry must never prevent an audit scan.
+        scan_started, rss_before = None, None
+    page_index, page_count = 0, 1
+    job_rows = 0
     queryset = QualityReport.objects.order_by("-report_dt", "-id")
     if report_ids is not None:
         ids = [value for value in report_ids if type(value) is int and value > 0]
@@ -461,13 +488,13 @@ def enqueue_stale_quality_report_audits(
         total_report_count = len(reports)
     specs_by_part = _part_spec_lookup(reports)
     snapshots = {
-        report.pk: build_quality_report_audit_input(
+        report.pk: _build_quality_report_audit_base(
             report,
             specs_by_part=specs_by_part,
         )
         for report in reports
     }
-    jobs_by_report: dict[int, list[AiJob]] = defaultdict(list)
+    latest_by_report: dict[int, tuple[int, str, Any]] = {}
     if reports:
         jobs = AiJob.objects.filter(
             job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
@@ -477,42 +504,54 @@ def enqueue_stale_quality_report_audits(
             scope__source_revision__in=[
                 snapshot[1] for snapshot in snapshots.values()
             ],
-        ).order_by("-id")
-        for job in jobs:
-            scope = job.scope if isinstance(job.scope, dict) else {}
+        ).order_by("-id").values_list("id", "status", "updated_at", "scope")
+        for job_id, job_status, updated_at, scope in jobs.iterator(chunk_size=128):
+            job_rows += 1
+            if not isinstance(scope, dict):
+                continue
             report_id = scope.get("report_id")
-            if type(report_id) is int:
-                jobs_by_report[report_id].append(job)
+            if type(report_id) is not int or report_id not in snapshots:
+                continue
+            if scope.get("source_revision") != snapshots[report_id][1]:
+                continue
+            if report_id not in latest_by_report:
+                latest_by_report[report_id] = (job_id, job_status, updated_at)
+    completed_ids = [
+        job_id for job_id, status, _ in latest_by_report.values()
+        if status == AiJob.STATUS_COMPLETED
+    ]
+    # Decode full JSON here to preserve Python identity semantics for available.
+    # Only the selected latest completed row per report reaches this query.
+    completed_payloads = dict(
+        AiJob.objects.filter(pk__in=completed_ids)
+        .values_list("id", "result_payload")
+        .iterator(chunk_size=128)
+    ) if completed_ids else {}
     created_jobs: list[AiJob] = []
     examined = 0
     eligible_count = 0
     for report in reports:
         examined += 1
         input_payload, source_revision = snapshots[report.pk]
-        existing = next((
-            job
-            for job in jobs_by_report.get(report.pk, [])
-            if isinstance(job.scope, dict)
-            and job.scope.get("source_revision") == source_revision
-        ), None)
+        existing = latest_by_report.get(report.pk)
         if existing is not None:
-            result = (
-                existing.result_payload
-                if isinstance(existing.result_payload, dict)
-                else {}
-            )
+            job_id, job_status, updated_at = existing
+            result = completed_payloads.get(job_id)
+            result = result if isinstance(result, dict) else {}
             retryable = (
-                existing.status == AiJob.STATUS_FAILED
+                job_status == AiJob.STATUS_FAILED
                 or (
-                    existing.status == AiJob.STATUS_COMPLETED
+                    job_status == AiJob.STATUS_COMPLETED
                     and result.get("available") is not True
                 )
-            ) and existing.updated_at <= timezone.now() - timedelta(minutes=5)
+            ) and updated_at <= timezone.now() - timedelta(minutes=5)
             if not retryable:
                 continue
         eligible_count += 1
         if len(created_jobs) >= limit:
             continue
+        input_payload["deterministic_classification"] = _canonical_problem_types(report.phenomenon)
+        input_payload["taxonomy_candidates"] = taxonomy_candidates()
         scope = {
             "mode": QUALITY_REPORT_AUDIT_MODE,
             "trigger": QUALITY_REPORT_AUDIT_TRIGGER,
@@ -530,6 +569,24 @@ def enqueue_stale_quality_report_audits(
             created_by=created_by,
         )
         created_jobs.append(job)
+    try:
+        elapsed_ms = (perf_counter() - scan_started) * 1000 if scan_started is not None else 0
+        rss_after = read_rss_mib()
+        rss_growth = (
+            rss_after - rss_before
+            if rss_before is not None and rss_after is not None else 0
+        )
+        if page_index == 0 or elapsed_ms >= 1000 or rss_growth >= 16 or created_jobs:
+            _SCAN_LOG.info(
+                "quality_audit_scan page_index=%d page_count=%d reports=%d job_rows=%d "
+                "completed_payloads=%d eligible=%d created=%d elapsed_ms=%.1f "
+                "rss_before_mib=%s rss_after_mib=%s",
+                page_index, page_count, len(reports), job_rows, len(completed_payloads),
+                eligible_count, len(created_jobs), elapsed_ms,
+                format_rss(rss_before), format_rss(rss_after),
+            )
+    except Exception:
+        pass  # Log collection must not change the scan result.
     return {
         "created_count": len(created_jobs),
         "created_job_ids": [job.pk for job in created_jobs],

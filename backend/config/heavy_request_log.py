@@ -49,6 +49,66 @@ def _response_bytes(response):
     return len(response.content)
 
 
+class PeriodicEnqueueStageLog:
+    """Collect five fixed stage samples without affecting enqueue behavior."""
+
+    _STAGES = ("hourly", "quality_summary", "translations", "quality_audit", "deep_analysis")
+
+    def __init__(self):
+        self._samples = []
+        self._enabled = False
+        try:
+            self._started_at = perf_counter()
+            self._previous_at = self._started_at
+            self._before = read_rss_mib()
+            self._enabled = True
+        except Exception:
+            pass
+
+    def record(self, stage):
+        if not self._enabled:
+            return
+        try:
+            if stage != self._STAGES[len(self._samples)]:
+                self._enabled = False
+                return
+            ended_at = perf_counter()
+            rss = read_rss_mib()
+            self._samples.append(((ended_at - self._previous_at) * 1000, rss))
+            self._previous_at = ended_at
+        except Exception:
+            self._enabled = False
+
+    def finish(self):
+        if not self._enabled or len(self._samples) != len(self._STAGES):
+            return
+        self._enabled = False
+        try:
+            elapsed_ms = (self._previous_at - self._started_at) * 1000
+            after = self._samples[-1][1]
+            rss_increased = (
+                self._before is not None
+                and after is not None
+                and after - self._before >= 16
+            )
+            if elapsed_ms < 1000 and not rss_increased:
+                return
+            values = []
+            for elapsed, rss in self._samples:
+                values.extend((elapsed, format_rss(rss)))
+            _LOG.info(
+                "ai_periodic_enqueue_stages hourly_elapsed_ms=%.1f hourly_rss_mib=%s "
+                "quality_summary_elapsed_ms=%.1f quality_summary_rss_mib=%s "
+                "translations_elapsed_ms=%.1f translations_rss_mib=%s "
+                "quality_audit_elapsed_ms=%.1f quality_audit_rss_mib=%s "
+                "deep_analysis_elapsed_ms=%.1f deep_analysis_rss_mib=%s "
+                "elapsed_ms=%.1f rss_before_mib=%s rss_after_mib=%s",
+                *values, elapsed_ms, format_rss(self._before), format_rss(after),
+            )
+        except Exception:
+            pass
+
+
 class HeavyRequestLogMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

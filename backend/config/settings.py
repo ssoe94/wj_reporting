@@ -359,6 +359,10 @@ MES_ACCESS_TOKEN = os.getenv('MES_ACCESS_TOKEN', '')
 AI_WORKER_TOKEN = os.getenv('AI_WORKER_TOKEN', '')
 AI_JOB_CLAIM_LIMIT = int(os.getenv('AI_JOB_CLAIM_LIMIT', '1') or 1)
 AI_JOB_TIMEOUT_SECONDS = int(os.getenv('AI_JOB_TIMEOUT_SECONDS', '600') or 600)
+QUALITY_AUDIT_PERIODIC_SCAN_ENABLED = (
+    os.getenv('QUALITY_AUDIT_PERIODIC_SCAN_ENABLED', '').strip().lower()
+    not in {'0', 'false', 'off'}
+)
 
 
 from datetime import timedelta
