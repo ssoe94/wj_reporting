@@ -355,3 +355,77 @@ class DuplicateObservationReconciliationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalLlmRequestGoldenTests(unittest.TestCase):
+    """Freeze the existing non-image and pre-encoded request contracts."""
+
+    def check_request(self, mode, images):
+        import json
+
+        schema = {
+            "type": "object",
+            "properties": {"SYNTHETIC-result": {"type": "string"}},
+            "required": ["SYNTHETIC-result"],
+            "additionalProperties": False,
+        }
+        payload = {"task": "SYNTHETIC-audit"}
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+        content = text if not images else [
+            {"type": "image_url", "image_url": {"url": images[0]}},
+            {"type": "text", "text": text},
+        ]
+        expected = {
+            "model": "SYNTHETIC-model",
+            "temperature": 0.1,
+            "max_tokens": 1200,
+            "messages": [
+                {"role": "system", "content": "SYNTHETIC-system"},
+                {"role": "user", "content": content},
+            ],
+            "enable_thinking": False,
+        }
+        options = {}
+        if mode == "schema":
+            options["json_schema"] = schema
+            expected["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "bounded_analysis", "strict": True, "schema": schema},
+            }
+        elif mode == "object":
+            options["json_object"] = True
+            expected["response_format"] = {"type": "json_object"}
+        response = mock.Mock(status_code=200)
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"finish_reason": "stop",
+                         "message": {"content": '{"SYNTHETIC-result":"SYNTHETIC-value"}'}}],
+        }
+        client = LocalLlmClient("http://127.0.0.1:8082/v1", "SYNTHETIC-model", timeout=240)
+        with mock.patch("requests.post", return_value=response) as post:
+            result = client.structured_analysis(
+                "SYNTHETIC-system", payload, image_urls=images, **options,
+            )
+        self.assertEqual(result, {"SYNTHETIC-result": "SYNTHETIC-value"})
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.args, ("http://127.0.0.1:8082/v1/chat/completions",))
+        self.assertEqual(post.call_args.kwargs["json"], expected)
+        self.assertEqual(
+            post.call_args.kwargs["timeout"],
+            client.call_timeout_seconds(
+                4 + len(text) // 4, 1200, image_count=len(images or []),
+            ),
+        )
+
+    def test_complete_text_only_payload_in_all_response_modes(self):
+        for mode in ("schema", "object", "plain"):
+            with self.subTest(mode=mode):
+                self.check_request(mode, None)
+
+    def test_existing_data_uri_is_byte_for_byte_unchanged(self):
+        import base64
+
+        uri = "data:image/png;base64," + base64.b64encode(b"SYNTHETIC-image-bytes").decode("ascii")
+        for mode in ("schema", "object", "plain"):
+            with self.subTest(mode=mode):
+                self.check_request(mode, [uri])
