@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytz
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from .mes_service import mes_service
@@ -54,12 +56,24 @@ class InjectionBoardMatrixProfileTests(TestCase):
     def test_projection_does_not_mutate_service_data_or_default_full_response(self):
         data = mes_service.get_production_matrix(interval_type='10min', columns=3)
         original = deepcopy(data)
-        with patch.object(mes_service, 'get_production_matrix', return_value=data):
+        with patch.object(mes_service, 'get_production_matrix', return_value=data) as build:
             board = self.client.get(self.endpoint, {'profile': 'injection-board'})
             self.assertEqual(board.status_code, 200)
             self.assertEqual(data, original)
+            self.assertIs(build.call_args.kwargs['include_telemetry'], False)
             for params in ({}, {'profile': 'full'}):
                 self.assertEqual(self.client.get(self.endpoint, params).data, original)
+                self.assertIs(build.call_args.kwargs['include_telemetry'], True)
+
+    def test_board_profile_does_not_read_raw_telemetry(self):
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(self.endpoint, {'profile': 'injection-board', 'columns': 3})
+        self.assertEqual(response.status_code, 200)
+        raw_sql = [entry['sql'] for entry in queries
+                   if '"injection_injectionmonitoringrecord"' in entry['sql']]
+        self.assertEqual(len(raw_sql), 3)
+        self.assertNotIn('"oil_temperature"', ' '.join(raw_sql))
+        self.assertNotIn('"power_kwh"', ' '.join(raw_sql))
 
     def test_board_profile_preserves_machine_scope(self):
         response = self.client.get(self.endpoint, {

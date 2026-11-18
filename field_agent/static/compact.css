@@ -1,0 +1,77 @@
+/* Half-screen field layout. Details and extra history open on demand. */
+.compact-header {
+  column-gap: .65rem;
+  row-gap: .4rem;
+  padding: .6rem .8rem;
+}
+.compact-header h1 { font-size: 1.25rem; }
+.compact-header #station { font-size: .875rem; }
+.compact-header .languages { gap: .3rem; }
+.health-strip { display: flex; flex: 1 1 100%; align-items: stretch; flex-wrap: wrap; gap: .35rem; }
+.health-connection, .health-chip {
+  box-sizing: border-box;
+  white-space: nowrap;
+  min-height: 2.75rem;
+  padding: .29rem .55rem;
+  font-size: .875rem;
+  line-height: 1.3;
+  border-radius: .4rem;
+}
+.health-connection {
+  display: flex;
+  align-items: center;
+  color: #5d6872;
+  border: 1px solid transparent;
+}
+.health-chip { color: #344756; background: #f8fafb; border-color: #ced7df; font-weight: 650; }
+.health-chip[aria-expanded="true"] { color: #104d69; background: #e8f3f8; border-color: #70a8bd; }
+.health-connection[data-state="disconnected"], .health-chip[data-level="warning"] {
+  color: #754419;
+  background: #fff4de;
+  border-color: #d6a976;
+}
+.health-chip[data-level="fault"] { color: #861e15; background: #fff0ee; border-color: #d38378; }
+.health-detail { padding: .7rem .8rem; }
+.health-detail .device-row { padding: .34rem 0; }
+
+.barcode .card { padding: .64rem .78rem; }
+.barcode .barcode-header { gap: .38rem .7rem; }
+.barcode .barcode-lane { min-width: 0; }
+.barcode .barcode-last-input { padding-top: .25rem; font-size: .875rem; }
+.barcode .barcode-last-result { padding: .32rem .5rem; font-size: 1.15rem; line-height: 1.35; }
+.barcode .barcode-last-result[data-result="ok"] { background: #edf8ef; }
+.barcode .barcode-last-result[data-result="ng"] {
+  font-size: 1.3rem;
+  border-left: .23rem solid #aa4638;
+}
+.barcode .barcode-count-label { margin: .42rem 0 .2rem; font-size: .875rem; }
+.barcode .barcode-counts > div { padding: .24rem .4rem; }
+.barcode .barcode-counts dt { font-size: .875rem; }
+.barcode .barcode-counts [data-outcome="ok"], .barcode .barcode-counts [data-active="false"] {
+  color: inherit;
+  background: #f3f5f7;
+}
+.barcode .barcode-lane h4 { margin-top: .46rem; font-size: .9375rem; }
+.barcode .barcode-records th, .barcode .barcode-records td { padding: .18rem .28rem; font-size: .875rem; line-height: 1.4; }
+.barcode .barcode-records th:first-child { width: 4.5rem; }
+.barcode .barcode-records td:nth-child(2) {
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.barcode table.barcode-records tr[data-result] { background: transparent; }
+.barcode .barcode-history-toggle { margin-top: .27rem; font-size: .875rem; }
+.barcode .barcode-record-actions { justify-content: flex-start; padding: .55rem 0 0; margin-top: .5rem; border-top: 1px solid #e2e8ee; }
+.barcode .barcode-settings { padding-block: .2rem; }
+@media (min-width: 42rem) and (max-width: 50rem) {
+  main { padding: .625rem; gap: .625rem; }
+  .barcode { gap: .55rem; }
+  .barcode .barcode-records th:first-child { width: 4rem; }
+  .barcode .barcode-records th:last-child { width: 24%; }
+  .barcode .barcode-records th, .barcode .barcode-records td { line-height: 1.25; }
+}
+
+.vision-observation ul { margin: .5rem 0 0; padding: 0; list-style: none; }
+.vision-observation li { padding: .45rem 0; border-top: 1px solid var(--wj-border, #d5dce3); }
+.vision-observation dl { margin: .3rem 0 0; }

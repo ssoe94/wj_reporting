@@ -35,6 +35,8 @@ api_urlpatterns = [
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth'))
 ]
+if apps.is_installed('field_monitoring'):
+    api_urlpatterns.append(path('api/field/v1/', include('field_monitoring.urls')))
 if apps.is_installed('lgent'):
     api_urlpatterns.append(path('api/lgent/', include('lgent.urls')))
 

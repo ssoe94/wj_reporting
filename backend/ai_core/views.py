@@ -13,6 +13,8 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.heavy_request_log import PeriodicEnqueueStageLog
+
 from production.ai_context import build_context_pack
 from production.ai_answer import build_ai_briefing
 from production.ai_metrics import SHANGHAI_TZ
@@ -783,6 +785,7 @@ class AiWorkerPeriodicEnqueueView(APIView):
             deep = enqueue_daily_deep_analysis(languages=tuple(normalized_languages))
             return Response({'created_count': deep['created_count'], 'deep_analysis': deep})
 
+        stage_log = PeriodicEnqueueStageLog()
         target_date, schedule_slot = current_business_scope()
         jobs = []
         created_count = 0
@@ -822,19 +825,23 @@ class AiWorkerPeriodicEnqueueView(APIView):
                     jobs.append(job)
                     created_count += 1
 
+        stage_log.record('hourly')
         quality_enqueue = enqueue_daily_quality_summary()
         if quality_enqueue.get('created'):
             created_count += 1
         quality_job = quality_enqueue.get('job')
+        stage_log.record('quality_summary')
         from quality.action_result_translation import enqueue_missing_translations
         quality_translation_enqueue = enqueue_missing_translations()
         created_count += quality_translation_enqueue['created_count']
+        stage_log.record('translations')
         from quality.classification_audit import enqueue_stale_quality_report_audits
 
         quality_audit_enqueue = enqueue_stale_quality_report_audits(
             bounded_scan=True,
         )
         created_count += int(quality_audit_enqueue.get('created_count') or 0)
+        stage_log.record('quality_audit')
 
         try:
             deep_analysis_enqueue = enqueue_daily_deep_analysis(languages=tuple(normalized_languages))
@@ -843,6 +850,8 @@ class AiWorkerPeriodicEnqueueView(APIView):
             logger.exception('Daily deep analysis enqueue failed')
             deep_analysis_enqueue = {'error': f'{exc.__class__.__name__}: {exc}'[:300]}
         created_count += int(deep_analysis_enqueue.get('created_count') or 0)
+        stage_log.record('deep_analysis')
+        stage_log.finish()
 
         return Response({
             'schedule_slot': schedule_slot,

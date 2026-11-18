@@ -52,7 +52,7 @@ class MatrixLoadingTests(TestCase):
                     with CaptureQueriesContext(connection) as queries:
                         result = self.matrix(selected)
                 self.assertEqual(len(queries), 5)
-                self.assertEqual(hydrate.call_count, 2 * len(selected))
+                hydrate.assert_not_called()
                 self.assertEqual(set(result['actual_production_matrix']), {str(number) for number in selected})
                 for number in selected:
                     self.assertEqual(result['actual_production_matrix'][str(number)], [2, 0])

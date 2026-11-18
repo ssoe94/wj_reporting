@@ -601,32 +601,11 @@ class PartSpecViewSet(viewsets.ModelViewSet):
         if model_code:
             models_queryset = models_queryset.filter(model_code__icontains=model_code)
         
-        models_data = []
-        for part in models_queryset:
-            models_data.append({
-                'id': part.id,
-                'part_no': part.part_no,
-                'model_code': part.model_code,
-                'description': part.description or '',
-                'mold_type': part.mold_type or '',
-                'color': part.color or '',
-                'resin_type': part.resin_type or '',
-                'resin_code': part.resin_code or '',
-                'net_weight_g': str(part.net_weight_g) if part.net_weight_g else '',
-                'sr_weight_g': str(part.sr_weight_g) if part.sr_weight_g else '',
-                'tonnage': part.tonnage,
-                'cycle_time_sec': part.cycle_time_sec,
-                'efficiency_rate': str(part.efficiency_rate) if part.efficiency_rate else '',
-                'cavity': part.cavity,
-                'resin_loss_pct': str(part.resin_loss_pct) if part.resin_loss_pct else '',
-                'defect_rate_pct': str(part.defect_rate_pct) if part.defect_rate_pct else '',
-                'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
-                'created_at': part.created_at.isoformat() if part.created_at else '',
-                'source': 'models'  # 데이터 출처 표시
-            })
-        
+        models_queryset = models_queryset.order_by('part_no', '-valid_from', 'pk')
+        models_count = models_queryset.count()
+
         # 2. MES 데이터 (AssemblyPartSpec + Production Reports) 검색
-        mes_data = []
+        mes_candidates = []
         if search or model_code:
             try:
                 from assembly.models import AssemblyPartSpec, AssemblyReport
@@ -645,21 +624,19 @@ class PartSpecViewSet(viewsets.ModelViewSet):
                 assembly_parts = AssemblyPartSpec.objects.filter(assembly_filter)[:20] if assembly_filter.children else []
                 
                 for part in assembly_parts:
-                    # Models에 이미 없는 것만 추가 (중복 방지)
-                    if not any(m['part_no'] == part.part_no for m in models_data):
-                        mes_data.append({
-                            'id': f"assembly_{part.id}",
-                            'part_no': part.part_no,
-                            'model_code': part.model_code,
-                            'description': part.description or '',
-                            'process_type': part.process_type or '',
-                            'material_type': part.material_type or '',
-                            'standard_cycle_time': part.standard_cycle_time,
-                            'standard_worker_count': part.standard_worker_count,
-                            'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
-                            'source': 'mes_assembly'
-                        })
-                
+                    mes_candidates.append({
+                        'id': f"assembly_{part.id}",
+                        'part_no': part.part_no,
+                        'model_code': part.model_code,
+                        'description': part.description or '',
+                        'process_type': part.process_type or '',
+                        'material_type': part.material_type or '',
+                        'standard_cycle_time': part.standard_cycle_time,
+                        'standard_worker_count': part.standard_worker_count,
+                        'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
+                        'source': 'mes_assembly'
+                    })
+
                 # AssemblyReport (생산 기록)에서도 검색
                 report_filter = Q()
                 if search:
@@ -675,17 +652,14 @@ class PartSpecViewSet(viewsets.ModelViewSet):
                 for report in assembly_reports:
                     part_no = report['part_no']
                     model = report['model']
-                    # 이미 추가되지 않은 것만 추가
-                    if (not any(m['part_no'] == part_no for m in models_data) and
-                        not any(m['part_no'] == part_no for m in mes_data)):
-                        mes_data.append({
-                            'id': f"report_assembly_{part_no}",
-                            'part_no': part_no,
-                            'model_code': model,
-                            'description': '',
-                            'source': 'mes_report_assembly'
-                        })
-                
+                    mes_candidates.append({
+                        'id': f"report_assembly_{part_no}",
+                        'part_no': part_no,
+                        'model_code': model,
+                        'description': '',
+                        'source': 'mes_report_assembly'
+                    })
+
                 # InjectionReport (사출 생산 기록)에서도 검색
                 injection_filter = Q()
                 if search:
@@ -702,30 +676,44 @@ class PartSpecViewSet(viewsets.ModelViewSet):
                     part_no = report['part_no']
                     model = report['model']
                     description = report['type'] or ''
-                    # 이미 추가되지 않은 것만 추가
-                    if (not any(m['part_no'] == part_no for m in models_data) and
-                        not any(m['part_no'] == part_no for m in mes_data)):
-                        mes_data.append({
-                            'id': f"report_injection_{part_no}",
-                            'part_no': part_no,
-                            'model_code': model,
-                            'description': description,
-                            'source': 'mes_report_injection'
-                        })
-                        
+                    mes_candidates.append({
+                        'id': f"report_injection_{part_no}",
+                        'part_no': part_no,
+                        'model_code': model,
+                        'description': description,
+                        'source': 'mes_report_injection'
+                    })
+
             except Exception as e:
                 # MES 데이터 조회 실패시 Models 데이터만 반환
                 pass
         
-        # 3. 결과 통합 (Models 우선, MES 보완)
-        all_results = models_data + mes_data
-        
-        # 4. 페이지네이션
-        total_count = len(all_results)
+        mes_data = []
+        if mes_candidates:
+            candidate_parts = {candidate['part_no'] for candidate in mes_candidates}
+            model_parts = set(models_queryset.filter(part_no__in=candidate_parts).values_list('part_no', flat=True))
+            seen_mes_parts = set()
+            for candidate in mes_candidates:
+                part_no = candidate['part_no']
+                if part_no in model_parts:
+                    continue
+                if candidate['source'] != 'mes_assembly' and part_no in seen_mes_parts:
+                    continue
+                mes_data.append(candidate)
+                seen_mes_parts.add(part_no)
+
+        total_count = models_count + len(mes_data)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        page_results = all_results[start_idx:end_idx]
-        
+        # Normalize just as slicing the old combined list did, including negative bounds.
+        start, stop, _ = slice(start_idx, end_idx).indices(total_count)
+        model_stop = min(stop, models_count)
+        page_results = []
+        if start < model_stop:
+            page_results = [self._model_search_row(part) for part in models_queryset[start:model_stop]]
+        if start < stop and stop > models_count:
+            page_results.extend(mes_data[max(start - models_count, 0):stop - models_count])
+
         # 5. 페이지네이션 응답 형식으로 반환
         return Response({
             'count': total_count,
@@ -733,6 +721,31 @@ class PartSpecViewSet(viewsets.ModelViewSet):
             'previous': f"?page={page - 1}&search={search}&page_size={page_size}" if page > 1 else None,
             'results': page_results
         })
+
+    @staticmethod
+    def _model_search_row(part):
+        return {
+            'id': part.id,
+            'part_no': part.part_no,
+            'model_code': part.model_code,
+            'description': part.description or '',
+            'mold_type': part.mold_type or '',
+            'color': part.color or '',
+            'resin_type': part.resin_type or '',
+            'resin_code': part.resin_code or '',
+            'net_weight_g': str(part.net_weight_g) if part.net_weight_g else '',
+            'sr_weight_g': str(part.sr_weight_g) if part.sr_weight_g else '',
+            'tonnage': part.tonnage,
+            'cycle_time_sec': part.cycle_time_sec,
+            'efficiency_rate': str(part.efficiency_rate) if part.efficiency_rate else '',
+            'cavity': part.cavity,
+            'resin_loss_pct': str(part.resin_loss_pct) if part.resin_loss_pct else '',
+            'defect_rate_pct': str(part.defect_rate_pct) if part.defect_rate_pct else '',
+            'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
+            'created_at': part.created_at.isoformat() if part.created_at else '',
+            'source': 'models'  # 데이터 출처 표시
+        }
+
 
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()
@@ -2150,19 +2163,13 @@ class ProductionMatrixView(generics.GenericAPIView):
                 columns=columns,
                 reference_time=reference_time,
                 machine_numbers=machine_numbers,
+                include_telemetry=profile == 'full',
             )
             
             # mes_data가 비어있거나 mes_source가 없는 경우, 에러로 간주
             if not mes_data or not mes_data.get('mes_source'):
                 raise Exception("MES 서비스에서 유효한 데이터를 받지 못했습니다 (mes_data is empty or missing 'mes_source').")
             
-            if profile == 'injection-board':
-                # Keep the same calculation and observation evidence. Only omit
-                # telemetry the board never reads, without mutating shared data.
-                mes_data = {
-                    key: value for key, value in mes_data.items()
-                    if key not in ('oil_temperature_matrix', 'power_kwh_matrix', 'power_usage_matrix')
-                }
             return Response(mes_data)
 
         except Exception as e:

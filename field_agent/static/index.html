@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <link rel="stylesheet" href="/agent.css">
+  <link rel="stylesheet" href="/compact.css">
+  <script src="/barcode.js" defer></script>
+  <script src="/weigh.js" defer></script>
+  <script src="/agent.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="header compact-header card">
+      <div>
+        <h1 data-text="heading"></h1>
+        <p class="muted" id="station">—</p>
+      </div>
+      <div class="languages" data-aria-text="languageControl">
+        <button type="button" data-lang="ko" lang="ko" aria-pressed="true">한국어</button>
+        <button type="button" data-lang="zh" lang="zh-Hans" aria-pressed="false">中文</button>
+      </div>
+      <div class="health-strip" role="group" data-aria-text="healthControl">
+        <p class="health-connection" role="status" id="connection"></p>
+        <button type="button" class="health-chip" data-health-chip="outbox" aria-expanded="false" aria-controls="health-outbox"></button>
+        <button type="button" class="health-chip" data-health-chip="backup" aria-expanded="false" aria-controls="health-backup"></button>
+        <button type="button" class="health-chip" data-health-chip="clock" aria-expanded="false" aria-controls="health-clock"></button>
+        <button type="button" class="health-chip" data-health-chip="devices" aria-expanded="false" aria-controls="health-devices"></button>
+        <button type="button" class="health-chip" data-health-chip="companion" aria-expanded="false" aria-controls="health-companion" hidden></button>
+      </div>
+    </header>
+    <p id="language-error" class="warning" role="alert" hidden></p>
+    <section id="health-outbox" class="card health-detail" data-health-panel="outbox" aria-labelledby="outbox-title" hidden>
+      <h2 id="outbox-title" data-text="outbox"></h2>
+      <dl id="outbox"></dl>
+    </section>
+    <section id="health-backup" class="card health-detail" data-health-panel="backup" aria-labelledby="backup-title" hidden>
+      <h2 id="backup-title" data-text="backup"></h2>
+      <dl id="backup"></dl>
+    </section>
+    <section id="health-clock" class="card health-detail" data-health-panel="clock" aria-labelledby="clock-title" hidden>
+      <h2 id="clock-title" data-text="clockSource"></h2>
+      <p id="clock-warning" role="status"></p>
+    </section>
+    <section id="health-devices" class="card health-detail details" data-health-panel="devices" aria-labelledby="devices-title" hidden>
+      <div>
+        <h2 id="devices-title" data-text="devices"></h2>
+        <div id="devices"></div>
+      </div>
+      <div>
+        <h2 id="apps-title" data-text="apps"></h2>
+        <div id="app-tabs" class="app-tabs"></div>
+        <div id="app-panel"></div>
+      </div>
+    </section>
+    <section id="health-companion" class="card health-detail" data-health-panel="companion" aria-labelledby="companion-title" hidden>
+      <h2 id="companion-title" data-text="companion"></h2>
+      <p id="companion-status" role="status"></p>
+    </section>
+    <section id="barcode" class="barcode" aria-labelledby="barcode-title" hidden>
+      <div class="card barcode-header">
+        <div>
+          <h2 id="barcode-title" data-barcode-text="title"></h2>
+          <p><span data-barcode-text="group"></span> <strong id="barcode-group"></strong></p>
+        </div>
+        <p id="barcode-mode" class="badge"></p>
+        <div class="barcode-actions">
+          <button id="barcode-sound" type="button"></button>
+          <button id="barcode-toggle-mode" type="button"></button>
+        </div>
+      </div>
+      <p id="barcode-storage-error" role="alert" class="barcode-critical" data-barcode-text="storageError" hidden></p>
+      <p id="barcode-stale" role="status" class="warning" data-barcode-text="stale" hidden></p>
+      <p id="barcode-notice" class="barcode-notice" role="status" hidden></p>
+      <div id="barcode-lanes" class="barcode-lanes"></div>
+      <details class="card barcode-settings">
+        <summary id="barcode-settings-summary" data-barcode-text="settings"></summary>
+        <div class="barcode-form">
+          <label><span data-barcode-text="group"></span><select id="barcode-setting-group"></select></label>
+          <label><span data-barcode-text="scannerA"></span><select id="barcode-setting-A"></select></label>
+          <label><span data-barcode-text="scannerB"></span><select id="barcode-setting-B"></select></label>
+        </div>
+        <div class="barcode-actions">
+          <button id="barcode-save" type="button" data-barcode-text="apply"></button>
+          <button id="barcode-cancel" type="button" data-barcode-text="cancelEdit"></button>
+        </div>
+        <div class="barcode-actions barcode-record-actions">
+          <button id="barcode-export" type="button" data-barcode-text="export"></button>
+          <button id="barcode-reset" type="button" data-barcode-text="reset"></button>
+        </div>
+        <p id="barcode-setting-notice" class="barcode-notice" role="status" hidden></p>
+      </details>
+    </section>
+    <template id="barcode-lane-template">
+      <section class="card barcode-lane">
+        <header class="barcode-lane-header">
+          <h3></h3>
+          <p class="badge barcode-device"></p>
+        </header>
+        <p class="barcode-last-input"><span data-barcode-text="lastInput"></span> <strong></strong></p>
+        <p class="barcode-last-result"></p>
+        <p class="barcode-count-label muted" data-barcode-text="sinceReset"></p>
+        <dl class="barcode-counts"></dl>
+        <h4 data-barcode-text="recent"></h4>
+        <table class="barcode-records">
+          <thead>
+            <tr>
+              <th scope="col" data-barcode-text="time"></th><th scope="col" data-barcode-text="barcode"></th><th scope="col" data-barcode-text="result"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <button type="button" class="barcode-history-toggle" aria-expanded="false" hidden></button>
+        <p class="barcode-frame-errors muted" hidden></p>
+      </section>
+    </template>
+    <section id="weigh" class="weigh" aria-labelledby="weigh-title" hidden>
+      <div class="card weigh-header">
+        <div>
+          <h2 id="weigh-title" data-weigh-text="title"></h2>
+          <p><span data-weigh-text="activePart"></span> <strong id="weigh-active-part">—</strong></p>
+        </div>
+        <p class="badge" id="weigh-mode" hidden></p>
+        <button type="button" id="weigh-sound"></button>
+        <div class="weigh-product">
+          <label><span data-weigh-text="partSelect"></span><select id="weigh-product"></select></label>
+          <button type="button" id="weigh-select" data-weigh-text="applyPart"></button>
+        </div>
+        <p class="muted weigh-change-note" id="weigh-pending-change" data-weigh-text="pendingChange" hidden></p>
+      </div>
+      <p id="weigh-storage-error" role="alert" class="barcode-critical" data-weigh-text="storageError" hidden></p>
+      <div id="weigh-serial-block" class="barcode-critical" role="alert" hidden>
+        <p data-weigh-text="serial_floor_required"></p>
+        <p id="weigh-serial-context"></p>
+        <p data-weigh-text="serialAction"></p>
+      </div>
+      <p id="weigh-stale" role="status" class="warning" data-weigh-text="stale" hidden></p>
+      <p id="weigh-notice" role="status" class="barcode-notice" hidden></p>
+      <div class="weigh-details">
+        <section class="card weigh-measurement" aria-labelledby="weigh-scale-title">
+          <h3 id="weigh-scale-title" data-weigh-text="scale"></h3>
+          <strong id="weigh-weight" class="weigh-weight">—</strong>
+          <div class="weigh-badges"><span class="badge" id="weigh-stable">—</span><span class="badge" id="weigh-empty">—</span></div>
+          <h4 data-weigh-text="lastResult"></h4>
+          <p class="weigh-verdict" id="weigh-result" role="status">—</p>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="resultPart"></dt><dd id="weigh-result-part">—</dd>
+            <dt data-weigh-text="quantity"></dt><dd id="weigh-result-quantity">—</dd>
+            <dt data-weigh-text="resultWeight"></dt><dd id="weigh-result-weight">—</dd>
+            <dt data-weigh-text="delta"></dt><dd id="weigh-result-delta">—</dd>
+            <dt data-weigh-text="time"></dt><dd id="weigh-result-time">—</dd>
+          </dl>
+        </section>
+        <section class="card" aria-labelledby="weigh-queue-title">
+          <h3 id="weigh-queue-title" data-weigh-text="queue"></h3>
+          <dl class="weigh-queue-counts">
+            <div><dt data-weigh-text="waiting"></dt><dd id="weigh-waiting">—</dd></div>
+            <div><dt data-weigh-text="submitted"></dt><dd id="weigh-submitted">—</dd></div>
+            <div><dt data-weigh-text="uncertain"></dt><dd id="weigh-uncertain">—</dd></div>
+          </dl>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="dispatching"></dt><dd id="weigh-dispatching">—</dd>
+            <dt data-weigh-text="partial"></dt><dd id="weigh-partial">—</dd>
+            <dt data-weigh-text="peel"></dt><dd id="weigh-peel-state">—</dd>
+          </dl>
+          <p id="weigh-paused" class="warning weigh-paused" role="status" hidden></p>
+          <div class="weigh-actions">
+            <button type="button" id="weigh-pause" data-weigh-text="pause"></button>
+            <button type="button" id="weigh-resume" data-weigh-text="resume"></button>
+            <button type="button" id="weigh-flush" data-weigh-text="flush"></button>
+            <button type="button" id="weigh-peel" data-weigh-text="clearPeel"></button>
+            <button type="button" id="weigh-cancel" data-weigh-text="cancelWaiting"></button>
+          </div>
+          <div id="weigh-uncertain-controls" class="weigh-uncertain-controls" hidden>
+            <p id="weigh-uncertain-label"></p>
+            <label for="weigh-confirmed-quantity" data-weigh-text="confirmedQuantity"></label>
+            <div class="weigh-confirm-row">
+              <input id="weigh-confirmed-quantity" type="number" inputmode="numeric" min="0" step="1">
+              <button type="button" id="weigh-acknowledge" data-weigh-text="acknowledge"></button>
+            </div>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="weigh-reread-title">
+          <h3 id="weigh-reread-title" data-weigh-text="reread"></h3>
+          <p class="weigh-verdict" id="weigh-reread-result" role="status">—</p>
+          <dl class="weigh-facts">
+            <dt data-weigh-text="barcode"></dt><dd id="weigh-reread-barcode">—</dd>
+            <dt data-weigh-text="source"></dt><dd id="weigh-reread-device">—</dd>
+            <dt data-weigh-text="time"></dt><dd id="weigh-reread-time">—</dd>
+          </dl>
+          <form id="weigh-scan-form" class="weigh-scan-form">
+            <label><span data-weigh-text="keyboardInput"></span><input id="weigh-scan-input" type="text" maxlength="256" autocomplete="off" spellcheck="false" aria-describedby="weigh-scanner-focus weigh-focus-help"></label>
+            <p class="badge" id="weigh-scanner-focus"></p>
+            <p id="weigh-focus-help" class="muted" data-weigh-text="focusHelp"></p>
+            <div class="weigh-actions">
+              <button type="button" id="weigh-focus" data-weigh-text="focusInput"></button>
+              <button type="submit" id="weigh-manual" data-weigh-text="submitManual"></button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <section class="card weigh-progress" aria-labelledby="weigh-jobs-title">
+        <h3 id="weigh-jobs-title" data-weigh-text="jobProgress"></h3>
+        <p class="muted" id="weigh-jobs-empty" data-weigh-text="noJobs"></p>
+        <ul id="weigh-jobs"></ul>
+        <button id="weigh-older-jobs" class="weigh-older-jobs" type="button" aria-controls="weigh-jobs" aria-expanded="false" hidden></button>
+      </section>
+      <details class="card weigh-label-settings">
+        <summary data-weigh-text="labelSettings"></summary>
+        <div id="weigh-template-controls" class="weigh-template-controls">
+          <label><span data-weigh-text="templateSelect"></span><select id="weigh-template"></select></label>
+          <div id="weigh-template-fields" class="weigh-template-fields"></div>
+          <div class="weigh-actions">
+            <button type="button" id="weigh-template-apply" data-weigh-text="applyTemplate"></button>
+          </div>
+          <p class="muted" id="weigh-template-pending" data-weigh-text="pendingChange" hidden></p>
+          <h4 data-weigh-text="labelPreview"></h4>
+          <p class="muted" data-weigh-text="previewDisclosure"></p>
+          <div id="weigh-preview" class="weigh-preview"></div>
+        </div>
+        <p id="weigh-no-templates" class="muted" data-weigh-text="noTemplates" hidden></p>
+      </details>
+    </section>
+    <details id="vision" class="card vision-observation" hidden>
+      <summary data-text="visionTitle"></summary>
+      <ul id="vision-sources"></ul>
+    </details>
+    <noscript><!-- native-script-notice --></noscript>
+  </main>
+  <dialog id="field-confirmation" class="card field-confirmation"
+      aria-labelledby="field-confirmation-title" aria-describedby="field-confirmation-message">
+    <h2 id="field-confirmation-title"></h2>
+    <p id="field-confirmation-message"></p>
+    <div class="field-confirmation-actions">
+      <button type="button" data-confirm-cancel autofocus></button>
+      <button type="button" data-confirm-accept></button>
+    </div>
+  </dialog>
+</body>
+</html>
