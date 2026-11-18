@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, unquote_to_bytes, urlparse
 
 import requests
 
@@ -22,6 +24,97 @@ DECODE_TOKENS_PER_SECOND = 30.0
 TIMEOUT_MARGIN_SECONDS = 30.0
 IMAGE_PREFILL_SECONDS = 5.0
 DEFAULT_MAX_TOKENS = 1200
+
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_TOTAL_IMAGE_BYTES = 16 * 1024 * 1024
+
+
+def _image_data_uris(image_urls: list[str]) -> list[str]:
+    """Prepare every image and enforce raw-byte bounds before any HTTP call."""
+    images = []
+    total_bytes = 0
+    for index, image in enumerate(image_urls, start=1):
+        value = str(image or "")
+        if not value.strip():
+            continue
+        if value.lower().startswith("data:image/"):
+            # Preserve existing URIs byte-for-byte, including their encoding.
+            header, _, content = value.partition(",")
+            if ";base64" in header.lower():
+                encoded = "".join(content.split())
+                padding = len(encoded) - len(encoded.rstrip("="))
+                size = max(0, len(encoded) * 3 // 4 - padding)
+            else:
+                size = len(unquote_to_bytes(content))
+            uri = value
+        else:
+            path = Path(value)
+            if not path.is_absolute():
+                parsed = urlparse(value)
+                if (parsed.scheme.lower() != "file"
+                        or parsed.netloc.lower() not in {"", "localhost"}
+                        or parsed.query or parsed.fragment):
+                    raise ValueError(f"Image {index} must be a local absolute file or data URI.")
+                path = Path(unquote(parsed.path))
+                if not path.is_absolute():
+                    raise ValueError(f"Image {index} file URI must contain an absolute path.")
+            try:
+                if not path.is_file():
+                    raise ValueError(f"Image {index} is not a readable local file.")
+                with path.open("rb") as source:
+                    raw = source.read(MAX_IMAGE_BYTES + 1)
+            except OSError:
+                raise ValueError(f"Image {index} could not be read.") from None
+            size = len(raw)
+            if size > MAX_IMAGE_BYTES:
+                raise ValueError(f"Image {index} exceeds the 8 MiB raw-byte limit.")
+            if raw.startswith(b"\xff\xd8\xff"):
+                mime = "image/jpeg"
+            elif raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                mime = "image/png"
+            elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+                mime = "image/webp"
+            else:
+                raise ValueError(f"Image {index} has an unsupported image signature.")
+            uri = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
+        if size > MAX_IMAGE_BYTES:
+            raise ValueError(f"Image {index} exceeds the 8 MiB raw-byte limit.")
+        total_bytes += size
+        if total_bytes > MAX_TOTAL_IMAGE_BYTES:
+            raise ValueError("Images exceed the 16 MiB request raw-byte limit.")
+        images.append(uri)
+    return images
+
+
+def _http_error_detail(text: str) -> str:
+    detail = " ".join(text.split())
+    detail = re.sub(r"data:image/[^\s\"'<>]+", "[image omitted]", detail, flags=re.IGNORECASE)
+    detail = re.sub(r"\b[A-Za-z]:[\\/][^\s\"'<>]+", "[path omitted]", detail)
+    detail = re.sub(r"(?<![A-Za-z0-9])/[^\s\"'<>]+", "[path omitted]", detail)
+    detail = re.sub(r"\b[A-Za-z0-9+/]{64,}={0,2}", "[encoded content omitted]", detail)
+    return detail[:300]
+
+
+def _raise_for_status_with_detail(response: requests.Response) -> None:
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        if 400 <= response.status_code < 500:
+            # Freeze the legacy classifier before server text can add keywords.
+            previous = str(exc).lower()
+            code = getattr(exc, "fallback_code", None)
+            if not isinstance(code, str) or not code.strip():
+                is_timeout = "timeout" in exc.__class__.__name__.lower() or "timeout" in previous or "timed out" in previous
+                code = "timeout" if is_timeout else "model_unavailable"
+            exc.fallback_code = code
+            try:
+                detail = _http_error_detail(response.text)
+            except Exception:
+                detail = ""
+            if detail:
+                exc.args = (f"{exc}; response: {detail}",)
+        raise
+
 
 _CJK_CHAR = re.compile(
     "["
@@ -180,10 +273,9 @@ class LocalLlmClient:
             user_content = [
                 {
                     "type": "image_url",
-                    "image_url": {"url": str(image_url)},
+                    "image_url": {"url": image_url},
                 }
-                for image_url in image_urls
-                if str(image_url or "").strip()
+                for image_url in _image_data_uris(image_urls)
             ]
             user_content.append({"type": "text", "text": user_text})
         request_payload: dict[str, Any] = {
@@ -233,7 +325,7 @@ class LocalLlmClient:
                 image_count=image_count,
             ),
         )
-        response.raise_for_status()
+        _raise_for_status_with_detail(response)
         data = response.json()
         choice = data.get("choices", [{}])[0]
         if choice.get("finish_reason") in {"length", "max_tokens"}:

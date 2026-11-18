@@ -193,10 +193,11 @@ class LocalLlmMultimodalContractTests(unittest.TestCase):
             model="Qwen3.8-27B-4bit",
         )
 
+        uri = "data:image/jpeg;base64,U1lOVEhFVElDLWltYWdl"
         result = client.structured_analysis(
             "system",
             {"task": "audit"},
-            image_urls=["/tmp/verified.jpg"],
+            image_urls=[uri],
             json_schema={
                 "type": "object",
                 "properties": {"status": {"type": "string"}},
@@ -209,7 +210,7 @@ class LocalLlmMultimodalContractTests(unittest.TestCase):
         sent = post.call_args.kwargs["json"]
         user_content = sent["messages"][1]["content"]
         self.assertEqual(user_content[0]["type"], "image_url")
-        self.assertEqual(user_content[0]["image_url"]["url"], "/tmp/verified.jpg")
+        self.assertEqual(user_content[0]["image_url"]["url"], uri)
         self.assertEqual(sent["response_format"]["type"], "json_schema")
 
 
@@ -429,3 +430,227 @@ class LocalLlmRequestGoldenTests(unittest.TestCase):
         for mode in ("schema", "object", "plain"):
             with self.subTest(mode=mode):
                 self.check_request(mode, [uri])
+
+
+class LocalLlmImageEncodingTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.temporary = tempfile.TemporaryDirectory(prefix="SYNTHETIC-images-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.client = LocalLlmClient("http://127.0.0.1:8082/v1", "SYNTHETIC-model", timeout=240)
+
+    def image(self, name, format="JPEG"):
+        from PIL import Image
+
+        path = self.root / name
+        Image.new("RGB", (8, 8), color=(255, 255, 255)).save(path, format=format)
+        return path
+
+    def response(self, status=200, body=None, reason=None):
+        import json
+        import requests
+
+        result = requests.Response()
+        result.status_code = status
+        result.reason = reason or "SYNTHETIC-response"
+        result.url = "http://127.0.0.1:8082/v1/chat/completions"
+        result.encoding = "utf-8"
+        result._content = (body if body is not None else json.dumps({
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"SYNTHETIC-result":true}'}}],
+        })).encode()
+        result.request = requests.Request("POST", result.url).prepare()
+        return result
+
+    def call(self, images):
+        return self.client.structured_analysis(
+            "SYNTHETIC-system", {"SYNTHETIC-task": "SYNTHETIC-audit"}, image_urls=images,
+        )
+
+    def test_magic_bytes_order_file_uri_and_trailing_text(self):
+        import base64
+        import json
+
+        jpeg = self.image("SYNTHETIC-wrong.png")
+        png = self.image("SYNTHETIC spaced.jpg", "PNG")
+        webp = self.image("SYNTHETIC-wrong.bin", "WEBP")
+        encoded = "data:image/png;base64," + base64.b64encode(b"SYNTHETIC").decode()
+        with mock.patch("requests.post", return_value=self.response()) as post:
+            self.call([str(jpeg), png.as_uri(), str(webp), encoded])
+        sent = post.call_args.kwargs["json"]["messages"][1]["content"]
+        expected = [
+            "data:image/jpeg;base64," + base64.b64encode(jpeg.read_bytes()).decode(),
+            "data:image/png;base64," + base64.b64encode(png.read_bytes()).decode(),
+            "data:image/webp;base64," + base64.b64encode(webp.read_bytes()).decode(),
+            encoded,
+        ]
+        self.assertEqual(sent[:-1], [{"type": "image_url", "image_url": {"url": uri}} for uri in expected])
+        self.assertEqual(sent[-1], {"type": "text", "text": json.dumps(
+            {"SYNTHETIC-task": "SYNTHETIC-audit"}, ensure_ascii=False,
+        )})
+        self.assertEqual(post.call_args.kwargs["timeout"], self.client.call_timeout_seconds(
+            len("SYNTHETIC-system") // 4
+            + len(sent[-1]["text"]) // 4, 1200, image_count=4,
+        ))
+
+    def test_invalid_images_fail_before_post_and_hide_full_paths(self):
+        valid = self.image("SYNTHETIC-valid.jpg")
+        unsupported = self.root / "SYNTHETIC-document.jpg"
+        unsupported.write_bytes(b"SYNTHETIC-not-an-image")
+        empty = self.root / "SYNTHETIC-empty.jpg"
+        empty.touch()
+        for invalid in (
+            "http://example.invalid/SYNTHETIC.jpg",
+            "https://example.invalid/SYNTHETIC.jpg",
+            str(self.root / "SYNTHETIC-missing.jpg"), str(self.root),
+            str(unsupported), str(empty), "SYNTHETIC-relative.jpg",
+            "file://example.invalid/SYNTHETIC.jpg",
+            valid.as_uri() + "?SYNTHETIC=1", valid.as_uri() + "#SYNTHETIC",
+        ):
+            with self.subTest(input_kind=invalid.split(":")[0]), mock.patch("requests.post") as post:
+                with self.assertRaises(ValueError) as caught:
+                    self.call([str(valid), invalid])
+                post.assert_not_called()
+                self.assertNotIn(str(self.root), str(caught.exception))
+
+    def test_unreadable_file_has_no_path_in_displayed_exception_chain(self):
+        valid = self.image("SYNTHETIC-unreadable.jpg")
+        with mock.patch("pathlib.Path.open", side_effect=PermissionError(str(valid))), \
+                mock.patch("requests.post") as post:
+            with self.assertRaises(ValueError) as caught:
+                self.call([str(valid)])
+        post.assert_not_called()
+        self.assertNotIn(str(valid), str(caught.exception))
+        self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_per_image_and_request_raw_byte_limits_include_boundaries(self):
+        from .llm_client import MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES
+
+        first = self.root / "SYNTHETIC-first.jpg"
+        second = self.root / "SYNTHETIC-second.jpg"
+        first.write_bytes(b"\xff\xd8\xff" + b"\0" * (MAX_IMAGE_BYTES - 3))
+        second.write_bytes(first.read_bytes())
+        self.assertEqual(first.stat().st_size + second.stat().st_size, MAX_TOTAL_IMAGE_BYTES)
+        with mock.patch("requests.post", return_value=self.response()) as post:
+            self.call([str(first), str(second)])
+            self.assertEqual(post.call_count, 1)
+        third = self.image("SYNTHETIC-third.jpg")
+        with mock.patch("requests.post") as post:
+            with self.assertRaisesRegex(ValueError, "16 MiB"):
+                self.call([str(first), str(second), str(third)])
+            post.assert_not_called()
+        with first.open("ab") as target:
+            target.write(b"x")
+        with mock.patch("requests.post") as post:
+            with self.assertRaisesRegex(ValueError, "8 MiB"):
+                self.call([str(first)])
+            post.assert_not_called()
+
+    def test_existing_data_uri_counts_toward_total_without_reencoding(self):
+        import base64
+        from .llm_client import MAX_IMAGE_BYTES
+
+        raw = b"SYNTHETIC-" + b"x" * (MAX_IMAGE_BYTES - len(b"SYNTHETIC-"))
+        uri = "data:image/png;base64," + base64.b64encode(raw).decode()
+        valid = self.image("SYNTHETIC-tiny.jpg")
+        with mock.patch("requests.post") as post:
+            with self.assertRaisesRegex(ValueError, "16 MiB"):
+                self.call([uri, uri, str(valid)])
+            post.assert_not_called()
+        too_large = "data:image/png;base64," + base64.b64encode(raw + b"x").decode()
+        with mock.patch("requests.post") as post:
+            with self.assertRaisesRegex(ValueError, "8 MiB"):
+                self.call([too_large])
+            post.assert_not_called()
+
+    def test_4xx_detail_preserves_legacy_classifier_and_exception_objects(self):
+        import requests
+        from .worker import classify_llm_error
+
+        for status, reason, body in (
+            (400, "Bad Request", "SYNTHETIC timeout\nconnection rejected " + "SYNTHETIC detail " * 50),
+            (408, "Request Timeout", "SYNTHETIC connection rejected"),
+            (429, "Too Many Requests", "SYNTHETIC TIMEOUT CONNECTION"),
+        ):
+            with self.subTest(status=status):
+                response = self.response(status, body=body, reason=reason)
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as original:
+                    before = classify_llm_error(original)
+                    with mock.patch.object(response, "raise_for_status", side_effect=original), \
+                            mock.patch("requests.post", return_value=response):
+                        with self.assertRaises(requests.HTTPError) as caught:
+                            self.call(None)
+                    self.assertIs(caught.exception, original)
+                    self.assertIs(caught.exception.response, response)
+                    self.assertIs(caught.exception.request, response.request)
+                    self.assertEqual(classify_llm_error(caught.exception), before)
+                    detail = str(caught.exception).split("; response: ", 1)[1]
+                    normalized = " ".join(body.split())
+                    self.assertEqual(detail, normalized[:300])
+                    self.assertLessEqual(len(detail), 300)
+
+    def test_4xx_detail_redacts_encoded_image_and_absolute_paths(self):
+        import base64
+        import requests
+
+        encoded = base64.b64encode(b"SYNTHETIC-image-contents").decode()
+        uri = "data:image/jpeg;base64," + encoded
+        path = self.root / "SYNTHETIC-private.jpg"
+        body = f"SYNTHETIC rejection {uri} file={path} timeout connection"
+        with mock.patch("requests.post", return_value=self.response(400, body=body)):
+            with self.assertRaises(requests.HTTPError) as caught:
+                self.call([uri])
+        text = str(caught.exception)
+        self.assertIn("SYNTHETIC rejection", text)
+        self.assertNotIn(uri, text)
+        self.assertNotIn(encoded, text)
+        self.assertNotIn(str(self.root), text)
+
+    def test_server_and_transport_errors_keep_original_behavior(self):
+        import requests
+        from .worker import classify_llm_error
+
+        response = self.response(500, body="SYNTHETIC timeout in body", reason="Internal Server Error")
+        with mock.patch("requests.post", return_value=response):
+            with self.assertRaises(requests.HTTPError) as caught:
+                self.call(None)
+        self.assertNotIn("; response:", str(caught.exception))
+        self.assertEqual(classify_llm_error(caught.exception), "model_unavailable")
+        failure = requests.Timeout("SYNTHETIC timeout")
+        with mock.patch("requests.post", side_effect=failure):
+            with self.assertRaises(requests.Timeout) as caught:
+                self.call(None)
+        self.assertIs(caught.exception, failure)
+
+    def test_handler_posts_data_uri_and_preserves_complete_result_contract(self):
+        from hashlib import sha256
+
+        path = self.image("SYNTHETIC-source.jpg")
+        raw = path.read_bytes()
+        job = audit_job()
+        job["input_payload"]["report"].update(
+            part_no="SYNTHETIC-PART", model="SYNTHETIC-MODEL",
+            phenomenon="SYNTHETIC defect", disposition="SYNTHETIC disposition",
+            action_result="SYNTHETIC action",
+            image_refs=[{"slot": "image1", "url": "https://res.cloudinary.com/SYNTHETIC.jpg"}],
+        )
+        model_result = _result([_observation(0)])
+        fake = mock.Mock()
+        fake.structured_analysis.return_value = model_result
+        with mock.patch.object(handler, "_download_image", return_value=(raw, sha256(raw).hexdigest())):
+            expected = handler.analyze_with_llm(job, fake, "SYNTHETIC-model", handler.build_dummy_result(job))
+        import json
+        body = json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(model_result)}}]})
+        with mock.patch.object(handler, "_download_image", return_value=(raw, sha256(raw).hexdigest())), \
+                mock.patch("requests.post", return_value=self.response(body=body)) as post:
+            actual = handler.analyze_with_llm(
+                job, self.client, "SYNTHETIC-model", handler.build_dummy_result(job),
+            )
+        self.assertEqual(actual, expected)
+        blocks = post.call_args.kwargs["json"]["messages"][1]["content"]
+        self.assertTrue(blocks[0]["image_url"]["url"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(blocks[-1]["type"], "text")
