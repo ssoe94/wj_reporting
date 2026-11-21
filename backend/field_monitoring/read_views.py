@@ -20,6 +20,7 @@ from config.authentication import ScopedJWTAuthentication
 from injection.cycle_time_history import business_date_at
 
 from .base import FieldAPIView
+from .event_payload import event_references
 from .issuer_detection import issuance_exceptions, successful_label_scans
 from .issuer_views import reported_policy_matches, station_policies
 from .models import FieldArchiveEvent, FieldEvent, FieldStation, FieldStationHeartbeat
@@ -433,7 +434,7 @@ def _row(event):
         'serial': event.serial,
         'part_no': event.part_no,
         'status_raw': event.payload.get('status_raw'),
-        'ref': event.payload.get('ref', {}),
+        'ref': event_references(event),
         'detail': event.payload.get('detail', {}),
         'clock_suspect': event.clock_suspect,
         'clock_offset_seconds': event.clock_offset_seconds,

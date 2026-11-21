@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from .contract import STATION_ID_PATTERN
 from .issuer_rules import MAX_CEILINGS, MAX_GRANTS, MAX_SERIAL, NAMESPACE, PART, grant_summaries, label_date_code, policy_bytes, policy_digest, serial_number
-from .models import FieldEvent, FieldLabelIssuer, FieldStation, FieldStationHeartbeat
+from .models import FieldEvent, FieldIssuerRetainedFloor, FieldLabelIssuer, FieldStation, FieldStationHeartbeat
 from .station_views import ManageView
 
 SHANGHAI = fixed_timezone(timedelta(hours=8))
@@ -235,6 +235,14 @@ def _verified_ceilings(row):
             day, number = item['label_print_date'].isoformat(), serial_number(item['serial'])
             if number is not None:
                 floors[day] = max(number, floors.get(day, 0))
+        # Read the compacted floors after the live scan. An overlapping prune
+        # commits the floor update and the event deletion together.
+        retained = FieldIssuerRetainedFloor.objects.filter(
+            station_id=row.station_id, namespace=row.namespace, part_no=row.part_no,
+        ).values_list('print_date', 'serial_floor')
+        for print_date, number in retained:
+            day = print_date.isoformat()
+            floors[day] = max(number, floors.get(day, 0))
     return floors
 
 

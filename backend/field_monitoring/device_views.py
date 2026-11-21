@@ -18,8 +18,10 @@ from .contract import (
     CONTRACT, ContractError, read_device_json, validate_envelope, validate_heartbeat,
     validate_ingest,
 )
+from .event_payload import WIRE_PAYLOAD_COLUMNS, compact_payload, wire_payload
 from .issuer_rules import reservation_fields
 from .models import FieldArchiveEvent, FieldCredential, FieldEvent, FieldIngestBatch, FieldStation, FieldStationHeartbeat
+from .retention import history_cutoff, retain_serial_floors
 
 
 _TOKEN = re.compile(r'([0-9a-f]{32})\.([A-Za-z0-9_-]{43})', re.ASCII)
@@ -67,42 +69,57 @@ def _ingest(station, database_id, batch_id, raw_hash, events, timestamps, receiv
         return existing_batch.ack
 
     event_model = FieldArchiveEvent if archive else FieldEvent
-    existing = dict(event_model.objects.filter(
+    existing = {row.seq: row for row in event_model.objects.filter(
         station=station, database_id=database_id, seq__in=[event['seq'] for event in events],
-    ).values_list('seq', 'payload'))
+    ).only(*WIRE_PAYLOAD_COLUMNS)}
     offset = None if archive else FieldStationHeartbeat.objects.filter(
         station=station, received_at__lte=received_at,
     ).values_list('clock_offset_seconds', flat=True).first()
     offset_limit = getattr(settings, 'FIELD_MONITORING_CLOCK_HOLD_SECONDS', 3600)
     offset_suspect = offset is not None and abs(offset) > offset_limit
+    cutoff = history_cutoff(received_at)
     pending = []
+    expired = 0
+    expired_reservations = []
     for index, (event, occurred_at) in enumerate(zip(events, timestamps, strict=True)):
         seq = event['seq']
         if seq in existing:
-            if _canonical_event(existing[seq]) != _canonical_event(event):
+            if _canonical_event(wire_payload(existing[seq])) != _canonical_event(event):
                 raise ContractError('event_conflict', 409, event_index=index)
             continue
+        day = business_date_at(occurred_at)
         issuer_fields = {}
         if not archive:
             issuer_namespace, label_print_date = reservation_fields(event)
             issuer_fields = {'issuer_namespace': issuer_namespace, 'label_print_date': label_print_date}
+        if day < cutoff:
+            expired += 1
+            if not archive and label_print_date is not None:
+                expired_reservations.append((station.pk, issuer_namespace, event['part_no'],
+                                             label_print_date, event['serial']))
+            continue
         pending.append(event_model(
             station=station, database_id=database_id, seq=seq,
             app=event['app'], event_type=event['type'], mode=event['mode'], result=event['result'],
             reason=event['reason'], barcode=event.get('barcode') or '', serial=event.get('serial') or '',
             part_no=event.get('part_no') or '', job_id=event.get('ref', {}).get('job_id', ''),
-            occurred_at=occurred_at, received_at=received_at, business_date=business_date_at(occurred_at),
+            occurred_at=occurred_at, received_at=received_at, business_date=day,
             clock_offset_seconds=offset,
             clock_suspect=offset_suspect or occurred_at > received_at + timedelta(minutes=5),
-            payload=event, **issuer_fields,
+            payload=compact_payload(event), **issuer_fields,
         ))
 
     event_model.objects.bulk_create(pending)
+    retain_serial_floors(expired_reservations)
     ack = {
         'contract': CONTRACT, 'station_id': station.station_id, 'database_id': str(database_id),
         'batch_id': str(batch_id), 'accepted': len(pending),
         'duplicates': len(events) - len(pending), 'max_seq': events[-1]['seq'],
     }
+    if expired:
+        # The v1 uploader requires accepted + duplicates == batch size.
+        # Expiry is a terminal no-insert disposition, flagged separately.
+        ack['expired'] = expired
     FieldIngestBatch.objects.create(
         station=station, batch_id=batch_id, request_sha256=raw_hash, ack=ack, received_at=received_at,
     )

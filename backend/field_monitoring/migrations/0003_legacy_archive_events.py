@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
                 ('clock_offset_seconds', models.BigIntegerField(null=True)),
                 ('clock_suspect', models.BooleanField(default=False)),
                 ('payload', models.JSONField()),
-                ('station', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='field_monitoring.fieldstation')),
+                ('station', models.ForeignKey(db_index=False, on_delete=django.db.models.deletion.PROTECT, to='field_monitoring.fieldstation')),
             ],
             options={
                 'indexes': [models.Index(fields=['station', 'business_date', 'occurred_at'], name='field_archive_station_day'), models.Index(fields=['business_date', 'occurred_at'], name='field_archive_day')],

@@ -1,14 +1,25 @@
+from datetime import datetime, timezone
+from unittest.mock import patch
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from .event_payload import wire_payload
 from .models import FieldArchiveEvent, FieldEvent, FieldIngestBatch, FieldStationHeartbeat
 from .test_device_api import ROOT, authenticate, device_post, fixture, register
 
 
 class ArchiveApiTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        clock = patch('field_monitoring.device_views.timezone.now',
+                      return_value=datetime(2026, 11, 21, tzinfo=timezone.utc))
+        clock.start()
+        cls.addClassCleanup(clock.stop)
+
     def setUp(self):
         self.client = APIClient()
         admin = get_user_model().objects.create_superuser(username='archive-synthetic', password='synthetic-only')
@@ -37,7 +48,8 @@ class ArchiveApiTests(TestCase):
         different_batch = dict(self.payload, batch_id=str(uuid4()))
         self.assertEqual(self.send(different_batch).data['duplicates'], 1)
         record = FieldArchiveEvent.objects.get()
-        self.assertEqual(record.payload, self.payload['events'][0])
+        self.assertEqual(wire_payload(record), self.payload['events'][0])
+        self.assertNotIn('part_no', record.payload)
         self.assertEqual(record.business_date.isoformat(), '2025-09-09')
         self.assertEqual(FieldEvent.objects.count(), 0)
         self.assertEqual(FieldStationHeartbeat.objects.count(), 0)

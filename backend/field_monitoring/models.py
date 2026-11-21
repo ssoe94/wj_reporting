@@ -95,7 +95,8 @@ class FieldEvent(models.Model):
 class FieldArchiveEvent(models.Model):
     """Historical imports are queried independently of the live field ledger."""
 
-    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT)
+    # Both archive identity and station/date indexes already lead with station.
+    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT, db_index=False)
     database_id = models.UUIDField()
     seq = models.PositiveBigIntegerField()
     app = models.CharField(max_length=64)
@@ -121,6 +122,23 @@ class FieldArchiveEvent(models.Model):
         indexes = [
             models.Index(fields=['station', 'business_date', 'occurred_at'], name='field_archive_station_day'),
             models.Index(fields=['business_date', 'occurred_at'], name='field_archive_day'),
+        ]
+
+
+class FieldIssuerRetainedFloor(models.Model):
+    """Per-date-code serial safety evidence left by expired live reservations."""
+
+    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT, db_index=False)
+    namespace = models.CharField(max_length=3)
+    part_no = models.CharField(max_length=32)
+    date_code = models.CharField(max_length=3)
+    print_date = models.DateField()
+    serial_floor = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['station', 'namespace', 'part_no', 'date_code'],
+                                    name='field_retained_floor_identity'),
         ]
 
 
