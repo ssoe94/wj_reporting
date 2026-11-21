@@ -52,6 +52,16 @@ test('record and export queries include historical archive only when selected', 
   assert.deepEqual(recordParams({ ...range, archive: 'true' }), { ...range, archive: 'true' });
 });
 
+test('record and export queries keep the selected scanner lane in the live and archive search', () => {
+  const range = { from: '2025-09-01', to: '2025-09-30', station: 'SYNTH-WS' };
+  assert.deepEqual(recordParams({ ...range, lane: '' }), range);
+  assert.deepEqual(recordParams({ ...range, lane: 'B' }), { ...range, lane: 'B' });
+  assert.deepEqual(
+    recordParams({ ...range, lane: 'W', archive: 'true' }),
+    { ...range, lane: 'W', archive: 'true' },
+  );
+});
+
 test('explicit cross-PC issuance evidence keeps both stations in the records and CSV query', () => {
   const reserved = exceptionRecordFilters('2026-11-17', 'SYNTH-WS', {
     station: '', part_no: 'SYNTH-PART', type: 'label.reserved', issuer_namespace: 'TST',
