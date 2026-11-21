@@ -46,6 +46,12 @@ test('record and export filters preserve exact values and omit empty controls', 
   });
 });
 
+test('record and export queries include historical archive only when selected', () => {
+  const range = { from: '2025-09-01', to: '2025-09-30', station: 'SYNTH-WS' };
+  assert.deepEqual(recordParams({ ...range, archive: '' }), range);
+  assert.deepEqual(recordParams({ ...range, archive: 'true' }), { ...range, archive: 'true' });
+});
+
 test('explicit cross-PC issuance evidence keeps both stations in the records and CSV query', () => {
   const reserved = exceptionRecordFilters('2026-11-17', 'SYNTH-WS', {
     station: '', part_no: 'SYNTH-PART', type: 'label.reserved', issuer_namespace: 'TST',

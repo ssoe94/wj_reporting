@@ -14,7 +14,7 @@ export type FieldFilters = Partial<Record<FieldFilterKey, string>> & { from: str
 
 const FIELD_FILTER_KEYS = [
   'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id', 'seen_before_reset',
-  'issuer_namespace', 'label_print_date', 'issuance_scan',
+  'issuer_namespace', 'label_print_date', 'issuance_scan', 'archive',
 ] as const;
 
 export function recordParams(filters: FieldFilters) {

@@ -329,10 +329,16 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
       <TextFilter label={tx('작업 ID', '作业 ID')} value={draft.job_id ?? ''} onChange={update('job_id')} />
       <TextFilter label={tx('사이클 ID', '周期 ID')} value={draft.cycle_id ?? ''} onChange={update('cycle_id')} />
       <label className="flex min-h-10 items-center gap-2 self-end text-sm">
+        <input type="checkbox" checked={draft.archive === 'true'}
+          onChange={event => setDraft(previous => ({ ...previous, archive: event.target.checked ? 'true' : '',
+            issuer_namespace: '', label_print_date: '', issuance_scan: '', seen_before_reset: '' }))} />
+        {tx('이관한 과거 기록', '已迁移的历史记录')}
+      </label>
+      {draft.archive !== 'true' && <label className="flex min-h-10 items-center gap-2 self-end text-sm">
         <input type="checkbox" checked={draft.seen_before_reset === 'true'}
           onChange={event => update('seen_before_reset')(event.target.checked ? 'true' : '')} />
         {fieldText('barcode_seen_before_reset', tx)}
-      </label>
+      </label>}
       {(draft.issuer_namespace || draft.label_print_date || draft.issuance_scan) && <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm md:col-span-4">
         {draft.issuer_namespace && <FieldBadge>{tx('네임스페이스', '命名空间')} {draft.issuer_namespace}</FieldBadge>}
         {draft.label_print_date && <FieldBadge>{tx('발급 날짜', '发号日期')} {draft.label_print_date}</FieldBadge>}
