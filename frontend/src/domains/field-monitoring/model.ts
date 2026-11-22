@@ -35,6 +35,7 @@ export type FieldStationDraft = {
   apps: string[];
   location: string;
   line_note: string;
+  injection_machine_number?: number | null;
   enabled: boolean;
 };
 

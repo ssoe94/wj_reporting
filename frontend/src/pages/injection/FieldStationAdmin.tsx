@@ -11,12 +11,13 @@ import { fieldText, formatFieldTime } from '@/domains/field-monitoring/labels';
 import type { Tx } from '@/domains/field-monitoring/labels';
 import { FIELD_APPS } from '@/domains/field-monitoring/model';
 import type { FieldStation, FieldStationDraft, IssuedToken } from '@/domains/field-monitoring/model';
-import { FieldBadge, FieldLoadError, FieldNotice, panelClass } from './FieldMonitoringViews';
+import { FieldBadge, FieldLoadError, FieldNotice, panelClass, selectClass } from './FieldMonitoringViews';
 import FieldIssuerAdmin from './FieldIssuerAdmin';
 
 const blankStation: FieldStationDraft = {
-  station_id: '', display_name: '', apps: [], location: '', line_note: '', enabled: true,
+  station_id: '', display_name: '', apps: [], location: '', line_note: '', injection_machine_number: null, enabled: true,
 };
+const injectionMachineNumbers = Array.from({ length: 17 }, (_, index) => index + 1);
 const muted = 'text-[var(--wj-muted)]';
 
 function stationError(error: unknown, tx: Tx) {
@@ -98,6 +99,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
     setDraft({
       station_id: station.station_id, display_name: station.display_name, apps: station.apps,
       location: station.location, line_note: station.line_note, enabled: station.enabled,
+      injection_machine_number: station.injection_machine_number ?? null,
     });
     formHeading.current?.focus();
   }
@@ -186,6 +188,15 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
         <label className="min-w-0 text-sm"><span className="mb-1 block font-medium">{tx('호기·라인 메모', '机台与产线备注')}</span>
           <Input value={draft.line_note} onChange={event => setDraft({ ...draft, line_note: event.target.value })} maxLength={160} />
         </label>
+        <label className="min-w-0 text-sm"><span className="mb-1 block font-medium">{tx('사출 호기', '注塑机台')}</span>
+          <select className={selectClass} value={draft.injection_machine_number ?? ''} onChange={event => {
+            const value = event.target.value;
+            setDraft({ ...draft, injection_machine_number: value === '' ? null : Number(value) });
+          }}>
+            <option value="">{tx('연결 안 함', '不关联')}</option>
+            {injectionMachineNumbers.map(number => <option key={number} value={number}>{number}{tx('호기', '号机')}</option>)}
+          </select>
+        </label>
         <fieldset className="min-w-0 text-sm sm:col-span-2">
           <legend className="mb-1 font-medium">{tx('사용 앱', '使用的程序')}</legend>
           <div className="flex flex-wrap gap-x-4">
@@ -220,6 +231,9 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
           <div className="flex flex-wrap items-center gap-2">
             <strong className="break-all">{station.display_name} · {station.station_id}</strong>
             <FieldBadge>{station.enabled ? tx('사용 중', '启用') : tx('사용 중지', '停用')}</FieldBadge>
+            <FieldBadge>{station.injection_machine_number == null
+              ? tx('호기 미연결', '未关联机台')
+              : `${station.injection_machine_number}${tx('호기', '号机')}`}</FieldBadge>
             <FieldBadge>{station.credential_active ? tx('유효한 토큰', '有效令牌') : tx('유효한 토큰 없음', '无有效令牌')}</FieldBadge>
           </div>
           <p className={`mt-1 break-words ${muted}`}>{[station.location, station.line_note, ...station.apps.map(app => fieldText(app, tx))].filter(Boolean).join(' · ')}</p>

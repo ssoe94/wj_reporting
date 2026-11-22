@@ -2,6 +2,7 @@ from django.urls import path
 
 from .device_views import ArchiveIngestView, HeartbeatView, IngestView
 from .issuer_views import IssuerAssignmentsView, IssuerPolicyView, IssuerReleaseView, IssuerStopView
+from .production_context import ProductionContextView
 from .read_views import EventsCsvView, EventsView, ExceptionsView, OverviewView
 from .station_views import IssueTokenView, RevokeTokenView, StationsView, StationView
 
@@ -10,6 +11,7 @@ urlpatterns = [
     path('ingest/', IngestView.as_view(), name='field-ingest'),
     path('archive-ingest/', ArchiveIngestView.as_view(), name='field-archive-ingest'),
     path('heartbeat/', HeartbeatView.as_view(), name='field-heartbeat'),
+    path('production-context/', ProductionContextView.as_view(), name='field-production-context'),
     path('overview/', OverviewView.as_view(), name='field-overview'),
     path('exceptions/', ExceptionsView.as_view(), name='field-exceptions'),
     path('events/', EventsView.as_view(), name='field-events'),

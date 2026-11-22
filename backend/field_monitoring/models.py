@@ -1,6 +1,11 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
+
+
+MIN_INJECTION_MACHINE = 1
+MAX_INJECTION_MACHINE = 17
 
 
 class FieldStation(models.Model):
@@ -11,9 +16,24 @@ class FieldStation(models.Model):
     line_note = models.CharField(max_length=160, blank=True)
     enabled = models.BooleanField(default=True)
     issuer_policy_revision = models.PositiveBigIntegerField(default=0)
+    injection_machine_number = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[
+            MinValueValidator(MIN_INJECTION_MACHINE), MaxValueValidator(MAX_INJECTION_MACHINE),
+        ],
+    )
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(injection_machine_number__isnull=True) | Q(
+                    injection_machine_number__range=(MIN_INJECTION_MACHINE, MAX_INJECTION_MACHINE)
+                ),
+                name='field_station_injection_machine_range',
+            ),
+        ]
 
 
 class FieldStationChange(models.Model):

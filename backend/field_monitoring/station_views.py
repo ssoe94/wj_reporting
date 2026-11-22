@@ -12,7 +12,7 @@ from config.authentication import ScopedJWTAuthentication
 from .base import FieldAPIView
 from .contract import APP_TYPES, STATION_ID_PATTERN
 from .device_views import secret_digest
-from .models import FieldCredential, FieldStation, FieldStationChange
+from .models import MAX_INJECTION_MACHINE, MIN_INJECTION_MACHINE, FieldCredential, FieldStation, FieldStationChange
 from .permissions import CanManageFieldStations
 
 
@@ -23,6 +23,9 @@ class StationInput(serializers.Serializer):
     location = serializers.CharField(max_length=120, required=False, allow_blank=True)
     line_note = serializers.CharField(max_length=160, required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
+    injection_machine_number = serializers.IntegerField(
+        min_value=MIN_INJECTION_MACHINE, max_value=MAX_INJECTION_MACHINE, required=False, allow_null=True,
+    )
 
     def validate_apps(self, apps):
         if len(set(apps)) != len(apps):
@@ -47,6 +50,7 @@ def _station_json(station, active):
     return {
         'station_id': station.station_id, 'display_name': station.display_name, 'apps': station.apps,
         'location': station.location, 'line_note': station.line_note, 'enabled': station.enabled,
+        'injection_machine_number': station.injection_machine_number,
         'created_at': station.created_at, 'updated_at': station.updated_at, 'credential_active': active,
     }
 
