@@ -1,4 +1,4 @@
-"""Read the current WJ injection part for the station identified by its token."""
+"""Read WJ's current injection plan group for the station identified by its token."""
 
 from django.utils import timezone
 from rest_framework.response import Response
@@ -23,7 +23,7 @@ def _shared_plan_value(group, name):
     return None
 
 
-def _current_part(business_date, machine_number, now):
+def _current_group(business_date, machine_number, now):
     summary = get_injection_summary(
         business_date, machine_numbers=[machine_number], scope_capacity_to_machines=True,
         include_plan_metadata=True,
@@ -49,12 +49,14 @@ def _current_part(business_date, machine_number, now):
     if current is None or current['allocated_shots'] <= 0:
         return None, 'no_verified_current_run'
     group = [part for part in parts if part['production_group_id'] == current['production_group_id']]
-    part_numbers = {part['part_no'] for part in group}
-    if (not current['production_group_complete'] or len(part_numbers) != 1
-            or part_numbers.intersection({'', '-'})):
+    parts_per_shot = max(part['parts_per_shot'] or 1 for part in group)
+    part_numbers = sorted({part['part_no'] for part in group})
+    if (not current['production_group_complete'] or len(part_numbers) != parts_per_shot
+            or any(part in ('', '-') for part in part_numbers)):
         return None, 'ambiguous_current_part'
     return {
-        'part_no': part_numbers.pop(),
+        'parts': part_numbers,
+        'part_no': part_numbers[0] if len(part_numbers) == 1 else None,
         **{name: _shared_plan_value(group, name) for name in INJECTION_PLAN_METADATA_FIELDS},
     }, None
 
@@ -73,11 +75,12 @@ class ProductionContextView(FieldAPIView):
             business_date = business_date_at(now)
             current, reason = (None, 'station_unmapped')
             if station.injection_machine_number is not None:
-                current, reason = _current_part(business_date, station.injection_machine_number, now)
-            fields = current or dict.fromkeys(('part_no', *INJECTION_PLAN_METADATA_FIELDS))
+                current, reason = _current_group(business_date, station.injection_machine_number, now)
+            fields = current or {'parts': [], **dict.fromkeys(('part_no', *INJECTION_PLAN_METADATA_FIELDS))}
             return Response({
                 'contract': CONTRACT,
                 'station_id': station.station_id,
+                'injection_machine_number': station.injection_machine_number,
                 'status': 'current' if current else 'unavailable',
                 **fields,
                 'source': SOURCE if current else None,

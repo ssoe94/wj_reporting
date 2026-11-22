@@ -16,13 +16,14 @@
 
 `GET /api/field/v1/production-context/`는 기존 `Authorization: WJField <token>`으로 현장 PC를 확인한다. 설비는 토큰으로 확인된 PC의 `injection_machine_number`(1–17) 설정으로 찾는다. 질의 매개변수를 받지 않고 응답은 `Cache-Control: no-store`로 보낸다. 토큰이 틀리거나 회수되면 401, PC가 중지되면 403이다. 조회는 데이터를 변경하거나 MES에 연결하지 않는다.
 
-기존 생산 계획·MES 누적 샷·캐비티 배분에서 상하이 08:00 기준의 현재 생산 그룹을 확인한다. 금형 교체·셋업과 확인된 재가동은 기존 배분 기준을 그대로 따른다. 해당 호기의 최근 샷과 10분 이내의 카운터 자료가 있고, 그룹 전체에서 품번 하나가 확인될 때만 `current`를 반환한다. 계획에만 있는 품번이나 동시 생산 품번 중 하나를 골라 비교하지 않는다. 이 품번은 WJ가 배분한 현재 품번이다. 현장 검사는 바코드 품번을 기준으로 진행한다.
+기존 생산 계획·MES 누적 샷·캐비티 배분에서 상하이 08:00 기준의 현재 생산 그룹을 확인한다. 금형 교체·셋업과 확인된 재가동은 기존 배분 기준을 그대로 따른다. 해당 호기의 최근 샷과 10분 이내의 카운터 자료가 있고, 현재 그룹의 품번 구성이 모두 확인되면 `current`를 반환한다. A/B 동시 생산은 두 품번을 함께 반환한다. 현장 앱은 바코드로 검사할 품번을 정하고, 해당 품번이 목록에 없을 때 확인 경보를 표시한다.
 
 | 응답 필드 | 값 |
 | --- | --- |
 | `contract`, `station_id`, `business_date` | `wj.field.v1`, 토큰의 PC 식별자, `YYYY-MM-DD` |
 | `status` | `current` 또는 `unavailable` |
-| `part_no`, `source` | 확인된 품번과 `injection_plan_mes_shots`. 비교 불가 시 두 필드 모두 `null` |
+| `injection_machine_number` | 토큰에 연결된 사출 호기. 미지정 시 `null` |
+| `parts`, `part_no`, `source` | 현재 그룹의 품번 문자열 목록(정렬, 중복 제거), 단일 품번일 때의 이전 형식 `part_no`, 확인 근거 `injection_plan_mes_shots`. 비교 불가 시 빈 목록과 `null` |
 | `model_name`, `part_spec`, `product_family_code`, `product_family_name` | 현재 생산 그룹의 모델명, 품목 규격, 제품군 코드·이름. 값이 비었거나 그룹 안에서 일치하지 않는 필드는 `null`. 비교 불가일 때는 모두 `null` |
 | `reason` | `current`이면 `null`. 호기 미등록 `station_unmapped`, 카운터 미확인 `machine_data_unavailable`, 생산 그룹 미확인 `no_verified_current_run`, 품번 모호 `ambiguous_current_part` |
 

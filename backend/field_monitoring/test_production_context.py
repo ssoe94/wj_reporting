@@ -66,7 +66,8 @@ class StationProductionContextTests(TestCase):
         self.assertEqual(initial.status_code, 200)
         self.assertEqual(initial.data, {
             'contract': 'wj.field.v1', 'station_id': 'context-pc', 'status': 'unavailable',
-            'part_no': None, 'model_name': None, 'part_spec': None,
+            'injection_machine_number': None, 'parts': [], 'part_no': None,
+            'model_name': None, 'part_spec': None,
             'product_family_code': None, 'product_family_name': None,
             'source': None, 'business_date': '2026-01-02', 'reason': 'station_unmapped',
         })
@@ -105,6 +106,7 @@ class StationProductionContextTests(TestCase):
             response = self.context(3)
         self.assertEqual(response.data, {
             'contract': 'wj.field.v1', 'station_id': 'context-pc', 'status': 'current',
+            'injection_machine_number': 4, 'parts': ['PART-FOUR'],
             'part_no': 'PART-FOUR', 'model_name': '65', 'part_spec': '2 POLE STAND',
             'product_family_code': 'STAND', 'product_family_name': '스탠드', 'source': 'injection_plan_mes_shots',
             'business_date': '2026-01-02', 'reason': None,
@@ -162,17 +164,32 @@ class StationProductionContextTests(TestCase):
                          ('unavailable', None, 'machine_data_unavailable'))
         self.assertIsNone(stale['product_family_name'])
 
-    def test_two_simultaneous_cavity_part_numbers_are_ambiguous(self):
+    def test_complete_current_cavity_group_returns_all_parts_and_shared_metadata(self):
         self.set_mapping(4)
-        for part, sequence in [('PART-A', 1), ('PART-B', 2)]:
-            self.plan(part, sequence=sequence)
+        for part, sequence in [('PART-B', 1), ('PART-A', 2)]:
+            self.plan(part, sequence=sequence, model_name='MODEL-X', part_spec=f'Spec {part}',
+                      product_family_code='STAND', product_family_name='Stand family')
             ProductionPartCavity.objects.create(part_no=part, cavity=1, cavity_pattern='2x1',
                                                  parts_per_shot=2, cavity_group='PART-A+PART-B')
+        self.plan('NEXT-PART', sequence=3)
         self.samples([(-2, 100), (1, 104), (2, 105)])
-        response = self.context(3)
-        self.assertEqual((response.data['status'], response.data['part_no'], response.data['reason']),
-                         ('unavailable', None, 'ambiguous_current_part'))
-        self.assertIsNone(response.data['model_name'])
+        response = self.context(3).data
+        self.assertEqual((response['status'], response['parts'], response['part_no'], response['reason']),
+                         ('current', ['PART-A', 'PART-B'], None, None))
+        self.assertEqual((response['model_name'], response['part_spec'], response['product_family_code'],
+                          response['product_family_name']), ('MODEL-X', None, 'STAND', 'Stand family'))
+
+    def test_missing_parallel_member_does_not_make_an_incomplete_plan_current(self):
+        self.set_mapping(4)
+        self.plan('PART-A')
+        ProductionPartCavity.objects.create(part_no='PART-A', cavity=1, cavity_pattern='2x1',
+                                             parts_per_shot=2, cavity_group='PART-A+PART-B')
+        self.samples([(-2, 100), (1, 104), (2, 105)])
+        response = self.context(3).data
+        self.assertEqual((response['status'], response['parts'], response['part_no'], response['reason']),
+                         ('unavailable', [], None, 'ambiguous_current_part'))
+        self.assertEqual(response['injection_machine_number'], 4)
+        self.assertIsNone(response['model_name'])
 
     def test_comparison_and_acknowledgment_events_use_the_existing_v1_contract(self):
         events = [
