@@ -12,6 +12,25 @@
 
 검색은 station·업무일·앱·result와 바코드·시리얼·품번 정확 조건을 우선 사용한다. 실제 운영량을 측정해 인덱스와 보관 정책을 재검토한다. 원천 이벤트를 지우는 API는 제공하지 않는다. 기존 설비 모니터링 및 [현장 운영 집계](../../backend/analytics/field_operations.py)와 저장 경계를 분리한다. 기존 바코드 수신기에 대한 호환 경로는 단계 B 범위 밖이다.
 
+## 현장 품번 대조 조회
+
+`GET /api/field/v1/production-context/`는 기존 `Authorization: WJField <token>`으로 현장 PC를 확인한다. 토큰에 연결된 PC의 공정과 설비를 기준으로 조회한다. 질의 매개변수를 받지 않고 응답은 `Cache-Control: no-store`로 보낸다. 토큰이 틀리거나 회수되면 401, PC가 중지되면 403이다. 조회는 데이터를 변경하거나 MES에 연결하지 않는다.
+
+사출은 기존 생산 계획·MES 누적 샷·캐비티 배분을 사용한다. 상하이 08:00 기준, 해당 호기의 최근 샷과 10분 이내의 카운터 자료가 있고 현재 그룹의 품번 구성이 모두 확인되면 `current`를 반환한다. 패밀리 금형의 품번은 해당 시점의 그룹에 속한 모든 값이다. 조립은 같은 업무일, 배정 라인의 양수 수량 조립 계획에서 `planned` 품번 목록을 반환한다. 현장 앱은 바코드 품번이 목록에 있는지 대조한다.
+
+| 응답 필드 | 값 |
+| --- | --- |
+| `contract`, `station_id`, `business_date` | `wj.field.v1`, 토큰의 PC 식별자, `YYYY-MM-DD` |
+| `status`, `source` | 사출 확인 `current` / `injection_plan_mes_shots`, 조립 계획 `planned` / `assembly_line_plan`, 확인 불가 `unavailable` / `null` |
+| `production_process`, `injection_machine_number`, `assembly_line` | `injection` 및 호기 1–17, `assembly` 및 라인 A–D. 미지정 값은 `null` |
+| `parts`, `part_no` | 품번으로 정렬된 객체 목록. 각 객체는 `part_no`, `model_name`, `part_spec`, `product_family_code`, `product_family_name`을 가진다. 단일 품번이면 호환용 `part_no`도 반환한다. 비교 불가 시 빈 목록과 `null` |
+| `model_name`, `part_spec`, `product_family_code`, `product_family_name` | 현재 생산 그룹의 모델명, 품목 규격, 제품군 코드·이름. 값이 비었거나 그룹 안에서 일치하지 않는 필드는 `null`. 비교 불가일 때는 모두 `null` |
+| `reason` | 조회 값이 있을 때 `null`. 설비 미연결 `station_unmapped`, 카운터 미확인 `machine_data_unavailable`, 생산 그룹 미확인 `no_verified_current_run`, 품번 모호 `ambiguous_current_part`, 해당 조립 라인 계획 없음 `no_assembly_plan` |
+
+수퍼유저는 사출 현장 모니터링의 현장 PC 탭에서 등록·수정 시 공정과 연결 설비를 지정한다. 공정 변경과 기존 설비의 해제는 한 요청으로 저장한다. 목록에는 저장된 공정과 설비가 표시되며 기존 관리 변경 이력에 담당자와 이전·다음 값이 남는다. 기존 PC는 마이그레이션 후 미연결 상태에서 시작한다.
+
+불일치와 확인 이벤트의 `app`은 `vision_backcover`, `type`은 `operator.action`이다. `wj_part_mismatch`와 `wj_part_acknowledged`는 기존 v1 수신 계약에서 받는다.
+
 ## 사람용 API
 
 사람용 API는 JWT를 사용한다. 활성 사용자는 실제 사출 조회 권한(`can_view_injection`) 또는 superuser 권한이 있을 때 조회할 수 있다. 현장 단말 계정은 운영 조회에서 제외한다. 활성 superuser만 현장 PC나 장비 자격을 관리할 수 있다. [기존 권한 경계](../../backend/injection/permissions.py)
@@ -23,7 +42,7 @@
 | `GET /api/field/v1/events/` | 업무일 기간 및 이벤트 상세 필터, 페이지당 최대 500건, 커서 페이지네이션 |
 | `GET /api/field/v1/events.csv` | 같은 필터의 CSV, 최대 10,000행, UTF-8 BOM, 수식 주입 방지 |
 | `GET/POST /api/field/v1/stations/` | 관리용 목록과 등록 |
-| `PATCH /api/field/v1/stations/{station_id}/` | 앱·이름·위치·메모 변경과 사용 여부 |
+| `PATCH /api/field/v1/stations/{station_id}/` | 앱·이름·위치·메모·사출기 번호 변경과 사용 여부 |
 | `POST /api/field/v1/stations/{station_id}/issue-token/` | 새 토큰 발급 또는 이전 자격 회수 후 재발급 |
 | `POST /api/field/v1/stations/{station_id}/revoke-token/` | 현재 활성 자격 회수 |
 

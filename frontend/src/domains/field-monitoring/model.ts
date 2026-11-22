@@ -29,7 +29,28 @@ export function exceptionRecordFilters(day: string, station: string, filters: Re
 }
 
 
-export type FieldStationDraft = {
+export const FIELD_ASSEMBLY_LINES = ['A', 'B', 'C', 'D'] as const;
+
+export type FieldProductionProcess = 'injection' | 'assembly';
+export type FieldAssemblyLine = typeof FIELD_ASSEMBLY_LINES[number];
+type FieldStationBinding = {
+  production_process?: FieldProductionProcess | null;
+  injection_machine_number?: number | null;
+  assembly_line?: FieldAssemblyLine | null;
+};
+
+export function fieldStationBinding(station: FieldStationBinding): Required<FieldStationBinding> {
+  const process = station.production_process === undefined && station.injection_machine_number != null
+    ? 'injection'
+    : station.production_process ?? null;
+  return {
+    production_process: process,
+    injection_machine_number: process === 'injection' ? station.injection_machine_number ?? null : null,
+    assembly_line: process === 'assembly' ? station.assembly_line ?? null : null,
+  };
+}
+
+export type FieldStationDraft = FieldStationBinding & {
   station_id: string;
   display_name: string;
   apps: string[];

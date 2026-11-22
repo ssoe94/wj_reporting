@@ -12,7 +12,10 @@ from config.authentication import ScopedJWTAuthentication
 from .base import FieldAPIView
 from .contract import APP_TYPES, STATION_ID_PATTERN
 from .device_views import secret_digest
-from .models import FieldCredential, FieldStation, FieldStationChange
+from .models import (
+    ASSEMBLY_LINES, MAX_INJECTION_MACHINE, MIN_INJECTION_MACHINE, PRODUCTION_PROCESSES,
+    FieldCredential, FieldStation, FieldStationChange,
+)
 from .permissions import CanManageFieldStations
 
 
@@ -23,11 +26,27 @@ class StationInput(serializers.Serializer):
     location = serializers.CharField(max_length=120, required=False, allow_blank=True)
     line_note = serializers.CharField(max_length=160, required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
+    production_process = serializers.ChoiceField(choices=PRODUCTION_PROCESSES, required=False, allow_null=True)
+    assembly_line = serializers.ChoiceField(choices=ASSEMBLY_LINES, required=False, allow_null=True)
+    injection_machine_number = serializers.IntegerField(
+        min_value=MIN_INJECTION_MACHINE, max_value=MAX_INJECTION_MACHINE, required=False, allow_null=True,
+    )
 
     def validate_apps(self, apps):
         if len(set(apps)) != len(apps):
             raise serializers.ValidationError('Apps must be unique.')
         return apps
+
+    def validate(self, values):
+        process, machine, line = (
+            values.get(name, getattr(self.instance, name, None))
+            for name in ('production_process', 'injection_machine_number', 'assembly_line')
+        )
+        if machine is not None and process != 'injection':
+            raise serializers.ValidationError({'injection_machine_number': 'Select the injection process.'})
+        if line is not None and process != 'assembly':
+            raise serializers.ValidationError({'assembly_line': 'Select the assembly process.'})
+        return values
 
     def to_internal_value(self, data):
         if not isinstance(data, dict) or data.keys() - self.fields.keys():
@@ -47,6 +66,8 @@ def _station_json(station, active):
     return {
         'station_id': station.station_id, 'display_name': station.display_name, 'apps': station.apps,
         'location': station.location, 'line_note': station.line_note, 'enabled': station.enabled,
+        'injection_machine_number': station.injection_machine_number,
+        'production_process': station.production_process, 'assembly_line': station.assembly_line,
         'created_at': station.created_at, 'updated_at': station.updated_at, 'credential_active': active,
     }
 
@@ -84,7 +105,7 @@ class StationView(ManageView):
     @transaction.atomic
     def patch(self, request, station_id):
         station = get_object_or_404(FieldStation.objects.select_for_update(), station_id=station_id)
-        form = StationInput(data=request.data, partial=True)
+        form = StationInput(station, data=request.data, partial=True)
         form.is_valid(raise_exception=True)
         changes = {}
         for name, next_value in form.validated_data.items():

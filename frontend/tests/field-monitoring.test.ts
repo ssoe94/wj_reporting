@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canAccessFieldMonitoring, isFieldMonitoringRoute } from '../src/domains/auth/field-monitoring-access.ts';
-import { exceptionRecordFilters, recordParams } from '../src/domains/field-monitoring/model.ts';
+import { exceptionRecordFilters, fieldStationBinding, recordParams } from '../src/domains/field-monitoring/model.ts';
 
 test('field monitoring navigation requires the dedicated permission or superuser status', () => {
   assert.equal(canAccessFieldMonitoring({ is_superuser: true }), true);
@@ -12,6 +12,21 @@ test('field monitoring navigation requires the dedicated permission or superuser
   assert.equal(isFieldMonitoringRoute('/injection/field-monitoring/?tab=records'), true);
   assert.equal(isFieldMonitoringRoute('/injection/%66ield-monitoring'), true);
   assert.equal(isFieldMonitoringRoute('/injection/dashboard'), false);
+});
+
+test('station production binding retains older injection selections and clears unrelated targets', () => {
+  const blank = { production_process: null, injection_machine_number: null, assembly_line: null };
+  assert.deepEqual(fieldStationBinding({}), blank);
+  assert.deepEqual(fieldStationBinding({ production_process: null, injection_machine_number: 10 }), blank);
+  assert.deepEqual(fieldStationBinding({ injection_machine_number: 10 }), {
+    ...blank, production_process: 'injection', injection_machine_number: 10,
+  });
+  assert.deepEqual(fieldStationBinding({ production_process: 'injection', assembly_line: 'B' }), {
+    ...blank, production_process: 'injection',
+  });
+  assert.deepEqual(fieldStationBinding({ production_process: 'assembly', assembly_line: 'C', injection_machine_number: 11 }), {
+    ...blank, production_process: 'assembly', assembly_line: 'C',
+  });
 });
 
 test('exception navigation pins the selected PC and preserves cross-day evidence without copying cursor controls', () => {

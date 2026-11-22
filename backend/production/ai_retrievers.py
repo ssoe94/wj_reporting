@@ -51,6 +51,7 @@ MACHINE_TONNAGE = {
 CHANGEOVER_STOP_MINUTES = 10
 CHANGEOVER_MAX_SAMPLE_GAP_MINUTES = 4
 CHANGEOVER_STABLE_SAMPLES = 3
+INJECTION_PLAN_METADATA_FIELDS = ("model_name", "part_spec", "product_family_code", "product_family_name")
 
 
 def _same_part_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
@@ -624,6 +625,8 @@ def get_injection_summary(
     target_date: Any,
     *,
     machine_numbers: list[int] | None = None,
+    scope_capacity_to_machines: bool = False,
+    include_plan_metadata: bool = False,
 ) -> dict[str, Any]:
     range_start, range_end = business_range(target_date)
     plan_queryset = (
@@ -642,16 +645,18 @@ def get_injection_summary(
             if parse_machine_number(plan.machine_name) in requested_machine_numbers
         ]
     cavity_map = cavity_map_for_plans(plans)
-    latest_mes_time = (
-        InjectionMonitoringRecord.objects
-        .filter(timestamp__gte=range_start, timestamp__lt=range_end)
+    capacity_rows = (
+        InjectionMonitoringRecord.objects.filter(timestamp__gte=range_start, timestamp__lt=range_end)
         # Production output is derived only from the cumulative capacity
         # counter. Power or temperature telemetry must not make a missing
         # production counter look like a verified zero-output sample.
         .filter(capacity__isnull=False)
-        .aggregate(latest=Max("timestamp"))
-        .get("latest")
     )
+    if scope_capacity_to_machines and requested_machine_numbers is not None:
+        capacity_rows = capacity_rows.filter(
+            machine_name__in=[machine_monitoring_name(number) for number in requested_machine_numbers],
+        )
+    latest_mes_time = capacity_rows.aggregate(latest=Max("timestamp")).get("latest")
     reference_time = reference_time_for_business_day(target_date, latest_mes_time)
     time_progress_rate = elapsed_rate(target_date, reference_time)
     recent_start = max(range_start, reference_time - timedelta(minutes=60))
@@ -790,6 +795,10 @@ def get_injection_summary(
                     "production_group_complete": production_group_complete,
                     "status": status,
                 }
+                if include_plan_metadata:
+                    part_payload["plan_metadata"] = {
+                        name: getattr(plan, name) for name in INJECTION_PLAN_METADATA_FIELDS
+                    }
                 sequence += 1
                 parts.append(part_payload)
                 part_rows.append(part_payload)
@@ -842,11 +851,7 @@ def get_injection_summary(
         "running_equipment_count": sum(1 for row in machine_rows if row["is_running"]),
         "total_equipment_count": 17,
         "plan_row_count": len(plans),
-        "monitoring_row_count": InjectionMonitoringRecord.objects.filter(
-            timestamp__gte=range_start,
-            timestamp__lt=range_end,
-            capacity__isnull=False,
-        ).count(),
+        "monitoring_row_count": capacity_rows.count(),
         "capacity_coverage_complete": all(
             not row.get("data_warning")
             for row in machine_rows
