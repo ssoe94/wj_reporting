@@ -31,6 +31,12 @@
 
 불일치와 확인 이벤트의 `app`은 `vision_backcover`, `type`은 `operator.action`이다. `wj_part_mismatch`와 `wj_part_acknowledged`는 기존 v1 수신 계약에서 받는다.
 
+## 스테이션 기본 설정
+
+수퍼유저가 현장 PC 목록에서 이름·공정·설비와 `workstation` 값을 설정한다. `workstation`에는 프리셋, 선택 모듈, 기본 언어가 있다. 기존 등록·수정 경로에서 값 전체를 저장하며 `null`이면 현장 기본값을 쓴다. 장치 경로와 토큰 파일은 현장에 보관한다.
+
+`GET /api/field/v1/station-config/`는 현장 토큰에 해당하는 PC의 이름, 공정, 연결 설비, 프리셋, 모듈, 기본 언어를 읽는다. 같은 응답에 배정된 사출 호기 또는 조립 라인의 상하이 업무일 생산계획에서 모델명·품목 규격·제품군·품번을 최대 200종 제공한다. 같은 품번의 계획 값이 서로 다르면 해당 메타데이터를 `null`로 반환한다. 카탈로그는 등록 인터뷰의 입력 목록이다. 생산 대조용 목록은 `production-context/`를 이용한다.
+
 ## 사람용 API
 
 사람용 API는 JWT를 사용한다. 활성 사용자는 실제 사출 조회 권한(`can_view_injection`) 또는 superuser 권한이 있을 때 조회할 수 있다. 현장 단말 계정은 운영 조회에서 제외한다. 활성 superuser만 현장 PC나 장비 자격을 관리할 수 있다. [기존 권한 경계](../../backend/injection/permissions.py)

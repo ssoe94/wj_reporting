@@ -17,6 +17,7 @@ from .models import (
     FieldCredential, FieldStation, FieldStationChange,
 )
 from .permissions import CanManageFieldStations
+from .workstation_config import WorkstationInput
 
 
 class StationInput(serializers.Serializer):
@@ -26,6 +27,7 @@ class StationInput(serializers.Serializer):
     location = serializers.CharField(max_length=120, required=False, allow_blank=True)
     line_note = serializers.CharField(max_length=160, required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
+    workstation = WorkstationInput(required=False, allow_null=True)
     production_process = serializers.ChoiceField(choices=PRODUCTION_PROCESSES, required=False, allow_null=True)
     assembly_line = serializers.ChoiceField(choices=ASSEMBLY_LINES, required=False, allow_null=True)
     injection_machine_number = serializers.IntegerField(
@@ -67,6 +69,7 @@ def _station_json(station, active):
         'station_id': station.station_id, 'display_name': station.display_name, 'apps': station.apps,
         'location': station.location, 'line_note': station.line_note, 'enabled': station.enabled,
         'injection_machine_number': station.injection_machine_number,
+        'workstation': station.workstation,
         'production_process': station.production_process, 'assembly_line': station.assembly_line,
         'created_at': station.created_at, 'updated_at': station.updated_at, 'credential_active': active,
     }

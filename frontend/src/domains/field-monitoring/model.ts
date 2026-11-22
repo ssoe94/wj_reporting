@@ -29,6 +29,14 @@ export function exceptionRecordFilters(day: string, station: string, filters: Re
 }
 
 
+export type WorkstationModule = 'barcode' | 'vision' | 'weigh' | 'companion';
+export type WorkstationPreset = 'barcode' | 'vision' | 'vision_barcode' | 'weigh' | 'vision_weigh' | 'custom';
+export type WorkstationConfig = {
+  preset: WorkstationPreset;
+  modules: WorkstationModule[];
+  language: 'ko' | 'zh';
+};
+
 export const FIELD_ASSEMBLY_LINES = ['A', 'B', 'C', 'D'] as const;
 
 export type FieldProductionProcess = 'injection' | 'assembly';
@@ -56,6 +64,7 @@ export type FieldStationDraft = FieldStationBinding & {
   apps: string[];
   location: string;
   line_note: string;
+  workstation?: WorkstationConfig | null;
   enabled: boolean;
 };
 

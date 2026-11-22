@@ -5,6 +5,7 @@ from .issuer_views import IssuerAssignmentsView, IssuerPolicyView, IssuerRelease
 from .production_context import ProductionContextView
 from .read_views import EventsCsvView, EventsView, ExceptionsView, OverviewView
 from .station_views import IssueTokenView, RevokeTokenView, StationsView, StationView
+from .workstation_config import WorkstationConfigView
 
 
 urlpatterns = [
@@ -12,6 +13,7 @@ urlpatterns = [
     path('archive-ingest/', ArchiveIngestView.as_view(), name='field-archive-ingest'),
     path('heartbeat/', HeartbeatView.as_view(), name='field-heartbeat'),
     path('production-context/', ProductionContextView.as_view(), name='field-production-context'),
+    path('station-config/', WorkstationConfigView.as_view(), name='field-workstation-config'),
     path('overview/', OverviewView.as_view(), name='field-overview'),
     path('exceptions/', ExceptionsView.as_view(), name='field-exceptions'),
     path('events/', EventsView.as_view(), name='field-events'),
