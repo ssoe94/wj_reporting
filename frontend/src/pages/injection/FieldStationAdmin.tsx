@@ -10,15 +10,67 @@ import {
 import { fieldText, formatFieldTime } from '@/domains/field-monitoring/labels';
 import type { Tx } from '@/domains/field-monitoring/labels';
 import { FIELD_APPS, FIELD_ASSEMBLY_LINES, fieldStationBinding } from '@/domains/field-monitoring/model';
-import type { FieldAssemblyLine, FieldProductionProcess, FieldStation, FieldStationDraft, IssuedToken } from '@/domains/field-monitoring/model';
+import type {
+  FieldAssemblyLine, FieldProductionProcess, FieldStation, FieldStationDraft, IssuedToken,
+  WorkstationConfig, WorkstationModule, WorkstationPreset,
+} from '@/domains/field-monitoring/model';
 import { FieldBadge, FieldLoadError, FieldNotice, panelClass, selectClass } from './FieldMonitoringViews';
 import FieldIssuerAdmin from './FieldIssuerAdmin';
 
 const blankStation: FieldStationDraft = {
-  station_id: '', display_name: '', apps: [], location: '', line_note: '', ...fieldStationBinding({}), enabled: true,
+  station_id: '', display_name: '', apps: [], location: '', line_note: '', ...fieldStationBinding({}), enabled: true, workstation: null,
 };
 const injectionMachineNumbers = Array.from({ length: 17 }, (_, index) => index + 1);
 const muted = 'text-[var(--wj-muted)]';
+const presets: Record<WorkstationPreset, { labels: [string, string]; modules: WorkstationModule[] }> = {
+  barcode: { labels: ['바코드', '条码'], modules: ['barcode'] },
+  vision: { labels: ['비전', '视觉'], modules: ['vision'] },
+  vision_barcode: { labels: ['비전 + 바코드', '视觉 + 条码'], modules: ['vision', 'barcode'] },
+  weigh: { labels: ['계량·인쇄·리딩', '称重·打印·回读'], modules: ['weigh'] },
+  vision_weigh: { labels: ['비전 + 계량·인쇄·리딩', '视觉 + 称重·打印·回读'], modules: ['vision', 'weigh'] },
+  custom: { labels: ['직접 선택', '自定义'], modules: [] },
+};
+const moduleLabels: Record<WorkstationModule, [string, string]> = {
+  barcode: presets.barcode.labels, vision: presets.vision.labels, weigh: presets.weigh.labels,
+  companion: ['비전 동반 모니터', '视觉伴随监测'],
+};
+
+function WorkstationFields({ value, tx, onChange }: {
+  value: WorkstationConfig | null | undefined; tx: Tx; onChange: (value: WorkstationConfig | null) => void;
+}) {
+  const options = value?.preset === 'custom' ? Object.keys(moduleLabels) as WorkstationModule[]
+    : value && presets[value.preset].modules.includes('vision') ? ['companion' as const] : [];
+  return <fieldset className="grid gap-3 text-sm sm:col-span-2 sm:grid-cols-2">
+    <legend className="mb-1 font-medium">{tx('스테이션 기본 설정', '工位默认设置')}</legend>
+    <label className="min-w-0">
+      <span className="mb-1 block">{tx('기능 프리셋', '功能预设')}</span>
+      <select className={selectClass} value={value?.preset ?? ''} onChange={event => {
+        const preset = event.target.value as WorkstationPreset | '';
+        onChange(preset ? { preset, modules: presets[preset].modules, language: value?.language ?? 'zh' } : null);
+      }}>
+        <option value="">{tx('현장 설정 사용', '使用现场设置')}</option>
+        {(Object.keys(presets) as WorkstationPreset[]).map(preset =>
+          <option key={preset} value={preset}>{tx(...presets[preset].labels)}</option>)}
+      </select>
+    </label>
+    {value && <label className="min-w-0">
+      <span className="mb-1 block">{tx('표시 언어 기본값', '默认显示语言')}</span>
+      <select className={selectClass} value={value.language} onChange={event =>
+        onChange({ ...value, language: event.target.value as WorkstationConfig['language'] })}>
+        <option value="ko">한국어</option>
+        <option value="zh">中文</option>
+      </select>
+    </label>}
+    {value && options.length > 0 && <div className="flex flex-wrap gap-x-4 sm:col-span-2">
+      {options.map(module => <label key={module} className="flex min-h-10 items-center gap-2">
+        <input type="checkbox" className="size-4 accent-[var(--wj-accent)]" checked={value.modules.includes(module)}
+          onChange={event => onChange({ ...value, modules: event.target.checked
+            ? [...value.modules, module] : value.modules.filter(selected => selected !== module) })} />
+        {tx(...moduleLabels[module])}
+      </label>)}
+    </div>}
+  </fieldset>;
+}
 
 function productionBindingLabel(station: FieldStation, tx: Tx) {
   const { production_process: process, injection_machine_number: machine, assembly_line: line } = fieldStationBinding(station);
@@ -111,6 +163,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
       station_id: station.station_id, display_name: station.display_name, apps: station.apps,
       location: station.location, line_note: station.line_note, enabled: station.enabled,
       ...fieldStationBinding(station),
+      workstation: station.workstation ?? null,
     });
     formHeading.current?.focus();
   }
@@ -146,7 +199,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
       location: draft.location.trim(),
       line_note: draft.line_note.trim(),
     };
-    if (!next.station_id || !next.display_name || !next.apps.length) return;
+    if (!next.station_id || !next.display_name || !next.apps.length || next.workstation?.modules.length === 0) return;
     void run(async signal => {
       const request = { authSessionId, signal };
       if (editing) await updateFieldStation(editing, next, request);
@@ -227,6 +280,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
             {FIELD_ASSEMBLY_LINES.map(line => <option key={line} value={line}>{tx(`${line} 라인`, `${line} 线`)}</option>)}
           </select>
         </label>}
+        <WorkstationFields value={draft.workstation} tx={tx} onChange={workstation => setDraft({ ...draft, workstation })} />
         <fieldset className="min-w-0 text-sm sm:col-span-2">
           <legend className="mb-1 font-medium">{tx('사용 앱', '使用的程序')}</legend>
           <div className="flex flex-wrap gap-x-4">
@@ -244,7 +298,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
           {tx('사용 중', '启用')}
         </label>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
-          <Button type="submit" disabled={!draft.station_id.trim() || !draft.display_name.trim() || !draft.apps.length}>
+          <Button type="submit" disabled={!draft.station_id.trim() || !draft.display_name.trim() || !draft.apps.length || draft.workstation?.modules.length === 0}>
             {editing ? tx('저장', '保存') : tx('등록', '登记')}
           </Button>
           {editing && <Button type="button" variant="secondary" onClick={reset}>{tx('수정 취소', '取消修改')}</Button>}
@@ -263,6 +317,7 @@ export default function FieldStationAdmin({ tx, authSessionId }: { tx: Tx; authS
             <FieldBadge>{station.enabled ? tx('사용 중', '启用') : tx('사용 중지', '停用')}</FieldBadge>
             <FieldBadge>{productionBindingLabel(station, tx)}</FieldBadge>
             <FieldBadge>{station.credential_active ? tx('유효한 토큰', '有效令牌') : tx('유효한 토큰 없음', '无有效令牌')}</FieldBadge>
+            {station.workstation && <FieldBadge>{tx(...presets[station.workstation.preset].labels)} · {station.workstation.language === 'ko' ? '한국어' : '中文'}</FieldBadge>}
           </div>
           <p className={`mt-1 break-words ${muted}`}>{[station.location, station.line_note, ...station.apps.map(app => fieldText(app, tx))].filter(Boolean).join(' · ')}</p>
           <p className={`tabular-nums ${muted}`}>{tx('수정', '更新')} {formatFieldTime(station.updated_at)}</p>
