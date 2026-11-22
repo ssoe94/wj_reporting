@@ -6,6 +6,8 @@ from django.db.models import Q
 
 MIN_INJECTION_MACHINE = 1
 MAX_INJECTION_MACHINE = 17
+PRODUCTION_PROCESSES = ('injection', 'assembly')
+ASSEMBLY_LINES = ('A', 'B', 'C', 'D')
 
 
 class FieldStation(models.Model):
@@ -16,6 +18,12 @@ class FieldStation(models.Model):
     line_note = models.CharField(max_length=160, blank=True)
     enabled = models.BooleanField(default=True)
     issuer_policy_revision = models.PositiveBigIntegerField(default=0)
+    production_process = models.CharField(
+        max_length=9, null=True, blank=True, choices=[(value, value) for value in PRODUCTION_PROCESSES],
+    )
+    assembly_line = models.CharField(
+        max_length=1, null=True, blank=True, choices=[(value, value) for value in ASSEMBLY_LINES],
+    )
     injection_machine_number = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[
             MinValueValidator(MIN_INJECTION_MACHINE), MaxValueValidator(MAX_INJECTION_MACHINE),
@@ -32,6 +40,17 @@ class FieldStation(models.Model):
                     injection_machine_number__range=(MIN_INJECTION_MACHINE, MAX_INJECTION_MACHINE)
                 ),
                 name='field_station_injection_machine_range',
+            ),
+            models.CheckConstraint(
+                condition=Q(production_process__isnull=True, injection_machine_number__isnull=True,
+                            assembly_line__isnull=True) | (
+                    Q(production_process__isnull=False) & (
+                        Q(production_process='injection', assembly_line__isnull=True) |
+                        (Q(production_process='assembly', injection_machine_number__isnull=True) &
+                         (Q(assembly_line__isnull=True) | Q(assembly_line__in=ASSEMBLY_LINES)))
+                    )
+                ),
+                name='field_station_valid_production_binding',
             ),
         ]
 

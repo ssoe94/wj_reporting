@@ -1,10 +1,12 @@
-"""Read WJ's current injection plan group for the station identified by its token."""
+"""Read the station's verified injection group or daily assembly line plan."""
 
 from django.utils import timezone
 from rest_framework.response import Response
 
 from injection.cycle_time_history import business_date_at
 from production.ai_retrievers import INJECTION_PLAN_METADATA_FIELDS, get_injection_summary
+from production.mes_progress import normalize_equipment_key, normalize_part_no
+from production.models import ProductionPlan
 
 from .base import FieldAPIView
 from .contract import CONTRACT, ContractError
@@ -12,15 +14,37 @@ from .device_views import _device_identity
 
 
 SOURCE = 'injection_plan_mes_shots'
+ASSEMBLY_SOURCE = 'assembly_line_plan'
 
 
 def _shared_plan_value(group, name):
-    values = {(part['plan_metadata'][name] or '').strip() for part in group}
+    values = {(part[name] or '').strip() for part in group}
     if len(values) == 1:
         value = values.pop()
         if value not in ('', '-'):
             return value
     return None
+
+
+def plan_parts(rows):
+    by_number = {}
+    for number, metadata in rows:
+        if number and number != '-':
+            by_number.setdefault(number, []).append(metadata)
+    return [
+        {'part_no': number, **{name: _shared_plan_value(group, name) for name in INJECTION_PLAN_METADATA_FIELDS}}
+        for number, group in sorted(by_number.items())
+    ]
+
+
+def station_assembly_parts(day, line):
+    plans = ProductionPlan.objects.filter(plan_date=day, plan_type='machining', planned_quantity__gt=0)
+    rows = plans.values_list('machine_name', 'part_no', *INJECTION_PLAN_METADATA_FIELDS).order_by('pk')
+    return plan_parts(
+        (normalize_part_no(number), dict(zip(INJECTION_PLAN_METADATA_FIELDS, metadata)))
+        for machine, number, *metadata in rows
+        if normalize_equipment_key('machining', machine) == line
+    )
 
 
 def _current_group(business_date, machine_number, now):
@@ -54,11 +78,7 @@ def _current_group(business_date, machine_number, now):
     if (not current['production_group_complete'] or len(part_numbers) != parts_per_shot
             or any(part in ('', '-') for part in part_numbers)):
         return None, 'ambiguous_current_part'
-    return {
-        'parts': part_numbers,
-        'part_no': part_numbers[0] if len(part_numbers) == 1 else None,
-        **{name: _shared_plan_value(group, name) for name in INJECTION_PLAN_METADATA_FIELDS},
-    }, None
+    return plan_parts((part['part_no'], part['plan_metadata']) for part in group), None
 
 
 class ProductionContextView(FieldAPIView):
@@ -73,17 +93,25 @@ class ProductionContextView(FieldAPIView):
                 raise ContractError('unexpected_query', 400)
             now = timezone.now()
             business_date = business_date_at(now)
-            current, reason = (None, 'station_unmapped')
-            if station.injection_machine_number is not None:
-                current, reason = _current_group(business_date, station.injection_machine_number, now)
-            fields = current or {'parts': [], **dict.fromkeys(('part_no', *INJECTION_PLAN_METADATA_FIELDS))}
+            parts, source, reason = [], None, 'station_unmapped'
+            if station.production_process == 'injection' and station.injection_machine_number is not None:
+                parts, reason = _current_group(business_date, station.injection_machine_number, now)
+                source = SOURCE if parts else None
+            elif station.production_process == 'assembly' and station.assembly_line is not None:
+                parts = station_assembly_parts(business_date, station.assembly_line)
+                source, reason = (ASSEMBLY_SOURCE, None) if parts else (None, 'no_assembly_plan')
+            parts = parts or []
             return Response({
                 'contract': CONTRACT,
                 'station_id': station.station_id,
+                'production_process': station.production_process,
                 'injection_machine_number': station.injection_machine_number,
-                'status': 'current' if current else 'unavailable',
-                **fields,
-                'source': SOURCE if current else None,
+                'assembly_line': station.assembly_line,
+                'status': 'planned' if source == ASSEMBLY_SOURCE else 'current' if parts else 'unavailable',
+                'parts': parts,
+                'part_no': parts[0]['part_no'] if len(parts) == 1 else None,
+                **{name: _shared_plan_value(parts, name) for name in INJECTION_PLAN_METADATA_FIELDS},
+                'source': source,
                 'business_date': business_date.isoformat(),
                 'reason': reason,
             })
