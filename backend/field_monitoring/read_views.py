@@ -20,13 +20,15 @@ from config.authentication import ScopedJWTAuthentication
 from injection.cycle_time_history import business_date_at
 
 from .base import FieldAPIView
+from .event_payload import event_references
 from .issuer_detection import issuance_exceptions, successful_label_scans
 from .issuer_views import reported_policy_matches, station_policies
-from .models import FieldEvent, FieldStation, FieldStationHeartbeat
+from .models import FieldArchiveEvent, FieldEvent, FieldStation, FieldStationHeartbeat
 from .permissions import CanViewFieldMonitoring
 
 CSV_LIMIT = 10_000
 RESULTS = ('ok', 'ng', 'error', 'info')
+SCANNER_LANES = ('A', 'B', 'W')
 FORMULA_PREFIXES = ('=', '+', '-', '@', '＝', '＋', '－', '＠')
 RESULT_EXCEPTION_TYPES = {
     'weigh.result': ('weight_outside_limit', 'weight_at_or_below_zero'),
@@ -47,6 +49,7 @@ SEARCH_FIELDS = {
     'result': ('result', 64),
     'reason': ('reason', 64),
     'mode': ('mode', 64),
+    'lane': ('payload__device', 1),
     'barcode': ('barcode', 256),
     'serial': ('serial', 128),
     'part_no': ('part_no', 128),
@@ -340,12 +343,22 @@ def _event_search(params):
     if start > end:
         raise QueryError('from must not follow to.')
 
-    query = FieldEvent.objects.filter(business_date__range=(start, end))
+    archive = params.get('archive', '')
+    if archive not in ('', 'true'):
+        raise QueryError('archive must be true.')
+    model = FieldArchiveEvent if archive else FieldEvent
+    query = model.objects.filter(business_date__range=(start, end))
     scope = {'from': start.isoformat(), 'to': end.isoformat()}
+    if archive:
+        scope['archive'] = archive
     for name, (field, _) in SEARCH_FIELDS.items():
         value = _filter_value(params, name)
         if not value:
             continue
+        if archive and name in ('issuer_namespace', 'label_print_date', 'issuance_scan', 'seen_before_reset'):
+            raise QueryError(f'{name} is available only in the live ledger.')
+        if name == 'lane' and value not in SCANNER_LANES:
+            raise QueryError('lane must be A, B, or W.')
         scope[name] = value
         if name == 'issuance_scan':
             if value != 'true':
@@ -404,6 +417,7 @@ def _event_page(params):
 
 
 def _row(event):
+    device = event.payload.get('device')
     return {
         'id': event.pk,
         'station_id': event.station.station_id,
@@ -413,13 +427,14 @@ def _row(event):
         'result': event.result,
         'reason': event.reason,
         'mode': event.mode,
+        'lane': device if device in SCANNER_LANES else None,
         'occurred_at': event.occurred_at,
         'received_at': event.received_at,
         'barcode': event.barcode,
         'serial': event.serial,
         'part_no': event.part_no,
         'status_raw': event.payload.get('status_raw'),
-        'ref': event.payload.get('ref', {}),
+        'ref': event_references(event),
         'detail': event.payload.get('detail', {}),
         'clock_suspect': event.clock_suspect,
         'clock_offset_seconds': event.clock_offset_seconds,
@@ -520,6 +535,7 @@ class EventsCsvView(FieldReadView):
         fields = (
             'id', 'business_date', 'station_id', 'app', 'type', 'result', 'reason', 'mode', 'occurred_at',
             'received_at', 'barcode', 'serial', 'part_no', 'status_raw', 'clock_suspect', 'clock_offset_seconds',
+            'lane',
         )
         writer = csv.writer(response)
         writer.writerow(fields)

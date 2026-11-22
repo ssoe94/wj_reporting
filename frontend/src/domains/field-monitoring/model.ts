@@ -1,6 +1,7 @@
 export const FIELD_APPS = ['barcode', 'weigh_label', 'vision_backcover', 'vision_capture', 'vision_uv'] as const;
 export const FIELD_RESULTS = ['ok', 'ng', 'error', 'info'] as const;
 export const FIELD_MODES = ['production', 'test', 'demo', 'preview', 'manual', 'unknown'] as const;
+export const FIELD_LANES = ['A', 'B', 'W'] as const;
 export const FIELD_TYPES = [
   'scan.recorded', 'weigh.result', 'label.reserved', 'label.dispatched', 'label.reread',
   'queue.partial_flush', 'vision.cycle', 'vision.batch', 'capture.pair', 'capture.single',
@@ -13,8 +14,8 @@ export type FieldFilterKey = typeof FIELD_FILTER_KEYS[number];
 export type FieldFilters = Partial<Record<FieldFilterKey, string>> & { from: string; to: string };
 
 const FIELD_FILTER_KEYS = [
-  'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id', 'seen_before_reset',
-  'issuer_namespace', 'label_print_date', 'issuance_scan',
+  'from', 'to', 'station', 'app', 'type', 'result', 'reason', 'mode', 'lane', 'barcode', 'serial', 'part_no', 'job_id', 'cycle_id', 'seen_before_reset',
+  'issuer_namespace', 'label_print_date', 'issuance_scan', 'archive',
 ] as const;
 
 export function recordParams(filters: FieldFilters) {
@@ -116,6 +117,7 @@ export type FieldEvent = {
   result: FieldResult;
   reason: string;
   mode: string;
+  lane: typeof FIELD_LANES[number] | null;
   occurred_at: string;
   received_at: string;
   business_date: string;

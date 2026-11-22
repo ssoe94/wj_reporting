@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
 from .contract import MAX_BODY
+from .event_payload import wire_payload
 from .models import FieldCredential, FieldEvent, FieldIngestBatch, FieldStation, FieldStationChange, FieldStationHeartbeat
 
 
@@ -157,6 +158,34 @@ class DeviceApiTests(TestCase):
             self.assertEqual((response.status_code, response.data.get('event_index')), (400, 0))
         self.assertFalse(FieldEvent.objects.exists())
 
+    def test_compact_and_legacy_payload_preserve_exact_event_replays(self):
+        payload = fixture('ingest-valid-weigh')
+        event = payload['events'][0]
+        event.update(barcode=None, serial='')
+        event['ref']['job_id'] = 'SYNTH-JOB-12'
+        self.assertEqual(self.post_device('ingest', payload).data['accepted'], 1)
+        row = FieldEvent.objects.get()
+        self.assertEqual(wire_payload(row), event)
+        self.assertIsNone(row.payload['barcode'])
+        self.assertEqual(row.payload['serial'], '')
+        self.assertNotIn('job_id', row.payload['ref'])
+        entries = self.client.get(ROOT + 'events/', {'from': '2026-01-02', 'to': '2026-01-02'}).data['results']
+        self.assertEqual(entries[0]['ref'], event['ref'])
+        for key in ('seq', 'app', 'type', 'mode', 'result', 'reason', 'part_no'):
+            self.assertNotIn(key, row.payload)
+
+        def rebatch(event):
+            return self.post_device('ingest', dict(payload, batch_id=str(uuid4()), events=[event]))
+
+        self.assertEqual(rebatch(event).data['duplicates'], 1)
+        self.assertEqual(rebatch({key: value for key, value in event.items() if key != 'barcode'}).data['code'],
+                         'event_conflict')
+        utc_spelling = dict(event, occurred_at='2026-01-02T00:10:00Z')
+        self.assertEqual(rebatch(utc_spelling).data['code'], 'event_conflict')
+        FieldEvent.objects.filter(pk=row.pk).update(payload=event)
+        self.assertEqual(rebatch(event).data['duplicates'], 1)
+        self.assertEqual(rebatch(utc_spelling).data['code'], 'event_conflict')
+
     def test_delivery_replay_duplicate_conflict_and_atomic_rejection(self):
         payload = fixture('ingest-valid-weigh')
         first = self.post_device('ingest', payload)
@@ -236,6 +265,7 @@ class ConcurrentDeliveryTests(TransactionTestCase):
         station_url = register(client)
         token = client.post(station_url + 'issue-token/').data['token']
         first = fixture('ingest-valid-weigh')
+        first['events'][0]['occurred_at'] = datetime.now(timezone.utc).isoformat(timespec='milliseconds')
         second = deepcopy(first)
         second['batch_id'] = str(uuid4())
         barrier = Barrier(3)

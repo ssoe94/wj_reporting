@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .device_views import HeartbeatView, IngestView
+from .device_views import ArchiveIngestView, HeartbeatView, IngestView
 from .issuer_views import IssuerAssignmentsView, IssuerPolicyView, IssuerReleaseView, IssuerStopView
 from .read_views import EventsCsvView, EventsView, ExceptionsView, OverviewView
 from .station_views import IssueTokenView, RevokeTokenView, StationsView, StationView
@@ -8,6 +8,7 @@ from .station_views import IssueTokenView, RevokeTokenView, StationsView, Statio
 
 urlpatterns = [
     path('ingest/', IngestView.as_view(), name='field-ingest'),
+    path('archive-ingest/', ArchiveIngestView.as_view(), name='field-archive-ingest'),
     path('heartbeat/', HeartbeatView.as_view(), name='field-heartbeat'),
     path('overview/', OverviewView.as_view(), name='field-overview'),
     path('exceptions/', ExceptionsView.as_view(), name='field-exceptions'),

@@ -92,6 +92,56 @@ class FieldEvent(models.Model):
         ]
 
 
+class FieldArchiveEvent(models.Model):
+    """Historical imports are queried independently of the live field ledger."""
+
+    # Both archive identity and station/date indexes already lead with station.
+    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT, db_index=False)
+    database_id = models.UUIDField()
+    seq = models.PositiveBigIntegerField()
+    app = models.CharField(max_length=64)
+    event_type = models.CharField(max_length=64)
+    mode = models.CharField(max_length=16)
+    result = models.CharField(max_length=16)
+    reason = models.CharField(max_length=64)
+    barcode = models.CharField(max_length=256, blank=True)
+    serial = models.CharField(max_length=128, blank=True)
+    part_no = models.CharField(max_length=128, blank=True)
+    job_id = models.CharField(max_length=128, blank=True)
+    occurred_at = models.DateTimeField()
+    received_at = models.DateTimeField()
+    business_date = models.DateField()
+    clock_offset_seconds = models.BigIntegerField(null=True)
+    clock_suspect = models.BooleanField(default=False)
+    payload = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['station', 'database_id', 'seq'], name='field_archive_event_identity'),
+        ]
+        indexes = [
+            models.Index(fields=['station', 'business_date', 'occurred_at'], name='field_archive_station_day'),
+            models.Index(fields=['business_date', 'occurred_at'], name='field_archive_day'),
+        ]
+
+
+class FieldIssuerRetainedFloor(models.Model):
+    """Per-date-code serial safety evidence left by expired live reservations."""
+
+    station = models.ForeignKey(FieldStation, on_delete=models.PROTECT, db_index=False)
+    namespace = models.CharField(max_length=3)
+    part_no = models.CharField(max_length=32)
+    date_code = models.CharField(max_length=3)
+    print_date = models.DateField()
+    serial_floor = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['station', 'namespace', 'part_no', 'date_code'],
+                                    name='field_retained_floor_identity'),
+        ]
+
+
 class FieldStationHeartbeat(models.Model):
     station = models.OneToOneField(FieldStation, on_delete=models.PROTECT, related_name='heartbeat')
     received_at = models.DateTimeField()

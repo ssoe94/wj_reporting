@@ -18,8 +18,10 @@ from .contract import (
     CONTRACT, ContractError, read_device_json, validate_envelope, validate_heartbeat,
     validate_ingest,
 )
+from .event_payload import WIRE_PAYLOAD_COLUMNS, compact_payload, wire_payload
 from .issuer_rules import reservation_fields
-from .models import FieldCredential, FieldEvent, FieldIngestBatch, FieldStation, FieldStationHeartbeat
+from .models import FieldArchiveEvent, FieldCredential, FieldEvent, FieldIngestBatch, FieldStation, FieldStationHeartbeat
+from .retention import history_cutoff, retain_serial_floors
 
 
 _TOKEN = re.compile(r'([0-9a-f]{32})\.([A-Za-z0-9_-]{43})', re.ASCII)
@@ -59,47 +61,65 @@ def _canonical_event(event):
     return json.dumps(event, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
 
 
-def _ingest(station, database_id, batch_id, raw_hash, events, timestamps, received_at):
+def _ingest(station, database_id, batch_id, raw_hash, events, timestamps, received_at, *, archive=False):
     existing_batch = FieldIngestBatch.objects.filter(station=station, batch_id=batch_id).first()
     if existing_batch is not None:
         if existing_batch.request_sha256 != raw_hash:
             raise ContractError('batch_conflict', 409)
         return existing_batch.ack
 
-    existing = dict(FieldEvent.objects.filter(
+    event_model = FieldArchiveEvent if archive else FieldEvent
+    existing = {row.seq: row for row in event_model.objects.filter(
         station=station, database_id=database_id, seq__in=[event['seq'] for event in events],
-    ).values_list('seq', 'payload'))
-    offset = FieldStationHeartbeat.objects.filter(
+    ).only(*WIRE_PAYLOAD_COLUMNS)}
+    offset = None if archive else FieldStationHeartbeat.objects.filter(
         station=station, received_at__lte=received_at,
     ).values_list('clock_offset_seconds', flat=True).first()
     offset_limit = getattr(settings, 'FIELD_MONITORING_CLOCK_HOLD_SECONDS', 3600)
     offset_suspect = offset is not None and abs(offset) > offset_limit
+    cutoff = history_cutoff(received_at)
     pending = []
+    expired = 0
+    expired_reservations = []
     for index, (event, occurred_at) in enumerate(zip(events, timestamps, strict=True)):
         seq = event['seq']
         if seq in existing:
-            if _canonical_event(existing[seq]) != _canonical_event(event):
+            if _canonical_event(wire_payload(existing[seq])) != _canonical_event(event):
                 raise ContractError('event_conflict', 409, event_index=index)
             continue
-        issuer_namespace, label_print_date = reservation_fields(event)
-        pending.append(FieldEvent(
+        day = business_date_at(occurred_at)
+        issuer_fields = {}
+        if not archive:
+            issuer_namespace, label_print_date = reservation_fields(event)
+            issuer_fields = {'issuer_namespace': issuer_namespace, 'label_print_date': label_print_date}
+        if day < cutoff:
+            expired += 1
+            if not archive and label_print_date is not None:
+                expired_reservations.append((station.pk, issuer_namespace, event['part_no'],
+                                             label_print_date, event['serial']))
+            continue
+        pending.append(event_model(
             station=station, database_id=database_id, seq=seq,
             app=event['app'], event_type=event['type'], mode=event['mode'], result=event['result'],
             reason=event['reason'], barcode=event.get('barcode') or '', serial=event.get('serial') or '',
             part_no=event.get('part_no') or '', job_id=event.get('ref', {}).get('job_id', ''),
-            occurred_at=occurred_at, received_at=received_at, business_date=business_date_at(occurred_at),
-            issuer_namespace=issuer_namespace, label_print_date=label_print_date,
+            occurred_at=occurred_at, received_at=received_at, business_date=day,
             clock_offset_seconds=offset,
             clock_suspect=offset_suspect or occurred_at > received_at + timedelta(minutes=5),
-            payload=event,
+            payload=compact_payload(event), **issuer_fields,
         ))
 
-    FieldEvent.objects.bulk_create(pending)
+    event_model.objects.bulk_create(pending)
+    retain_serial_floors(expired_reservations)
     ack = {
         'contract': CONTRACT, 'station_id': station.station_id, 'database_id': str(database_id),
         'batch_id': str(batch_id), 'accepted': len(pending),
         'duplicates': len(events) - len(pending), 'max_seq': events[-1]['seq'],
     }
+    if expired:
+        # The v1 uploader requires accepted + duplicates == batch size.
+        # Expiry is a terminal no-insert disposition, flagged separately.
+        ack['expired'] = expired
     FieldIngestBatch.objects.create(
         station=station, batch_id=batch_id, request_sha256=raw_hash, ack=ack, received_at=received_at,
     )
@@ -167,11 +187,56 @@ class DeviceView(FieldAPIView):
 class IngestView(DeviceView):
     def prepare(self, raw, payload):
         batch_id, timestamps = validate_ingest(payload)
+        if 'archive_capability' in payload or any('archive_source' in event for event in payload['events']):
+            raise ContractError('invalid_payload')
         return batch_id, timestamps, hashlib.sha256(raw).hexdigest()
 
     def persist(self, station, database_id, payload, prepared, received_at):
         batch_id, timestamps, raw_hash = prepared
         return _ingest(station, database_id, batch_id, raw_hash, payload['events'], timestamps, received_at)
+
+
+class ArchiveIngestView(DeviceView):
+    sources = {
+        'barcode_scan': ('barcode', {'scan.recorded'}),
+        'barcode_reset': ('barcode', {'operator.action'}),
+        'weigh_scan': ('weigh_label', {'label.reread'}),
+        'weigh_print': ('weigh_label', {
+            'weigh.result', 'label.reserved', 'label.dispatched', 'queue.partial_flush', 'operator.action',
+        }),
+    }
+
+    def prepare(self, raw, payload):
+        if UUID(payload['database_id']).version != 5:
+            raise ContractError('invalid_payload')
+        if set(payload) == {'contract', 'station_id', 'database_id', 'archive_capability'}:
+            if payload['archive_capability'] is not True:
+                raise ContractError('invalid_payload')
+            return None
+        if set(payload) != {'contract', 'station_id', 'database_id', 'batch_id', 'events'}:
+            raise ContractError('invalid_payload')
+        batch_id, timestamps = validate_ingest(payload)
+        seen_sources = set()
+        for index, event in enumerate(payload['events']):
+            source = event.get('archive_source')
+            app, types = self.sources.get(source, (None, ())) if isinstance(source, str) else (None, ())
+            if (event['app'] != app or event['type'] not in types or event['mode'] != 'unknown'
+                    or not event.get('ref', {}).get('source_key')
+                    or event.get('evidence') or 'issuer_assignment_id' in event.get('detail', {})):
+                raise ContractError('invalid_payload', event_index=index)
+            seen_sources.add(source)
+        if len(seen_sources) != 1:
+            raise ContractError('invalid_payload')
+        return batch_id, timestamps, hashlib.sha256(raw).hexdigest()
+
+    def persist(self, station, database_id, payload, prepared, received_at):
+        if prepared is None:
+            return {'contract': CONTRACT, 'station_id': station.station_id, 'database_id': str(database_id),
+                    'archive_capability': 1}
+        if any(event['app'] not in station.apps for event in payload['events']):
+            raise ContractError('station_denied', 403)
+        batch_id, timestamps, digest = prepared
+        return _ingest(station, database_id, batch_id, digest, payload['events'], timestamps, received_at, archive=True)
 
 
 class HeartbeatView(DeviceView):

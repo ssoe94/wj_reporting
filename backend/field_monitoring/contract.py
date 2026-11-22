@@ -1,4 +1,4 @@
-"""Validation for the device protocol. Persist the validated event unchanged."""
+"""Validation for the device protocol. Validated event values must round-trip."""
 
 import json
 import re

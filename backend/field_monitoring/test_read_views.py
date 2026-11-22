@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 
 from injection.cycle_time_history import business_date_at
 
-from .models import FieldEvent, FieldStation, FieldStationHeartbeat
+from .models import FieldArchiveEvent, FieldEvent, FieldStation, FieldStationHeartbeat
 from .read_views import EventsCsvView, EventsView, ExceptionsView, OverviewView
 
 
@@ -67,15 +67,20 @@ class FieldReadTests(TestCase):
 
     def event(self, *, station=None, occurred=None, app='barcode', event_type='scan.recorded',
               result='ok', reason='scan_match', mode='production', suspect=False, job_id='',
-              ref=None, detail=None, barcode='', serial='', part_no='', status_raw='raw'):
+              ref=None, detail=None, barcode='', serial='', part_no='', status_raw='raw',
+              device=None, archive=False):
         self.seq += 1
         occurred = occurred or self.now - timedelta(minutes=5)
-        return FieldEvent.objects.create(
+        payload = {'status_raw': status_raw, 'ref': ref or {}, 'detail': detail or {}}
+        if device is not None:
+            payload['device'] = device
+        model = FieldArchiveEvent if archive else FieldEvent
+        return model.objects.create(
             station=station or self.station, database_id=self.ledger, seq=self.seq, app=app,
             event_type=event_type, mode=mode, result=result, reason=reason, barcode=barcode, serial=serial,
             part_no=part_no, job_id=job_id, occurred_at=occurred, received_at=self.now,
             business_date=business_date_at(occurred), clock_offset_seconds=361, clock_suspect=suspect,
-            payload={'status_raw': status_raw, 'ref': ref or {}, 'detail': detail or {}},
+            payload=payload,
         )
 
     def test_overview_uses_business_date_and_distinguishes_current_health_from_work(self):
@@ -351,11 +356,41 @@ class FieldReadTests(TestCase):
 
     def test_invalid_filters(self):
         for filters in ({'from': '20260101'}, {'from': '2026-02-30'}, {'from': '2026-01-02', 'to': '2026-01-01'},
-                        {'page_size': '501'}, {'page_size': '0'}, {'cursor': 'not-a-cursor'}):
+                        {'page_size': '501'}, {'page_size': '0'}, {'cursor': 'not-a-cursor'}, {'lane': 'X'}):
             with self.subTest(filters=filters):
                 result = self.client.get(BASE + 'events/', filters)
                 self.assertEqual(result.status_code, 400)
                 self.assertEqual(result.data['code'], 'invalid_filter')
+
+    def test_lane_search_and_csv_use_actual_device_in_live_and_archive(self):
+        for archive in (False, True):
+            with self.subTest(archive=archive):
+                fixtures = {'archive': archive, 'mode': 'unknown' if archive else 'production'}
+                matching = {lane: self.event(device=lane, **fixtures) for lane in ('A', 'B')}
+                matching['W'] = self.event(app='weigh_label', event_type='label.reread', device='W',
+                                           detail={'legacy_slot': 'A'}, **fixtures)
+                missing = self.event(detail={'legacy_slot': 'B', 'expected_device': 'A'}, **fixtures)
+                keyboard = self.event(device='KEYBOARD', detail={'legacy_slot': 'A'}, **fixtures)
+                filters = {'archive': 'true'} if archive else {}
+                rows = {row['id']: row['lane'] for row in self.client.get(BASE + 'events/', filters).data['results']}
+                expected = {record.pk: lane for lane, record in matching.items()}
+                self.assertEqual(rows, {**expected, missing.pk: None, keyboard.pk: None})
+
+                for lane, record in matching.items():
+                    query = {**filters, 'lane': lane}
+                    selected = self.client.get(BASE + 'events/', query).data['results']
+                    self.assertEqual([(row['id'], row['lane']) for row in selected], [(record.pk, lane)])
+                    csv_result = self.client.get(BASE + 'events.csv', query)
+                    self.assertEqual(csv_result.status_code, 200)
+                    csv_rows = list(csv.DictReader(StringIO(csv_result.content.decode('utf-8-sig'))))
+                    self.assertEqual([(row['id'], row['lane']) for row in csv_rows], [(str(record.pk), lane)])
+
+                self.event(device='W', **fixtures)
+                query = {**filters, 'lane': 'W', 'page_size': '1'}
+                cursor = self.client.get(BASE + 'events/', query).data['next_cursor']
+                self.assertIsNotNone(cursor)
+                self.assertEqual(self.client.get(BASE + 'events/', {**query, 'cursor': cursor, 'lane': 'A'}).status_code,
+                                 400)
 
     def test_csv_uses_same_filters_bom_and_formula_protection(self):
         self.event(barcode='  =SUM(1,2)', serial='+SYNTH-SERIAL', part_no='SYNTH-PART', status_raw='\tSYNTH')

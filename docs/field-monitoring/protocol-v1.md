@@ -158,6 +158,8 @@ flowchart LR
 
 송신기는 HTTP 200 + JSON, `contract/batch_id/station_id/database_id`, 정수 타입과 `accepted >= 0`, `duplicates >= 0`, `accepted + duplicates == events.length`, `max_seq == 이 묶음의 마지막 seq`를 모두 확인한다. `max_seq`는 서버의 전역 커서가 아니다. 일치하면 로컬에서 해당 묶음만 ACK 처리한다. 같은 ID의 정확한 재시도는 최초 ACK 그대로 반환하므로 새 이벤트가 다시 증가하지 않는다. 다른 배치의 동일 이벤트는 `duplicates`에 반영한다.
 
+서버 보존 기간이 지난 신규 이벤트도 송신을 완료 처리할 수 있도록 `duplicates`에 반영한다. 이때 서버는 해당 수를 선택 응답 필드 `expired`로 따로 표시하며, 이벤트를 조회 원장에 적재하지 않는다. 보존 기준은 상하이 08:00 영업일로 계산한 2년이며 같은 날짜 경계는 포함한다. 이관 완료 건수를 서버 조회와 대조할 때 만료 건을 제외한다.
+
 `POST /api/field/v1/heartbeat/`는 시작할 때, 기본 60초마다, 상태가 바뀌면 디바운스해 보낸다. 응답은 이 상태를 받았음을 확인한다. 단절 중 heartbeat를 큐에 쌓지 않고 복구 후 최신 상태를 만든다. 이벤트의 묶음 ACK는 별도로 확인한다.
 
 서버는 station별로 수신 시각(`received_at`)이 최신인 스냅샷을 저장한다. `session_id`와 세션별 `heartbeat_seq`는 진단에 사용한다. 같은 station에서 10분 안에 다른 세션으로 전환되었다가 이전 세션이 다시 수신되는 경우(예: A→B→A), `duplicate_sender` 경고를 표시하고 스냅샷은 수신한다. 정상적인 한 번의 재시작(A→B)으로는 경고를 만들지 않는다.

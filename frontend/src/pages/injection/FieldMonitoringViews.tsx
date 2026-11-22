@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { downloadFieldEvents, fieldEvents } from '@/domains/field-monitoring/api';
 import { clockMinutes, fieldDeviceText, fieldText, formatFieldTime } from '@/domains/field-monitoring/labels';
 import type { Tx } from '@/domains/field-monitoring/labels';
-import { FIELD_APPS, FIELD_MODES, FIELD_RESULTS, FIELD_TYPES } from '@/domains/field-monitoring/model';
+import { FIELD_APPS, FIELD_LANES, FIELD_MODES, FIELD_RESULTS, FIELD_TYPES } from '@/domains/field-monitoring/model';
 import type { FieldEvent, FieldException, FieldFilterKey, FieldFilters, FieldOverviewStation, FieldOverviewSummary } from '@/domains/field-monitoring/model';
 
 export const panelClass = 'rounded-lg border border-[var(--wj-border)] bg-[var(--wj-surface)]';
@@ -322,6 +322,7 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
       <SelectFilter tx={tx} options={FIELD_TYPES} label={tx('이벤트', '事件')} value={draft.type ?? ''} onChange={update('type')} />
       <SelectFilter tx={tx} options={FIELD_RESULTS} label={tx('결과', '结果')} value={draft.result ?? ''} onChange={update('result')} />
       <SelectFilter tx={tx} options={FIELD_MODES} label={tx('모드', '模式')} value={draft.mode ?? ''} onChange={update('mode')} />
+      <SelectFilter tx={tx} options={FIELD_LANES} label={tx('스캐너 레인', '扫码枪通道')} value={draft.lane ?? ''} onChange={update('lane')} />
       <TextFilter label={tx('사유 코드', '原因代码')} value={draft.reason ?? ''} onChange={update('reason')} maxLength={64} />
       <TextFilter label={tx('바코드', '条码')} value={draft.barcode ?? ''} onChange={update('barcode')} maxLength={256} />
       <TextFilter label={tx('시리얼', '序列号')} value={draft.serial ?? ''} onChange={update('serial')} />
@@ -329,10 +330,16 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
       <TextFilter label={tx('작업 ID', '作业 ID')} value={draft.job_id ?? ''} onChange={update('job_id')} />
       <TextFilter label={tx('사이클 ID', '周期 ID')} value={draft.cycle_id ?? ''} onChange={update('cycle_id')} />
       <label className="flex min-h-10 items-center gap-2 self-end text-sm">
+        <input type="checkbox" checked={draft.archive === 'true'}
+          onChange={event => setDraft(previous => ({ ...previous, archive: event.target.checked ? 'true' : '',
+            issuer_namespace: '', label_print_date: '', issuance_scan: '', seen_before_reset: '' }))} />
+        {tx('이관한 과거 기록', '已迁移的历史记录')}
+      </label>
+      {draft.archive !== 'true' && <label className="flex min-h-10 items-center gap-2 self-end text-sm">
         <input type="checkbox" checked={draft.seen_before_reset === 'true'}
           onChange={event => update('seen_before_reset')(event.target.checked ? 'true' : '')} />
         {fieldText('barcode_seen_before_reset', tx)}
-      </label>
+      </label>}
       {(draft.issuer_namespace || draft.label_print_date || draft.issuance_scan) && <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm md:col-span-4">
         {draft.issuer_namespace && <FieldBadge>{tx('네임스페이스', '命名空间')} {draft.issuer_namespace}</FieldBadge>}
         {draft.label_print_date && <FieldBadge>{tx('발급 날짜', '发号日期')} {draft.label_print_date}</FieldBadge>}
@@ -360,7 +367,9 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
         {rows.map(row => <li key={row.id} className={`${panelClass} min-w-0 p-3`}>
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <strong className="break-words">{fieldText(row.app, tx)} · {fieldText(row.type, tx)}</strong>
-            <span className={muted}>{row.station_id} · {fieldText(row.mode, tx)}</span>
+            <span className={muted}>
+              {row.station_id} · {fieldText(row.mode, tx)}{row.lane && <> · {tx('레인', '通道')} {row.lane}</>}
+            </span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <FieldEventTime row={row} tx={tx} />
@@ -376,7 +385,7 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
             <tr>
               {[
                 tx('발생 시각 (UTC+8)', '发生时间 (UTC+8)'), tx('현장 PC', '现场电脑'), tx('앱·이벤트', '程序与事件'),
-                tx('결과·사유', '结果与原因'), tx('모드', '模式'), tx('바코드·시리얼·품번', '条码、序列号与料号'),
+                tx('결과·사유', '结果与原因'), tx('모드', '模式'), tx('레인', '通道'), tx('바코드·시리얼·품번', '条码、序列号与料号'),
               ].map(value => <th key={value} scope="col" className={th}>{value}</th>)}
             </tr>
           </thead>
@@ -389,6 +398,7 @@ export function FieldRecordsView({ tx, stations, applied, onApply, authSessionId
               </td>
               <td className="px-3 py-2.5"><FieldEventOutcome row={row} tx={tx} /></td>
               <td className="px-3 py-2.5">{fieldText(row.mode, tx)}</td>
+              <td className="px-3 py-2.5">{row.lane ?? '—'}</td>
               <td className="max-w-96 px-3 py-2.5"><FieldEventIdentifiers row={row} /></td>
             </tr>)}
           </tbody>
